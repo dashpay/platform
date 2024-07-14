@@ -1,7 +1,7 @@
-use std::fmt;
 use crate::balances::credits::{Creditable, MAX_CREDITS};
 use crate::fee::{Credits, SignedCredits};
 use crate::ProtocolError;
+use std::fmt;
 
 /// The outcome of verifying credits
 #[derive(Copy, Clone, Debug)]
@@ -19,14 +19,25 @@ pub struct TotalCreditsBalance {
 impl fmt::Display for TotalCreditsBalance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "TotalCreditsBalance {{")?;
-        writeln!(f, "    total_credits_in_platform: {},", self.total_credits_in_platform)?;
+        writeln!(
+            f,
+            "    total_credits_in_platform: {},",
+            self.total_credits_in_platform
+        )?;
         writeln!(f, "    total_in_pools: {},", self.total_in_pools)?;
-        writeln!(f, "    total_identity_balances: {},", self.total_identity_balances)?;
-        writeln!(f, "    total_specialized_balances: {}", self.total_specialized_balances)?;
+        writeln!(
+            f,
+            "    total_identity_balances: {},",
+            self.total_identity_balances
+        )?;
+        writeln!(
+            f,
+            "    total_specialized_balances: {}",
+            self.total_specialized_balances
+        )?;
         write!(f, "}}")
     }
 }
-
 
 impl TotalCreditsBalance {
     /// Is the outcome okay? basically do the values match up

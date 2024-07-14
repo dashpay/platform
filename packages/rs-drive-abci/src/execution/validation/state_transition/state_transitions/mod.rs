@@ -132,7 +132,10 @@ pub(crate) mod tests {
         credits: Credits,
     ) -> (Identity, SimpleSigner, IdentityPublicKey) {
         let platform_version = PlatformVersion::latest();
-        platform.drive.add_to_system_credits(credits, None, platform_version).expect("expected to add to system credits");
+        platform
+            .drive
+            .add_to_system_credits(credits, None, platform_version)
+            .expect("expected to add to system credits");
         setup_identity(platform, seed, credits)
     }
 
@@ -193,7 +196,7 @@ pub(crate) mod tests {
 
         (identity, signer, critical_public_key)
     }
-    
+
     pub(crate) fn process_state_transitions(
         platform: &TempPlatform<MockCoreRPCLike>,
         state_transitions: &[StateTransition],
@@ -201,9 +204,12 @@ pub(crate) mod tests {
         platform_state: &PlatformState,
     ) -> (Vec<FeeResult>, ProcessedBlockFeesOutcome) {
         let platform_version = PlatformVersion::latest();
-        
-        let raw_state_transitions = state_transitions.iter().map(|a| a.serialize_to_bytes().expect("expected to serialize")).collect();
-        
+
+        let raw_state_transitions = state_transitions
+            .iter()
+            .map(|a| a.serialize_to_bytes().expect("expected to serialize"))
+            .collect();
+
         let transaction = platform.drive.grove.start_transaction();
 
         let processing_result = platform
@@ -224,7 +230,7 @@ pub(crate) mod tests {
 
         // while we have the state transitions executed, we now need to process the block fees
         let block_fees_v0: BlockFeesV0 = processing_result.aggregated_fees().clone().into();
-        
+
         let block_execution_context = BlockExecutionContext::V0(BlockExecutionContextV0 {
             block_state_info: BlockStateInfo::V0(BlockStateInfoV0 {
                 height: block_info.height,
@@ -244,12 +250,14 @@ pub(crate) mod tests {
         });
 
         // Process fees
-        let processed_block_fees = platform.process_block_fees(
-            &block_execution_context,
-            block_fees_v0.into(),
-            &transaction,
-            platform_version,
-        ).expect("expected to process block fees");
+        let processed_block_fees = platform
+            .process_block_fees(
+                &block_execution_context,
+                block_fees_v0.into(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process block fees");
 
         platform
             .drive
@@ -265,9 +273,16 @@ pub(crate) mod tests {
         platform: &TempPlatform<MockCoreRPCLike>,
         identity_id: Identifier,
         platform_version: &PlatformVersion,
-        expected_balance: Credits
+        expected_balance: Credits,
     ) {
-        assert_eq!(expected_balance, platform.drive.fetch_identity_balance(identity_id.to_buffer(), None, platform_version).expect("expected to be able to fetch balance").expect("expected a balance"));
+        assert_eq!(
+            expected_balance,
+            platform
+                .drive
+                .fetch_identity_balance(identity_id.to_buffer(), None, platform_version)
+                .expect("expected to be able to fetch balance")
+                .expect("expected a balance")
+        );
     }
     pub(crate) fn setup_masternode_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,

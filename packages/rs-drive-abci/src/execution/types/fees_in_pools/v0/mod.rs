@@ -1,6 +1,6 @@
-use std::fmt;
 use dpp::fee::Credits;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Struct containing the amount of processing and storage fees in the distribution pools
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]

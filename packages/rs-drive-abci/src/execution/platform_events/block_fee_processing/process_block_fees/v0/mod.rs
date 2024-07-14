@@ -25,8 +25,8 @@ use crate::execution::types::processed_block_fees_outcome;
 use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
 
-use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use drive::fee_pools::epochs::operations_factory::EpochOperations;
 
 /// From the Dash Improvement Proposal:
 
@@ -153,7 +153,11 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             &block_info.to_block_info(epoch_info.try_into()?),
             Some(transaction),
             platform_version,
-            Some(block_execution_context.block_platform_state().previous_fee_versions()),
+            Some(
+                block_execution_context
+                    .block_platform_state()
+                    .previous_fee_versions(),
+            ),
         )?;
 
         let outcome = processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome {
@@ -270,7 +274,7 @@ mod tests {
                 block_platform_state,
                 proposer_results: None,
             };
-            
+
             let storage_fee_distribution_outcome = platform
                 .process_block_fees_v0(
                     &block_execution_context.into(),

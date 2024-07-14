@@ -97,7 +97,16 @@ mod tests {
 
         let mut inner_batch = GroveDbOpBatch::new();
 
-        current_epoch_tree.add_init_current_operations(platform_version.fee_version.uses_version_fee_multiplier_permille.expect("expected a fee multiplier"), 1, 1, 1, &mut inner_batch);
+        current_epoch_tree.add_init_current_operations(
+            platform_version
+                .fee_version
+                .uses_version_fee_multiplier_permille
+                .expect("expected a fee multiplier"),
+            1,
+            1,
+            1,
+            &mut inner_batch,
+        );
 
         batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
 
@@ -160,7 +169,16 @@ mod tests {
 
         let mut batch = GroveDbOpBatch::new();
 
-        current_epoch_tree.add_init_current_operations(platform_version.fee_version.uses_version_fee_multiplier_permille.expect("expected a fee multiplier"), 1, 1, 1, &mut batch);
+        current_epoch_tree.add_init_current_operations(
+            platform_version
+                .fee_version
+                .uses_version_fee_multiplier_permille
+                .expect("expected a fee multiplier"),
+            1,
+            1,
+            1,
+            &mut batch,
+        );
 
         // Apply new pool structure
         platform

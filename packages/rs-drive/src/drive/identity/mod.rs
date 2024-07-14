@@ -32,11 +32,11 @@
 //! fetching identities from the subtree.
 //!
 
-use std::fmt;
 #[cfg(feature = "server")]
 use crate::drive::object_size_info::DriveKeyInfo;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::RootTree;
+use std::fmt;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::identity::Purpose;
@@ -70,10 +70,10 @@ pub mod key;
 pub mod update;
 
 use crate::drive::identity::contract_info::ContractInfoStructure;
-#[cfg(any(feature = "server", feature = "verify"))]
-pub use fetch::queries::*;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use fetch::queries::*;
 
 /// Identity path
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -376,7 +376,9 @@ impl TryFrom<u8> for IdentityRootStructure {
             160 => Ok(IdentityRootStructure::IdentityTreeKeyReferences),
             96 => Ok(IdentityRootStructure::IdentityTreeNegativeCredit),
             32 => Ok(IdentityRootStructure::IdentityContractInfo),
-            _ => Err(Error::Drive(DriveError::NotSupported("unknown identity root structure tree item"))),
+            _ => Err(Error::Drive(DriveError::NotSupported(
+                "unknown identity root structure tree item",
+            ))),
         }
     }
 }

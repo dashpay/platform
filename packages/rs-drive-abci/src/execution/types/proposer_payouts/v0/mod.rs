@@ -1,5 +1,5 @@
-use std::fmt;
 use dpp::block::epoch::EpochIndex;
+use std::fmt;
 
 /// Struct containing the number of proposers to be paid and the index of the epoch
 /// they're to be paid from.
@@ -14,7 +14,11 @@ pub struct ProposersPayouts {
 impl fmt::Display for ProposersPayouts {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "ProposersPayouts {{")?;
-        writeln!(f, "    proposers_paid_count: {},", self.proposers_paid_count)?;
+        writeln!(
+            f,
+            "    proposers_paid_count: {},",
+            self.proposers_paid_count
+        )?;
         writeln!(f, "    paid_epoch_index: {}", self.paid_epoch_index)?;
         write!(f, "}}")
     }

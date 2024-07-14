@@ -61,7 +61,11 @@ macro_rules! expect_match {
     ($value:expr, $pattern:pat => $result:expr) => {
         match $value {
             $pattern => $result,
-            e => panic!("expected pattern to match: {:?}, got {:?}", stringify!($pattern), e),
+            e => panic!(
+                "expected pattern to match: {:?}, got {:?}",
+                stringify!($pattern),
+                e
+            ),
         }
     };
 }

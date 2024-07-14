@@ -104,8 +104,11 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         // init current epoch pool for processing
         let current_epoch = Epoch::new(epoch_info.current_epoch_index())?;
-        
-        let Some(fee_multiplier) = platform_version.fee_version.uses_version_fee_multiplier_permille else {
+
+        let Some(fee_multiplier) = platform_version
+            .fee_version
+            .uses_version_fee_multiplier_permille
+        else {
             return Err(Error::Drive(error::drive::DriveError::NotSupported("the fee_multiplier_permille must be set in fees if using add_process_epoch_change_operations_v0").into()));
         };
 

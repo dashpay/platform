@@ -1,6 +1,6 @@
-use std::fmt;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::GroveDb;
+use std::fmt;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::config::DriveConfig;
@@ -143,7 +143,9 @@ impl fmt::Display for RootTree {
             RootTree::DataContractDocuments => "DataContractAndDocumentsRoot",
             RootTree::Identities => "Identities",
             RootTree::UniquePublicKeyHashesToIdentities => "UniquePublicKeyHashesToIdentities",
-            RootTree::NonUniquePublicKeyKeyHashesToIdentities => "NonUniquePublicKeyKeyHashesToIdentities",
+            RootTree::NonUniquePublicKeyKeyHashesToIdentities => {
+                "NonUniquePublicKeyKeyHashesToIdentities"
+            }
             RootTree::Pools => "Pools",
             RootTree::PreFundedSpecializedBalances => "PreFundedSpecializedBalances",
             RootTree::SpentAssetLockTransactions => "SpentAssetLockTransactions",
@@ -195,7 +197,9 @@ impl TryFrom<u8> for RootTree {
             16 => Ok(RootTree::TokenBalances),
             120 => Ok(RootTree::Versions),
             112 => Ok(RootTree::Votes),
-            _ => Err(Error::Drive(DriveError::NotSupported("unknown root tree item"))),
+            _ => Err(Error::Drive(DriveError::NotSupported(
+                "unknown root tree item",
+            ))),
         }
     }
 }
