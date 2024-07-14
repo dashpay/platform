@@ -13,7 +13,7 @@ mod v0;
 impl Drive {
     /// Calculates fees for the given operations. Returns the storage and processing costs.
     // Developer note : If there would ever need to be more parameters, they could be added as an option.
-    // For example we could transform
+    // For example, we could transform
     //     pub fn calculate_fee(
     //         base_operations: Option<EnumMap<BaseOp, u64>>,
     //         drive_operations: Option<Vec<LowLevelDriveOperation>>,

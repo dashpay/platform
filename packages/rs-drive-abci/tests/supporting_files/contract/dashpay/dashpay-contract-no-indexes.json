@@ -70,8 +70,6 @@
             "additionalProperties": false
         },
         "contactRequest": {
-            "requiresIdentityEncryptionBoundedKey": 2,
-            "requiresIdentityDecryptionBoundedKey": 2,
             "type": "object",
             "indices": [],
             "properties": {

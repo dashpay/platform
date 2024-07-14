@@ -138,7 +138,7 @@ mod tests {
                 .add_init_empty_operations(&mut batch)
                 .expect("should add init operations");
 
-            epoch.add_init_current_operations(0.0, 1, 1, genesis_time_ms, &mut batch);
+            epoch.add_init_current_operations(0, 1, 1, genesis_time_ms, &mut batch);
 
             drive
                 .apply_batch_grovedb_operations(

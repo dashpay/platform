@@ -1,6 +1,5 @@
 mod v0;
 
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 
 use drive::grovedb::Transaction;

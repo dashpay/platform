@@ -30,7 +30,7 @@ impl Drive {
         }
         if ops.operations.len() < 500 {
             //no initialization
-            dbg!("batch {}", &ops);
+            println!("batch {}", &ops);
         }
 
         if self.config.batching_consistency_verification {

@@ -74,6 +74,7 @@ pub(crate) mod tests {
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::{get_contested_resource_vote_state_request_v0, GetContestedResourceVoteStateRequestV0};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::FinishedVoteInfo;
+    use dpp::block::epoch::Epoch;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
     use dpp::dash_to_credits;
     use dpp::dashcore::{ProTxHash, Txid};
@@ -210,7 +211,7 @@ pub(crate) mod tests {
             .process_raw_state_transitions(
                 &raw_state_transitions,
                 &platform_state,
-                &BlockInfo::default(),
+                &block_info,
                 &transaction,
                 platform_version,
             )
@@ -1515,6 +1516,7 @@ pub(crate) mod tests {
         platform: &TempPlatform<MockCoreRPCLike>,
         time_ms: u64,
         height: u64,
+        epoch_index: u16,
     ) {
         let platform_state = platform.state.load();
 
@@ -1527,7 +1529,7 @@ pub(crate) mod tests {
             time_ms, //less than 2 weeks
             height,
             core_height: 42,
-            epoch: Default::default(),
+            epoch: Epoch::new(epoch_index).unwrap(),
         };
 
         platform_state.set_last_committed_block_info(Some(

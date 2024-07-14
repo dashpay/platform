@@ -6,11 +6,17 @@
 use crate::drive::flags::StorageFlags;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{GroveDbOp, GroveDbOpConsistencyResults, KeyInfoPath, Op};
-use grovedb::Element;
+use grovedb::{Element, ElementFlags};
 use std::borrow::Cow;
 use std::fmt;
+use chrono::format;
 use grovedb::operations::proof::util::hex_to_ascii;
+use dpp::block::epoch::Epoch;
+use dpp::identity::{Purpose, SecurityLevel};
+use dpp::prelude::Identifier;
+use crate::drive::identity::IdentityRootStructure;
 use crate::drive::RootTree;
+use crate::fee_pools;
 
 /// A batch of GroveDB operations as a vector.
 // TODO move to GroveDB
@@ -20,40 +26,198 @@ pub struct GroveDbOpBatch {
     pub(crate) operations: Vec<GroveDbOp>,
 }
 
-fn readable_key_info(position: u32, key_info: &KeyInfo) -> String {
-
-        match key_info {
-            KeyInfo::KnownKey(key) => {
-                match position {
-                    0 if key.len() == 1 => {
-                        if let Ok(root_tree) = RootTree::try_from(key[0]) {
-                            root_tree.to_string()
-                        } else {
-                            hex_to_ascii(key)
-                        }
-
-                    }
-                    _ => hex_to_ascii(key)
-                }
-
-            }
-            KeyInfo::MaxKeySize { unique_id, max_size } => {
-                format!("MaxKeySize(unique_id: {:?}, max_size: {})", unique_id, max_size)
-            }
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+enum KnownPath {
+    Root, //Level 0
+    DataContractAndDocumentsRoot, //Level 1
+    DataContractStorage, //Level 2
+    DocumentsRoot, //Level 2
+    IdentitiesRoot, //Level 1
+    IdentityTreeRevisionRoot, //Level 2
+    IdentityTreeNonceRoot, //Level 2
+    IdentityTreeKeysRoot, //Level 2
+    IdentityTreeKeyReferencesRoot, //Level 2
+    IdentityTreeKeyReferencesInPurpose(Purpose), //Level 3
+    IdentityTreeKeyReferencesInSecurityLevel(Purpose, SecurityLevel), //Level 4
+    IdentityTreeNegativeCreditRoot, //Level 2
+    IdentityContractInfoRoot, //Level 2
+    UniquePublicKeyHashesToIdentitiesRoot, //Level 1
+    NonUniquePublicKeyKeyHashesToIdentitiesRoot, //Level 1
+    PoolsRoot, //Level 1
+    PoolsInsideEpoch(Epoch), //Level 2
+    PreFundedSpecializedBalancesRoot, //Level 1
+    SpentAssetLockTransactionsRoot, //Level 1
+    MiscRoot, //Level 1
+    WithdrawalTransactionsRoot, //Level 1
+    BalancesRoot, //Level 1
+    TokenBalancesRoot, //Level 1
+    VersionsRoot, //Level 1
+    VotesRoot, //Level 1
 }
 
-fn readable_path(path: &KeyInfoPath) -> String {
-    path.0.iter().enumerate().map(|(pos, key_info)| {
-        readable_key_info(pos as u32, key_info)
-    }).collect::<Vec<_>>().join("/")
+impl From<RootTree> for KnownPath {
+    fn from(value: RootTree) -> Self {
+        match value {
+            RootTree::DataContractDocuments => KnownPath::DataContractAndDocumentsRoot,
+            RootTree::Identities => KnownPath::IdentitiesRoot,
+            RootTree::UniquePublicKeyHashesToIdentities => KnownPath::UniquePublicKeyHashesToIdentitiesRoot,
+            RootTree::NonUniquePublicKeyKeyHashesToIdentities => KnownPath::NonUniquePublicKeyKeyHashesToIdentitiesRoot,
+            RootTree::Pools => KnownPath::PoolsRoot,
+            RootTree::PreFundedSpecializedBalances => KnownPath::PreFundedSpecializedBalancesRoot,
+            RootTree::SpentAssetLockTransactions => KnownPath::SpentAssetLockTransactionsRoot,
+            RootTree::Misc => KnownPath::MiscRoot,
+            RootTree::WithdrawalTransactions => KnownPath::WithdrawalTransactionsRoot,
+            RootTree::Balances => KnownPath::BalancesRoot,
+            RootTree::TokenBalances => KnownPath::TokenBalancesRoot,
+            RootTree::Versions => KnownPath::VersionsRoot,
+            RootTree::Votes => KnownPath::VotesRoot,
+        }
+    }
+}
+
+impl From<IdentityRootStructure> for KnownPath {
+    fn from(value: IdentityRootStructure) -> Self {
+        match value {
+            IdentityRootStructure::IdentityTreeRevision => KnownPath::IdentityTreeRevisionRoot,
+            IdentityRootStructure::IdentityTreeNonce => KnownPath::IdentityTreeNonceRoot,
+            IdentityRootStructure::IdentityTreeKeys => KnownPath::IdentityTreeKeysRoot,
+            IdentityRootStructure::IdentityTreeKeyReferences => KnownPath::IdentityTreeKeyReferencesRoot,
+            IdentityRootStructure::IdentityTreeNegativeCredit => KnownPath::IdentityTreeNegativeCreditRoot,
+            IdentityRootStructure::IdentityContractInfo => KnownPath::IdentityContractInfoRoot,
+        }
+    }
+}
+
+fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Option<KnownPath>) {
+        match key_info {
+            KeyInfo::KnownKey(key) => {
+                match known_path {
+                    KnownPath::Root => {
+                        if let Ok(root_tree) = RootTree::try_from(key[0]) {
+                            (format!("{}({})",root_tree.to_string(), key[0]), Some(root_tree.into()))
+                        } else {
+                            (hex_to_ascii(key), None)
+                        }
+                    }
+                    KnownPath::BalancesRoot | KnownPath::IdentitiesRoot if key.len() == 32 => {
+                        (format!("IdentityId(bs58::{})", Identifier::from_vec(key.clone()).unwrap()), None)
+                    }
+                    KnownPath::DataContractAndDocumentsRoot if key.len() == 32 => {
+                        (format!("ContractId(bs58::{})", Identifier::from_vec(key.clone()).unwrap()), None)
+                    }
+                    KnownPath::DataContractAndDocumentsRoot if key.len() == 1 => {
+                        match key[0] {
+                            0 => ("DataContractStorage(0)".to_string(), Some(KnownPath::DataContractStorage)),
+                            1 => ("DataContractDocuments(1)".to_string(), Some(KnownPath::DocumentsRoot)),
+                            _ => (hex_to_ascii(key), None),
+                        }
+                    }
+                    KnownPath::IdentitiesRoot if key.len() == 1 => {
+                        if let Ok(root_tree) = IdentityRootStructure::try_from(key[0]) {
+                            (format!("{}({})",root_tree.to_string(), key[0]), Some(root_tree.into()))
+                        } else {
+                            (hex_to_ascii(key), None)
+                        }
+                    }
+                    KnownPath::IdentityTreeKeyReferencesRoot if key.len() == 1 => {
+                        if let Ok(purpose) = Purpose::try_from(key[0]) {
+                            (format!("Purpose::{}({})", purpose, key[0]), Some(KnownPath::IdentityTreeKeyReferencesInPurpose(purpose)))
+                        } else {
+                            (hex_to_ascii(key), None)
+                        }
+                    }
+                    KnownPath::IdentityTreeKeyReferencesInPurpose(purpose) if key.len() == 1 => {
+                        if let Ok(security_level) = SecurityLevel::try_from(key[0]) {
+                            (format!("SecurityLevel::{}({})", security_level, key[0]), Some(KnownPath::IdentityTreeKeyReferencesInSecurityLevel(purpose, security_level)))
+                        } else {
+                            (hex_to_ascii(key), None)
+                        }
+                    }
+
+                    KnownPath::PoolsRoot if key.len() == 1 => {
+                        match key[0] {
+                            fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL_U8 => ("StorageFeePool(ascii:'s')".to_string(), None),
+                            fee_pools::epochs_root_tree_key_constants::KEY_UNPAID_EPOCH_INDEX_U8 => ("UnpaidEpochIndex(ascii:'u')".to_string(), None),
+                            fee_pools::epochs_root_tree_key_constants::KEY_PENDING_EPOCH_REFUNDS_U8 => ("PendingEpochRefunds(ascii:'p')".to_string(), None),
+                            _ => (hex_to_ascii(key), None),
+                        }
+                    }
+                    KnownPath::PoolsRoot if key.len() == 2 => { // this is an epoch
+                        if let Ok(epoch) = Epoch::try_from(key) {
+                            (format!("Epoch::{}({})", epoch.index, hex::encode(key)), Some(KnownPath::PoolsInsideEpoch(epoch)))
+                        } else {
+                            (hex_to_ascii(key), None)
+                        }
+                    }
+                    KnownPath::PoolsInsideEpoch(_) if key.len() == 1 => { // this is an epoch
+                        match key[0] {
+                            fee_pools::epochs::epoch_key_constants::KEY_POOL_PROCESSING_FEES_U8 => ("PoolProcessingFees(ascii:'p')".to_string(), None),
+                            fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES_U8 => ("PoolStorageFees(ascii:'s')".to_string(), None),
+                            fee_pools::epochs::epoch_key_constants::KEY_START_TIME_U8 => ("StartTime(ascii:'t')".to_string(), None),
+                            fee_pools::epochs::epoch_key_constants::KEY_PROTOCOL_VERSION_U8 => ("ProtocolVersion(ascii:'v')".to_string(), None),
+                            fee_pools::epochs::epoch_key_constants::KEY_START_BLOCK_HEIGHT_U8 => ("StartBlockHeight(ascii:'h')".to_string(), None),
+                            fee_pools::epochs::epoch_key_constants::KEY_START_BLOCK_CORE_HEIGHT_U8 => ("StartBlockCoreHeight(ascii:'c')".to_string(), None),
+                            fee_pools::epochs::epoch_key_constants::KEY_PROPOSERS_U8 => ("Proposers(ascii:'m')".to_string(), None),
+                            fee_pools::epochs::epoch_key_constants::KEY_FEE_MULTIPLIER_U8 => ("FeeMultiplier(ascii:'x')".to_string(), None),
+                            _ => (hex_to_ascii(key), None),
+                        }
+                    }
+                    _ => (hex_to_ascii(key), None),
+                }
+            }
+            KeyInfo::MaxKeySize { unique_id, max_size } => {
+                (format!("MaxKeySize(unique_id: {:?}, max_size: {})", unique_id, max_size), None)
+            }
+        }
+}
+
+fn readable_path(path: &KeyInfoPath) -> (String, KnownPath) {
+    
+    let mut known_path = KnownPath::Root;
+    let string = path.0.iter().map(|key_info| {
+        let (string, new_known_path) = readable_key_info(known_path, key_info);
+        if let Some(new_known_path) = new_known_path {
+            known_path = new_known_path;
+        }
+        string
+    }).collect::<Vec<_>>().join("/");
+    (string, known_path)
 }
 
 impl fmt::Display for GroveDbOpBatch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for op in &self.operations {
-            writeln!(f, "Path: {}", readable_path(&op.path))?;
-            writeln!(f, "Key: {}", readable_key_info(op.path.len(), &op.key))?;
-            writeln!(f, "Operation: {:?}", op.op)?;
+            let (path_string, known_path) = readable_path(&op.path);
+            let (key_string, _) = readable_key_info(known_path, &op.key);
+            writeln!(f, "{{")?;
+            writeln!(f, "   Path: {}", path_string)?;
+            writeln!(f, "   Key: {}", key_string)?;
+            match &op.op {
+                Op::Insert { element } => {
+                    let flags = element.get_flags();
+                    let flag_info = match flags {
+                        None => "No Flags".to_string(),
+                        Some(flags) => format!("Flags are 0x{}", hex::encode(flags))
+                    };
+                    match element {
+                        Element::Item(data, _) => {
+                            let num = match data.len() { 
+                                8 => format!(" u64({})", u64::from_be_bytes(data.clone().try_into().unwrap())),
+                                4 => format!(" u32({})", u32::from_be_bytes(data.clone().try_into().unwrap())),
+                                _ => String::new(),
+                            };
+                            writeln!(f, "   Operation: Insert Item with length: {}{} {}", data.len(), num, flag_info)?
+                        },
+                        Element::Tree(None, _) => writeln!(f, "   Operation: Insert Empty Tree {}", flag_info)?,
+                        Element::SumTree(None, _, _) => writeln!(f, "   Operation: Insert Empty Sum Tree {}", flag_info)?,
+                        _ => writeln!(f, "   Operation: Insert {}", element)?,
+                    }
+                }
+                _ => {
+                    writeln!(f, "   Operation: {:?}", op.op)?;
+                }
+            }
+            writeln!(f, "}}")?;
         }
         Ok(())
     }

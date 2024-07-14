@@ -7,7 +7,6 @@
 use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::Drive;

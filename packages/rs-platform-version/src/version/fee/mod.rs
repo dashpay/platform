@@ -18,6 +18,8 @@ pub mod vote_resolution_fund_fees;
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
 pub struct FeeVersion {
+    // Permille means devise by 1000
+    pub uses_version_fee_multiplier_permille: Option<u64>,
     pub storage: FeeStorageVersion,
     pub signature: FeeSignatureVersion,
     pub hashing: FeeHashingVersion,

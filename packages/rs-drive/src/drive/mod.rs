@@ -140,7 +140,7 @@ pub enum RootTree {
 impl fmt::Display for RootTree {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let variant_name = match self {
-            RootTree::DataContractDocuments => "DataContractDocuments",
+            RootTree::DataContractDocuments => "DataContractAndDocumentsRoot",
             RootTree::Identities => "Identities",
             RootTree::UniquePublicKeyHashesToIdentities => "UniquePublicKeyHashesToIdentities",
             RootTree::NonUniquePublicKeyKeyHashesToIdentities => "NonUniquePublicKeyKeyHashesToIdentities",
