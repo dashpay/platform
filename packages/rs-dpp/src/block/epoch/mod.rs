@@ -1,4 +1,4 @@
-use crate::ProtocolError;
+use crate::{InvalidVectorSizeError, ProtocolError};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -54,5 +54,20 @@ impl TryFrom<EpochIndex> for Epoch {
 
     fn try_from(value: EpochIndex) -> Result<Self, Self::Error> {
         Self::new(value)
+    }
+}
+
+impl TryFrom<&Vec<u8>> for Epoch {
+    type Error = ProtocolError;
+
+    fn try_from(value: &Vec<u8>) -> Result<Self, Self::Error> {
+        let key = value.clone().try_into().map_err(|_| {
+            ProtocolError::InvalidVectorSizeError(InvalidVectorSizeError::new(2, value.len()))
+        })?;
+        let index_with_offset = u16::from_be_bytes(key);
+        let index = index_with_offset
+            .checked_sub(EPOCH_KEY_OFFSET)
+            .ok_or(ProtocolError::Overflow("value too low, must have offset"))?;
+        Ok(Epoch { index, key })
     }
 }

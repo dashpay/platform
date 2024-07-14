@@ -543,6 +543,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 batch_insert: 0,
                 batch_insert_if_not_exists: 0,
                 batch_insert_if_changed_value: 0,
+                batch_replace: 0,
                 batch_delete: 0,
                 batch_remove_raw: 0,
                 batch_delete_up_tree_while_empty: 0,

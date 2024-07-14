@@ -1,5 +1,6 @@
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::GroveDb;
+use std::fmt;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::config::DriveConfig;
@@ -73,6 +74,8 @@ pub mod votes;
 
 #[cfg(feature = "server")]
 use crate::drive::cache::DriveCache;
+use crate::error::drive::DriveError;
+use crate::error::Error;
 
 /// Drive struct
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -133,6 +136,30 @@ pub enum RootTree {
     Votes = 112,
 }
 
+#[cfg(any(feature = "server", feature = "verify"))]
+impl fmt::Display for RootTree {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let variant_name = match self {
+            RootTree::DataContractDocuments => "DataContractAndDocumentsRoot",
+            RootTree::Identities => "Identities",
+            RootTree::UniquePublicKeyHashesToIdentities => "UniquePublicKeyHashesToIdentities",
+            RootTree::NonUniquePublicKeyKeyHashesToIdentities => {
+                "NonUniquePublicKeyKeyHashesToIdentities"
+            }
+            RootTree::Pools => "Pools",
+            RootTree::PreFundedSpecializedBalances => "PreFundedSpecializedBalances",
+            RootTree::SpentAssetLockTransactions => "SpentAssetLockTransactions",
+            RootTree::Misc => "Misc",
+            RootTree::WithdrawalTransactions => "WithdrawalTransactions",
+            RootTree::Balances => "Balances",
+            RootTree::TokenBalances => "TokenBalances",
+            RootTree::Versions => "Versions",
+            RootTree::Votes => "Votes",
+        };
+        write!(f, "{}", variant_name)
+    }
+}
+
 /// Storage cost
 #[cfg(feature = "server")]
 pub const STORAGE_COST: i32 = 50;
@@ -148,6 +175,32 @@ impl From<RootTree> for u8 {
 impl From<RootTree> for [u8; 1] {
     fn from(root_tree: RootTree) -> Self {
         [root_tree as u8]
+    }
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl TryFrom<u8> for RootTree {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            64 => Ok(RootTree::DataContractDocuments),
+            32 => Ok(RootTree::Identities),
+            24 => Ok(RootTree::UniquePublicKeyHashesToIdentities),
+            8 => Ok(RootTree::NonUniquePublicKeyKeyHashesToIdentities),
+            48 => Ok(RootTree::Pools),
+            40 => Ok(RootTree::PreFundedSpecializedBalances),
+            72 => Ok(RootTree::SpentAssetLockTransactions),
+            104 => Ok(RootTree::Misc),
+            80 => Ok(RootTree::WithdrawalTransactions),
+            96 => Ok(RootTree::Balances),
+            16 => Ok(RootTree::TokenBalances),
+            120 => Ok(RootTree::Versions),
+            112 => Ok(RootTree::Votes),
+            _ => Err(Error::Drive(DriveError::NotSupported(
+                "unknown root tree item",
+            ))),
+        }
     }
 }
 

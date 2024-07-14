@@ -431,6 +431,7 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_insert: FeatureVersion,
     pub batch_insert_if_not_exists: FeatureVersion,
     pub batch_insert_if_changed_value: FeatureVersion,
+    pub batch_replace: FeatureVersion,
     pub batch_delete: FeatureVersion,
     pub batch_remove_raw: FeatureVersion,
     pub batch_delete_up_tree_while_empty: FeatureVersion,

@@ -35,7 +35,7 @@ impl Drive {
 
         if let Some(drive_operations) = drive_operations {
             // println!("{:#?}", drive_operations);
-            for drive_fee_result in LowLevelDriveOperation::consume_to_fees(
+            for drive_fee_result in LowLevelDriveOperation::consume_to_fees_v0(
                 drive_operations,
                 epoch,
                 epochs_per_era,

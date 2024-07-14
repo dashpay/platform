@@ -112,7 +112,7 @@ mod tests {
 
         let epoch = Epoch::new(0).unwrap();
 
-        let multiplier = 42.0;
+        let multiplier = 42000;
 
         let mut batch = GroveDbOpBatch::new();
 

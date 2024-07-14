@@ -27,6 +27,7 @@ use dpp::fee::fee_result::refunds::FeeRefunds;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use platform_version::version::fee::FeeVersion;
+use platform_version::version::PlatformVersion;
 
 /// Base ops
 #[derive(Debug, Enum)]
@@ -209,14 +210,15 @@ pub enum LowLevelDriveOperation {
 
 impl LowLevelDriveOperation {
     /// Returns a list of the costs of the Drive operations.
-    pub fn consume_to_fees(
-        drive_operation: Vec<LowLevelDriveOperation>,
+    /// Should only be used by Calculate fee
+    pub fn consume_to_fees_v0(
+        drive_operations: Vec<LowLevelDriveOperation>,
         epoch: &Epoch,
         epochs_per_era: u16,
         fee_version: &FeeVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<Vec<FeeResult>, Error> {
-        drive_operation
+        drive_operations
             .into_iter()
             .map(|operation| match operation {
                 PreCalculatedFeeResult(f) => Ok(f),
