@@ -2,6 +2,7 @@
 
 #[cfg(test)]
 mod refund_tests {
+    use std::ops::Deref;
     use crate::execution::validation::state_transition::tests::{fast_forward_to_block, setup_identity, fetch_expected_identity_balance, setup_identity_with_system_credits, process_state_transitions};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -564,5 +565,83 @@ mod refund_tests {
         let expected_user_balance_after_deletion = current_user_balance - fee_result.total_base_fee() + refund_amount;
 
         fetch_expected_identity_balance(&platform, identity.id(), platform_version, expected_user_balance_after_deletion);
+    }
+
+    #[test]
+    fn test_document_refund_after_10_epochs_on_different_fee_version_increasing_fees() {
+        let platform_version = PlatformVersion::latest();
+        let platform_version_with_higher_fees = platform_version.clone();
+        
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let dashpay_contract_no_indexes = setup_contract(
+            &platform.drive,
+            "tests/supporting_files/contract/dashpay/dashpay-contract-no-indexes.json",
+            None,
+            None,
+        );
+
+        let profile = dashpay_contract_no_indexes
+            .document_type_for_name("profile")
+            .expect("expected a profile document type");
+
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let (identity, signer, key) = setup_identity_with_system_credits(&mut platform, 958, dash_to_credits!(1));
+
+        fetch_expected_identity_balance(&platform, identity.id(), platform_version, dash_to_credits!(1));
+
+        let (document, insertion_fee_result, current_user_balance) = setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
+
+        fast_forward_to_block(&platform, 1_200_000_000, 900, 10); //next epoch
+
+        let documents_batch_delete_transition =
+            DocumentsBatchTransition::new_document_deletion_transition_from_document(
+                document,
+                profile,
+                &key,
+                4,
+                0,
+                &signer,
+                &platform_version_with_higher_fees,
+                None,
+                None,
+                None,
+            )
+                .expect("expect to create documents batch transition");
+
+        let mut platform_state = platform.state.load().clone().deref().clone();
+
+        platform_state.previous_fee_versions_mut().insert(5, platform_version_with_higher_fees.fee_version.clone());
+
+        let (mut fee_results, _) = process_state_transitions(&platform, &vec![documents_batch_delete_transition.clone()], *platform_state.last_block_info(), &platform_state);
+
+        let fee_result = fee_results.remove(0);
+
+        let credits_verified = platform.platform
+            .drive
+            .calculate_total_credits_balance(None, &platform_version_with_higher_fees.drive).expect("expected to check sum trees");
+
+        let balanced = credits_verified.ok().expect("expected that credits will balance when we remove in same block");
+
+        assert!(balanced, "platform should be balanced {}", credits_verified);
+
+        let refund_amount = fee_result.fee_refunds.calculate_refunds_amount_for_identity(identity.id()).expect("expected refunds for identity");
+
+        println!("{}", insertion_fee_result.storage_fee);
+        println!("{}", refund_amount);
+        
+        // we should be refunding around 21% after 25 years.
+        let refunded_percentage = refund_amount * 100 / insertion_fee_result.storage_fee;
+        assert_eq!(refunded_percentage, 98);
+
+        assert_eq!(fee_result.storage_fee, 0);
+
+        let expected_user_balance_after_deletion = current_user_balance - fee_result.total_base_fee() + refund_amount;
+
+        fetch_expected_identity_balance(&platform, identity.id(), &platform_version_with_higher_fees, expected_user_balance_after_deletion);
     }
 }
