@@ -36,6 +36,7 @@
 use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::Drive;
@@ -53,6 +54,7 @@ use crate::execution::types::block_state_info::v0::{
 use crate::execution::types::processed_block_fees_outcome;
 use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
+
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 
 /// From the Dash Improvement Proposal:
@@ -80,6 +82,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         block_fees: BlockFees,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome, Error> {
         let epoch_info = block_execution_context.epoch_info();
         let block_info = block_execution_context.block_state_info();
@@ -180,6 +183,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             &block_info.to_block_info(epoch_info.try_into()?),
             Some(transaction),
             platform_version,
+            Some(previous_fee_versions),
         )?;
 
         let outcome = processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome {
@@ -233,6 +237,7 @@ mod tests {
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
         use crate::platform_types::epoch_info::v0::EpochInfoV0;
         use crate::platform_types::epoch_info::EpochInfo;
+        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
         use crate::platform_types::platform_state::PlatformState;
         use dpp::fee::epoch::{perpetual_storage_epochs, CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
@@ -296,12 +301,17 @@ mod tests {
                 proposer_results: None,
             };
 
+            let block_execution_context_clone = block_execution_context.clone();
+            let previous_fee_versions = block_execution_context_clone
+                .block_platform_state()
+                .previous_fee_versions();
             let storage_fee_distribution_outcome = platform
                 .process_block_fees_v0(
                     &block_execution_context.into(),
                     block_fees.clone(),
                     transaction,
                     platform_version,
+                    previous_fee_versions,
                 )
                 .expect("should process block fees");
 

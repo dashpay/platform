@@ -13,6 +13,7 @@ use dpp::prelude::Revision;
 use dpp::version::PlatformVersion;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use std::collections::HashMap;
 
 impl Drive {
@@ -27,6 +28,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         // TODO: In case of dry run we will get less because we replace the same bytes
 
@@ -52,13 +54,13 @@ impl Drive {
             &mut drive_operations,
             &platform_version.drive,
         )?;
-
         let fees = Drive::calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
+            previous_fee_versions,
         )?;
 
         Ok(fees)

@@ -3,6 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::{BaseOp, LowLevelDriveOperation};
 use dpp::block::epoch::Epoch;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use enum_map::EnumMap;
@@ -35,9 +36,17 @@ impl Drive {
         epoch: &Epoch,
         epochs_per_era: u16,
         platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version.drive.methods.fees.calculate_fee {
-            0 => Self::calculate_fee_v0(base_operations, drive_operations, epoch, epochs_per_era),
+            0 => Self::calculate_fee_v0(
+                base_operations,
+                drive_operations,
+                epoch,
+                epochs_per_era,
+                &platform_version.fee_version,
+                previous_fee_versions,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "Drive::calculate_fee".to_string(),
                 known_versions: vec![0],

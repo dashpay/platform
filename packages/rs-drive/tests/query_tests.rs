@@ -38,6 +38,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 #[cfg(feature = "server")]
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 #[cfg(feature = "server")]
 use std::collections::HashMap;
 #[cfg(feature = "server")]
@@ -66,15 +67,15 @@ use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
 };
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::identity::TimestampMillis;
 use dpp::platform_value;
-
 #[cfg(feature = "server")]
 use dpp::prelude::DataContract;
-
 use dpp::tests::json_document::json_document_to_contract;
 #[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
+use once_cell::sync::Lazy;
 
 use dpp::version::PlatformVersion;
 
@@ -243,6 +244,7 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -311,6 +313,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -380,6 +383,7 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -624,6 +628,7 @@ pub fn add_domains_to_contract(
                 true,
                 transaction,
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -794,6 +799,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -843,6 +849,7 @@ fn test_query_many() {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -1829,6 +1836,7 @@ fn test_family_basic_queries() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -1873,6 +1881,7 @@ fn test_family_basic_queries() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -2289,6 +2298,9 @@ fn test_family_person_update() {
 
     let platform_version = PlatformVersion::latest();
 
+    let EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+
     let db_transaction = drive.grove.start_transaction();
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(84594);
@@ -2335,6 +2347,7 @@ fn test_family_person_update() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -2363,6 +2376,7 @@ fn test_family_person_update() {
             None,
             Some(&db_transaction),
             platform_version,
+            Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
         )
         .expect("expected to override document");
     assert!(fee.storage_fee > 0);
@@ -2856,6 +2870,9 @@ fn test_family_with_nulls_query() {
 
     let platform_version = PlatformVersion::latest();
 
+    let EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+
     let db_transaction = drive.grove.start_transaction();
 
     let root_hash = drive
@@ -2960,6 +2977,7 @@ fn test_family_with_nulls_query() {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
     }
@@ -4103,6 +4121,7 @@ fn test_dpns_query_start_at_with_null_id() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4145,6 +4164,7 @@ fn test_dpns_query_start_at_with_null_id() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4303,6 +4323,7 @@ fn test_dpns_query_start_after_with_null_id() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4346,6 +4367,7 @@ fn test_dpns_query_start_after_with_null_id() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4508,6 +4530,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4551,6 +4574,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4978,6 +5002,7 @@ fn test_query_documents_by_created_at() {
             true,
             None,
             platform_version,
+            None,
         )
         .expect("should add document");
 

@@ -1,5 +1,6 @@
 mod v0;
 
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 
 use drive::grovedb::Transaction;
@@ -40,6 +41,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         block_fees: BlockFees,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome, Error> {
         match platform_version
             .drive_abci
@@ -52,6 +54,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 block_fees,
                 transaction,
                 platform_version,
+                previous_fee_versions,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "process_block_fees".to_string(),

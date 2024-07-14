@@ -23,6 +23,7 @@ use crate::config::PlatformConfig;
 use crate::platform_types::signature_verification_quorum_set::{
     SignatureVerificationQuorumSet, SignatureVerificationQuorumSetForSaving,
 };
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
@@ -58,6 +59,9 @@ pub struct PlatformStateV0 {
 
     /// current HPMN masternode list
     pub hpmn_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
+
+    /// previous Fee Versions
+    pub previous_fee_versions: CachedEpochIndexFeeVersions,
 }
 
 impl Debug for PlatformStateV0 {
@@ -143,6 +147,9 @@ pub struct PlatformStateForSavingV0 {
 
     /// current HPMN masternode list
     pub hpmn_masternode_list: BTreeMap<Bytes32, Masternode>,
+
+    /// previous FeeVersions
+    pub previous_fee_versions: CachedEpochIndexFeeVersions,
 }
 
 impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
@@ -189,6 +196,7 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
                     ))
                 })
                 .collect::<Result<BTreeMap<Bytes32, Masternode>, Error>>()?,
+            previous_fee_versions: value.previous_fee_versions,
         })
     }
 }
@@ -223,6 +231,7 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
                 .into_iter()
                 .map(|(k, v)| (ProTxHash::from_byte_array(k.to_buffer()), v.into()))
                 .collect(),
+            previous_fee_versions: value.previous_fee_versions,
         }
     }
 }
@@ -254,6 +263,7 @@ impl PlatformStateV0 {
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
             genesis_block_info: None,
+            previous_fee_versions: Default::default(),
         };
 
         Ok(state)
@@ -407,6 +417,12 @@ pub trait PlatformStateV0Methods {
     fn last_committed_block_epoch_ref(&self) -> &Epoch;
     /// The last block id hash
     fn last_committed_block_id_hash(&self) -> [u8; 32];
+
+    /// Returns reference to the previous feeversions
+    fn previous_fee_versions(&self) -> &CachedEpochIndexFeeVersions;
+
+    /// Returns a mutable reference to the previous feeversions
+    fn previous_fee_versions_mut(&mut self) -> &mut CachedEpochIndexFeeVersions;
 
     /// The changes in the full masternode list between two platform states
     fn full_masternode_list_changes(&self, previous: &Self) -> MasternodeListChanges
@@ -710,6 +726,16 @@ impl PlatformStateV0Methods for PlatformStateV0 {
             .as_ref()
             .map(|block_info| *block_info.block_id_hash())
             .unwrap_or_default()
+    }
+
+    /// Returns a reference to the previous feeversions
+    fn previous_fee_versions(&self) -> &CachedEpochIndexFeeVersions {
+        &self.previous_fee_versions
+    }
+
+    /// Returns a mutable reference to the previous feeversions
+    fn previous_fee_versions_mut(&mut self) -> &mut CachedEpochIndexFeeVersions {
+        &mut self.previous_fee_versions
     }
 
     fn full_masternode_list_changes(&self, previous: &PlatformStateV0) -> MasternodeListChanges {

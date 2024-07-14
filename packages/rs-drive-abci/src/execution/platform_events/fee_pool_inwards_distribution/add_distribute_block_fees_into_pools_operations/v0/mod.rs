@@ -75,6 +75,7 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use dpp::block::block_info::BlockInfo;
+
     use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -126,6 +127,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("should apply batch");
 
@@ -194,6 +196,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("should apply batch");
 

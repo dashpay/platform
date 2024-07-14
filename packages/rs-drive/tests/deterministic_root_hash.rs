@@ -168,6 +168,7 @@ pub fn add_domains_to_contract(
                 true,
                 transaction,
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }

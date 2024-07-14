@@ -9,6 +9,7 @@ use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use drive::fee_pools::update_unpaid_epoch_index_operation;
 
 use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Getters;
+
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {
@@ -203,6 +204,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("should apply batch");
 
