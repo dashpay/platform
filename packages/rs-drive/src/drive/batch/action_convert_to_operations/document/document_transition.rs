@@ -1,5 +1,5 @@
-use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
-use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
+use crate::drive::batch::action_convert_to_operations::document::DriveHighLevelDocumentOperationConverter;
+use crate::drive::batch::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
 use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
