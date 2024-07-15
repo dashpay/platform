@@ -17,7 +17,6 @@ use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use std::collections::HashMap;
 
 impl Drive {
-    //todo: this should probably not exist
     /// Update revision for specific identity
     #[inline(always)]
     pub(super) fn update_identity_revision_v0(
@@ -30,8 +29,6 @@ impl Drive {
         platform_version: &PlatformVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
-        // TODO: In case of dry run we will get less because we replace the same bytes
-
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {

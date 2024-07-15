@@ -2,7 +2,7 @@ use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::query::{DriveQuery, InternalClauses, OrderClause, WhereClause};
+use crate::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
@@ -64,7 +64,7 @@ impl Drive {
             },
         );
 
-        let drive_query = DriveQuery {
+        let drive_query = DriveDocumentQuery {
             contract: &contract_fetch_info.contract,
             document_type,
             internal_clauses: InternalClauses {

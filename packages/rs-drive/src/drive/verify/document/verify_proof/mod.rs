@@ -4,12 +4,12 @@ use crate::drive::verify::RootHash;
 use crate::error::drive::DriveError;
 
 use crate::error::Error;
-use crate::query::DriveQuery;
+use crate::query::DriveDocumentQuery;
 use dpp::document::Document;
 
 use dpp::version::PlatformVersion;
 
-impl<'a> DriveQuery<'a> {
+impl<'a> DriveDocumentQuery<'a> {
     /// Verifies a proof for a collection of documents.
     ///
     /// This function takes a byte slice representing the serialized proof, verifies it, and returns a tuple consisting of the root hash

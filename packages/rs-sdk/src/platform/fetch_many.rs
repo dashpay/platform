@@ -214,7 +214,7 @@ where
 ///
 /// ## Supported query types
 ///
-/// * [DriveQuery](crate::platform::DriveQuery) - query that specifies document matching criteria
+/// * [DriveQuery](crate::platform::DriveDocumentQuery) - query that specifies document matching criteria
 /// * [DocumentQuery](crate::platform::document_query::DocumentQuery)
 #[async_trait::async_trait]
 impl FetchMany<Identifier, Documents> for Document {

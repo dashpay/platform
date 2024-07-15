@@ -8,7 +8,7 @@ mod tests {
 
     use crate::drive::config::DriveConfig;
     use crate::error::{query::QuerySyntaxError, Error};
-    use crate::query::DriveQuery;
+    use crate::query::DriveDocumentQuery;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
@@ -107,7 +107,7 @@ mod tests {
         });
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type.as_ref(),
@@ -129,7 +129,7 @@ mod tests {
         });
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type.as_ref(),
@@ -156,7 +156,7 @@ mod tests {
         });
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type.as_ref(),

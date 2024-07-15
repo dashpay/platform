@@ -23,7 +23,7 @@ use drive::query::contested_resource_votes_given_by_identity_query::ContestedRes
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
-use drive::query::{DriveQuery, VotePollsByEndDateDriveQuery};
+use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use drive_proof_verifier::from_request::TryFromRequest;
 use rs_dapi_client::transport::TransportRequest;
 use std::fmt::Debug;
@@ -171,7 +171,7 @@ impl Query<proto::GetIdentityKeysRequest> for Identifier {
     }
 }
 
-impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
+impl<'a> Query<DocumentQuery> for DriveDocumentQuery<'a> {
     fn query(self, prove: bool) -> Result<DocumentQuery, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");

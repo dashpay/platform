@@ -29,7 +29,7 @@ use crate::error::Error;
 #[cfg(feature = "fixtures-and-mocks")]
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "fixtures-and-mocks")]
-use crate::query::DriveQuery;
+use crate::query::DriveDocumentQuery;
 #[cfg(all(
     feature = "fixtures-and-mocks",
     feature = "data-contract-cbor-conversion"
@@ -254,7 +254,8 @@ impl Drive {
         protocol_version: Option<u32>,
     ) -> Result<Vec<u8>, Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
-        let query = DriveQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
+        let query =
+            DriveDocumentQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
 
         query.execute_with_proof_internal(self, transaction, drive_operations, platform_version)
     }
@@ -310,7 +311,8 @@ impl Drive {
         protocol_version: Option<u32>,
     ) -> Result<(RootHash, Vec<Vec<u8>>), Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
-        let query = DriveQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
+        let query =
+            DriveDocumentQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
 
         query.execute_with_proof_only_get_elements_internal(
             self,
@@ -386,8 +388,12 @@ impl Drive {
             .contract
             .document_type_for_name(document_type_name)?;
 
-        let query =
-            DriveQuery::from_cbor(query_cbor, &contract.contract, document_type, &self.config)?;
+        let query = DriveDocumentQuery::from_cbor(
+            query_cbor,
+            &contract.contract,
+            document_type,
+            &self.config,
+        )?;
 
         self.query_serialized_documents(query, epoch, transaction, platform_version)
     }
@@ -404,7 +410,8 @@ impl Drive {
         protocol_version: Option<u32>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
-        let query = DriveQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
+        let query =
+            DriveDocumentQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
 
         query.execute_raw_results_no_proof_internal(
             self,
@@ -419,7 +426,7 @@ impl Drive {
     /// and the cost.
     pub fn query_serialized_documents(
         &self,
-        query: DriveQuery,
+        query: DriveDocumentQuery,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

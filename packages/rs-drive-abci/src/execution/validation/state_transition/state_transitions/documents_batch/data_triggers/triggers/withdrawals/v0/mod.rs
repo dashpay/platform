@@ -7,7 +7,7 @@ use dpp::platform_value::Value;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::version::PlatformVersion;
-use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::{document, ProtocolError};
@@ -64,7 +64,7 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
 
     let document_type = data_contract.document_type_for_name(withdrawal::NAME)?;
 
-    let drive_query = DriveQuery {
+    let drive_query = DriveDocumentQuery {
         contract: data_contract,
         document_type,
         internal_clauses: InternalClauses {

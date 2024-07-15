@@ -259,7 +259,7 @@ mod tests {
     use dpp::tests::json_document::json_document_to_contract;
     use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
     use drive::drive::flags::StorageFlags;
-    use drive::query::DriveQuery;
+    use drive::query::DriveDocumentQuery;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
@@ -1600,7 +1600,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -1610,7 +1610,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2747,7 +2747,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2757,7 +2757,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2951,7 +2951,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2961,7 +2961,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3101,7 +3101,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3111,7 +3111,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3296,7 +3296,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3306,7 +3306,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3544,7 +3544,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3700,7 +3700,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3710,7 +3710,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3942,7 +3942,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3952,7 +3952,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", purchaser.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -4766,7 +4766,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -4776,7 +4776,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", purchaser.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -4968,7 +4968,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -4978,7 +4978,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -5295,7 +5295,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),

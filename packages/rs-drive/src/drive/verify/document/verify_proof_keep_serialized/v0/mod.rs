@@ -2,12 +2,12 @@ use crate::drive::verify::RootHash;
 
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::query::DriveQuery;
+use crate::query::DriveDocumentQuery;
 
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 
-impl<'a> DriveQuery<'a> {
+impl<'a> DriveDocumentQuery<'a> {
     /// Verifies the given proof and returns the root hash of the GroveDB tree and a vector
     /// of serialized documents if the verification is successful.
     ///
