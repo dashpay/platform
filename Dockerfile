@@ -13,7 +13,7 @@
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
 # - NODE_ENV - node.js environment name to use to build the library
-# - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables avaialable:
+# - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables available:
 #   - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
 #   - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
@@ -138,8 +138,18 @@ ENV SCCACHE_REGION=${SCCACHE_REGION}
 ARG CARGO_INCREMENTAL=false
 ENV CARGO_INCREMENTAL=${CARGO_INCREMENTAL}
 
+# Print environment variables for debugging
+RUN echo "SCCACHE_BUCKET=${SCCACHE_BUCKET}" && \
+    echo "SCCACHE_REGION=${SCCACHE_REGION}" && \
+    echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" && \
+    echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" && \
+    echo "RUSTC_WRAPPER=${RUSTC_WRAPPER}"
+
+# Test access to the S3 bucket
+RUN aws s3 ls s3://${SCCACHE_BUCKET} --region ${SCCACHE_REGION}
+
 #
-# DEPS: FULL DEPENCIES LIST
+# DEPS: FULL DEPENDENCIES LIST
 #
 # This is separate from `deps` to use sccache for caching
 FROM deps-${RUSTC_WRAPPER:-base} AS deps
