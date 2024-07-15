@@ -16,7 +16,7 @@ impl Drive {
         epoch_tree: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<f64, Error> {
+    ) -> Result<u64, Error> {
         let element = self
             .grove
             .get(
@@ -34,7 +34,7 @@ impl Drive {
             )));
         };
 
-        Ok(f64::from_be_bytes(
+        Ok(u64::from_be_bytes(
             encoded_multiplier.as_slice().try_into().map_err(|_| {
                 Error::Drive(DriveError::CorruptedSerialization(String::from(
                     "epochs multiplier must be f64",
@@ -112,7 +112,7 @@ mod tests {
 
         let epoch = Epoch::new(0).unwrap();
 
-        let multiplier = 42.0;
+        let multiplier = 42000;
 
         let mut batch = GroveDbOpBatch::new();
 

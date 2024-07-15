@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Update Documents.
 //!
 //! This modules implements functions in Drive relevant to updating Documents.
@@ -54,12 +25,12 @@ mod update_document_with_serialization_for_contract;
 
 #[cfg(test)]
 mod tests {
+    use dpp::data_contract::{DataContract, DataContractFactory};
     use grovedb::TransactionArg;
     use std::borrow::Cow;
+    use std::collections::BTreeMap;
     use std::default::Default;
     use std::option::Option::None;
-
-    use dpp::data_contract::{DataContract, DataContractFactory};
 
     use dpp::platform_value::{platform_value, Identifier, Value};
 
@@ -89,12 +60,16 @@ mod tests {
     };
     use dpp::document::specialized_document_factory::SpecializedDocumentFactory;
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
-    use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::fee_result::FeeResult;
     use dpp::platform_value;
     use dpp::tests::json_document::json_document_to_document;
+    use once_cell::sync::Lazy;
     use platform_version::version::PlatformVersion;
+
+    static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
@@ -141,6 +116,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("should create alice profile");
 
@@ -170,6 +146,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("should update alice profile");
     }
@@ -217,6 +194,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("should create alice profile");
 
@@ -258,6 +236,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("should update alice profile");
 
@@ -313,6 +292,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("should create alice profile");
 
@@ -362,6 +342,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("should update alice profile");
 
@@ -423,6 +404,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("should create alice profile");
 
@@ -463,6 +445,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to delete document");
 
@@ -509,6 +492,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("should update alice profile");
 
@@ -622,6 +606,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                None,
             )
             .expect("should add document");
 
@@ -656,6 +641,7 @@ mod tests {
                 StorageFlags::optional_default_as_cow(),
                 None,
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("should update document");
 
@@ -677,6 +663,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("should delete document");
     }
@@ -728,6 +715,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -742,6 +730,7 @@ mod tests {
                 StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect_err("expected not to be able to update a non mutable document");
 
@@ -763,6 +752,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect_err("expected not to be able to override a non mutable document");
     }
@@ -822,6 +812,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -836,6 +827,7 @@ mod tests {
                 StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to update a document with history successfully");
     }
@@ -917,9 +909,10 @@ mod tests {
             platform_version,
         );
         let original_bytes = original_fees.storage_fee
-            / Epoch::new(0)
-                .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+                StorageDiskUsageCreditPerByte,
+            );
         let expected_added_bytes = if using_history {
             //Explanation for 1237
 
@@ -1084,9 +1077,10 @@ mod tests {
 
             assert_eq!(*removed_credits, 25940733);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
-                / Epoch::new(0)
-                    .unwrap()
-                    .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                    &EPOCH_CHANGE_FEE_VERSION_TEST,
+                    StorageDiskUsageCreditPerByte,
+                );
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
             assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 963
@@ -1103,9 +1097,10 @@ mod tests {
             );
 
             let original_bytes = original_fees.storage_fee
-                / Epoch::new(0)
-                    .unwrap()
-                    .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                    &EPOCH_CHANGE_FEE_VERSION_TEST,
+                    StorageDiskUsageCreditPerByte,
+                );
 
             assert_eq!(original_bytes, expected_added_bytes);
         }
@@ -1123,9 +1118,10 @@ mod tests {
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee
-            / Epoch::new(0)
-                .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+                StorageDiskUsageCreditPerByte,
+            );
 
         let expected_added_bytes = if using_history { 313 } else { 1 };
         assert_eq!(added_bytes, expected_added_bytes);
@@ -1194,9 +1190,10 @@ mod tests {
             platform_version,
         );
         let original_bytes = original_fees.storage_fee
-            / Epoch::new(0)
-                .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+                StorageDiskUsageCreditPerByte,
+            );
         let expected_added_bytes = if using_history { 1238 } else { 962 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
@@ -1219,9 +1216,10 @@ mod tests {
 
             assert_eq!(*removed_credits, 25940733);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
-                / Epoch::new(0)
-                    .unwrap()
-                    .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                    &EPOCH_CHANGE_FEE_VERSION_TEST,
+                    StorageDiskUsageCreditPerByte,
+                );
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
             assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 1012
@@ -1238,9 +1236,10 @@ mod tests {
             );
 
             let original_bytes = original_fees.storage_fee
-                / Epoch::new(0)
-                    .unwrap()
-                    .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                    &EPOCH_CHANGE_FEE_VERSION_TEST,
+                    StorageDiskUsageCreditPerByte,
+                );
 
             assert_eq!(original_bytes, expected_added_bytes);
         }
@@ -1258,9 +1257,10 @@ mod tests {
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee
-            / Epoch::new(0)
-                .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+                StorageDiskUsageCreditPerByte,
+            );
 
         let removed_credits = update_fees
             .fee_refunds
@@ -1276,9 +1276,10 @@ mod tests {
         let expected_removed_credits = if using_history { 16286655 } else { 16232643 };
         assert_eq!(*removed_credits, expected_removed_credits);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
-            / Epoch::new(0)
-                .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+                StorageDiskUsageCreditPerByte,
+            );
 
         assert!(expected_added_bytes > refund_equivalent_bytes);
         let expected_remove_bytes = if using_history { 603 } else { 601 };
@@ -1388,9 +1389,10 @@ mod tests {
             platform_version,
         );
         let original_bytes = original_fees.storage_fee
-            / Epoch::new(0)
-                .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+                StorageDiskUsageCreditPerByte,
+            );
         let expected_added_bytes = if using_history {
             //Explanation for 1237
 
@@ -1547,9 +1549,10 @@ mod tests {
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee
-            / Epoch::new(0)
-                .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+                StorageDiskUsageCreditPerByte,
+            );
 
         let expected_added_bytes = if using_history { 1239 } else { 963 };
         assert_eq!(added_bytes, expected_added_bytes);
@@ -1627,6 +1630,7 @@ mod tests {
                 apply,
                 transaction,
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to add document")
     }
@@ -1648,6 +1652,7 @@ mod tests {
                 true,
                 transaction,
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to remove person")
     }
@@ -1894,6 +1899,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                None,
             )
             .expect("should create document");
 
@@ -1916,6 +1922,7 @@ mod tests {
                 storage_flags,
                 None,
                 platform_version,
+                None,
             )
             .expect("should update document");
 

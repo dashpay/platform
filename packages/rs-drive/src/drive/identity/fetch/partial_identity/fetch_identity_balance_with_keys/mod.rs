@@ -3,7 +3,6 @@ use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::PartialIdentity;
 use dpp::version::PlatformVersion;
@@ -66,7 +65,6 @@ impl Drive {
     ///
     /// - `identity_key_request`: A request containing information about the identity whose balance and keys need to be fetched.
     /// - `apply`: Whether to apply the operation or just fetch an estimation.
-    /// - `epoch`: Current epoch for cost estimation.
     /// - `transaction`: A transaction argument for the database.
     /// - `platform_version`: The platform version being used.
     ///
@@ -82,7 +80,6 @@ impl Drive {
         &self,
         identity_key_request: IdentityKeysRequest,
         apply: bool,
-        epoch: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Option<PartialIdentity>, FeeResult), Error> {
@@ -97,7 +94,6 @@ impl Drive {
             0 => self.fetch_identity_balance_with_keys_with_cost_v0(
                 identity_key_request,
                 apply,
-                epoch,
                 transaction,
                 platform_version,
             ),

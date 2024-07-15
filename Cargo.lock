@@ -1416,6 +1416,7 @@ dependencies = [
  "itertools 0.11.0",
  "moka",
  "nohash-hasher",
+ "once_cell",
  "parking_lot",
  "platform-version",
  "rand",
@@ -3331,6 +3332,7 @@ dependencies = [
 name = "platform-version"
 version = "1.0.0-dev.16"
 dependencies = [
+ "bincode",
  "grovedb-version",
  "thiserror",
  "versioned-feature-core",

@@ -139,6 +139,7 @@ impl Drive {
                 &block_info.epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -192,6 +193,7 @@ impl Drive {
                 &block_info.epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -230,6 +232,7 @@ impl Drive {
                 &block_info.epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -286,6 +289,7 @@ impl Drive {
                 &block_info.epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -344,6 +348,7 @@ impl Drive {
                 &block_info.epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -433,6 +438,7 @@ impl Drive {
                 epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {

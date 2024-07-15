@@ -9,6 +9,7 @@ use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use drive::fee_pools::update_unpaid_epoch_index_operation;
 
 use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Getters;
+
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {
@@ -146,7 +147,16 @@ mod tests {
 
         let mut batch = GroveDbOpBatch::new();
 
-        unpaid_epoch.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
+        unpaid_epoch.add_init_current_operations(
+            platform_version
+                .fee_version
+                .uses_version_fee_multiplier_permille
+                .expect("expected a fee multiplier"),
+            1,
+            1,
+            1,
+            &mut batch,
+        );
 
         batch.push(
             unpaid_epoch
@@ -161,7 +171,10 @@ mod tests {
         );
 
         current_epoch.add_init_current_operations(
-            1.0,
+            platform_version
+                .fee_version
+                .uses_version_fee_multiplier_permille
+                .expect("expected a fee multiplier"),
             proposers_count as u64 + 1,
             3,
             2,
@@ -203,6 +216,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("should apply batch");
 

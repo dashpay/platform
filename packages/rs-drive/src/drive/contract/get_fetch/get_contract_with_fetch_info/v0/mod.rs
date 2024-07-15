@@ -100,6 +100,7 @@ impl Drive {
                 epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )
             .map(Some)
         })?;
@@ -155,6 +156,7 @@ impl Drive {
                             epoch,
                             self.config.epochs_per_era,
                             platform_version,
+                            None,
                         )?;
 
                         let updated_contract_fetch_info = Arc::new(DataContractFetchInfo {

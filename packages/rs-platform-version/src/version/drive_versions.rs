@@ -431,6 +431,7 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_insert: FeatureVersion,
     pub batch_insert_if_not_exists: FeatureVersion,
     pub batch_insert_if_changed_value: FeatureVersion,
+    pub batch_replace: FeatureVersion,
     pub batch_delete: FeatureVersion,
     pub batch_remove_raw: FeatureVersion,
     pub batch_delete_up_tree_while_empty: FeatureVersion,
@@ -465,6 +466,7 @@ pub struct DriveCreditPoolMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveCreditPoolEpochsMethodVersions {
     pub get_epochs_infos: FeatureVersion,
+    pub get_epochs_protocol_versions: FeatureVersion,
     pub prove_epochs_infos: FeatureVersion,
     pub get_epoch_fee_multiplier: FeatureVersion,
     pub get_epoch_processing_credits_for_distribution: FeatureVersion,
