@@ -2,13 +2,13 @@ use crate::drive::verify::RootHash;
 
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::query::DriveQuery;
+use crate::query::DriveDocumentQuery;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};
 
-impl<'a> DriveQuery<'a> {
+impl<'a> DriveDocumentQuery<'a> {
     /// Verifies if a document exists at the beginning of a proof,
     /// and returns the root hash and the optionally found document.
     ///

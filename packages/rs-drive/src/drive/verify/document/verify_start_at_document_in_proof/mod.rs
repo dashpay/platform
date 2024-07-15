@@ -4,11 +4,11 @@ use crate::drive::verify::RootHash;
 use crate::error::drive::DriveError;
 
 use crate::error::Error;
-use crate::query::DriveQuery;
+use crate::query::DriveDocumentQuery;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
 
-impl<'a> DriveQuery<'a> {
+impl<'a> DriveDocumentQuery<'a> {
     /// Verifies if a document exists at the beginning of a proof,
     /// and returns the root hash and the optionally found document.
     ///

@@ -23,7 +23,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
-use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 
 #[allow(dead_code)]
 #[deprecated(note = "This function is marked as unused.")]
@@ -137,7 +137,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
         .map(|dt| Value::Identifier(dt.get_id().to_buffer()))
         .collect();
 
-    let drive_query = DriveQuery {
+    let drive_query = DriveDocumentQuery {
         contract,
         document_type,
         internal_clauses: InternalClauses {
@@ -181,7 +181,7 @@ pub(crate) fn fetch_document_with_id(
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<(Option<Document>, FeeResult), Error> {
-    let drive_query = DriveQuery {
+    let drive_query = DriveDocumentQuery {
         contract,
         document_type,
         internal_clauses: InternalClauses {

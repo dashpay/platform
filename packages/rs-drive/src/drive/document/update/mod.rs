@@ -49,7 +49,7 @@ mod tests {
 
     use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
-    use crate::query::DriveQuery;
+    use crate::query::DriveDocumentQuery;
     use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -201,8 +201,9 @@ mod tests {
         // Check Alice profile
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-            .expect("should build query");
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -305,8 +306,9 @@ mod tests {
         // Check Alice profile
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-            .expect("should build query");
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -417,8 +419,9 @@ mod tests {
         // Check Alice profile
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-            .expect("should build query");
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
