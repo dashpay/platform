@@ -44,8 +44,8 @@ pub enum DocumentError {
     #[error("Trying To Replace Immutable Document")]
     TryingToReplaceImmutableDocument { document: Box<Document> },
 
-    #[error("Trying To Delete Immutable Document")]
-    TryingToDeleteImmutableDocument { document: Box<Document> },
+    #[error("Trying to delete indelible document")]
+    TryingToDeleteIndelibleDocument { document: Box<Document> },
 
     #[error("Documents have mixed owner ids")]
     MismatchOwnerIdsError { documents: Vec<Document> },
