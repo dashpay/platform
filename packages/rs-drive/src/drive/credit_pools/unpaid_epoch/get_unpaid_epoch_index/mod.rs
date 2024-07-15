@@ -21,7 +21,7 @@ impl Drive {
             .unpaid_epoch
             .get_unpaid_epoch_index
         {
-            0 => self.get_unpaid_epoch_index_v0(transaction),
+            0 => self.get_unpaid_epoch_index_v0(transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_unpaid_epoch_index".to_string(),
                 known_versions: vec![0],

@@ -52,6 +52,7 @@ impl Drive {
                 transaction,
                 check_existing_operations,
                 drive_operations,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "batch_delete_up_tree_while_empty".to_string(),

@@ -44,7 +44,7 @@ impl Drive {
         document_type_name: Option<String>,
         purposes: Vec<Purpose>,
         is_proof_subset: bool,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, IdentitiesContractKeys), Error> {
         let path_query = Self::identities_contract_keys_query(
             identity_ids,
@@ -55,9 +55,17 @@ impl Drive {
         );
 
         let (root_hash, proved_values) = if is_proof_subset {
-            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
+            GroveDb::verify_subset_query_with_absence_proof(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         } else {
-            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
+            GroveDb::verify_query_with_absence_proof(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         };
 
         let mut group_id = contract_id.to_vec();

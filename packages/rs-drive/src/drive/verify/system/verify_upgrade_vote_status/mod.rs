@@ -42,7 +42,12 @@ impl Drive {
             .system
             .verify_upgrade_vote_status
         {
-            0 => Drive::verify_upgrade_vote_status_v0(proof, start_protx_hash, count),
+            0 => Drive::verify_upgrade_vote_status_v0(
+                proof,
+                start_protx_hash,
+                count,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_upgrade_vote_status".to_string(),
                 known_versions: vec![0],

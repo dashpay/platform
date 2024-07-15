@@ -47,7 +47,7 @@ impl Drive {
         with_revision: bool,
         with_balance: bool,
         is_proof_subset: bool,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<PartialIdentity>), Error> {
         let identity_id = key_request.identity_id;
         let keys_path_query = key_request.into_path_query();
@@ -63,11 +63,11 @@ impl Drive {
             path_queries.push(&revision_path_query);
         }
 
-        let path_query = PathQuery::merge(path_queries)?;
+        let path_query = PathQuery::merge(path_queries, &platform_version.drive.grove_version)?;
         let (root_hash, proved_values) = if is_proof_subset {
-            GroveDb::verify_subset_query(proof, &path_query)?
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
-            GroveDb::verify_query(proof, &path_query)?
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
 
         let mut loaded_public_keys = BTreeMap::<KeyID, IdentityPublicKey>::new();

@@ -20,8 +20,11 @@ impl Drive {
             platform_version,
         )?;
         if let Some(identity_id) = identity_id {
-            let query =
-                Self::full_identity_with_public_key_hash_query(public_key_hash, identity_id)?;
+            let query = Self::full_identity_with_public_key_hash_query(
+                public_key_hash,
+                identity_id,
+                &platform_version.drive.grove_version,
+            )?;
             self.grove_get_proved_path_query(
                 &query,
                 transaction,

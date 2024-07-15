@@ -3,7 +3,6 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::identity::PartialIdentity;
@@ -63,7 +62,6 @@ impl Drive {
     ///
     /// - `identity_id`: A 32-byte array representing the ID of the identity.
     /// - `apply`: A boolean to determine if the balance should be applied or just estimated.
-    /// - `epoch`: The current epoch for fee calculations.
     /// - `transaction`: A transaction argument for the database.
     /// - `platform_version`: The platform version being used.
     ///
@@ -79,7 +77,6 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         apply: bool,
-        epoch: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Option<PartialIdentity>, FeeResult), Error> {
@@ -94,7 +91,6 @@ impl Drive {
             0 => self.fetch_identity_with_balance_with_cost_v0(
                 identity_id,
                 apply,
-                epoch,
                 transaction,
                 platform_version,
             ),

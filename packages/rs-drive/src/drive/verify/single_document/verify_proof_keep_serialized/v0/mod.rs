@@ -5,6 +5,7 @@ use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
 
 use grovedb::GroveDb;
+use platform_version::version::PlatformVersion;
 
 impl SingleDocumentDriveQuery {
     /// Verifies the proof of a document while keeping it serialized.
@@ -33,12 +34,21 @@ impl SingleDocumentDriveQuery {
         &self,
         is_subset: bool,
         proof: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Vec<u8>>), Error> {
-        let path_query = self.construct_path_query()?;
+        let path_query = self.construct_path_query(platform_version)?;
         let (root_hash, mut proved_key_values) = if is_subset {
-            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
+            GroveDb::verify_subset_query_with_absence_proof(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         } else {
-            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
+            GroveDb::verify_query_with_absence_proof(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         };
 
         if proved_key_values.len() != 1 {

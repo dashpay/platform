@@ -65,9 +65,17 @@ impl Drive {
         let path_query = PathQuery::new(path, SizedQuery::new(query, Some(1), None));
 
         let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
-            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
+            GroveDb::verify_subset_query_with_absence_proof(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         } else {
-            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
+            GroveDb::verify_query_with_absence_proof(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         };
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = proved_key_values.remove(0);

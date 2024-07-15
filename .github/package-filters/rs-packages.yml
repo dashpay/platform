@@ -65,8 +65,3 @@ dash-sdk:
   - packages/rs-sdk/**
   - *dapi_client
   - *drive
-
-random-document:
-  - .github/workflows/tests*
-  - packages/rs-random-document/**
-  - *dpp

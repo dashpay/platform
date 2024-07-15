@@ -228,7 +228,11 @@ impl Drive {
                     PathKeyUnknownElementSize((
                         document_id_in_primary_path,
                         KnownKey(encoded_time.clone()),
-                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                        Element::required_item_space(
+                            *max_size,
+                            STORAGE_FLAGS_SIZE,
+                            &platform_version.drive.grove_version,
+                        )?,
                     ))
                 }
             };
@@ -250,7 +254,11 @@ impl Drive {
                 PathKeyUnknownElementSize((
                     document_id_in_primary_path,
                     KnownKey(vec![0]),
-                    Element::required_item_space(reference_max_size, STORAGE_FLAGS_SIZE),
+                    Element::required_item_space(
+                        reference_max_size,
+                        STORAGE_FLAGS_SIZE,
+                        &platform_version.drive.grove_version,
+                    )?,
                 ))
             } else {
                 // we should also insert a reference at 0 to the current value
@@ -325,7 +333,11 @@ impl Drive {
                         unique_id: document_type.unique_id_for_storage().to_vec(),
                         max_size: DEFAULT_HASH_SIZE_U8,
                     },
-                    Element::required_item_space(*average_size, STORAGE_FLAGS_SIZE),
+                    Element::required_item_space(
+                        *average_size,
+                        STORAGE_FLAGS_SIZE,
+                        &platform_version.drive.grove_version,
+                    )?,
                 )),
                 DocumentOwnedInfo((document, storage_flags)) => {
                     let serialized_document = document
@@ -401,7 +413,11 @@ impl Drive {
                         unique_id: document_type.unique_id_for_storage().to_vec(),
                         max_size: DEFAULT_HASH_SIZE_U8,
                     },
-                    Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                    Element::required_item_space(
+                        *max_size,
+                        STORAGE_FLAGS_SIZE,
+                        &platform_version.drive.grove_version,
+                    )?,
                 )),
             };
             let apply_type = if estimated_costs_only_with_layer_info.is_none() {

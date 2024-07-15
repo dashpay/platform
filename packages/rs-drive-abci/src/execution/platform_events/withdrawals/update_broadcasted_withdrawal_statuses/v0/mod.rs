@@ -5,6 +5,7 @@ use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::version::PlatformVersion;
 use itertools::Itertools;
@@ -155,6 +156,7 @@ where
             block_info,
             transaction.into(),
             platform_version,
+            None,
         )?;
 
         Ok(())

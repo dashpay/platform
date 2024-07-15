@@ -5,6 +5,7 @@ use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
 use grovedb::{Element, PathQuery, TransactionArg};
 use grovedb_costs::CostContext;
 use grovedb_path::SubtreePath;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Gets the return value and the cost of a groveDB proved path query.
@@ -18,15 +19,21 @@ impl Drive {
         path_query_resolver: &impl Fn(Option<Element>) -> PathQuery,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
-        let CostContext { value, cost } = self.grove.get_raw_optional(root_path, key, transaction);
+        let CostContext { value, cost } =
+            self.grove
+                .get_raw_optional(root_path, key, transaction, &drive_version.grove_version);
         drive_operations.push(CalculatedCostOperation(cost));
         let maybe_element = value.map_err(Error::GroveDB)?;
         let path_query = path_query_resolver(maybe_element);
 
-        let CostContext { value, cost } =
-            self.grove
-                .get_proved_path_query(&path_query, None, transaction);
+        let CostContext { value, cost } = self.grove.get_proved_path_query(
+            &path_query,
+            None,
+            transaction,
+            &drive_version.grove_version,
+        );
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }

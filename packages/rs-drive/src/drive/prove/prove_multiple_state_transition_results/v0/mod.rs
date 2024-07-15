@@ -1,6 +1,5 @@
 use crate::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
 use crate::drive::Drive;
-use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{IdentityBasedVoteDriveQuery, SingleDocumentDriveQuery};
 
@@ -41,7 +40,10 @@ impl Drive {
             for identity_query in identity_queries {
                 match identity_query.prove_request_type {
                     IdentityProveRequestType::FullIdentity => {
-                        path_queries.push(Self::full_identity_query(&identity_query.identity_id)?);
+                        path_queries.push(Self::full_identity_query(
+                            &identity_query.identity_id,
+                            &platform_version.drive.grove_version,
+                        )?);
                     }
                     IdentityProveRequestType::Balance => {
                         path_queries.push(Self::balance_for_identity_id_query(
@@ -49,8 +51,10 @@ impl Drive {
                         ));
                     }
                     IdentityProveRequestType::Keys => {
-                        path_queries
-                            .push(Self::identity_all_keys_query(&identity_query.identity_id)?);
+                        path_queries.push(Self::identity_all_keys_query(
+                            &identity_query.identity_id,
+                            &platform_version.drive.grove_version,
+                        )?);
                     }
                     IdentityProveRequestType::Revision => {
                         path_queries
@@ -88,7 +92,7 @@ impl Drive {
         if !document_queries.is_empty() {
             path_queries.extend(document_queries.iter().filter_map(|drive_query| {
                 // The path query construction can only fail in extremely rare circumstances.
-                let mut path_query = drive_query.construct_path_query().ok()?;
+                let mut path_query = drive_query.construct_path_query(platform_version).ok()?;
                 path_query.query.limit = None;
                 Some(path_query)
             }));
@@ -104,7 +108,11 @@ impl Drive {
             }));
         }
 
-        let path_query = PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
+        let path_query = PathQuery::merge(
+            path_queries.iter().collect(),
+            &platform_version.drive.grove_version,
+        )
+        .map_err(Error::GroveDB)?;
 
         self.grove_get_proved_path_query(
             &path_query,

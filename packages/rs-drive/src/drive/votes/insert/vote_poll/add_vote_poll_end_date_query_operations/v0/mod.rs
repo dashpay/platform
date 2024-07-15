@@ -134,7 +134,9 @@ impl Drive {
             BatchInsertApplyType::StatelessBatchInsert {
                 in_tree_using_sums: false,
                 // todo: figure out a default serialized size to make this faster
-                target: QueryTargetValue(item.serialized_size()? as u32),
+                target: QueryTargetValue(
+                    item.serialized_size(&platform_version.drive.grove_version)? as u32,
+                ),
             }
         };
 

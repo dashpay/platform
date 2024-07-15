@@ -77,6 +77,7 @@ use crate::version::drive_versions::{
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
+use grovedb_version::version::v1::GROVE_V1;
 
 pub const PROTOCOL_VERSION_1: u32 = 1;
 
@@ -117,6 +118,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
             credit_pools: DriveCreditPoolMethodVersions {
                 epochs: DriveCreditPoolEpochsMethodVersions {
                     get_epochs_infos: 0,
+                    get_epochs_protocol_versions: 0,
                     prove_epochs_infos: 0,
                     get_epoch_fee_multiplier: 0,
                     get_epoch_processing_credits_for_distribution: 0,
@@ -540,6 +542,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 batch_insert: 0,
                 batch_insert_if_not_exists: 0,
                 batch_insert_if_changed_value: 0,
+                batch_replace: 0,
                 batch_delete: 0,
                 batch_remove_raw: 0,
                 batch_delete_up_tree_while_empty: 0,
@@ -554,6 +557,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 grove_batch_operations_costs: 0,
             },
         },
+        grove_version: GROVE_V1,
     },
     abci_structure: AbciStructureVersion {
         extended_block_info: FeatureVersionBounds {

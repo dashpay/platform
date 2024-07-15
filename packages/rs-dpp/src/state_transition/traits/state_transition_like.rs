@@ -42,7 +42,7 @@ pub trait StateTransitionLike:
     /// returns the fee multiplier
     fn user_fee_increase(&self) -> UserFeeIncrease;
     /// set a fee multiplier
-    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease);
+    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease);
     /// get modified ids list
     fn modified_data_ids(&self) -> Vec<Identifier>;
 

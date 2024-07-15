@@ -6,6 +6,7 @@ use crate::error::Error;
 use crate::drive::verify::RootHash;
 
 use grovedb::GroveDb;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Verifies the identity IDs of multiple identities by their public key hashes.
@@ -42,13 +43,22 @@ impl Drive {
         proof: &[u8],
         is_proof_subset: bool,
         public_key_hashes: &[[u8; 20]],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, T), Error> {
         let mut path_query = Self::identity_ids_by_unique_public_key_hash_query(public_key_hashes);
         path_query.query.limit = Some(public_key_hashes.len() as u16);
         let (root_hash, proved_key_values) = if is_proof_subset {
-            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
+            GroveDb::verify_subset_query_with_absence_proof(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         } else {
-            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
+            GroveDb::verify_query_with_absence_proof(
+                proof,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         };
         if proved_key_values.len() == public_key_hashes.len() {
             let values = proved_key_values

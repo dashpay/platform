@@ -128,6 +128,7 @@ pub fn setup_document(
             true,
             transaction,
             platform_version,
+            None,
         )
         .unwrap();
 }

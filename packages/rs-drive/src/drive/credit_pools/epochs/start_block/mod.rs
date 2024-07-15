@@ -122,6 +122,7 @@ mod tests {
                     Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                     None,
                     Some(&transaction),
+                    &platform_version.drive.grove_version,
                 )
                 .unwrap()
                 .expect("should insert invalid data");
@@ -152,6 +153,7 @@ mod tests {
                     Element::Item(u64::MAX.to_be_bytes().to_vec(), None),
                     None,
                     Some(&transaction),
+                    &platform_version.drive.grove_version,
                 )
                 .unwrap()
                 .expect("should insert invalid data");
@@ -185,6 +187,7 @@ mod tests {
                     Element::empty_tree(),
                     None,
                     Some(&transaction),
+                    &platform_version.drive.grove_version,
                 )
                 .unwrap()
                 .expect("should insert invalid data");
@@ -215,6 +218,7 @@ mod tests {
                     Element::empty_tree(),
                     None,
                     Some(&transaction),
+                    &platform_version.drive.grove_version,
                 )
                 .unwrap()
                 .expect("should insert invalid data");
