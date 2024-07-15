@@ -31,9 +31,13 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(QueryResultElements, u16), Error> {
         match drive_version.grove_methods.basic.grove_get_path_query {
-            0 => {
-                self.grove_get_path_query_v0(path_query, transaction, result_type, drive_operations)
-            }
+            0 => self.grove_get_path_query_v0(
+                path_query,
+                transaction,
+                result_type,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_path_query".to_string(),
                 known_versions: vec![0],

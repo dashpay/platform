@@ -59,6 +59,7 @@ impl<C> Platform<C> {
                 batch,
                 credits_per_epochs,
                 transaction,
+                platform_version,
             )?;
 
         Ok(
@@ -84,6 +85,7 @@ mod tests {
             perpetual_storage_epochs, CreditsPerEpoch, SignedCreditsPerEpoch, GENESIS_EPOCH_INDEX,
         };
         use dpp::fee::Credits;
+
         use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::drive::batch::DriveOperation;
         use drive::drive::config::DriveConfig;
@@ -196,6 +198,7 @@ mod tests {
                     &BlockInfo::default(),
                     Some(&transaction),
                     platform_version,
+                    None,
                 )
                 .expect("should apply batch");
 

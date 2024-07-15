@@ -49,10 +49,10 @@ impl StateTransitionLike for DocumentsBatchTransition {
         }
     }
     /// set a fee multiplier
-    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
+    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         match self {
             DocumentsBatchTransition::V0(transition) => {
-                transition.set_user_fee_increase(fee_multiplier)
+                transition.set_user_fee_increase(user_fee_increase)
             }
         }
     }

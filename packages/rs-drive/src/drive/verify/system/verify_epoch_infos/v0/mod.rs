@@ -14,6 +14,7 @@ use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::ProtocolError;
 use grovedb::{Element, GroveDb, PathQuery, SizedQuery};
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 impl Drive {
@@ -46,6 +47,7 @@ impl Drive {
         start_epoch: Option<EpochIndex>,
         count: u16,
         ascending: bool,
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<ExtendedEpochInfo>), Error> {
         let start_epoch_index = start_epoch.unwrap_or({
             if ascending {
@@ -82,7 +84,8 @@ impl Drive {
             SizedQuery::new(query, Some(count * 5), None),
         );
 
-        let (root_hash, elements) = GroveDb::verify_query(proof, &path_query)?;
+        let (root_hash, elements) =
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
         let results = elements.into_iter().fold(
             BTreeMap::<_, BTreeMap<_, _>>::new(),
@@ -207,14 +210,14 @@ impl Drive {
                 let fee_multiplier_bytes: [u8; 8] =
                     match encoded_multiplier.as_slice().try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "fee multiplier must be 8 bytes for a f64".to_string(),
+                            "fee multiplier must be 8 bytes for a u64".to_string(),
                         ))
                     }) {
                         Ok(value) => value,
                         Err(e) => return Some(Err(e)),
                     };
 
-                let fee_multiplier = f64::from_be_bytes(fee_multiplier_bytes);
+                let fee_multiplier = u64::from_be_bytes(fee_multiplier_bytes);
 
                 let protocol_version_element = inner_map.get(&KEY_PROTOCOL_VERSION.to_vec())?;
 
@@ -243,7 +246,7 @@ impl Drive {
                     first_block_time,
                     first_block_height,
                     first_core_block_height,
-                    fee_multiplier,
+                    fee_multiplier_permille: fee_multiplier,
                     protocol_version,
                 }
                 .into()))

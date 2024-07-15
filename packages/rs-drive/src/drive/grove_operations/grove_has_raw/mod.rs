@@ -36,7 +36,14 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
         match drive_version.grove_methods.basic.grove_has_raw {
-            0 => self.grove_has_raw_v0(path, key, query_type, transaction, drive_operations),
+            0 => self.grove_has_raw_v0(
+                path,
+                key,
+                query_type,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_has_raw".to_string(),
                 known_versions: vec![0],

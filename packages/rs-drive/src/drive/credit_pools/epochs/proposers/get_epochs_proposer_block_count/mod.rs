@@ -37,7 +37,12 @@ impl Drive {
             .epochs
             .get_epochs_proposer_block_count
         {
-            0 => self.get_epochs_proposer_block_count_v0(epoch, proposer_tx_hash, transaction),
+            0 => self.get_epochs_proposer_block_count_v0(
+                epoch,
+                proposer_tx_hash,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_epochs_proposer_block_count".to_string(),
                 known_versions: vec![0],

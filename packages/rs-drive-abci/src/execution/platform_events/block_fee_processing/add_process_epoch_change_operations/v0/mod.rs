@@ -37,10 +37,10 @@ use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
 use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX};
-use dpp::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
+use drive::error;
 use drive::grovedb::Transaction;
 
 use crate::error::Error;
@@ -105,9 +105,16 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         // init current epoch pool for processing
         let current_epoch = Epoch::new(epoch_info.current_epoch_index())?;
 
+        let Some(fee_multiplier) = platform_version
+            .fee_version
+            .uses_version_fee_multiplier_permille
+        else {
+            return Err(Error::Drive(error::drive::DriveError::NotSupported("the fee_multiplier_permille must be set in fees if using add_process_epoch_change_operations_v0").into()));
+        };
+
         //todo: version
         current_epoch.add_init_current_operations(
-            DEFAULT_ORIGINAL_FEE_MULTIPLIER, // TODO use a data contract to choose the fee multiplier
+            fee_multiplier, // TODO (feature) use a data contract to choose the fee multiplier
             block_info.height(),
             block_info.core_chain_locked_height(),
             block_info.block_time_ms(),
@@ -171,6 +178,7 @@ mod tests {
         use crate::platform_types::platform_state::PlatformState;
         use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::CreditsPerEpoch;
+
         use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
 
         /// Process and validate an epoch change
@@ -211,6 +219,7 @@ mod tests {
                         &BlockInfo::default(),
                         Some(transaction),
                         platform_version,
+                        None,
                     )
                     .expect("should apply batch");
             }
@@ -285,6 +294,7 @@ mod tests {
                     &BlockInfo::default(),
                     Some(transaction),
                     platform_version,
+                    None,
                 )
                 .expect("should apply batch");
 
@@ -296,7 +306,7 @@ mod tests {
 
             let has_epoch_tree_exists = platform
                 .drive
-                .has_epoch_tree_exists(&next_thousandth_epoch, Some(transaction))
+                .has_epoch_tree_exists(&next_thousandth_epoch, Some(transaction), platform_version)
                 .expect("should check epoch tree existence");
 
             assert!(has_epoch_tree_exists);

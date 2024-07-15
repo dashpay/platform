@@ -38,6 +38,7 @@ impl Drive {
                 batch,
                 refunds_per_epoch,
                 transaction,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_delete_pending_epoch_refunds_except_specified_operations".to_string(),

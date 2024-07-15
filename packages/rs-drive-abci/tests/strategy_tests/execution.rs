@@ -1157,6 +1157,8 @@ pub(crate) fn continue_chain_for_strategy(
     let masternode_identity_balances = if strategy.dont_finalize_block() && i == 0 {
         BTreeMap::new()
     } else {
+        let platform_state = platform.state.load();
+        let platform_version = platform_state.current_platform_version().unwrap();
         platform
             .drive
             .fetch_identities_balances(
@@ -1165,6 +1167,7 @@ pub(crate) fn continue_chain_for_strategy(
                     .map(|proposer| proposer.pro_tx_hash().into())
                     .collect(),
                 None,
+                platform_version,
             )
             .expect("expected to get balances")
     };

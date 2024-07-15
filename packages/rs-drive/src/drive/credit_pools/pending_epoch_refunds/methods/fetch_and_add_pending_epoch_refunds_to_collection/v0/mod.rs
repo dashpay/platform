@@ -9,6 +9,7 @@ use dpp::balances::credits::Creditable;
 use dpp::fee::epoch::CreditsPerEpoch;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Fetches pending epoch refunds and adds them to specified collection
@@ -16,6 +17,7 @@ impl Drive {
         &self,
         mut refunds_per_epoch: CreditsPerEpoch,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<CreditsPerEpoch, Error> {
         if refunds_per_epoch.is_empty() {
             return Ok(refunds_per_epoch);
@@ -39,6 +41,7 @@ impl Drive {
                 true,
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
+                &drive_version.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;
@@ -109,6 +112,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("should apply batch");
 

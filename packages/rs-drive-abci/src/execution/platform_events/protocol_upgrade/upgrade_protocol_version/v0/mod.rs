@@ -82,6 +82,26 @@ impl<C> Platform<C> {
                 .clear_version_information(Some(transaction), &platform_version.drive)
                 .map_err(Error::Drive)?;
 
+            let previous_fee_versions_map = block_platform_state.previous_fee_versions_mut();
+
+            let platform_version = PlatformVersion::get(current_block_protocol_version)?;
+            // If cached_fee_version is non-empty
+            if let Some((_, last_fee_version)) = previous_fee_versions_map.iter().last() {
+                // Insert the new (epoch_index, fee_version) only if the new fee_version is different from the last_fee_version.
+                if *last_fee_version != platform_version.fee_version {
+                    previous_fee_versions_map.insert(
+                        epoch_info.current_epoch_index(),
+                        platform_version.fee_version.clone(),
+                    );
+                }
+            // In case of empty cached_fee_version, insert the new (epoch_index, fee_version)
+            } else {
+                previous_fee_versions_map.insert(
+                    epoch_info.current_epoch_index(),
+                    platform_version.fee_version.clone(),
+                );
+            }
+
             // We clean voting counter cache only on finalize block because:
             // 1. The voting counter global cache uses for querying of voting information in Drive queries
             // 2. There might be multiple rounds so on the next round we will lose all previous epoch vote_choices

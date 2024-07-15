@@ -8,6 +8,7 @@ use crate::version::fee::vote_resolution_fund_fees::v1::VOTE_RESOLUTION_FUND_FEE
 use crate::version::fee::FeeVersion;
 
 pub const FEE_VERSION1: FeeVersion = FeeVersion {
+    uses_version_fee_multiplier_permille: Some(1000), //No action
     storage: FEE_STORAGE_VERSION1,
     signature: FEE_SIGNATURE_VERSION1,
     hashing: FEE_HASHING_VERSION1,

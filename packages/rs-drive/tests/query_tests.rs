@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Query Tests
 //!
 
@@ -67,6 +38,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 #[cfg(feature = "server")]
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 #[cfg(feature = "server")]
 use std::collections::HashMap;
 #[cfg(feature = "server")]
@@ -95,15 +67,15 @@ use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
 };
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::identity::TimestampMillis;
 use dpp::platform_value;
-
 #[cfg(feature = "server")]
 use dpp::prelude::DataContract;
-
 use dpp::tests::json_document::json_document_to_contract;
 #[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
+use once_cell::sync::Lazy;
 
 use dpp::version::PlatformVersion;
 
@@ -272,6 +244,7 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -340,6 +313,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -409,6 +383,7 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -653,6 +628,7 @@ pub fn add_domains_to_contract(
                 true,
                 transaction,
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -823,6 +799,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -872,6 +849,7 @@ fn test_query_many() {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -893,7 +871,7 @@ fn test_reference_proof_single_index() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -941,7 +919,7 @@ fn test_non_existence_reference_proof_single_index() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -988,7 +966,7 @@ fn test_family_basic_queries() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -1858,6 +1836,7 @@ fn test_family_basic_queries() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -1902,6 +1881,7 @@ fn test_family_basic_queries() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -2298,7 +2278,7 @@ fn test_family_basic_queries() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -2317,6 +2297,9 @@ fn test_family_person_update() {
     let (drive, contract) = setup_family_tests(10, 73509);
 
     let platform_version = PlatformVersion::latest();
+
+    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -2364,6 +2347,7 @@ fn test_family_person_update() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -2392,6 +2376,7 @@ fn test_family_person_update() {
             None,
             Some(&db_transaction),
             platform_version,
+            Some(&epoch_change_fee_version_test),
         )
         .expect("expected to override document");
     assert!(fee.storage_fee > 0);
@@ -2447,7 +2432,7 @@ fn test_family_starts_at_queries() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -2885,11 +2870,14 @@ fn test_family_with_nulls_query() {
 
     let platform_version = PlatformVersion::latest();
 
+    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+
     let db_transaction = drive.grove.start_transaction();
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -2989,6 +2977,7 @@ fn test_family_with_nulls_query() {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&epoch_change_fee_version_test),
             )
             .expect("expected to be able to delete the document");
     }
@@ -3011,7 +3000,7 @@ fn test_query_with_cached_contract() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3082,7 +3071,7 @@ fn test_dpns_query_contract_verification() {
 
     let root_hash = drive
         .grove
-        .root_hash(None)
+        .root_hash(None, &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3114,7 +3103,7 @@ fn test_contract_keeps_history_fetch_and_verification() {
 
     let root_hash = drive
         .grove
-        .root_hash(None)
+        .root_hash(None, &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3161,7 +3150,7 @@ fn test_dpns_query() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3637,7 +3626,7 @@ fn test_dpns_insertion_no_aliases() {
     assert_eq!(
         drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should get root hash"),
         proof_root_hash
@@ -3693,7 +3682,7 @@ fn test_dpns_insertion_with_aliases() {
     assert_eq!(
         drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should get root hash"),
         proof_root_hash
@@ -3713,7 +3702,7 @@ fn test_dpns_query_start_at() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3807,7 +3796,7 @@ fn test_dpns_query_start_after() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3901,7 +3890,7 @@ fn test_dpns_query_start_at_desc() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -3995,7 +3984,7 @@ fn test_dpns_query_start_after_desc() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -4132,6 +4121,7 @@ fn test_dpns_query_start_at_with_null_id() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4174,6 +4164,7 @@ fn test_dpns_query_start_at_with_null_id() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4187,7 +4178,7 @@ fn test_dpns_query_start_at_with_null_id() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -4332,6 +4323,7 @@ fn test_dpns_query_start_after_with_null_id() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4375,6 +4367,7 @@ fn test_dpns_query_start_after_with_null_id() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4388,7 +4381,7 @@ fn test_dpns_query_start_after_with_null_id() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -4537,6 +4530,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4580,6 +4574,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4593,7 +4588,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
 
@@ -5007,6 +5002,7 @@ fn test_query_documents_by_created_at() {
             true,
             None,
             platform_version,
+            None,
         )
         .expect("should add document");
 

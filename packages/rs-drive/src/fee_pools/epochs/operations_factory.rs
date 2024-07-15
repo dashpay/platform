@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Epoch Operations
 //!
 //! Defines and implements in `Epoch` functions relevant to epoch management.
@@ -70,7 +41,7 @@ pub trait EpochOperations {
     /// Adds to the groveDB op batch initialization operations for the epoch.
     fn add_init_current_operations(
         &self,
-        multiplier: f64,
+        multiplier_permille: u64,
         start_block_height: u64, // TODO Many method in drive needs block time and height. Maybe we need DTO for drive as well which will contain block information
         start_block_core_height: u32,
         start_time_ms: u64,
@@ -87,7 +58,7 @@ pub trait EpochOperations {
     /// Returns a groveDB op which updates the epoch start block height.
     fn update_start_block_core_height_operation(&self, start_block_core_height: u32) -> GroveDbOp;
     /// Returns a groveDB op which updates the epoch fee multiplier.
-    fn update_fee_multiplier_operation(&self, multiplier: f64) -> GroveDbOp;
+    fn update_fee_multiplier_operation(&self, multiplier_permille: u64) -> GroveDbOp;
     /// Returns a groveDB op which updates the epoch processing credits for distribution.
     fn update_processing_fee_pool_operation(
         &self,
@@ -169,7 +140,7 @@ impl EpochOperations for Epoch {
     /// Adds to the groveDB op batch initialization operations for the epoch.
     fn add_init_current_operations(
         &self,
-        multiplier: f64,
+        multiplier_permille: u64,
         start_block_height: u64, // TODO Many method in drive needs block time and height. Maybe we need DTO for drive as well which will contain block information
         start_block_core_height: u32,
         start_time_ms: u64,
@@ -181,7 +152,7 @@ impl EpochOperations for Epoch {
 
         batch.push(self.init_proposers_tree_operation());
 
-        batch.push(self.update_fee_multiplier_operation(multiplier));
+        batch.push(self.update_fee_multiplier_operation(multiplier_permille));
 
         batch.push(self.update_start_time_operation(start_time_ms));
     }
@@ -232,11 +203,11 @@ impl EpochOperations for Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch fee multiplier.
-    fn update_fee_multiplier_operation(&self, multiplier: f64) -> GroveDbOp {
+    fn update_fee_multiplier_operation(&self, multiplier_permille: u64) -> GroveDbOp {
         GroveDbOp::insert_op(
             self.get_path_vec(),
             KEY_FEE_MULTIPLIER.to_vec(),
-            Element::Item(multiplier.to_be_bytes().to_vec(), None),
+            Element::Item(multiplier_permille.to_be_bytes().to_vec(), None),
         )
     }
 
@@ -493,7 +464,7 @@ mod tests {
 
             let epoch = Epoch::new(1042).unwrap();
 
-            let multiplier = 42.0;
+            let multiplier = 42000;
             let start_time = 1;
             let start_block_height = 2;
             let start_block_core_height = 5;
@@ -570,7 +541,7 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            epoch.add_init_current_operations(1.0, 2, 5, 3, &mut batch);
+            epoch.add_init_current_operations(1000, 2, 5, 3, &mut batch);
 
             // Apply init current
             drive
@@ -591,6 +562,7 @@ mod tests {
                     &epoch.get_path(),
                     KEY_PROPOSERS.as_slice(),
                     Some(&transaction),
+                    &platform_version.drive.grove_version,
                 )
                 .unwrap();
 
@@ -879,6 +851,7 @@ mod tests {
                     &epoch.get_path(),
                     KEY_PROPOSERS.as_slice(),
                     Some(&transaction),
+                    &platform_version.drive.grove_version,
                 )
                 .unwrap()
                 .expect_err("expect tree not exists");

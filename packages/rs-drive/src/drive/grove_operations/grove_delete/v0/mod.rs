@@ -5,6 +5,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use grovedb::operations::delete::DeleteOptions;
 use grovedb::TransactionArg;
 use grovedb_path::SubtreePath;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes the `OperationCost` of deleting an element in groveDB to `drive_operations`.
@@ -14,6 +15,7 @@ impl Drive {
         key: &[u8],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let options = DeleteOptions {
             allow_deleting_non_empty_trees: false,
@@ -21,7 +23,13 @@ impl Drive {
             base_root_storage_is_free: true,
             validate_tree_at_path_exists: false,
         };
-        let cost_context = self.grove.delete(path, key, Some(options), transaction);
+        let cost_context = self.grove.delete(
+            path,
+            key,
+            Some(options),
+            transaction,
+            &drive_version.grove_version,
+        );
         push_drive_operation_result(cost_context, drive_operations)
     }
 }

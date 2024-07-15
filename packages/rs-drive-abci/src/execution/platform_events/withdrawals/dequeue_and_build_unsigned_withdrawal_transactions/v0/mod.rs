@@ -25,6 +25,7 @@ use crate::{
     rpc::core::CoreRPCLike,
 };
 use dpp::errors::ProtocolError;
+
 use drive::drive::config::DEFAULT_QUERY_LIMIT;
 
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
@@ -108,6 +109,7 @@ where
             block_info,
             transaction,
             platform_version,
+            None,
         )?;
 
         Ok(UnsignedWithdrawalTxs::from_vec(

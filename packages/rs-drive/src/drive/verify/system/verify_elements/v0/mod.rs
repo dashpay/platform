@@ -4,6 +4,8 @@ use crate::error::Error;
 use crate::query::Query;
 use grovedb::query_result_type::PathKeyOptionalElementTrio;
 use grovedb::{Element, GroveDb, PathQuery, SizedQuery};
+use grovedb_version::TryIntoVersioned;
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 impl Drive {
@@ -31,16 +33,19 @@ impl Drive {
         proof: &[u8],
         path: Vec<Vec<u8>>,
         keys: Vec<Vec<u8>>,
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, BTreeMap<Vec<u8>, Option<Element>>), Error> {
         let mut query = Query::new();
         query.insert_keys(keys);
         let path_query = PathQuery::new(path, SizedQuery::new(query, None, None));
 
-        let (root_hash, proved_path_key_values) = GroveDb::verify_query_raw(proof, &path_query)?;
+        let (root_hash, proved_path_key_values) =
+            GroveDb::verify_query_raw(proof, &path_query, &platform_version.drive.grove_version)?;
         let path_key_optional_elements = proved_path_key_values
             .into_iter()
             .map(|pkv| {
-                let key_element_pair: PathKeyOptionalElementTrio = pkv.try_into()?;
+                let key_element_pair: PathKeyOptionalElementTrio =
+                    pkv.try_into_versioned(&platform_version.drive.grove_version)?;
                 Ok((key_element_pair.1, key_element_pair.2))
             })
             .collect::<Result<BTreeMap<Vec<u8>, Option<Element>>, grovedb::Error>>()?;

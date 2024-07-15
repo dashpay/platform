@@ -35,6 +35,7 @@ use crate::drive::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use crate::error::drive::DriveError;
+
 use std::collections::{BTreeMap, HashMap};
 
 /// A converter that will get Drive Operations from High Level Operations
@@ -284,6 +285,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert contract and document");
 
@@ -293,6 +295,7 @@ mod tests {
                 &contract_root_path(&contract.id().to_buffer()),
                 &[0],
                 Some(&db_transaction),
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .expect("expected to get contract back");
@@ -402,6 +405,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -513,6 +517,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -522,6 +527,7 @@ mod tests {
                 &contract_root_path(&contract.id().to_buffer()),
                 &[0],
                 Some(&db_transaction),
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .expect("expected to get contract back");
@@ -643,6 +649,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -751,6 +758,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -811,6 +819,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to be able to update documents");
 
@@ -964,6 +973,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to be able to insert documents");
 
@@ -1017,6 +1027,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to be able to update documents");
 

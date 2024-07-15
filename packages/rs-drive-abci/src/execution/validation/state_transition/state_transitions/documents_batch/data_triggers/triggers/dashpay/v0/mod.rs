@@ -207,6 +207,7 @@ mod test {
 
     #[test]
     fn should_return_invalid_result_if_owner_id_equals_to_user_id() {
+        let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -224,7 +225,12 @@ mod test {
                     core_height: 42,
                     epoch: Default::default(),
                 },
-                app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                app_hash: platform
+                    .drive
+                    .grove
+                    .root_hash(None, &platform_version.drive.grove_version)
+                    .unwrap()
+                    .unwrap(),
                 quorum_hash: [0u8; 32],
                 block_id_hash: [0u8; 32],
                 proposer_pro_tx_hash: [0u8; 32],
@@ -326,6 +332,7 @@ mod test {
 
     #[test]
     fn should_return_invalid_result_if_id_not_exists() {
+        let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -343,7 +350,12 @@ mod test {
                     core_height: 42,
                     epoch: Default::default(),
                 },
-                app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                app_hash: platform
+                    .drive
+                    .grove
+                    .root_hash(None, &platform_version.drive.grove_version)
+                    .unwrap()
+                    .unwrap(),
                 quorum_hash: [0u8; 32],
                 block_id_hash: [0u8; 32],
                 proposer_pro_tx_hash: [0u8; 32],

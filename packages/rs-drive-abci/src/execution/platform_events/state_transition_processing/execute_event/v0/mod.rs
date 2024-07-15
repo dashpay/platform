@@ -7,9 +7,11 @@ use crate::platform_types::event_execution_result::EventExecutionResult::{
     UnsuccessfulPaidExecution,
 };
 use crate::platform_types::platform::Platform;
+
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
@@ -41,6 +43,7 @@ where
     ///
     /// This function may return an `Error` variant if there is a problem with the drive operations or
     /// an internal error occurs.
+    #[inline(always)]
     pub(super) fn execute_event_v0(
         &self,
         event: ExecutionEvent,
@@ -48,6 +51,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         let maybe_fee_validation_result = match event {
             ExecutionEvent::PaidFromAssetLock { .. } | ExecutionEvent::Paid { .. } => {
@@ -56,6 +60,7 @@ where
                     block_info,
                     Some(transaction),
                     platform_version,
+                    previous_fee_versions,
                 )?)
             }
             ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. }
@@ -90,6 +95,7 @@ where
                             block_info,
                             Some(transaction),
                             platform_version,
+                            Some(previous_fee_versions),
                         )
                         .map_err(Error::Drive)?;
 
@@ -139,6 +145,7 @@ where
                         block_info,
                         Some(transaction),
                         platform_version,
+                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
 
@@ -167,6 +174,7 @@ where
                             block_info,
                             Some(transaction),
                             platform_version,
+                            Some(previous_fee_versions),
                         )
                         .map_err(Error::Drive)?;
 
@@ -186,6 +194,7 @@ where
                         block_info,
                         Some(transaction),
                         platform_version,
+                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
                 Ok(SuccessfulFreeExecution)

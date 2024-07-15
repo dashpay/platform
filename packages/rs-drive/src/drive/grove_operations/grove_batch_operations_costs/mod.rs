@@ -45,6 +45,7 @@ impl Drive {
                 estimated_layer_info,
                 validate,
                 drive_operations,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_batch_operations_costs".to_string(),

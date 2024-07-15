@@ -47,6 +47,7 @@ impl Drive {
                 transaction,
                 add_on_operations,
                 drive_operations,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_apply_partial_batch_with_add_costs".to_string(),

@@ -14,6 +14,7 @@ mod tests {
     };
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+
     use dpp::version::PlatformVersion;
 
     #[test]
@@ -52,6 +53,7 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("to apply batch");
 
@@ -73,6 +75,7 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("to apply batch");
 
@@ -96,6 +99,7 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("to apply batch");
 

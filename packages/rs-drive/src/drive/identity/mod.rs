@@ -36,6 +36,7 @@
 use crate::drive::object_size_info::DriveKeyInfo;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::RootTree;
+use std::fmt;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::identity::Purpose;
@@ -69,6 +70,8 @@ pub mod key;
 pub mod update;
 
 use crate::drive::identity::contract_info::ContractInfoStructure;
+use crate::error::drive::DriveError;
+use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use fetch::queries::*;
 
@@ -344,6 +347,40 @@ pub enum IdentityRootStructure {
     IdentityTreeNegativeCredit = 96,
     /// Identity contract information
     IdentityContractInfo = 32,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl fmt::Display for IdentityRootStructure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let variant_name = match self {
+            IdentityRootStructure::IdentityTreeRevision => "Revision",
+            IdentityRootStructure::IdentityTreeNonce => "Nonce",
+            IdentityRootStructure::IdentityTreeKeys => "IdentityKeys",
+            IdentityRootStructure::IdentityTreeKeyReferences => "IdentityKeyReferences",
+            IdentityRootStructure::IdentityTreeNegativeCredit => "NegativeCredit",
+            IdentityRootStructure::IdentityContractInfo => "ContractInfo",
+        };
+        write!(f, "{}", variant_name)
+    }
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl TryFrom<u8> for IdentityRootStructure {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            192 => Ok(IdentityRootStructure::IdentityTreeRevision),
+            64 => Ok(IdentityRootStructure::IdentityTreeNonce),
+            128 => Ok(IdentityRootStructure::IdentityTreeKeys),
+            160 => Ok(IdentityRootStructure::IdentityTreeKeyReferences),
+            96 => Ok(IdentityRootStructure::IdentityTreeNegativeCredit),
+            32 => Ok(IdentityRootStructure::IdentityContractInfo),
+            _ => Err(Error::Drive(DriveError::NotSupported(
+                "unknown identity root structure tree item",
+            ))),
+        }
+    }
 }
 
 #[cfg(feature = "server")]

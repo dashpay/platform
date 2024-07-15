@@ -73,7 +73,9 @@ use dpp::voting::votes::Vote;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::config::PlatformConfig;
-use drive_abci::platform_types::signature_verification_quorum_set::{QuorumConfig, Quorums, SigningQuorum};
+use drive_abci::platform_types::signature_verification_quorum_set::{
+    QuorumConfig, Quorums, SigningQuorum,
+};
 use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 
 use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
