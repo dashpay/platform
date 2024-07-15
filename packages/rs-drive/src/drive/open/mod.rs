@@ -9,6 +9,7 @@ use dpp::util::deserializer::ProtocolVersion;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 use std::path::Path;
+use std::sync::Arc;
 
 impl Drive {
     /// Opens GroveDB database
@@ -30,9 +31,14 @@ impl Drive {
         path: P,
         config: Option<DriveConfig>,
     ) -> Result<(Self, Option<ProtocolVersion>), Error> {
-        let grove = GroveDb::open(path)?;
-
         let config = config.unwrap_or_default();
+
+        let grove = Arc::new(GroveDb::open(path)?);
+
+        #[cfg(feature = "grovedbg")]
+        if config.grovedb_visualizer_enabled {
+            grove.start_visualizer(config.grovedb_visualizer_address);
+        }
         let genesis_time_ms = config.default_genesis_time;
         let data_contracts_global_cache_size = config.data_contracts_global_cache_size;
         let data_contracts_block_cache_size = config.data_contracts_block_cache_size;

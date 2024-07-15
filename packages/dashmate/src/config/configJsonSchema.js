@@ -844,9 +844,12 @@ export default {
                 metrics: {
                   $ref: '#/definitions/enabledHostPort',
                 },
+                grovedbVisualizer: {
+                  $ref: '#/definitions/enabledHostPort',
+                },
               },
               additionalProperties: false,
-              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics'],
+              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics', 'grovedbVisualizer'],
             },
             tenderdash: {
               type: 'object',

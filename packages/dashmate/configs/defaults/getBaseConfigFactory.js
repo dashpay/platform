@@ -311,6 +311,11 @@ export default function getBaseConfigFactory(homeDir) {
               host: '127.0.0.1',
               port: 29090,
             },
+            grovedbVisualizer: {
+              enabled: false,
+              host: '127.0.0.1',
+              port: 8083,
+            },
             epochTime: 788400,
           },
           tenderdash: {

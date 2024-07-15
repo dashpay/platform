@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::GroveDb;
 use std::fmt;
@@ -81,9 +83,11 @@ use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub struct Drive {
     /// GroveDB
-    pub grove: GroveDb,
+    pub grove: Arc<GroveDb>,
+
     /// Drive config
     pub config: DriveConfig,
+
     /// Drive Cache
     #[cfg(feature = "server")]
     pub cache: DriveCache,
