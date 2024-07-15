@@ -44,6 +44,7 @@ mod tests {
     // If this test failed, then a new field was added in FeeVersion. And the corresponding eq needs to be updated as well
     fn test_fee_version_equality() {
         let version1 = FeeVersion {
+            uses_version_fee_multiplier_permille: None,
             storage: FeeStorageVersion {
                 storage_disk_usage_credit_per_byte: 1,
                 storage_processing_credit_per_byte: 2,
@@ -100,6 +101,7 @@ mod tests {
         };
 
         let version2 = FeeVersion {
+            uses_version_fee_multiplier_permille: None,
             storage: FeeStorageVersion {
                 storage_disk_usage_credit_per_byte: 1,
                 storage_processing_credit_per_byte: 2,

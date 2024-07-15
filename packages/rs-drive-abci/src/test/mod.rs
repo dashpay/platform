@@ -25,6 +25,7 @@ pub mod helpers;
 ///     // fields
 /// }
 ///
+/// #[derive(Debug)]
 /// enum StateTransitionExecutionResult {
 ///     SuccessfulExecution(u32, FeeResult),
 ///     FailedExecution(String),
@@ -48,7 +49,7 @@ pub mod helpers;
 ///     };
 ///
 ///     let fee_result = expect_match!(
-///         processing_result.execution_results()[0],
+///         &processing_result.execution_results()[0],
 ///         StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => fee_result
 ///     );
 ///

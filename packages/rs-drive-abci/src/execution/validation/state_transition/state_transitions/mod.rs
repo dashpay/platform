@@ -115,9 +115,8 @@ pub(crate) mod tests {
     use crate::expect_match;
     use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use crate::platform_types::state_transitions_processing_result::{StateTransitionExecutionResult, StateTransitionsProcessingResult};
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{SuccessfulExecution, UnpaidConsensusError};
-    use dpp::block::extended_block_info::ExtendedBlockInfo;
     use crate::execution::types::block_state_info::BlockStateInfo;
     use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
     use crate::platform_types::epoch_info::EpochInfo;

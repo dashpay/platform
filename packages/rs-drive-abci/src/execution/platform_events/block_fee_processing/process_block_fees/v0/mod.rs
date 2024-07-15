@@ -211,7 +211,6 @@ mod tests {
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
         use crate::platform_types::epoch_info::v0::EpochInfoV0;
         use crate::platform_types::epoch_info::EpochInfo;
-        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
         use crate::platform_types::platform_state::PlatformState;
         use dpp::fee::epoch::{perpetual_storage_epochs, CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;

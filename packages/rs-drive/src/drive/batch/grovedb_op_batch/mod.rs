@@ -7,14 +7,13 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::identity::IdentityRootStructure;
 use crate::drive::RootTree;
 use crate::fee_pools;
-use chrono::format;
 use dpp::block::epoch::Epoch;
 use dpp::identity::{Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{GroveDbOp, GroveDbOpConsistencyResults, KeyInfoPath, Op};
 use grovedb::operations::proof::util::hex_to_ascii;
-use grovedb::{Element, ElementFlags};
+use grovedb::Element;
 use std::borrow::Cow;
 use std::fmt;
 

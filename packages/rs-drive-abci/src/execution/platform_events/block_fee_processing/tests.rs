@@ -2,14 +2,11 @@
 mod refund_tests {
     use crate::execution::validation::state_transition::tests::{
         fast_forward_to_block, fetch_expected_identity_balance, process_state_transitions,
-        setup_identity, setup_identity_with_system_credits,
+        setup_identity_with_system_credits,
     };
-    use crate::expect_match;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-    use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -26,7 +23,6 @@ mod refund_tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::Bytes32;
-    use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use drive::common::setup_contract;
@@ -72,11 +68,6 @@ mod refund_tests {
         altered_document.increment_revision().unwrap();
         altered_document.set("displayName", "Ivan".into());
         altered_document.set("avatarUrl", "http://test.com/dog.jpg".into());
-
-        let serialized_len = document
-            .serialize(profile, platform_version)
-            .expect("expected to serialize")
-            .len() as u64;
 
         let documents_batch_create_transition =
             DocumentsBatchTransition::new_document_creation_transition_from_document(
@@ -683,7 +674,7 @@ mod refund_tests {
             dash_to_credits!(1),
         );
 
-        let (document, insertion_fee_result, current_user_balance) =
+        let (document, _, current_user_balance) =
             setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
 
         fast_forward_to_block(&platform, 10_200_000_000, 9000, 40 * 50); //50 years later

@@ -192,7 +192,7 @@ pub fn setup(
 
     let platform_version = PlatformVersion::latest();
 
-    let EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
 
     let drive = setup_drive(Some(drive_config));
@@ -258,7 +258,7 @@ pub fn setup(
                     true,
                     Some(&db_transaction),
                     platform_version,
-                    Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                    Some(&epoch_change_fee_version_test),
                 )
                 .expect("expected to add document");
         }
@@ -286,7 +286,7 @@ fn test_query_historical() {
 
     let platform_version = PlatformVersion::latest();
 
-    let EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
 
     let db_transaction = drive.grove.start_transaction();
@@ -1139,7 +1139,7 @@ fn test_query_historical() {
             true,
             Some(&db_transaction),
             platform_version,
-            Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            Some(&epoch_change_fee_version_test),
         )
         .expect("document should be inserted");
 

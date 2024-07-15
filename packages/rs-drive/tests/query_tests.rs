@@ -2298,7 +2298,7 @@ fn test_family_person_update() {
 
     let platform_version = PlatformVersion::latest();
 
-    let EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
 
     let db_transaction = drive.grove.start_transaction();
@@ -2376,7 +2376,7 @@ fn test_family_person_update() {
             None,
             Some(&db_transaction),
             platform_version,
-            Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            Some(&epoch_change_fee_version_test),
         )
         .expect("expected to override document");
     assert!(fee.storage_fee > 0);
@@ -2870,7 +2870,7 @@ fn test_family_with_nulls_query() {
 
     let platform_version = PlatformVersion::latest();
 
-    let EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
 
     let db_transaction = drive.grove.start_transaction();
@@ -2977,7 +2977,7 @@ fn test_family_with_nulls_query() {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                Some(&epoch_change_fee_version_test),
             )
             .expect("expected to be able to delete the document");
     }

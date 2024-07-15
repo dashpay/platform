@@ -27,7 +27,6 @@ use dpp::fee::fee_result::refunds::FeeRefunds;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use platform_version::version::fee::FeeVersion;
-use platform_version::version::PlatformVersion;
 
 /// Base ops
 #[derive(Debug, Enum)]
