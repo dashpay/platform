@@ -106,9 +106,14 @@ runs:
         echo "Printing Docker networks before network start..."
         docker network ls
 
+    - name: Print processes using port 6769
+      shell: bash
+      run: |
+        echo "Checking for processes using port 6769..."
+        sudo lsof -i :6769 || echo "No processes using port 6769."
+
     - name: Start local network
       shell: bash
       run: yarn start
       env:
         DEBUG: 1
-
