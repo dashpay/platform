@@ -19,7 +19,7 @@ on:
         required: true
 env:
   DIGEST_NAME: digests-${{ inputs.image_org }}-${{ inputs.image_name }}-${{ github.sha }}
-  DIGEST_DIR_PATH: /tmp/digests
+  DIGEST_DIR_PATH: ./digests
 
 jobs:
   build-image:
