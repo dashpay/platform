@@ -33,7 +33,6 @@ use crate::errors::consensus::state::identity::{
     InvalidIdentityNonceErrorWasm, MissingIdentityPublicKeyIdsErrorWasm,
 };
 use dpp::consensus::basic::decode::VersionError;
-use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::BasicError::{
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
@@ -53,6 +52,7 @@ use dpp::consensus::basic::BasicError::{
     NotImplementedIdentityCreditWithdrawalTransitionPoolingError, ProtocolVersionParsingError,
     UnsupportedProtocolVersionError, UnsupportedVersionError,
 };
+use dpp::consensus::basic::{BasicError, UnsupportedFeatureError};
 use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::state::state_error::StateError;
@@ -535,6 +535,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::OverflowError(e) => generic_consensus_error!(OverflowError, e).into(),
         BasicError::ContestedUniqueIndexOnMutableDocumentTypeError(e) => {
             generic_consensus_error!(ContestedUniqueIndexOnMutableDocumentTypeError, e).into()
+        }
+        BasicError::UnsupportedFeatureError(e) => {
+            generic_consensus_error!(UnsupportedFeatureError, e).into()
         }
     }
 }

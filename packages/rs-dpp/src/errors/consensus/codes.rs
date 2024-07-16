@@ -36,6 +36,7 @@ impl ErrorWithCode for BasicError {
             Self::UnsupportedProtocolVersionError(_) => 10003,
             Self::IncompatibleProtocolVersionError(_) => 10004,
             Self::VersionError(_) => 10005,
+            Self::UnsupportedFeatureError(_) => 10006,
 
             // Structure Errors: 10100-10199
             #[cfg(feature = "json-schema-validation")]
@@ -93,8 +94,9 @@ impl ErrorWithCode for BasicError {
             Self::UnknownTransferableTypeError { .. } => 10243,
             Self::UnknownTradeModeError { .. } => 10244,
             Self::UnknownDocumentCreationRestrictionModeError { .. } => 10245,
-            Self::ContractError(DataContractError::RegexError(_)) => 10247,
             Self::IncompatibleDocumentTypeSchemaError { .. } => 10246,
+            Self::ContractError(DataContractError::RegexError(_)) => 10247,
+            Self::ContestedUniqueIndexOnMutableDocumentTypeError(_) => 10248,
 
             // Document Errors: 10400-10499
             Self::DataContractNotPresentError { .. } => 10400,
@@ -156,7 +158,6 @@ impl ErrorWithCode for BasicError {
 
             // General Errors 10700-10799
             Self::OverflowError(_) => 10700,
-            Self::ContestedUniqueIndexOnMutableDocumentTypeError(_) => 10701,
         }
     }
 }
