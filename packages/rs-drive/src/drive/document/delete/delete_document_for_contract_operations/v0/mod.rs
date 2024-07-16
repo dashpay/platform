@@ -7,18 +7,18 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use std::collections::HashMap;
 
 use crate::drive::document::paths::contract_documents_primary_key_path;
-use crate::util::storage_flags::StorageFlags;
 use crate::util::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentOwnedInfo,
 };
+use crate::util::storage_flags::StorageFlags;
 
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
+use crate::drive::Drive;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-use crate::drive::Drive;
 
 use crate::error::drive::DriveError;
 

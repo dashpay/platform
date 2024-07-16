@@ -10,14 +10,14 @@ use crate::fees::op::LowLevelDriveOperation;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod balances;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod constants;
 ///DataContract module
 #[cfg(any(feature = "server", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod contract;
 /// Fee pools module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod credit_pools;
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod constants;
 /// Document module
 #[cfg(any(feature = "server", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod document;

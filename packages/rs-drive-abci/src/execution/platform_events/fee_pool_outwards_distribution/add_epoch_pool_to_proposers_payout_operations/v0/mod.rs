@@ -187,10 +187,10 @@ mod tests {
         use dpp::identity::accessors::IdentityGettersV0;
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 
-        use drive::util::test_helpers::test_utils::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
+        use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
         use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::util::batch::GroveDbOpBatch;
-        use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
+        use drive::util::test_helpers::test_utils::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
         use rust_decimal::Decimal;
         use rust_decimal_macros::dec;
 

@@ -1,9 +1,9 @@
-use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
-use crate::util::batch::DriveOperation::{DataContractOperation, IdentityOperation};
-use crate::util::batch::{DataContractOperationType, DriveOperation, IdentityOperationType};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
+use crate::util::batch::DriveOperation::{DataContractOperation, IdentityOperation};
+use crate::util::batch::{DataContractOperationType, DriveOperation, IdentityOperationType};
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;

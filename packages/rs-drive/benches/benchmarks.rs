@@ -1,5 +1,3 @@
-
-
 //! Benchmarks for serialization functions.
 //!
 //! This module defines functions which benchmark serialization and deserialization functions.

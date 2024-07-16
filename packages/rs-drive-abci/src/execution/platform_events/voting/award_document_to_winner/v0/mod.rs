@@ -4,10 +4,10 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use dpp::voting::contender_structs::FinalizedContender;
-use drive::util::object_size_info::DocumentInfo::DocumentAndSerialization;
-use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use drive::grovedb::TransactionArg;
+use drive::util::object_size_info::DocumentInfo::DocumentAndSerialization;
+use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
 impl<C> Platform<C>
 where

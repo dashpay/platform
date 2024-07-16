@@ -1,10 +1,10 @@
 use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 
+use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
 use platform_version::version::PlatformVersion;
 
@@ -67,9 +67,9 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
     use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::util::batch::GroveDbOpBatch;
-    use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
 

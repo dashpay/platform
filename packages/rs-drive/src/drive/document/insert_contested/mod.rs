@@ -50,8 +50,8 @@ mod tests {
     use rand::random;
 
     use crate::drive::document::tests::setup_dashpay;
-    use crate::util::storage_flags::StorageFlags;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;

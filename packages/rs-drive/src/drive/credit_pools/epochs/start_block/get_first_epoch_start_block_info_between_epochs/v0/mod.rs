@@ -5,13 +5,13 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::epoch::EpochIndex;
 
+use crate::drive::credit_pools::epochs;
 use crate::drive::credit_pools::epochs::epoch_key_constants::{
     KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT,
 };
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
-use crate::drive::credit_pools::epochs;
 
 impl Drive {
     /// Returns the index and start block platform and core heights of the first epoch between

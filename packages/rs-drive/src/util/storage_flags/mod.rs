@@ -1,14 +1,12 @@
-
-
 //! Flags
 //!
 
 #[cfg(feature = "server")]
-use crate::util::type_constants::DEFAULT_HASH_SIZE;
-#[cfg(feature = "server")]
 use crate::util::storage_flags::StorageFlags::{
     MultiEpoch, MultiEpochOwned, SingleEpoch, SingleEpochOwned,
 };
+#[cfg(feature = "server")]
+use crate::util::type_constants::DEFAULT_HASH_SIZE;
 #[cfg(feature = "server")]
 use grovedb::ElementFlags;
 #[cfg(feature = "server")]

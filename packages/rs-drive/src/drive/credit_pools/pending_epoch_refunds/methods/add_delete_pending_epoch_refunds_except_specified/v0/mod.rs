@@ -1,8 +1,8 @@
-use crate::util::batch::GroveDbOpBatch;
 use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::batch::GroveDbOpBatch;
 
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
@@ -61,10 +61,10 @@ impl Drive {
 #[cfg(test)]
 mod tests {
 
-    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-    use crate::util::batch::GroveDbOpBatch;
     use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
     use crate::drive::Drive;
+    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use crate::util::batch::GroveDbOpBatch;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::fee::epoch::CreditsPerEpoch;

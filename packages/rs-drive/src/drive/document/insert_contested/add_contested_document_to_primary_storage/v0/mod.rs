@@ -6,20 +6,20 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 use crate::drive::constants::STORAGE_FLAGS_SIZE;
-use crate::util::storage_flags::StorageFlags;
 use crate::util::object_size_info::DocumentInfo::{
     DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
     DocumentRefAndSerialization, DocumentRefInfo,
 };
+use crate::util::storage_flags::StorageFlags;
 
-use crate::util::object_size_info::DocumentAndContractInfo;
-use crate::util::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyRefElement, PathKeyUnknownElementSize,
-};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::object_size_info::DocumentAndContractInfo;
+use crate::util::object_size_info::PathKeyElementInfo::{
+    PathFixedSizeKeyRefElement, PathKeyUnknownElementSize,
+};
 
 use crate::util::grove_operations::BatchInsertApplyType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
@@ -31,8 +31,8 @@ use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::DocumentV0Getters;
 
 use crate::drive::votes::paths::vote_contested_resource_contract_documents_storage_path;
-use dpp::version::PlatformVersion;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Adds a document to primary storage.

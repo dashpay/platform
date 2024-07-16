@@ -1,5 +1,3 @@
-
-
 //! Genesis Time.
 //!
 //! This module defines functions relevant to the chain's genesis time.
@@ -61,8 +59,8 @@ mod tests {
         use super::*;
         use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
-        use crate::util::batch::GroveDbOpBatch;
         use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+        use crate::util::batch::GroveDbOpBatch;
 
         #[test]
         fn should_return_none_if_cache_is_empty_and_start_time_is_not_persisted() {

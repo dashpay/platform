@@ -1,9 +1,9 @@
-use dpp::block::epoch::{Epoch, EPOCH_KEY_OFFSET};
 use crate::drive::credit_pools::epochs::epoch_key_constants;
 use crate::drive::RootTree;
 use crate::error::drive::DriveError;
-use crate::error::Error;
 use crate::error::fee::FeeError;
+use crate::error::Error;
+use dpp::block::epoch::{Epoch, EPOCH_KEY_OFFSET};
 
 /// Proposer Trait for Epoch
 pub trait EpochProposers {

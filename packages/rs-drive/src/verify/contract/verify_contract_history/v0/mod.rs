@@ -1,14 +1,14 @@
 use crate::drive::contract::paths::contract_storage_path_vec;
-use crate::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use crate::verify::RootHash;
 
 use dpp::prelude::DataContract;
 use std::collections::BTreeMap;
 
-use crate::util::common::decode;
 use crate::error::drive::DriveError;
+use crate::util::common::decode;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;

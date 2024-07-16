@@ -1,4 +1,5 @@
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
+use crate::verify::RootHash;
 use crate::{
     drive::{identity::identity_path_vec, Drive},
     error::{proof::ProofError, Error},
@@ -6,7 +7,6 @@ use crate::{
 use dpp::prelude::Revision;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
-use crate::verify::RootHash;
 
 impl Drive {
     /// Verifies the revision of an identity by their identity ID.

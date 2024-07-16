@@ -1,10 +1,14 @@
-use crate::util::storage_flags::StorageFlags;
-use crate::util::object_size_info::DriveKeyInfo::{Key, KeySize};
-use crate::util::object_size_info::KeyValueInfo::{KeyRefRequest, KeyValueMaxSize};
-use crate::util::object_size_info::{DriveKeyInfo, KeyValueInfo};
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
+use crate::util::object_size_info::DriveKeyInfo::{Key, KeySize};
+use crate::util::object_size_info::KeyValueInfo::{KeyRefRequest, KeyValueMaxSize};
+use crate::util::object_size_info::{DriveKeyInfo, KeyValueInfo};
+use crate::util::storage_flags::StorageFlags;
+use crate::util::type_constants::{
+    DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8, U32_SIZE_U16, U32_SIZE_U8, U64_SIZE_U16,
+    U64_SIZE_U8,
+};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
@@ -13,7 +17,6 @@ use dpp::document::{Document, DocumentV0Getters};
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use std::borrow::Cow;
-use crate::util::type_constants::{DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8, U32_SIZE_U16, U32_SIZE_U8, U64_SIZE_U16, U64_SIZE_U8};
 
 /// Document info
 #[derive(Clone, Debug)]

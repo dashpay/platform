@@ -1,5 +1,4 @@
 use super::ContractLookupFn;
-use crate::util::object_size_info::DataContractResolvedInfo;
 use crate::drive::votes::paths::vote_contested_resource_contract_documents_indexes_path_vec;
 #[cfg(feature = "server")]
 use crate::drive::Drive;
@@ -13,6 +12,7 @@ use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+use crate::util::object_size_info::DataContractResolvedInfo;
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;

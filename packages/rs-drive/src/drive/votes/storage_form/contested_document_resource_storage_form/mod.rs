@@ -1,4 +1,3 @@
-use crate::util::type_constants::DEFAULT_HASH_SIZE_USIZE;
 use crate::drive::votes::paths::{
     ACTIVE_POLLS_TREE_KEY, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
 };
@@ -6,6 +5,7 @@ use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
 use crate::error::contract::DataContractError::{CorruptedDataContract, ProvidedContractMismatch};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_USIZE;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;

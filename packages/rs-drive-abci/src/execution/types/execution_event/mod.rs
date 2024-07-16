@@ -17,8 +17,8 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use drive::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
-use drive::util::batch::DriveOperation;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionAccessorsV0;
+use drive::util::batch::DriveOperation;
 
 /// An execution event
 #[derive(Clone)]

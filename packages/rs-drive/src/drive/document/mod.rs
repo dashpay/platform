@@ -5,9 +5,9 @@
 //!
 
 #[cfg(feature = "server")]
-use crate::util::storage_flags::StorageFlags;
-#[cfg(feature = "server")]
 use crate::drive::votes::paths::CONTESTED_DOCUMENT_STORAGE_TREE_KEY;
+#[cfg(feature = "server")]
+use crate::util::storage_flags::StorageFlags;
 #[cfg(feature = "server")]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 #[cfg(feature = "server")]
@@ -144,8 +144,8 @@ fn unique_event_id() -> [u8; 32] {
 pub(crate) mod tests {
     use std::option::Option::None;
 
-    use crate::util::storage_flags::StorageFlags;
     use crate::drive::Drive;
+    use crate::util::storage_flags::StorageFlags;
     use dpp::block::block_info::BlockInfo;
     use dpp::prelude::DataContract;
     use dpp::tests::json_document::json_document_to_contract;

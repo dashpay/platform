@@ -1,13 +1,11 @@
-
-
-#[cfg(feature = "server")]
-use crate::util::batch::GroveDbOpBatch;
 #[cfg(feature = "server")]
 use crate::drive::Drive;
 #[cfg(feature = "server")]
 use crate::error::drive::DriveError;
 #[cfg(feature = "server")]
 use crate::error::Error;
+#[cfg(feature = "server")]
+use crate::util::batch::GroveDbOpBatch;
 
 #[cfg(feature = "server")]
 use epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
@@ -186,8 +184,8 @@ mod tests {
 
     mod add_update_epoch_storage_fee_pools_operations {
         use super::*;
-        use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+        use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use dpp::block::epoch::EpochIndex;
         use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
         use dpp::fee::Credits;

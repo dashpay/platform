@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
 use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
-use crate::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
+use crate::verify::RootHash;
 use dpp::prelude::DataContract;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use platform_version::version::PlatformVersion;

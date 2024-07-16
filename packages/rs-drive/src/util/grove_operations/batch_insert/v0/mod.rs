@@ -1,12 +1,12 @@
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::fees::op::LowLevelDriveOperation;
 use crate::util::object_size_info::PathKeyElementInfo;
 use crate::util::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize, PathKeyRefElement,
     PathKeyUnknownElementSize,
 };
-use crate::drive::Drive;
-use crate::error::drive::DriveError;
-use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation;
 
 impl Drive {
     /// Pushes an "insert element" operation to `drive_operations`.

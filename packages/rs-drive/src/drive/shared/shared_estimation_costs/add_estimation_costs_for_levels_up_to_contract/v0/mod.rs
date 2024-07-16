@@ -1,7 +1,7 @@
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
-use crate::util::storage_flags::StorageFlags;
 use crate::drive::Drive;
+use crate::util::storage_flags::StorageFlags;
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};

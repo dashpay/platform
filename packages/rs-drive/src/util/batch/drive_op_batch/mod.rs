@@ -31,10 +31,10 @@ use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 
+use crate::error::drive::DriveError;
 use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
-use crate::error::drive::DriveError;
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -221,10 +221,10 @@ mod tests {
     use crate::util::batch::DriveOperation::{DataContractOperation, DocumentOperation};
 
     use crate::drive::contract::paths::contract_root_path;
-    use crate::util::storage_flags::StorageFlags;
+    use crate::drive::Drive;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo, OwnedDocumentInfo};
-    use crate::drive::Drive;
+    use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 
     #[test]

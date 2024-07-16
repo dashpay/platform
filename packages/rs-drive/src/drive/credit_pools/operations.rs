@@ -1,13 +1,15 @@
-use dpp::block::epoch::EpochIndex;
-use grovedb::batch::GroveDbOp;
-use grovedb::Element;
-use dpp::balances::credits::Creditable;
-use dpp::fee::Credits;
-use crate::drive::credit_pools::epochs::epochs_root_tree_key_constants::{KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX};
+use crate::drive::credit_pools::epochs::epochs_root_tree_key_constants::{
+    KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX,
+};
 use crate::drive::credit_pools::pools_vec_path;
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
+use dpp::balances::credits::Creditable;
+use dpp::block::epoch::EpochIndex;
+use dpp::fee::Credits;
+use grovedb::batch::GroveDbOp;
+use grovedb::Element;
 
 #[cfg(feature = "server")]
 /// Adds operations to batch to create pending pool updates tree
@@ -42,11 +44,11 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 
     mod add_create_fee_pool_trees_operations {
+        use super::*;
+        use crate::error::Error;
         use dpp::block::epoch::Epoch;
         use dpp::fee::epoch::perpetual_storage_epochs;
-        use super::*;
         use dpp::version::PlatformVersion;
-        use crate::error::Error;
 
         #[test]
         fn test_values_are_set() {
@@ -97,10 +99,10 @@ mod tests {
 
     mod update_storage_fee_distribution_pool_operation {
         use super::*;
-        use dpp::version::PlatformVersion;
         use crate::drive::credit_pools::operations;
         use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use crate::util::batch::GroveDbOpBatch;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn test_update_and_get_value() {

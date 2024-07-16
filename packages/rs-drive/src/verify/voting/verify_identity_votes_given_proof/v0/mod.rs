@@ -1,4 +1,3 @@
-use crate::verify::RootHash;
 use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::drive::votes::storage_form::contested_document_resource_storage_form::ContestedDocumentResourceVoteStorageForm;
 use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
@@ -6,6 +5,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use crate::query::ContractLookupFn;
+use crate::verify::RootHash;
 use dpp::bincode;
 use dpp::identifier::Identifier;
 use dpp::voting::votes::resource_vote::ResourceVote;

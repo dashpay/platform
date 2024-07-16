@@ -1,8 +1,5 @@
 #[cfg(feature = "server")]
 use crate::drive::contract::DataContractFetchInfo;
-use crate::util::object_size_info::DataContractOwnedResolvedInfo;
-#[cfg(any(feature = "server", feature = "verify"))]
-use crate::util::object_size_info::DataContractResolvedInfo;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
@@ -11,6 +8,9 @@ use crate::error::contract::DataContractError;
 use crate::error::Error;
 #[cfg(feature = "verify")]
 use crate::query::ContractLookupFn;
+use crate::util::object_size_info::DataContractOwnedResolvedInfo;
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::util::object_size_info::DataContractResolvedInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::prelude::DataContract;

@@ -1,7 +1,7 @@
-use crate::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::verify::RootHash;
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::version::PlatformVersion;

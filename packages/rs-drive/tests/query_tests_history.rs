@@ -1,5 +1,3 @@
-
-
 //! Query Tests History
 //!
 
@@ -29,21 +27,21 @@ use std::option::Option::None;
 use drive::util::test_helpers::setup::setup_drive;
 
 #[cfg(feature = "server")]
-use drive::util::batch::GroveDbOpBatch;
-#[cfg(feature = "server")]
 use drive::config::DriveConfig;
 #[cfg(feature = "server")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
 #[cfg(feature = "server")]
-use drive::util::storage_flags::StorageFlags;
+use drive::drive::Drive;
+#[cfg(feature = "server")]
+use drive::error::{query::QuerySyntaxError, Error};
+#[cfg(feature = "server")]
+use drive::query::DriveDocumentQuery;
+#[cfg(feature = "server")]
+use drive::util::batch::GroveDbOpBatch;
 #[cfg(feature = "server")]
 use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 #[cfg(feature = "server")]
-use drive::drive::Drive;
-#[cfg(feature = "server")]
-use drive::error::{Error, query::QuerySyntaxError};
-#[cfg(feature = "server")]
-use drive::query::DriveDocumentQuery;
+use drive::util::storage_flags::StorageFlags;
 
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
@@ -98,13 +96,17 @@ impl Person {
         seed: u64,
         block_times: Vec<u64>,
     ) -> BTreeMap<u64, Vec<Self>> {
-        let first_names =
-            test_helpers::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
-        let middle_names =
-            test_helpers::text_file_strings("tests/supporting_files/contract/family/middle-names.txt");
-        let last_names =
-            test_helpers::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
-        let quotes = test_helpers::text_file_strings("tests/supporting_files/contract/family/quotes.txt");
+        let first_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/first-names.txt",
+        );
+        let middle_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/middle-names.txt",
+        );
+        let last_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/last-names.txt",
+        );
+        let quotes =
+            test_helpers::text_file_strings("tests/supporting_files/contract/family/quotes.txt");
         let mut people: Vec<Person> = Vec::with_capacity(count);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);

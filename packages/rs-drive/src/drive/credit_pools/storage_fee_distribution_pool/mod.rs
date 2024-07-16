@@ -1,5 +1,3 @@
-
-
 //! Storage Fee Distribution Pool.
 //!
 

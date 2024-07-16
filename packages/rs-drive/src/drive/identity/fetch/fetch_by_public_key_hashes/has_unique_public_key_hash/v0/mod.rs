@@ -1,5 +1,5 @@
-use crate::util::grove_operations::DirectQueryType::StatefulDirectQuery;
 use crate::drive::{unique_key_hashes_tree_path, Drive};
+use crate::util::grove_operations::DirectQueryType::StatefulDirectQuery;
 
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;

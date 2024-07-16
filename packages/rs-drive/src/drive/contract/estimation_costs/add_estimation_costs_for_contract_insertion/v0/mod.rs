@@ -1,11 +1,8 @@
+use crate::drive::constants::{AVERAGE_NUMBER_OF_UPDATES, ESTIMATED_AVERAGE_INDEX_NAME_SIZE};
 use crate::drive::contract::paths::contract_keeping_history_root_path;
-use crate::drive::constants::{
-    AVERAGE_NUMBER_OF_UPDATES,
-    ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
-};
 use crate::drive::document::paths::contract_document_type_path;
-use crate::util::storage_flags::StorageFlags;
 use crate::drive::Drive;
+use crate::util::storage_flags::StorageFlags;
 
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -14,6 +11,7 @@ use dpp::data_contract::DataContract;
 
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
+use crate::util::type_constants::{DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
@@ -21,7 +19,6 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
-use crate::util::type_constants::{DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8};
 
 impl Drive {
     /// Adds the estimation costs for a contract insertion

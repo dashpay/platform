@@ -3,9 +3,10 @@
 //! This module defines the GroveDbOpBatch struct and implements its functions.
 //!
 
-use crate::util::storage_flags::StorageFlags;
+use crate::drive::credit_pools::epochs;
 use crate::drive::identity::IdentityRootStructure;
 use crate::drive::{credit_pools, RootTree};
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::identity::{Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
@@ -15,7 +16,6 @@ use grovedb::operations::proof::util::hex_to_ascii;
 use grovedb::Element;
 use std::borrow::Cow;
 use std::fmt;
-use crate::drive::credit_pools::epochs;
 
 /// A batch of GroveDB operations as a vector.
 // TODO move to GroveDB

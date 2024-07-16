@@ -7,11 +7,11 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
-use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use crate::drive::document::unique_event_id;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
-use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::drive::Drive;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 
 use crate::error::fee::FeeError;
 use crate::error::Error;

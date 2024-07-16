@@ -6,7 +6,7 @@ use crate::error::Error;
 use dpp::errors::ProtocolError;
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::GroveDb;
-use platform_version::version::{INITIAL_PROTOCOL_VERSION, PlatformVersion};
+use platform_version::version::{PlatformVersion, INITIAL_PROTOCOL_VERSION};
 use std::path::Path;
 
 impl Drive {

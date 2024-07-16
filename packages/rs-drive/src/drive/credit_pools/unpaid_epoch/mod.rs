@@ -1,5 +1,3 @@
-
-
 //! Unpaid Epoch.
 //!
 

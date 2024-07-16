@@ -1,6 +1,3 @@
-use crate::util::grove_operations::{BatchDeleteApplyType, BatchInsertTreeApplyType};
-use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
-use crate::util::object_size_info::PathKeyInfo;
 use crate::drive::votes::paths::{
     vote_contested_resource_identity_votes_tree_path_for_identity_vec,
     vote_contested_resource_identity_votes_tree_path_vec, VotePollPaths,
@@ -11,6 +8,9 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
+use crate::util::grove_operations::{BatchDeleteApplyType, BatchInsertTreeApplyType};
+use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
+use crate::util::object_size_info::PathKeyInfo;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;

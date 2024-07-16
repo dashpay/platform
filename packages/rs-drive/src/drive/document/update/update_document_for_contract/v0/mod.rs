@@ -1,9 +1,9 @@
-use crate::util::storage_flags::StorageFlags;
-use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
-use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;

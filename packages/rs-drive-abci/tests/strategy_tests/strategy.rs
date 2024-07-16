@@ -26,9 +26,9 @@ use dpp::state_transition::data_contract_update_transition::DataContractUpdateTr
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
-use drive::util::storage_flags::StorageFlags::SingleEpoch;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
+use drive::util::storage_flags::StorageFlags::SingleEpoch;
 
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};

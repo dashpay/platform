@@ -41,11 +41,9 @@ mod tests {
     use std::borrow::Cow;
     use std::option::Option::None;
 
-    use crate::util::storage_flags::StorageFlags;
-    use crate::util::object_size_info::{
-        DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
-    };
     use crate::drive::Drive;
+    use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;

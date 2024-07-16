@@ -1,12 +1,11 @@
-use dpp::block::epoch::Epoch;
-use grovedb::TransactionArg;
-use platform_version::version::PlatformVersion;
 use crate::drive::credit_pools::pools_path;
 use crate::drive::Drive;
 use crate::error::Error;
+use dpp::block::epoch::Epoch;
+use grovedb::TransactionArg;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
-
     /// Checks if an Epoch tree exists. Returns a bool.
     /// Does not need to be versioned as it is very simple
     pub fn has_epoch_tree_exists(
@@ -34,8 +33,8 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 
     mod has_epoch_tree_exists {
-        use dpp::block::epoch::Epoch;
         use super::*;
+        use dpp::block::epoch::Epoch;
 
         use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
         use platform_version::version::PlatformVersion;

@@ -19,8 +19,8 @@ use dpp::serialization::{
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::ProtocolError;
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
-use drive::util::object_size_info::DataContractOwnedResolvedInfo;
 use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+use drive::util::object_size_info::DataContractOwnedResolvedInfo;
 use platform_version::version::PlatformVersion;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use rand::distributions::{Distribution, WeightedIndex};

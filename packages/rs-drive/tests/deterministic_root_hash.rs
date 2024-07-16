@@ -1,5 +1,3 @@
-
-
 //! Deterministic Root Hash Tests
 
 use grovedb_path::SubtreePath;
@@ -26,9 +24,9 @@ use serde::{Deserialize, Serialize};
 use drive::util::storage_flags::StorageFlags;
 
 #[cfg(feature = "server")]
-use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-#[cfg(feature = "server")]
 use drive::drive::{Drive, RootTree};
+#[cfg(feature = "server")]
+use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
@@ -76,8 +74,9 @@ impl Domain {
         seed: u64,
         normalized_parent_domain_name: &str,
     ) -> Vec<Self> {
-        let first_names =
-            test_helpers::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
+        let first_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/first-names.txt",
+        );
         let mut vec: Vec<Domain> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);

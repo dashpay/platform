@@ -1,10 +1,10 @@
-use crate::util::storage_flags::StorageFlags;
-use crate::util::grove_operations::BatchInsertTreeApplyType;
-use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKey;
 use crate::drive::{identity_tree_path, Drive};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKey;
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::accessors::IdentityGettersV0;

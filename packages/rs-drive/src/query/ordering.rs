@@ -1,5 +1,3 @@
-
-
 //! Query Ordering
 //!
 

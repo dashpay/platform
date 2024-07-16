@@ -1,10 +1,10 @@
+use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::util::batch::DriveOperation::{DocumentOperation, IdentityOperation, SystemOperation};
 use crate::util::batch::{
     DocumentOperationType, DriveOperation, IdentityOperationType, SystemOperationType,
 };
 use crate::util::object_size_info::{DocumentInfo, OwnedDocumentInfo};
-use crate::error::Error;
 use dpp::block::epoch::Epoch;
 
 use crate::error::drive::DriveError;

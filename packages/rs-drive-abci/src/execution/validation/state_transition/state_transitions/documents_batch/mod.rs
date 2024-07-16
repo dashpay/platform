@@ -258,8 +258,8 @@ mod tests {
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use dpp::tests::json_document::json_document_to_contract;
     use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
-    use drive::util::storage_flags::StorageFlags;
     use drive::query::DriveDocumentQuery;
+    use drive::util::storage_flags::StorageFlags;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;

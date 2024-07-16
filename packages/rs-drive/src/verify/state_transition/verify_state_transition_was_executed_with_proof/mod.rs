@@ -1,10 +1,10 @@
 //! Verifies the execution of a state transition using a provided proof.
 //!
-use crate::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::ContractLookupFn;
+use crate::verify::RootHash;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;

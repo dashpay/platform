@@ -8,9 +8,9 @@ use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
-use drive::util::batch::DriveOperation;
 use drive::drive::Drive;
 use drive::grovedb::Transaction;
+use drive::util::batch::DriveOperation;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;

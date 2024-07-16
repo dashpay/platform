@@ -1,8 +1,6 @@
-use crate::util::object_size_info::key_value_info::KeyValueInfo::{
-    KeyRefRequest, KeyValueMaxSize,
-};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::object_size_info::key_value_info::KeyValueInfo::{KeyRefRequest, KeyValueMaxSize};
 
 /// Key value info
 #[derive(Clone)]

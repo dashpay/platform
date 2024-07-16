@@ -1,5 +1,5 @@
-use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use crate::drive::{constants, RootTree};
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentTypeRef;

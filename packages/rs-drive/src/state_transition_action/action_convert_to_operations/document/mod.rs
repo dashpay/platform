@@ -1,5 +1,5 @@
-use crate::util::batch::DriveOperation;
 use crate::error::Error;
+use crate::util::batch::DriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::platform_value::Identifier;
 use dpp::version::PlatformVersion;

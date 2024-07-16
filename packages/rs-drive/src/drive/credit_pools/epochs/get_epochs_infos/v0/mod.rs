@@ -10,12 +10,12 @@ use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
 use std::u64;
 
-use crate::drive::credit_pools::pools_vec_path;
-use crate::error::query::QuerySyntaxError;
 use crate::drive::credit_pools::epochs::epoch_key_constants::{
     KEY_FEE_MULTIPLIER, KEY_PROTOCOL_VERSION, KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT,
     KEY_START_TIME,
 };
+use crate::drive::credit_pools::pools_vec_path;
+use crate::error::query::QuerySyntaxError;
 use crate::query::QueryItem;
 use dpp::version::PlatformVersion;
 

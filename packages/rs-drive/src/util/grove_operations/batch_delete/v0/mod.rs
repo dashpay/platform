@@ -1,8 +1,8 @@
-use crate::util::grove_operations::{push_drive_operation_result, BatchDeleteApplyType};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::grove_operations::{push_drive_operation_result, BatchDeleteApplyType};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::operations::delete::DeleteOptions;

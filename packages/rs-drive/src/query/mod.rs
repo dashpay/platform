@@ -15,22 +15,22 @@ pub use {
 use {
     crate::{
         drive::contract::paths::DataContractPaths,
-        error::{drive::DriveError, Error, query::QuerySyntaxError},
+        error::{drive::DriveError, query::QuerySyntaxError, Error},
     },
     dpp::{
         data_contract::{
             accessors::v0::DataContractV0Getters,
-            DataContract,
             document_type::{accessors::DocumentTypeV0Getters, methods::DocumentTypeV0Methods},
             document_type::{DocumentTypeRef, Index, IndexProperty},
+            DataContract,
         },
         document::{
-            Document,
-            document_methods::DocumentMethodsV0, DocumentV0Getters, serialization_traits::DocumentPlatformConversionMethodsV0,
+            document_methods::DocumentMethodsV0,
+            serialization_traits::DocumentPlatformConversionMethodsV0, Document, DocumentV0Getters,
         },
         platform_value::{btreemap_extensions::BTreeValueRemoveFromMapHelper, Value},
-        ProtocolError,
         version::PlatformVersion,
+        ProtocolError,
     },
     indexmap::IndexMap,
     sqlparser::{
@@ -46,17 +46,13 @@ use crate::verify::RootHash;
 
 #[cfg(feature = "server")]
 pub use grovedb::{
-    Element,
-    Error as GroveError, query_result_type::{QueryResultElements, QueryResultType}, TransactionArg,
+    query_result_type::{QueryResultElements, QueryResultType},
+    Element, Error as GroveError, TransactionArg,
 };
 
 #[cfg(feature = "server")]
 use {
-    crate::{
-        drive::Drive,
-        error::Error::GroveDB,
-        fees::op::LowLevelDriveOperation,
-    },
+    crate::{drive::Drive, error::Error::GroveDB, fees::op::LowLevelDriveOperation},
     dpp::block::block_info::BlockInfo,
 };
 
@@ -1928,9 +1924,9 @@ mod tests {
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    use crate::util::storage_flags::StorageFlags;
     use crate::drive::Drive;
     use crate::query::DriveDocumentQuery;
+    use crate::util::storage_flags::StorageFlags;
 
     use dpp::data_contract::DataContract;
 

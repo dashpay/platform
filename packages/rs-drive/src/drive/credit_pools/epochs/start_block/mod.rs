@@ -1,5 +1,3 @@
-
-
 //! Epoch Start Blocks
 //!
 //! This modules implements functions in Drive relevant to Epoch start blocks.
@@ -32,12 +30,12 @@ mod tests {
 
     mod get_epoch_start_block_height {
         use super::*;
-        use crate::error::drive::DriveError;
-        use crate::error::Error;
         use crate::drive::credit_pools::epochs::epoch_key_constants::{
             KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT,
         };
         use crate::drive::credit_pools::epochs::paths::EpochProposers;
+        use crate::error::drive::DriveError;
+        use crate::error::Error;
         use dpp::block::epoch::Epoch;
         use dpp::version::PlatformVersion;
         use grovedb::Element;
@@ -211,9 +209,9 @@ mod tests {
 
     mod get_first_epoch_start_block_height_between_epochs {
         use super::*;
+        use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
         use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use crate::util::batch::GroveDbOpBatch;
-        use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
         use dpp::block::epoch::Epoch;
         use dpp::version::PlatformVersion;
 

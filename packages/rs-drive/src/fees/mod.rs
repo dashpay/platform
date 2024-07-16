@@ -1,8 +1,8 @@
-use crate::error::Error;
 use crate::error::fee::FeeError;
+use crate::error::Error;
 
-pub mod op;
 mod calculate_fee;
+pub mod op;
 
 /// Get overflow error
 pub fn get_overflow_error(str: &'static str) -> Error {

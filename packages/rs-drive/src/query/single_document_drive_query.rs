@@ -1,5 +1,5 @@
-use crate::util::common::encode::encode_u64;
 use crate::drive::document::paths::contract_document_type_path_vec;
+use crate::util::common::encode::encode_u64;
 
 use crate::drive::votes;
 use crate::error::query::QuerySyntaxError;

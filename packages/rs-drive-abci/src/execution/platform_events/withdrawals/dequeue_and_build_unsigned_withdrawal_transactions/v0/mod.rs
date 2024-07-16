@@ -13,9 +13,9 @@ use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::withdrawals_contract;
 use drive::dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
-use drive::util::batch::DriveOperation;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use drive::query::TransactionArg;
+use drive::util::batch::DriveOperation;
 
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use crate::rpc::core::CoreHeight;

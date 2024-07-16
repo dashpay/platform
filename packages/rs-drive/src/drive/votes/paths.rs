@@ -1,4 +1,3 @@
-use crate::util::common::encode::encode_u64;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{
     ContestedDocumentResourceVotePollWithContractInfo,
     ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed,
@@ -6,6 +5,7 @@ use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_
 use crate::drive::votes::ResourceVoteChoiceToKeyTrait;
 use crate::drive::RootTree;
 use crate::error::Error;
+use crate::util::common::encode::encode_u64;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::IndexProperty;

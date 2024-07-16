@@ -1,5 +1,3 @@
-
-
 //! Drive Constants
 //!
 //! Constants values that will NEVER change.

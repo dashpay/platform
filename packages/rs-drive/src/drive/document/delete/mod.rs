@@ -58,13 +58,13 @@ mod tests {
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    use crate::util::test_helpers::setup_contract;
     use crate::config::DriveConfig;
     use crate::drive::document::tests::setup_dashpay;
-    use crate::util::storage_flags::StorageFlags;
+    use crate::drive::Drive;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-    use crate::drive::Drive;
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup_contract;
 
     use crate::query::DriveDocumentQuery;
     use dpp::block::epoch::Epoch;

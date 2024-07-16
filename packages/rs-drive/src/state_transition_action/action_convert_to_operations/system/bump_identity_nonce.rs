@@ -1,11 +1,11 @@
-use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
-use crate::util::batch::DriveOperation::IdentityOperation;
-use crate::util::batch::{DriveOperation, IdentityOperationType};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::system::bump_identity_nonce_action::{
     BumpIdentityNonceAction, BumpIdentityNonceActionAccessorsV0,
 };
+use crate::util::batch::DriveOperation::IdentityOperation;
+use crate::util::batch::{DriveOperation, IdentityOperationType};
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 

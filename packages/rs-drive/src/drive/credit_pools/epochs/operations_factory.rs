@@ -3,17 +3,17 @@
 //! Defines and implements in `Epoch` functions relevant to epoch management.
 //!
 
-use crate::util::batch::GroveDbOpBatch;
 use crate::drive::credit_pools::paths::pools_vec_path;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::util::batch::GroveDbOpBatch;
 
-use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::credit_pools::epochs::epoch_key_constants::{
     KEY_FEE_MULTIPLIER, KEY_POOL_PROCESSING_FEES, KEY_POOL_STORAGE_FEES, KEY_PROPOSERS,
     KEY_PROTOCOL_VERSION, KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT, KEY_START_TIME,
 };
 use crate::drive::credit_pools::epochs::paths::EpochProposers;
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use dpp::balances::credits::Creditable;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;

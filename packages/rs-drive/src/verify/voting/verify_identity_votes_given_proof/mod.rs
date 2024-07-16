@@ -1,8 +1,8 @@
 mod v0;
 
-use crate::verify::RootHash;
 use crate::error::drive::DriveError;
 use crate::query::ContractLookupFn;
+use crate::verify::RootHash;
 use dpp::identifier::Identifier;
 
 use crate::error::Error;

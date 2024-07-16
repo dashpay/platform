@@ -21,10 +21,10 @@ use drive::util::batch::{
     DataContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
 
+use drive::query::TransactionArg;
 use drive::util::object_size_info::{
     DataContractInfo, DocumentInfo, DocumentTypeInfo, OwnedDocumentInfo,
 };
-use drive::query::TransactionArg;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 

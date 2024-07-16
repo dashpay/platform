@@ -1,9 +1,9 @@
+use crate::verify::RootHash;
 use crate::{
     drive::Drive,
     error::{proof::ProofError, Error},
 };
 use platform_version::version::PlatformVersion;
-use crate::verify::RootHash;
 
 impl Drive {
     /// Verifies the balance and the reviof an identity by their identity ID.

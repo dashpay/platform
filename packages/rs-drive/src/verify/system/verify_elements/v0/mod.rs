@@ -1,7 +1,7 @@
-use crate::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::Query;
+use crate::verify::RootHash;
 use grovedb::query_result_type::PathKeyOptionalElementTrio;
 use grovedb::{Element, GroveDb, PathQuery, SizedQuery};
 use grovedb_version::TryIntoVersioned;

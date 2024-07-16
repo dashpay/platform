@@ -14,14 +14,14 @@ use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::document_reference_size;
 use crate::util::storage_flags::StorageFlags;
 
-use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::drive::Drive;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
-use dpp::version::PlatformVersion;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Removes the terminal reference.

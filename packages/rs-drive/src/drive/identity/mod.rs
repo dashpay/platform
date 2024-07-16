@@ -1,14 +1,12 @@
-
-
 //! This module defines functions within the Drive struct related to identities.
 //! Functions include inserting new identities into the `Identities` subtree and
 //! fetching identities from the subtree.
 //!
 
-#[cfg(feature = "server")]
-use crate::util::object_size_info::DriveKeyInfo;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::RootTree;
+#[cfg(feature = "server")]
+use crate::util::object_size_info::DriveKeyInfo;
 use std::fmt;
 
 #[cfg(any(feature = "server", feature = "verify"))]

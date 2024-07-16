@@ -1,5 +1,3 @@
-
-
 //! Insert Documents.
 //!
 //! This module implements functions in Drive relevant to inserting documents.
@@ -51,11 +49,11 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use rand::{random, Rng};
 
-    use crate::util::test_helpers::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
-    use crate::util::storage_flags::StorageFlags;
-    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::fees::op::LowLevelDriveOperation;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup_contract;
     use once_cell::sync::Lazy;
     use std::collections::BTreeMap;
 

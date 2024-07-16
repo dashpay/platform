@@ -12,8 +12,8 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
 
-    use dpp::version::PlatformVersion;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::version::PlatformVersion;
 
     #[test]
     fn test_enqueue_and_dequeue() {

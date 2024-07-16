@@ -1,9 +1,9 @@
 use crate::drive::protocol_upgrade::versions_counter_path_vec;
-use crate::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::{Query, QueryItem};
+use crate::verify::RootHash;
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::{GroveDb, PathQuery};
 use integer_encoding::VarInt;

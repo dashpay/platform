@@ -1,9 +1,9 @@
-use crate::util::grove_operations::BatchDeleteUpTreeApplyType;
 use crate::drive::votes::paths::vote_contested_resource_end_date_queries_at_time_tree_path_vec;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::BatchDeleteUpTreeApplyType;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;

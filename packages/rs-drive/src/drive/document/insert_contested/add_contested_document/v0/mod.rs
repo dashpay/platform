@@ -1,8 +1,8 @@
-use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::fee::fee_result::FeeResult;

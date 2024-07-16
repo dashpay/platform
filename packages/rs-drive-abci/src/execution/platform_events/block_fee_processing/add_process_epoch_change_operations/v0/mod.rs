@@ -38,10 +38,10 @@ use std::option::Option::None;
 use dpp::block::epoch::Epoch;
 use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX};
 use dpp::version::PlatformVersion;
-use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use drive::util::batch::{DriveOperation, GroveDbOpBatch};
 use drive::error;
 use drive::grovedb::Transaction;
+use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use drive::util::batch::{DriveOperation, GroveDbOpBatch};
 
 use crate::error::Error;
 use crate::execution::types::block_fees::v0::BlockFeesV0Getters;

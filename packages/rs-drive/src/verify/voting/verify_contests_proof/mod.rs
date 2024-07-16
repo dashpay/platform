@@ -1,7 +1,7 @@
 mod v0;
 
-use crate::verify::RootHash;
 use crate::error::drive::DriveError;
+use crate::verify::RootHash;
 use dpp::platform_value::Value;
 
 use crate::error::Error;

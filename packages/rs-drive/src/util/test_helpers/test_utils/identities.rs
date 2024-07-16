@@ -3,11 +3,11 @@
 //! This module defines helper functions pertinent to identities in Drive.
 //!
 
-use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use crate::util::batch::GroveDbOpBatch;
+use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::batch::GroveDbOpBatch;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::identifier::Identifier;

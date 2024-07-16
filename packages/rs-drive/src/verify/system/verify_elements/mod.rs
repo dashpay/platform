@@ -1,7 +1,7 @@
-use crate::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 use grovedb::Element;
 use std::collections::BTreeMap;

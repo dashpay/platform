@@ -1,7 +1,7 @@
 use crate::drive::constants::ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE;
 
-use crate::util::storage_flags::StorageFlags;
 use crate::drive::{contract_documents_path, Drive};
+use crate::util::storage_flags::StorageFlags;
 
 use dpp::data_contract::DataContract;
 use grovedb::batch::KeyInfoPath;

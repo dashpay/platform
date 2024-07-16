@@ -1,11 +1,11 @@
 use dpp::balances::credits::Creditable;
 use grovedb::{Element, TransactionArg};
 
+use crate::drive::credit_pools::epochs::epoch_key_constants;
+use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::drive::credit_pools::epochs::epoch_key_constants;
-use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
 use platform_version::version::PlatformVersion;
 
@@ -44,8 +44,8 @@ mod tests {
     use crate::error::drive::DriveError;
     use crate::error::Error;
 
-    use crate::drive::credit_pools::epochs::paths::EpochProposers;
     use crate::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
+    use crate::drive::credit_pools::epochs::paths::EpochProposers;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use dpp::version::PlatformVersion;

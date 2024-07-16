@@ -1,5 +1,3 @@
-
-
 //! Decoding.
 //!
 //! This module defines decoding functions.

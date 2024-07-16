@@ -1,9 +1,9 @@
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 
+use crate::drive::Drive;
 use crate::util::object_size_info::{
     DocumentAndContractInfo, DocumentInfoV0Methods, DriveKeyInfo, PathInfo,
 };
-use crate::drive::Drive;
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -11,12 +11,12 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
-use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use crate::drive::votes::paths::{
     vote_contested_resource_contract_documents_indexes_path_vec,
     RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
 };
 use crate::error::drive::DriveError;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::IndexProperty;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;

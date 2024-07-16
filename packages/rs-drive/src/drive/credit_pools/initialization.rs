@@ -1,12 +1,12 @@
-use dpp::block::epoch::Epoch;
-use dpp::fee::epoch::{GENESIS_EPOCH_INDEX, perpetual_storage_epochs};
-use dpp::util::deserializer::ProtocolVersion;
+use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
 use crate::drive::credit_pools::operations;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
+use dpp::block::epoch::Epoch;
+use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX};
+use dpp::util::deserializer::ProtocolVersion;
 
 impl Drive {
     #[cfg(feature = "server")]
@@ -17,10 +17,14 @@ impl Drive {
         protocol_version: ProtocolVersion,
     ) -> Result<(), Error> {
         // Init storage credit pool
-        batch.push(operations::update_storage_fee_distribution_pool_operation(0)?);
+        batch.push(operations::update_storage_fee_distribution_pool_operation(
+            0,
+        )?);
 
         // Init next epoch to pay
-        batch.push(operations::update_unpaid_epoch_index_operation(GENESIS_EPOCH_INDEX));
+        batch.push(operations::update_unpaid_epoch_index_operation(
+            GENESIS_EPOCH_INDEX,
+        ));
 
         operations::add_create_pending_epoch_refunds_tree_operations(batch);
 

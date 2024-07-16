@@ -15,8 +15,8 @@ use crate::util::storage_flags::StorageFlags;
 
 use crate::util::object_size_info::DriveKeyInfo::KeyRef;
 
-use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::drive::Drive;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 
 use crate::error::fee::FeeError;
 use crate::error::Error;

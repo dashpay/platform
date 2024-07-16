@@ -8,9 +8,9 @@ mod document;
 mod identity;
 mod system;
 
-use crate::util::batch::DriveOperation;
 use crate::error::Error;
 use crate::state_transition_action::StateTransitionAction;
+use crate::util::batch::DriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 

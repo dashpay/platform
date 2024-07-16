@@ -1,13 +1,11 @@
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
-use crate::util::batch::DriveOperation::{
-    IdentityOperation, PrefundedSpecializedBalanceOperation,
-};
+use crate::util::batch::DriveOperation::{IdentityOperation, PrefundedSpecializedBalanceOperation};
 use crate::util::batch::{DriveOperation, IdentityOperationType};
 
-use crate::util::batch::drive_op_batch::PrefundedSpecializedBalanceOperationType;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
+use crate::util::batch::drive_op_batch::PrefundedSpecializedBalanceOperationType;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;

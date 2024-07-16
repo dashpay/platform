@@ -1,6 +1,5 @@
 use crate::drive::constants::{
-    ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE,
-    ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
+    ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE, ESTIMATED_AVERAGE_INDEX_NAME_SIZE,
 };
 
 use crate::drive::Drive;
@@ -17,13 +16,13 @@ use crate::drive::votes::paths::{
     vote_contested_resource_contract_documents_indexes_path, vote_contested_resource_tree_path,
     vote_root_path,
 };
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
 use std::collections::HashMap;
-use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 impl Drive {
     /// Adds estimated costs for layers up to the contract level.

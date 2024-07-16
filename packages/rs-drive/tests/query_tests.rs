@@ -5,24 +5,24 @@ use ciborium::cbor;
 #[cfg(feature = "server")]
 use dpp::data_contract::DataContractFactory;
 #[cfg(feature = "server")]
-use drive::util::test_helpers::setup_contract;
-#[cfg(feature = "server")]
-use drive::util::batch::GroveDbOpBatch;
-#[cfg(feature = "server")]
 use drive::config::DriveConfig;
-#[cfg(feature = "server")]
-use drive::util::storage_flags::StorageFlags;
-#[cfg(feature = "server")]
-use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 #[cfg(feature = "server")]
 use drive::drive::Drive;
 #[cfg(feature = "server")]
-use drive::error::{Error, query::QuerySyntaxError};
+use drive::error::{query::QuerySyntaxError, Error};
 #[cfg(feature = "server")]
 use drive::query::DriveDocumentQuery;
 #[cfg(feature = "server")]
+use drive::util::batch::GroveDbOpBatch;
+#[cfg(feature = "server")]
+use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+#[cfg(feature = "server")]
+use drive::util::storage_flags::StorageFlags;
+#[cfg(feature = "server")]
 #[cfg(test)]
 use drive::util::test_helpers::setup::setup_drive;
+#[cfg(feature = "server")]
+use drive::util::test_helpers::setup_contract;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use rand::random;
@@ -52,7 +52,7 @@ use std::sync::Arc;
 use dpp::document::Document;
 #[cfg(feature = "server")]
 use dpp::platform_value::Value;
-use dpp::platform_value::{Bytes32, Identifier, platform_value};
+use dpp::platform_value::{platform_value, Bytes32, Identifier};
 
 #[cfg(feature = "server")]
 use base64::Engine;
@@ -77,9 +77,9 @@ use once_cell::sync::Lazy;
 
 use dpp::version::PlatformVersion;
 
-use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "server")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
+use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 #[cfg(feature = "server")]
@@ -108,12 +108,15 @@ struct Person {
 #[cfg(feature = "server")]
 impl Person {
     fn random_people(count: u32, seed: u64) -> Vec<Self> {
-        let first_names =
-            test_helpers::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
-        let middle_names =
-            test_helpers::text_file_strings("tests/supporting_files/contract/family/middle-names.txt");
-        let last_names =
-            test_helpers::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
+        let first_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/first-names.txt",
+        );
+        let middle_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/middle-names.txt",
+        );
+        let last_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/last-names.txt",
+        );
         let mut vec: Vec<Person> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -149,12 +152,15 @@ struct PersonWithOptionalValues {
 #[cfg(feature = "server")]
 impl PersonWithOptionalValues {
     fn random_people(count: u32, seed: u64) -> Vec<Self> {
-        let first_names =
-            test_helpers::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
-        let middle_names =
-            test_helpers::text_file_strings("tests/supporting_files/contract/family/middle-names.txt");
-        let last_names =
-            test_helpers::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
+        let first_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/first-names.txt",
+        );
+        let middle_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/middle-names.txt",
+        );
+        let last_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/last-names.txt",
+        );
         let mut vec: Vec<PersonWithOptionalValues> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -564,8 +570,9 @@ impl Domain {
         seed: u64,
         normalized_parent_domain_name: &str,
     ) -> Vec<Self> {
-        let first_names =
-            test_helpers::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
+        let first_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/first-names.txt",
+        );
         let mut vec: Vec<Domain> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);

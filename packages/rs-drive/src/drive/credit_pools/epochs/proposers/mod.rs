@@ -1,5 +1,3 @@
-
-
 //! Epoch Proposers.
 //!
 //! This module implements functions in Drive relevant to block proposers.
