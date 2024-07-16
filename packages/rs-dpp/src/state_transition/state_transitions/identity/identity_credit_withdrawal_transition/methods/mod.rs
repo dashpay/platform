@@ -38,11 +38,11 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
         user_fee_increase: UserFeeIncrease,
         signer: S,
         nonce: IdentityNonce,
-        _platform_version: &PlatformVersion,
-        _version: Option<FeatureVersion>,
+        platform_version: &PlatformVersion,
+        version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
-        match _version.unwrap_or(
-            _platform_version
+        match version.unwrap_or(
+            platform_version
                 .dpp
                 .state_transition_conversion_versions
                 .identity_to_identity_withdrawal_transition,
@@ -57,8 +57,8 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
                 user_fee_increase,
                 signer,
                 nonce,
-                _platform_version,
-                _version,
+                platform_version,
+                version,
             )?),
             v => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityCreditWithdrawalTransition version for try_from_identity {v}"

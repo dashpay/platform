@@ -29,8 +29,8 @@ pub trait IdentityCreditWithdrawalTransitionMethodsV0 {
         user_fee_increase: UserFeeIncrease,
         signer: S,
         nonce: IdentityNonce,
-        _platform_version: &PlatformVersion,
-        _version: Option<FeatureVersion>,
+        platform_version: &PlatformVersion,
+        version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;
 
     /// Get State Transition Type
