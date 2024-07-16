@@ -1,8 +1,7 @@
 #[cfg(test)]
 mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-    use drive::drive::config::DriveConfig;
-    use std::any::Any;
+    use drive::config::DriveConfig;
     use std::collections::{BTreeMap, HashMap};
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};

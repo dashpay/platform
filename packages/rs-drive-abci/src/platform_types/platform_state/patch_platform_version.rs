@@ -3,7 +3,7 @@ use crate::error::Error;
 use dpp::prelude::BlockHeight;
 use dpp::version::patches::PATCHES;
 use dpp::version::PlatformVersion;
-use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
+use dpp::version::INITIAL_PROTOCOL_VERSION;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::platform_types::platform_state::v0::{
