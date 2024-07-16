@@ -24,45 +24,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Set up sccache environment variables
-        run: |
-          echo "SCCACHE_BUCKET=${{ secrets.SCCACHE_BUCKET }}" >> $GITHUB_ENV
-          echo "SCCACHE_REGION=${{ secrets.SCCACHE_REGION }}" >> $GITHUB_ENV
-          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
-          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=/home/ubuntu/.cargo/bin/sccache" >> $GITHUB_ENV
-          echo "PATH=/home/ubuntu/.cargo/bin:$PATH" >> $GITHUB_ENV
-
-      - name: Verify sccache installation
-        run: |
-          echo "Checking sccache installation..."
-          which sccache
-          sccache --version
-
-      - name: Print environment variables for debugging
-        run: env
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Login to ECR
-        run: aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+        run: aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
         shell: bash
 
       - name: Build and push by SHA
         uses: ./.github/actions/docker
         with:
           image_name: ${{ inputs.image_name }}
-          image_org: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+          image_org: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
           target: ${{ inputs.target }}
           platform: linux/arm64
           push_tags: true
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
-          region: ${{ secrets.AWS_REGION }}
-          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region: ${{ vars.AWS_REGION }}
