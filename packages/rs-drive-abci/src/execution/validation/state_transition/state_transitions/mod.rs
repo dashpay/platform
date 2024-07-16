@@ -56,7 +56,7 @@ pub(crate) mod tests {
     use crate::test::helpers::setup::TempPlatform;
     use dpp::block::block_info::BlockInfo;
     use dpp::fee::Credits;
-    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
+    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityNonce};
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
@@ -194,6 +194,86 @@ pub(crate) mod tests {
             .expect("expected to add a new identity");
 
         (identity, signer, critical_public_key)
+    }
+
+    pub(crate) fn setup_identity_with_withdrawal_key_and_system_credits(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        seed: u64,
+        credits: Credits,
+    ) -> (Identity, SimpleSigner, IdentityPublicKey, IdentityPublicKey) {
+        let platform_version = PlatformVersion::latest();
+        platform
+            .drive
+            .add_to_system_credits(credits, None, platform_version)
+            .expect("expected to add to system credits");
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                0,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
+        let (critical_public_key, private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
+                1,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(critical_public_key.clone(), private_key.clone());
+
+        let (withdrawal_public_key, withdrawal_private_key) =
+            IdentityPublicKey::random_key_with_known_attributes(
+                2,
+                &mut rng,
+                Purpose::TRANSFER,
+                SecurityLevel::CRITICAL,
+                KeyType::ECDSA_SECP256K1,
+                None,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(
+            withdrawal_public_key.clone(),
+            withdrawal_private_key.clone(),
+        );
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([
+                (0, master_key.clone()),
+                (1, critical_public_key.clone()),
+                (2, withdrawal_public_key.clone()),
+            ]),
+            balance: credits,
+            revision: 0,
+        }
+        .into();
+
+        // We just add this identity to the system first
+
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new identity");
+
+        (identity, signer, critical_public_key, withdrawal_public_key)
     }
 
     pub(crate) fn process_state_transitions(
