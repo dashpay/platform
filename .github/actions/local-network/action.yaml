@@ -94,11 +94,6 @@ runs:
 
         cat /home/ubuntu/.dashmate/config.json
 
-    # TODO: Remove debug info
-    - name: Show containers
-      run: docker ps -a
-      shell: bash
-
     - name: Start local network
       shell: bash
       run: yarn start
