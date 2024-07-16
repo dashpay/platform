@@ -4,7 +4,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use dashcore_rpc::json::{ExtendedQuorumListResult, QuorumType};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use crate::platform_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
@@ -323,7 +323,8 @@ where
         last_committed_core_height: u32,
         next_core_height: u32,
     ) -> Result<bool, Error> {
-        let quorums_list: BTreeSet<_> = full_quorum_list
+        // TODO: Use HashSet, we don't need to update index for existing quorums
+        let quorums_list: BTreeMap<_, _> = full_quorum_list
             .quorums_by_type
             .get(&quorum_set_type.quorum_type())
             .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
@@ -333,40 +334,49 @@ where
                 ),
             )))?
             .iter()
-            .map(|(quorum_hash, _)| quorum_hash)
+            .map(|(quorum_hash, extended_quorum_details)| {
+                (quorum_hash, extended_quorum_details.quorum_index)
+            })
             .collect();
 
         let mut removed_a_validating_quorum = false;
 
         // Remove validating_quorums entries that are no longer valid for the core block height
-        quorum_set.current_quorums_mut().retain(|quorum_hash, _| {
-            let retain = quorums_list.contains(quorum_hash);
+        // and update quorum index for existing validator sets
+        quorum_set
+            .current_quorums_mut()
+            .retain(|quorum_hash, quorum| {
+                let retain = match quorums_list.get(quorum_hash) {
+                    Some(index) => {
+                        quorum.index = *index;
+                        true
+                    }
+                    None => false,
+                };
 
-            if !retain {
-                removed_a_validating_quorum = true;
-
-                tracing::trace!(
-                    ?quorum_hash,
-                    quorum_type = ?quorum_set_type.quorum_type(),
-                    "removed old {} quorum {}",
-                    quorum_set_type,
-                    quorum_hash,
-                );
-            }
-
-            retain
-        });
+                if !retain {
+                    tracing::trace!(
+                        ?quorum_hash,
+                        quorum_type = ?quorum_set_type.quorum_type(),
+                        "removed old {} quorum {}",
+                        quorum_set_type,
+                        quorum_hash,
+                    );
+                }
+                removed_a_validating_quorum |= !retain;
+                retain
+            });
 
         // Fetch quorum info and their keys from the RPC for new quorums
         // and then create VerificationQuorum instances
         let new_quorums = quorums_list
             .into_iter()
-            .filter(|quorum_hash| {
+            .filter(|(quorum_hash, _)| {
                 !quorum_set
                     .current_quorums()
                     .contains_key::<QuorumHash>(quorum_hash)
             })
-            .map(|quorum_hash| {
+            .map(|(quorum_hash, index)| {
                 let quorum_info = self.core_rpc.get_quorum_info(
                     quorum_set_type.quorum_type(),
                     quorum_hash,
@@ -381,29 +391,17 @@ where
                         Err(e) => return Err(e.into()),
                     };
 
-                let quorum_index = if quorum_info.quorum_index == 0 {
-                    None
-                } else {
-                    Some(quorum_info.quorum_index)
-                };
-
                 tracing::trace!(
                     ?public_key,
                     ?quorum_hash,
-                    quorum_index,
+                    index,
                     quorum_type = ?quorum_set_type.quorum_type(),
                     "add new {} quorum {}",
                     quorum_set_type,
                     quorum_hash,
                 );
 
-                Ok((
-                    *quorum_hash,
-                    VerificationQuorum {
-                        public_key,
-                        index: quorum_index,
-                    },
-                ))
+                Ok((*quorum_hash, VerificationQuorum { public_key, index }))
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
