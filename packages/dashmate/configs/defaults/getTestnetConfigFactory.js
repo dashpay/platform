@@ -25,7 +25,7 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:21.0.0-rc.1',
+          image: 'dashpay/dashd:21.0.0-devpr6115.db828177',
           commandArgs: [],
         },
         p2p: {
