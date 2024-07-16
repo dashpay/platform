@@ -46,7 +46,7 @@ impl<C> Platform<C> {
             total_hpmns,
             required_upgraded_hpmns,
             all_votes = ?protocol_versions_counter.global_cache,
-            versions_passing_threshold = versions_passing_threshold.len(),
+            ?versions_passing_threshold,
             "Protocol version voting is finished. {} versions passing the threshold: {:?}",
             versions_passing_threshold.len(),
             versions_passing_threshold

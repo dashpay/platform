@@ -213,16 +213,26 @@ impl<C> Platform<C> {
         drive: Drive,
         core_rpc: C,
         config: PlatformConfig,
-        platform_state: PlatformState,
+        mut platform_state: PlatformState,
     ) -> Result<Platform<C>, Error>
     where
         C: CoreRPCLike,
     {
-        PlatformVersion::set_current(PlatformVersion::get(
-            platform_state.current_protocol_version_in_consensus(),
-        )?);
-
         let height = platform_state.last_committed_block_height();
+
+        // Set patched or original platform version as current
+        let platform_version = platform_state
+            .apply_all_patches_to_platform_version_up_to_height(height)
+            .transpose()
+            .unwrap_or_else(|| {
+                let platform_version =
+                    PlatformVersion::get(platform_state.current_protocol_version_in_consensus())
+                        .map_err(Error::from);
+
+                platform_version
+            })?;
+
+        PlatformVersion::set_current(platform_version);
 
         let platform: Platform<C> = Platform {
             drive,

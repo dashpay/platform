@@ -77,10 +77,10 @@ use crate::version::drive_versions::{
 };
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
-use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
+use crate::version::{AbciStructureVersion, PlatformArchitectureVersion, ProtocolVersion};
 use grovedb_version::version::v1::GROVE_V1;
 
-pub const PROTOCOL_VERSION_1: u32 = 1;
+pub const PROTOCOL_VERSION_1: ProtocolVersion = 1;
 
 pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
     protocol_version: 1,

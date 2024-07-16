@@ -23,6 +23,7 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
 use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::documents_batch::transformer::v0::DocumentsBatchTransitionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 mod data_triggers;
 pub mod fetch_contender;

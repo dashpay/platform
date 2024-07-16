@@ -20,6 +20,7 @@ use crate::execution::validation::state_transition::identity_top_up::transform_i
 use crate::execution::validation::state_transition::processor::v0::StateTransitionBasicStructureValidationV0;
 
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 /// A trait to transform into a top up action
 pub trait StateTransitionIdentityTopUpTransitionActionTransformer {

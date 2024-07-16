@@ -90,7 +90,7 @@ impl From<QuorumConfigForSavingV0> for QuorumConfig {
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct PreviousPastQuorumsForSavingV0 {
     quorums: Vec<QuorumForSavingV0>,
-    active_core_height: u32,
+    last_active_core_height: u32,
     updated_at_core_height: u32,
     previous_change_height: Option<u32>,
 }
@@ -99,14 +99,14 @@ impl From<PreviousPastQuorumsV0> for PreviousPastQuorumsForSavingV0 {
     fn from(value: PreviousPastQuorumsV0) -> Self {
         let PreviousPastQuorumsV0 {
             quorums,
-            active_core_height,
+            last_active_core_height,
             updated_at_core_height,
             previous_change_height,
         } = value;
 
         Self {
             quorums: quorums.into(),
-            active_core_height,
+            last_active_core_height,
             updated_at_core_height,
             previous_change_height,
         }
@@ -117,14 +117,14 @@ impl From<PreviousPastQuorumsForSavingV0> for PreviousPastQuorumsV0 {
     fn from(value: PreviousPastQuorumsForSavingV0) -> Self {
         let PreviousPastQuorumsForSavingV0 {
             quorums,
-            active_core_height,
+            last_active_core_height: active_core_height,
             updated_at_core_height,
             previous_change_height,
         } = value;
 
         Self {
             quorums: quorums.into(),
-            active_core_height,
+            last_active_core_height: active_core_height,
             updated_at_core_height,
             previous_change_height,
         }
