@@ -1,17 +1,18 @@
-use crate::drive::grove_operations::BatchInsertApplyType;
-use crate::drive::object_size_info::PathKeyElementInfo;
+use crate::util::grove_operations::BatchInsertApplyType;
+use crate::util::object_size_info::PathKeyElementInfo;
 
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::protocol_upgrade::{desired_version_for_validators_path, versions_counter_path};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::drive_versions::DriveVersion;
 
+use crate::error::cache::CacheError;
 use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
 
@@ -90,12 +91,21 @@ impl Drive {
                     )))
                     .map(|(value, _)| value)?;
                 //we should remove 1 from the previous version
-                let previous_count = version_counter.get(&previous_version).ok_or(Error::Drive(
-                    DriveError::CorruptedCacheState(
-                        "trying to lower the count of a version from cache that is not found"
-                            .to_string(),
-                    ),
-                ))?;
+                let previous_count =
+                    version_counter
+                        .get(&previous_version)
+                        .map_err(|error| {
+                            match error {
+                                Error::Cache(CacheError::GlobalCacheIsBlocked) => Error::Drive(DriveError::CorruptedCacheState(
+                                    "global cache is blocked. we should never get into it when we get previous count because version counter trees must be empty at this point".to_string(),
+                                )),
+                                _ => error
+                            }
+                        })?
+                        .ok_or(Error::Drive(DriveError::CorruptedCacheState(
+                            "trying to lower the count of a version from cache that is not found"
+                                .to_string(),
+                        )))?;
                 if previous_count == &0 {
                     return Err(Error::Drive(DriveError::CorruptedCacheState(
                         "trying to lower the count of a version from cache that is already at 0"
@@ -115,7 +125,12 @@ impl Drive {
                 )?;
             }
 
-            let mut version_count = version_counter.get(&version).cloned().unwrap_or_default();
+            let mut version_count = match version_counter.get(&version) {
+                Ok(count) => count.copied().unwrap_or_default(),
+                // if global cache is blocked then it means we are starting from scratch
+                Err(Error::Cache(CacheError::GlobalCacheIsBlocked)) => 0,
+                Err(other_error) => return Err(other_error),
+            };
 
             version_count += 1;
 

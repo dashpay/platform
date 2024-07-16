@@ -1,6 +1,6 @@
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub(crate) mod identity_contract_nonce;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub mod keys;
 
 /// The sub elements in the contract space for each identity.

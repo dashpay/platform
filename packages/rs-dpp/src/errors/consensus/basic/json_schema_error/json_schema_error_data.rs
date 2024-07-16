@@ -176,6 +176,13 @@ impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
                 .set_keyword("resolver")
                 .add_param("url", url.to_string().into())
                 .build(),
+            ValidationErrorKind::Custom { message } => {
+                builder.set_error_message(message.to_owned()).build()
+            }
+            ValidationErrorKind::UnevaluatedProperties { unexpected } => builder
+                .set_keyword("unevaluatedProperties")
+                .add_param("unexpected", unexpected.clone().into())
+                .build(),
         }
     }
 }

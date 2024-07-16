@@ -165,6 +165,7 @@ export class Client extends EventEmitter {
 
     options = {
       index: this.defaultAccountIndex,
+      synchronize: true,
       ...options,
     };
 
@@ -179,6 +180,8 @@ export class Client extends EventEmitter {
     if (this.wallet) {
       await this.wallet.disconnect();
     }
+
+    await this.dapiClient.disconnect();
   }
 
   /**

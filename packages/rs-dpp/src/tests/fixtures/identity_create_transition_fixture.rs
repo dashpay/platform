@@ -11,7 +11,7 @@ use platform_value::string_encoding::{decode, Encoding};
 //[198, 23, 40, 120, 58, 93, 0, 165, 27, 49, 4, 117, 107, 204,  67, 46, 164, 216, 230, 135, 201, 92, 31, 155, 62, 131, 211, 177, 139, 175, 163, 237]
 
 pub fn identity_create_transition_fixture(one_time_private_key: Option<PrivateKey>) -> Value {
-    let asset_lock_proof = raw_instant_asset_lock_proof_fixture(one_time_private_key);
+    let asset_lock_proof = raw_instant_asset_lock_proof_fixture(one_time_private_key, None);
 
     platform_value!({
         "protocolVersion": version::LATEST_VERSION,

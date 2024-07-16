@@ -1,10 +1,10 @@
-use crate::drive::grove_operations::DirectQueryType;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::identity::{identity_path, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::DirectQueryType;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::fee::Credits;
 
 use dpp::version::PlatformVersion;

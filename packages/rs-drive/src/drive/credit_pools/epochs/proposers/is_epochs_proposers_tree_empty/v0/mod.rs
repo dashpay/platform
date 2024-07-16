@@ -1,10 +1,11 @@
 use grovedb::TransactionArg;
 
+use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Returns true if the Epoch's Proposers Tree is empty
@@ -12,10 +13,15 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
         match self
             .grove
-            .is_empty_tree(&epoch_tree.get_proposers_path(), transaction)
+            .is_empty_tree(
+                &epoch_tree.get_proposers_path(),
+                transaction,
+                &drive_version.grove_version,
+            )
             .unwrap()
         {
             Ok(result) => Ok(result),

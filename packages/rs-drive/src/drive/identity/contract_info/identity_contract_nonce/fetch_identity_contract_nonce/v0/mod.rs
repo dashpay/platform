@@ -1,10 +1,10 @@
-use crate::drive::grove_operations::DirectQueryType;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::identity::identity_contract_info_group_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::DirectQueryType;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::IdentityNonce;
@@ -112,6 +112,7 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
+            None,
         )?;
         Ok((value, fees))
     }

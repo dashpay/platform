@@ -1,67 +1,38 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! DriveDataContracts.
 //!
 //! This module defines functions pertinent toDataContracts stored in Drive.
 //!
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod apply;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "server")]
 mod contract_fetch_info;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod estimation_costs;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod get_fetch;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod insert;
 /// Various paths for contract operations
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod paths;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub(crate) mod prove;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) mod queries;
 #[cfg(feature = "fixtures-and-mocks")]
 /// Test helpers and utility methods
 pub mod test_helpers;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod update;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "server")]
 pub use contract_fetch_info::*;
 
 /// How many contracts to fetch at once. This is an arbitrary number and is needed to prevent
 /// the server from being overloaded with requests.
 pub const MAX_CONTRACT_HISTORY_FETCH_LIMIT: u16 = 10;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use dpp::block::block_info::BlockInfo;
@@ -70,11 +41,9 @@ mod tests {
     use std::borrow::Cow;
     use std::option::Option::None;
 
-    use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::{
-        DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
-    };
     use crate::drive::Drive;
+    use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
@@ -92,7 +61,7 @@ mod tests {
     use dpp::tests::json_document::json_document_to_contract;
 
     use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec};
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
     #[allow(dead_code)]
@@ -232,7 +201,7 @@ mod tests {
         });
 
         contract
-            .set_document_schema("note2", note2_schema, true, platform_version)
+            .set_document_schema("note2", note2_schema, true, &mut vec![], platform_version)
             .expect("should set a document schema");
 
         drive
@@ -268,7 +237,7 @@ mod tests {
     //
     //     let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
     //     drive
-    //         .add_document_for_contract(
+    //         .add_contested_document_for_contract(
     //             DocumentAndContractInfo {
     //                 owned_document_info: OwnedDocumentInfo {
     //                     document_info: DocumentInfo::DocumentRefInfo((&document, storage_flags)),
@@ -321,6 +290,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -523,6 +493,7 @@ mod tests {
                 false,
                 None,
                 platform_version,
+                None,
             )
             .expect("expected to apply contract successfully");
     }

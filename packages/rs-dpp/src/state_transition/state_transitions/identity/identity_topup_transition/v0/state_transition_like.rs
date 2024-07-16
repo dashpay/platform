@@ -1,3 +1,5 @@
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use platform_value::BinaryData;
 
 use crate::prelude::UserFeeIncrease;
@@ -57,7 +59,7 @@ impl StateTransitionLike for IdentityTopUpTransitionV0 {
         let identifier = self.asset_lock_proof.create_identifier();
         match identifier {
             Ok(identifier) => {
-                vec![base64::encode(identifier)]
+                vec![BASE64_STANDARD.encode(identifier)]
             }
             Err(_) => {
                 // no unique identifier, this won't actually occur on Platform
@@ -71,7 +73,7 @@ impl StateTransitionLike for IdentityTopUpTransitionV0 {
         self.user_fee_increase
     }
 
-    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
-        self.user_fee_increase = fee_multiplier
+    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+        self.user_fee_increase = user_fee_increase
     }
 }

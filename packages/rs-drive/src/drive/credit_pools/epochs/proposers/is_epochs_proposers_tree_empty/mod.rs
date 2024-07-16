@@ -33,7 +33,7 @@ impl Drive {
             .epochs
             .is_epochs_proposers_tree_empty
         {
-            0 => self.is_epochs_proposers_tree_empty_v0(epoch_tree, transaction),
+            0 => self.is_epochs_proposers_tree_empty_v0(epoch_tree, transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "is_epochs_proposers_tree_empty".to_string(),
                 known_versions: vec![0],
@@ -45,7 +45,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use dpp::version::drive_versions::DriveVersion;
 

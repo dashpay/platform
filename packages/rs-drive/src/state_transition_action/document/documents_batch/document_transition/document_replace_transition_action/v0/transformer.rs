@@ -18,6 +18,9 @@ impl DocumentReplaceTransitionActionV0 {
         originally_created_at: Option<TimestampMillis>,
         originally_created_at_block_height: Option<BlockHeight>,
         originally_created_at_core_block_height: Option<CoreBlockHeight>,
+        originally_transferred_at: Option<TimestampMillis>,
+        originally_transferred_at_block_height: Option<BlockHeight>,
+        originally_transferred_at_core_block_height: Option<CoreBlockHeight>,
         block_info: &BlockInfo,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
@@ -58,10 +61,13 @@ impl DocumentReplaceTransitionActionV0 {
             revision: *revision,
             created_at: originally_created_at,
             updated_at,
+            transferred_at: originally_transferred_at,
             created_at_block_height: originally_created_at_block_height,
             updated_at_block_height,
+            transferred_at_block_height: originally_transferred_at_block_height,
             created_at_core_block_height: originally_created_at_core_block_height,
             updated_at_core_block_height,
+            transferred_at_core_block_height: originally_transferred_at_core_block_height,
             data: data.clone(),
         })
     }

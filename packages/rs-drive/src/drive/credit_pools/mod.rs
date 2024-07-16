@@ -1,86 +1,69 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
-#[cfg(feature = "full")]
-use crate::drive::batch::GroveDbOpBatch;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::drive::Drive;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::error::drive::DriveError;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use crate::error::Error;
+#[cfg(feature = "server")]
+use crate::util::batch::GroveDbOpBatch;
 
-#[cfg(feature = "full")]
-use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
-#[cfg(feature = "full")]
-use crate::fee_pools::epochs::paths::encode_epoch_index_key;
-#[cfg(feature = "full")]
-use crate::fee_pools::epochs::paths::EpochProposers;
+#[cfg(feature = "server")]
+use epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
+#[cfg(feature = "server")]
+use epochs::paths::encode_epoch_index_key;
+#[cfg(feature = "server")]
+use epochs::paths::EpochProposers;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::block::epoch::{Epoch, EpochIndex};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::fee::epoch::SignedCreditsPerEpoch;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use dpp::fee::SignedCredits;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb::query_result_type::QueryResultType;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use grovedb::{Element, PathQuery, Query, TransactionArg};
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 use itertools::Itertools;
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Epochs module
 pub mod epochs;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) mod paths;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub mod pending_epoch_refunds;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub mod storage_fee_distribution_pool;
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub mod unpaid_epoch;
 
-#[cfg(feature = "full")]
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+/// Initialization module
+#[cfg(feature = "server")]
+pub mod initialization;
 
-#[cfg(feature = "full")]
-use crate::drive::fee::get_overflow_error;
+/// Operations module
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "server")]
+pub mod operations;
+
+#[cfg(feature = "server")]
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+
+#[cfg(feature = "server")]
+use crate::fees::get_overflow_error;
+
+#[cfg(any(feature = "server", feature = "verify"))]
 pub use paths::*;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
+use platform_version::version::PlatformVersion;
+
+#[cfg(feature = "server")]
 impl Drive {
     /// Adds GroveDB operations to update epoch storage fee pools with specified map of credits to epochs
     /// This method optimized to update sequence of epoch pools without gaps
@@ -89,6 +72,7 @@ impl Drive {
         batch: &mut GroveDbOpBatch,
         credits_per_epochs: SignedCreditsPerEpoch,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         if credits_per_epochs.is_empty() {
             return Ok(());
@@ -126,8 +110,10 @@ impl Drive {
                 &PathQuery::new_unsized(pools_vec_path(), epochs_query),
                 transaction.is_some(),
                 true,
+                true,
                 QueryResultType::QueryElementResultType,
                 transaction,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;
@@ -189,17 +175,17 @@ impl Drive {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 
     mod add_update_epoch_storage_fee_pools_operations {
         use super::*;
-        use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-        use crate::fee_pools::epochs::operations_factory::EpochOperations;
+        use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+        use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use dpp::block::epoch::EpochIndex;
         use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
         use dpp::fee::Credits;
@@ -208,6 +194,7 @@ mod tests {
 
         #[test]
         fn should_do_nothing_if_credits_per_epoch_are_empty() {
+            let platform_version = PlatformVersion::latest();
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
@@ -220,6 +207,7 @@ mod tests {
                     &mut batch,
                     credits_per_epoch,
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("should update epoch storage pools");
 
@@ -266,6 +254,7 @@ mod tests {
                     &mut batch,
                     credits_to_epochs,
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("should update epoch storage pools");
 
@@ -334,6 +323,7 @@ mod tests {
                     &mut batch,
                     credits_to_epochs,
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("should update epoch storage pools");
 

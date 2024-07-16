@@ -8,10 +8,10 @@ mod has_non_unique_public_key_hash;
 mod has_non_unique_public_key_hash_already_for_identity;
 mod has_unique_public_key_hash;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive;
+    use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -58,7 +58,7 @@ mod tests {
         assert_eq!(public_keys.len(), 5);
 
         for (_, key) in public_keys {
-            let hash = key.hash().expect("expected to get hash");
+            let hash = key.public_key_hash().expect("expected to get hash");
             if key.key_type().is_unique_key_type() {
                 let identity_id = drive
                     .fetch_identity_id_by_unique_public_key_hash(

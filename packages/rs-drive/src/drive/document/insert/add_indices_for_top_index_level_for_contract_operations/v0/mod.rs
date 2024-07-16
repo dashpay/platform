@@ -1,20 +1,21 @@
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
-use crate::drive::document::{contract_document_type_path_vec, unique_event_id};
+use crate::drive::document::unique_event_id;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
 
-use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::drive::Drive;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 use dpp::version::PlatformVersion;
 
+use crate::drive::document::paths::contract_document_type_path_vec;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::AllSubtrees;
@@ -54,8 +55,8 @@ impl Drive {
 
         // we need to construct the path for documents on the contract
         // the path is
-        //  * Document andDataContract root tree
-        //  *DataContract ID recovered from document
+        //  * Document and DataContract root tree
+        //  * DataContract ID recovered from document
         //  * 0 to signify Documents and notDataContract
         let contract_document_type_path = contract_document_type_path_vec(
             document_and_contract_info.contract.id_ref().as_bytes(),
@@ -119,6 +120,7 @@ impl Drive {
             // here we are inserting an empty tree that will have a subtree of all other index properties
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
+                false,
                 storage_flags,
                 apply_type,
                 transaction,
@@ -165,7 +167,7 @@ impl Drive {
                 // This is a stateless operation
                 PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
             } else {
-                PathInfo::PathIterator::<0>(index_path)
+                PathInfo::PathAsVec::<0>(index_path)
             };
 
             // we push the actual value of the index path

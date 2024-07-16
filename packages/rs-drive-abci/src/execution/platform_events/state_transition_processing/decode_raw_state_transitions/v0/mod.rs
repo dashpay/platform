@@ -1,15 +1,18 @@
-use crate::execution::types::state_transition_container::v0::StateTransitionContainerV0;
+use crate::execution::types::state_transition_container::v0::{
+    DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
+    StateTransitionContainerV0, SuccessfullyDecodedStateTransition,
+};
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
-use dpp::dashcore::hashes::Hash;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
-use dpp::{dashcore, ProtocolError};
+use dpp::ProtocolError;
+use std::time::{Duration, Instant};
 
 impl<C> Platform<C>
 where
@@ -41,89 +44,84 @@ where
     ///
     pub(super) fn decode_raw_state_transitions_v0<'a>(
         &self,
-        raw_state_transitions: &'a Vec<Vec<u8>>,
+        raw_state_transitions: &'a [impl AsRef<[u8]>],
         platform_version: &PlatformVersion,
     ) -> StateTransitionContainerV0<'a> {
         // Todo: might be better to have StateTransitionContainerV0 be a decoder instead and have
         //  the method decode_raw_state_transitions
-        let mut container = StateTransitionContainerV0::default();
-        for raw_state_transition in raw_state_transitions {
-            if raw_state_transition.len() as u64
-                > platform_version
-                    .dpp
-                    .state_transitions
-                    .max_state_transition_size
-            {
-                // The state transition is too big
-                let consensus_error =
-                    ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(
-                        StateTransitionMaxSizeExceededError::new(
-                            raw_state_transition.len() as u64,
-                            platform_version
-                                .dpp
-                                .state_transitions
-                                .max_state_transition_size,
+        let decoded_state_transitions = raw_state_transitions
+            .iter()
+            .map(|raw_state_transition| {
+                if raw_state_transition.as_ref().len() as u64
+                    > platform_version
+                        .dpp
+                        .state_transitions
+                        .max_state_transition_size
+                {
+                    // The state transition is too big
+                    let consensus_error = ConsensusError::BasicError(
+                        BasicError::StateTransitionMaxSizeExceededError(
+                            StateTransitionMaxSizeExceededError::new(
+                                raw_state_transition.as_ref().len() as u64,
+                                platform_version
+                                    .dpp
+                                    .state_transitions
+                                    .max_state_transition_size,
+                            ),
                         ),
-                    ));
-                tracing::debug!(?consensus_error, "State transition too big");
+                    );
 
-                container.push_invalid_raw_state_transition(raw_state_transition, consensus_error);
-                continue;
-            }
+                    DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
+                        raw: raw_state_transition.as_ref(),
+                        error: consensus_error,
+                        elapsed_time: Duration::default(),
+                    })
+                } else {
+                    let start_time = Instant::now();
 
-            match StateTransition::deserialize_from_bytes(raw_state_transition) {
-                Ok(state_transition) => {
-                    container.push_valid_state_transition(raw_state_transition, state_transition);
+                    match StateTransition::deserialize_from_bytes(raw_state_transition.as_ref()) {
+                        Ok(state_transition) => DecodedStateTransition::SuccessfullyDecoded(
+                            SuccessfullyDecodedStateTransition {
+                                decoded: state_transition,
+                                raw: raw_state_transition.as_ref(),
+                                elapsed_time: start_time.elapsed(),
+                            },
+                        ),
+                        Err(error) => match error {
+                            ProtocolError::PlatformDeserializationError(message) => {
+                                let consensus_error =
+                                    SerializedObjectParsingError::new(message.clone()).into();
+
+                                DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
+                                    raw: raw_state_transition.as_ref(),
+                                    error: consensus_error,
+                                    elapsed_time: start_time.elapsed(),
+                                })
+                            }
+                            ProtocolError::MaxEncodedBytesReachedError { .. } => {
+                                let message = error.to_string();
+                                let consensus_error =
+                                    SerializedObjectParsingError::new(message.clone()).into();
+
+                                DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
+                                    raw: raw_state_transition.as_ref(),
+                                    error: consensus_error,
+                                    elapsed_time: start_time.elapsed(),
+                                })
+                            }
+                            protocol_error => DecodedStateTransition::FailedToDecode(
+                                InvalidWithProtocolErrorStateTransition {
+                                    raw: raw_state_transition.as_ref(),
+                                    error: protocol_error,
+                                    elapsed_time: start_time.elapsed(),
+                                },
+                            ),
+                        },
+                    }
                 }
-                Err(error) => match error {
-                    ProtocolError::PlatformDeserializationError(message) => {
-                        let consensus_error =
-                            SerializedObjectParsingError::new(message.clone()).into();
-                        let errors = vec![&consensus_error];
+            })
+            .collect();
 
-                        tracing::debug!(
-                            ?errors,
-                            "Invalid unknown state transition ({}): {}",
-                            hex::encode(
-                                dashcore::hashes::sha256::Hash::hash(raw_state_transition)
-                                    .to_byte_array(),
-                            ),
-                            message
-                        );
-                        container.push_invalid_raw_state_transition(
-                            raw_state_transition,
-                            consensus_error,
-                        );
-                    }
-                    ProtocolError::MaxEncodedBytesReachedError { .. } => {
-                        let message = error.to_string();
-                        let consensus_error =
-                            SerializedObjectParsingError::new(message.clone()).into();
-                        let errors = vec![&consensus_error];
-
-                        tracing::debug!(
-                            ?errors,
-                            "State transition beyond max encoded bytes limit ({}): {}",
-                            hex::encode(
-                                dashcore::hashes::sha256::Hash::hash(raw_state_transition)
-                                    .to_byte_array(),
-                            ),
-                            message
-                        );
-
-                        container.push_invalid_raw_state_transition(
-                            raw_state_transition,
-                            consensus_error,
-                        );
-                    }
-                    e => container.push_invalid_raw_state_transition_with_protocol_error(
-                        raw_state_transition,
-                        e,
-                    ),
-                },
-            }
-        }
-
-        container
+        StateTransitionContainerV0::new(decoded_state_transitions)
     }
 }

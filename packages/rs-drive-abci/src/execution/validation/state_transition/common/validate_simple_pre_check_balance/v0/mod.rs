@@ -37,9 +37,11 @@ impl ValidateSimplePreCheckBalanceV0 for StateTransition {
                 platform_version
                     .fee_version
                     .state_transition_min_fees
-                    .document_batch_transition
+                    .document_batch_sub_transition
             }
-            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => 0,
+            StateTransition::IdentityCreate(_)
+            | StateTransition::IdentityTopUp(_)
+            | StateTransition::MasternodeVote(_) => 0,
             StateTransition::IdentityCreditWithdrawal(_) => {
                 platform_version
                     .fee_version

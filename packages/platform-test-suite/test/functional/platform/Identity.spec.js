@@ -5,7 +5,6 @@ const { createFakeInstantLock } = require('dash/build/utils/createFakeIntantLock
 const { hash, sha256 } = require('@dashevo/wasm-dpp/lib/utils/hash');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
-const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
 const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
 
 const {
@@ -234,13 +233,13 @@ describe('Platform', () => {
     });
 
     it('should be able to get newly created identity by it\'s public key', async () => {
-      const response = await client.getDAPIClient().platform.getIdentitiesByPublicKeyHashes(
-        [identity.getPublicKeyById(0).hash()],
+      const response = await client.getDAPIClient().platform.getIdentityByPublicKeyHash(
+        identity.getPublicKeyById(0).hash(),
       );
 
-      const [fetchedIdentity] = response.getIdentities();
+      const fetchedIdentity = response.getIdentity();
 
-      expect(fetchedIdentity).to.be.not.null();
+      expect(fetchedIdentity.length).to.be.greaterThan(0);
 
       // TODO(rs-drive-abci): fix. rs-drive-abci now only returning identity bytes without the
       //   asset lock proof. We would also want to do the same in rs-dpp and wasm-dpp, but
@@ -661,26 +660,11 @@ describe('Platform', () => {
     });
 
     describe('Masternodes', () => {
-      let dapiClient;
-      const network = process.env.NETWORK;
-
-      beforeEach(() => {
-        dapiClient = new Dash.DAPIClient({
-          network,
-          seeds: getDAPISeeds(),
-        });
-      });
-
       it('should receive masternode identities', async () => {
         await client.platform.initialize();
 
-        const bestBlockHash = await dapiClient.core.getBestBlockHash();
-        const baseBlockHash = await dapiClient.core.getBlockHash(1);
-
-        const { mnList } = await dapiClient.core.getMnListDiff(
-          baseBlockHash,
-          bestBlockHash,
-        );
+        const { mnList } = await client.getDAPIClient().dapiAddressProvider
+          .smlProvider.getSimplifiedMNList();
 
         for (const masternodeEntry of mnList) {
           if (!masternodeEntry.isValid) {

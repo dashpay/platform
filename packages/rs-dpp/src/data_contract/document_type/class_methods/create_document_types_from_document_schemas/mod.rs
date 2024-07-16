@@ -3,6 +3,7 @@ mod v0;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DocumentName;
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
@@ -38,7 +39,9 @@ impl DocumentType {
         schema_defs: Option<&BTreeMap<String, Value>>,
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
-        validate: bool,
+        documents_can_be_deleted_contract_default: bool,
+        full_validation: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         match platform_version
@@ -54,7 +57,9 @@ impl DocumentType {
                 schema_defs,
                 documents_keep_history_contract_default,
                 documents_mutable_contract_default,
-                validate,
+                documents_can_be_deleted_contract_default,
+                full_validation,
+                validation_operations,
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -62,38 +67,6 @@ impl DocumentType {
                 known_versions: vec![0],
                 received: version,
             }),
-        }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::consensus::basic::BasicError;
-    use crate::consensus::ConsensusError;
-    use platform_value::Identifier;
-    use std::ops::Deref;
-
-    #[test]
-    pub fn should_not_allow_creating_document_types_with_empty_schema() {
-        let result = crate::data_contract::document_type::DocumentType::create_document_types_from_document_schemas(
-            Identifier::random(),
-            Default::default(),
-            None,
-            false,
-            false,
-            false,
-            crate::version::PlatformVersion::latest(),
-        );
-
-        match result {
-            Err(crate::ProtocolError::ConsensusError(e)) => match e.deref() {
-                ConsensusError::BasicError(err) => match err {
-                    BasicError::DataContractEmptySchemaError(_) => {}
-                    _ => panic!("Expected DataContractEmptySchemaError"),
-                },
-                _ => panic!("Expected basic consensus error"),
-            },
-            _ => panic!("Expected consensus error"),
         }
     }
 }

@@ -7,6 +7,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
 
 use crate::execution::check_tx::CheckTxLevel;
 
@@ -25,8 +26,8 @@ pub(in crate::execution) fn state_transition_to_execution_event_for_check_tx<'a,
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
     check_tx_level: CheckTxLevel,
+    platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Option<ExecutionEvent<'a>>>, Error> {
-    let platform_version = platform.state.current_platform_version()?;
     match platform_version
         .drive_abci
         .validation_and_processing

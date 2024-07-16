@@ -13,7 +13,7 @@
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
 # - NODE_ENV - node.js environment name to use to build the library
-# - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables avaialable:
+# - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables available:
 #   - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
 #   - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
@@ -138,8 +138,11 @@ ENV SCCACHE_REGION=${SCCACHE_REGION}
 ARG CARGO_INCREMENTAL=false
 ENV CARGO_INCREMENTAL=${CARGO_INCREMENTAL}
 
+ARG AWS_ACCESS_KEY_ID
+ARG AWS_SECRET_ACCESS_KEY
+
 #
-# DEPS: FULL DEPENCIES LIST
+# DEPS: FULL DEPENDENCIES LIST
 #
 # This is separate from `deps` to use sccache for caching
 FROM deps-${RUSTC_WRAPPER:-base} AS deps
@@ -174,6 +177,9 @@ WORKDIR /platform
 
 COPY . .
 
+# Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
+RUN touch /platform/packages/dapi-grpc/build.rs
+
 #
 # STAGE: BUILD RS-DRIVE-ABCI
 #
@@ -194,7 +200,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
         --profile "$CARGO_BUILD_PROFILE" \
-        --package drive-abci && \
+        --package drive-abci \
+        --locked && \
     cp /platform/target/*/drive-abci /artifacts/ && \
     if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
 
@@ -232,9 +239,11 @@ LABEL description="Drive ABCI Rust"
 RUN apk add --no-cache libgcc libstdc++
 
 ENV DB_PATH=/var/lib/dash/rs-drive-abci/db
+ENV REJECTIONS_PATH=/var/log/dash/rejected
 
 RUN mkdir -p /var/log/dash \
-    /var/lib/dash/rs-drive-abci/db
+    /var/lib/dash/rs-drive-abci/db \
+    ${REJECTIONS_PATH}
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
 COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env

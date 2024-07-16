@@ -37,23 +37,24 @@ use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
 use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX};
-use dpp::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
+use drive::error;
 use drive::grovedb::Transaction;
+use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use drive::util::batch::{DriveOperation, GroveDbOpBatch};
 
 use crate::error::Error;
 use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
 use crate::execution::types::block_fees::BlockFees;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
-use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::execution::types::storage_fee_distribution_outcome;
 
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
-use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
-use drive::fee_pools::epochs::operations_factory::EpochOperations;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
 
 /// From the Dash Improvement Proposal:
 
@@ -77,8 +78,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     #[inline(always)]
     pub(super) fn add_process_epoch_change_operations_v0(
         &self,
-        block_info: &BlockStateInfo,
-        epoch_info: &EpochInfo,
+        block_execution_context: &BlockExecutionContext,
         block_fees: &BlockFees,
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
@@ -86,6 +86,9 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     ) -> Result<Option<storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome>, Error>
     {
         let mut inner_batch = GroveDbOpBatch::new();
+
+        let epoch_info = block_execution_context.epoch_info();
+        let block_info = block_execution_context.block_state_info();
 
         // init next thousandth empty epochs since last initiated
         let last_initiated_epoch_index = epoch_info
@@ -102,13 +105,30 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         // init current epoch pool for processing
         let current_epoch = Epoch::new(epoch_info.current_epoch_index())?;
 
+        let Some(fee_multiplier) = platform_version
+            .fee_version
+            .uses_version_fee_multiplier_permille
+        else {
+            return Err(Error::Drive(error::drive::DriveError::NotSupported("the fee_multiplier_permille must be set in fees if using add_process_epoch_change_operations_v0").into()));
+        };
+
         //todo: version
         current_epoch.add_init_current_operations(
-            DEFAULT_ORIGINAL_FEE_MULTIPLIER, // TODO use a data contract to choose the fee multiplier
+            fee_multiplier, // TODO (feature) use a data contract to choose the fee multiplier
             block_info.height(),
             block_info.core_chain_locked_height(),
             block_info.block_time_ms(),
             &mut inner_batch,
+        );
+
+        // Update next epoch protocol version
+        let next_epoch = Epoch::new(epoch_info.current_epoch_index() + 1)?;
+        inner_batch.push(
+            next_epoch.update_protocol_version_operation(
+                block_execution_context
+                    .block_platform_state()
+                    .next_epoch_protocol_version(),
+            ),
         );
 
         // Nothing to distribute on genesis epoch start
@@ -151,11 +171,15 @@ mod tests {
 
     mod helpers {
         use super::*;
+        use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
         use crate::execution::types::block_fees::v0::{BlockFeesV0, BlockFeesV0Methods};
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
         use crate::platform_types::epoch_info::v0::EpochInfoV0;
+        use crate::platform_types::platform_state::PlatformState;
         use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::CreditsPerEpoch;
+
+        use platform_version::version::INITIAL_PROTOCOL_VERSION;
 
         /// Process and validate an epoch change
         pub fn process_and_validate_epoch_change<C>(
@@ -195,6 +219,7 @@ mod tests {
                         &BlockInfo::default(),
                         Some(transaction),
                         platform_version,
+                        None,
                     )
                     .expect("should apply batch");
             }
@@ -233,12 +258,27 @@ mod tests {
             }
             .into();
 
+            let block_platform_state = PlatformState::default_with_protocol_versions(
+                INITIAL_PROTOCOL_VERSION,
+                INITIAL_PROTOCOL_VERSION,
+                &platform.config,
+            )
+            .expect("failed to create platform state");
+
+            let block_execution_context = BlockExecutionContextV0 {
+                block_state_info: block_info.clone().into(),
+                epoch_info,
+                hpmn_count: 0,
+                unsigned_withdrawal_transactions: Default::default(),
+                block_platform_state,
+                proposer_results: None,
+            };
+
             let mut batch = vec![];
 
             let storage_fee_distribution_outcome = platform
                 .add_process_epoch_change_operations_v0(
-                    &block_info.clone().into(),
-                    &epoch_info,
+                    &block_execution_context.into(),
                     &block_fees,
                     transaction,
                     &mut batch,
@@ -254,6 +294,7 @@ mod tests {
                     &BlockInfo::default(),
                     Some(transaction),
                     platform_version,
+                    None,
                 )
                 .expect("should apply batch");
 
@@ -265,7 +306,7 @@ mod tests {
 
             let has_epoch_tree_exists = platform
                 .drive
-                .has_epoch_tree_exists(&next_thousandth_epoch, Some(transaction))
+                .has_epoch_tree_exists(&next_thousandth_epoch, Some(transaction), platform_version)
                 .expect("should check epoch tree existence");
 
             assert!(has_epoch_tree_exists);

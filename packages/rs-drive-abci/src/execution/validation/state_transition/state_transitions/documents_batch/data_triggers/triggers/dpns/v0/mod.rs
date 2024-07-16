@@ -24,7 +24,7 @@ use dpp::system_data_contracts::dpns_contract::v1::document_types::domain::prope
 use dpp::util::strings::convert_to_homograph_safe_chars;
 use dpp::version::PlatformVersion;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
-use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 
 pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
@@ -248,7 +248,7 @@ pub(super) fn create_domain_data_trigger_v0(
                 .as_str(),
         )?;
 
-        let drive_query = DriveQuery {
+        let drive_query = DriveDocumentQuery {
             contract: data_contract,
             document_type,
             internal_clauses: InternalClauses {
@@ -363,7 +363,7 @@ pub(super) fn create_domain_data_trigger_v0(
 
     let document_type = data_contract.document_type_for_name("preorder")?;
 
-    let drive_query = DriveQuery {
+    let drive_query = DriveDocumentQuery {
         contract: data_contract,
         document_type,
         internal_clauses: InternalClauses {
@@ -501,10 +501,10 @@ mod test {
         };
 
         let result = create_domain_data_trigger_v0(
-            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(
-                document_create_transition, &BlockInfo::default(), |_identifier| {
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, None,
+                                                                                                           document_create_transition, &BlockInfo::default(), |_identifier| {
                     Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version)))
-                }).expect("expected to create action").into(),
+                }, platform_version).expect("expected to create action").0.into(),
             &data_trigger_context,
             platform_version,
         )

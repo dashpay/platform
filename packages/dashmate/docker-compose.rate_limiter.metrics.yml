@@ -1,0 +1,20 @@
+version: '3.7'
+
+services:
+  gateway_rate_limiter_metrics:
+    image: ${PLATFORM_GATEWAY_RATE_LIMITER_METRICS_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "Gateway rate limiter metrics exporter"
+    restart: unless-stopped
+    entrypoint: /bin/statsd_exporter
+    command:
+      - "--statsd.mapping-config=/etc/statsd-exporter/config.yaml"
+    networks:
+      - gateway_rate_limiter
+    volumes:
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/gateway/rate_limiter/statsd_exporter.yaml:/etc/statsd-exporter/config.yaml:ro
+    expose:
+      - 9125
+      - 9125/udp
+    ports:
+      - ${PLATFORM_GATEWAY_RATE_LIMITER_METRICS_HOST:?err}:${PLATFORM_GATEWAY_RATE_LIMITER_METRICS_PORT:?err}:9102

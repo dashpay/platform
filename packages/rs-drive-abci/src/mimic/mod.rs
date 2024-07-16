@@ -21,6 +21,7 @@ use dpp::platform_value::Value;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -95,6 +96,8 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
         state_transitions: Vec<StateTransition>,
         options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
+        let platform_version = PlatformVersion::get(proposed_version)?;
+
         // This will be NONE, except on init chain
         let original_block_execution_context = self
             .block_execution_context
@@ -112,12 +115,12 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                 self.platform
                     .drive
                     .grove
-                    .root_hash(Some(transaction))
+                    .root_hash(Some(transaction), &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             });
 
-        const APP_VERSION: u64 = 0;
+        const DEFAULT_APP_VERSION: u64 = 0;
 
         let mut rng = StdRng::seed_from_u64(block_info.height);
 
@@ -153,7 +156,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             proposed_app_version: proposed_version as u64,
             version: Some(Consensus {
                 block: 0,
-                app: APP_VERSION,
+                app: DEFAULT_APP_VERSION, // TODO: Prepare proposal should get 0 always
             }),
             quorum_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
         };
@@ -173,6 +176,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             consensus_param_updates: _,
             core_chain_lock_update,
             validator_set_update,
+            app_version,
         } = response_prepare_proposal;
 
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
@@ -231,7 +235,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
 
         let state_id = StateId {
             app_hash: app_hash.clone(),
-            app_version: APP_VERSION,
+            app_version,
             core_chain_locked_height: core_height,
             height,
             time: time.to_milis(),
@@ -271,7 +275,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             proposed_app_version: proposed_version as u64,
             version: Some(Consensus {
                 block: 0,
-                app: APP_VERSION,
+                app: app_version,
             }),
             quorum_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
         };
@@ -330,7 +334,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                     .platform
                     .drive
                     .grove
-                    .root_hash(Some(transaction))
+                    .root_hash(Some(transaction), &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap();
                 assert_eq!(start_root_hash, init_chain_root_hash);
@@ -373,7 +377,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                 .platform
                 .drive
                 .grove
-                .root_hash(Some(transaction))
+                .root_hash(Some(transaction), &platform_version.drive.grove_version)
                 .unwrap()
                 .unwrap();
             assert_eq!(
@@ -391,14 +395,14 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
 
         let response_extend_vote = self.extend_vote(request_extend_vote).unwrap_or_else(|e| {
             panic!(
-                "should extend vote #{} at time #{} : {:?}",
+                "should extend votes #{} at time #{} : {:?}",
                 block_info.height, block_info.time_ms, e
             )
         });
 
         let vote_extensions = response_extend_vote.vote_extensions;
 
-        // for all proposers in the quorum we much verify each vote extension
+        // for all proposers in the quorum we much verify each votes extension
 
         for validator in current_quorum.validator_set.iter() {
             let request_verify_vote_extension = RequestVerifyVoteExtension {
@@ -412,7 +416,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                 .verify_vote_extension(request_verify_vote_extension)
                 .unwrap_or_else(|e| {
                     panic!(
-                        "should verify vote extension #{} at time #{} : {:?}",
+                        "should verify votes extension #{} at time #{} : {:?}",
                         block_info.height, block_info.time_ms, e
                     )
                 });
@@ -423,7 +427,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             }
         }
 
-        //FixMe: This is not correct for the threshold vote extension (we need to sign and do
+        //FixMe: This is not correct for the threshold votes extension (we need to sign and do
         // things differently
 
         let block_execution_context_ref = self.block_execution_context.read().unwrap();
@@ -456,7 +460,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
 
         // We need to sign the block
 
-        let quorum_type = self.platform.config.validator_set_quorum_type();
+        let quorum_type = self.platform.config.validator_set.quorum_type;
         let state_id_hash = state_id
             .calculate_msg_hash(CHAIN_ID, height as i64, round as i32)
             .expect("cannot calculate state id hash");
@@ -479,7 +483,13 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             threshold_vote_extensions: extensions,
         };
         //if not in testing this will default to true
-        if self.platform.config.testing_configs.block_signing {
+        #[cfg(not(feature = "testing-config"))]
+        let sign_block = true;
+
+        #[cfg(feature = "testing-config")]
+        let sign_block = self.platform.config.testing_configs.block_signing;
+
+        if sign_block {
             let quorum_hash: [u8; 32] = quorum_hash.try_into().expect("wrong quorum hash len");
             let digest = commit
                 .calculate_sign_hash(
@@ -519,7 +529,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             header: Some(Header {
                 version: Some(Consensus {
                     block: 0, //todo
-                    app: APP_VERSION,
+                    app: app_version,
                 }),
                 chain_id: CHAIN_ID.to_string(),
                 height: height as i64,
@@ -567,7 +577,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             .platform
             .drive
             .grove
-            .root_hash(Some(transaction))
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .unwrap();
         assert_eq!(app_hash, root_hash_before_finalization);
@@ -583,14 +593,19 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                         block_info.height, round, block_info.time_ms, e
                     )
                 });
-            let root_hash_after_finalization =
-                self.platform.drive.grove.root_hash(None).unwrap().unwrap();
+            let root_hash_after_finalization = self
+                .platform
+                .drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .unwrap();
             assert_eq!(app_hash, root_hash_after_finalization);
         }
 
         Ok(MimicExecuteBlockOutcome {
             state_transaction_results,
-            app_version: APP_VERSION,
+            app_version,
             withdrawal_transactions,
             validator_set_update,
             next_validator_set_hash,

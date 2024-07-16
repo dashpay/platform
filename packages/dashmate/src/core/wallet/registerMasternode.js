@@ -46,7 +46,7 @@ export default async function registerMasternode(
   if (hp) {
     const platformNodeId = config.get('platform.drive.tenderdash.node.id');
     const platformP2PPort = config.get('platform.drive.tenderdash.p2p.port');
-    const platformHttpPort = config.get('platform.dapi.envoy.http.port');
+    const platformHttpPort = config.get('platform.gateway.listeners.dapiAndDrive.port');
 
     proTxArgs.push(platformNodeId);
     proTxArgs.push(platformP2PPort.toString());

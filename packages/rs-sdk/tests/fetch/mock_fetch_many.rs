@@ -1,6 +1,10 @@
 use std::collections::BTreeMap;
 
 use super::common::{mock_data_contract, mock_document_type};
+use dash_sdk::{
+    platform::{DocumentQuery, FetchMany},
+    Sdk,
+};
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters,
@@ -10,16 +14,12 @@ use dpp::{
     },
     document::{Document, DocumentV0Getters},
 };
-use rs_sdk::{
-    platform::{DocumentQuery, FetchMany},
-    Sdk,
-};
 
 /// Given some data contract, document type and 1 document of this type, when I request multiple documents, I get that
 /// document.
 #[tokio::test]
 async fn test_mock_document_fetch_many() {
-    let sdk = Sdk::new_mock();
+    let mut sdk = Sdk::new_mock();
     let document_type: DocumentType = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
 

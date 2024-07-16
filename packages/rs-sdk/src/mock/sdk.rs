@@ -34,13 +34,13 @@ use super::MockResponse;
 /// ## Panics
 ///
 /// Can panic on errors.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Key, Vec<u8>>,
     platform_version: &'static PlatformVersion,
     dapi: Arc<Mutex<MockDapiClient>>,
     prove: bool,
-    quorum_provider: Option<MockContextProvider>,
+    quorum_provider: Option<Arc<MockContextProvider>>,
 }
 
 impl MockDashPlatformSdk {
@@ -68,7 +68,7 @@ impl MockDashPlatformSdk {
     pub fn quorum_info_dir<P: AsRef<std::path::Path>>(&mut self, dir: P) -> &mut Self {
         let mut provider = MockContextProvider::new();
         provider.quorum_keys_dir(Some(dir.as_ref().to_path_buf()));
-        self.quorum_provider = Some(provider);
+        self.quorum_provider = Some(Arc::new(provider));
 
         self
     }
@@ -104,7 +104,7 @@ impl MockDashPlatformSdk {
 
         for filename in &files {
             let basename = filename.file_name().unwrap().to_str().unwrap();
-            let request_type = basename.split('_').nth(2).unwrap_or_default();
+            let request_type = basename.split('_').nth(1).unwrap_or_default();
 
             match request_type {
                 "DocumentQuery" => self.load_expectation::<DocumentQuery>(filename).await?,
@@ -118,6 +118,10 @@ impl MockDashPlatformSdk {
                 }
                 "GetDataContractsRequest" => {
                     self.load_expectation::<proto::GetDataContractsRequest>(filename)
+                        .await?
+                }
+                "GetDataContractHistoryRequest" => {
+                    self.load_expectation::<proto::GetDataContractHistoryRequest>(filename)
                         .await?
                 }
                 "IdentityRequest" => self.load_expectation::<IdentityRequest>(filename).await?,
@@ -151,6 +155,34 @@ impl MockDashPlatformSdk {
                         filename,
                     )
                     .await?
+                }
+                "GetContestedResourcesRequest" => {
+                    self.load_expectation::<proto::GetContestedResourcesRequest>(filename)
+                        .await?
+                }
+                "GetContestedResourceVoteStateRequest" => {
+                    self.load_expectation::<proto::GetContestedResourceVoteStateRequest>(filename)
+                        .await?
+                }
+                "GetContestedResourceVotersForIdentityRequest" => {
+                    self.load_expectation::<proto::GetContestedResourceVotersForIdentityRequest>(
+                        filename,
+                    )
+                    .await?
+                }
+                "GetContestedResourceIdentityVotesRequest" => {
+                    self.load_expectation::<proto::GetContestedResourceIdentityVotesRequest>(
+                        filename,
+                    )
+                    .await?
+                }
+                "GetVotePollsByEndDateRequest" => {
+                    self.load_expectation::<proto::GetVotePollsByEndDateRequest>(filename)
+                        .await?
+                }
+                "GetPrefundedSpecializedBalanceRequest" => {
+                    self.load_expectation::<proto::GetPrefundedSpecializedBalanceRequest>(filename)
+                        .await?
                 }
                 _ => {
                     return Err(Error::Config(format!(
@@ -209,7 +241,7 @@ impl MockDashPlatformSdk {
     /// # let r = tokio::runtime::Runtime::new().unwrap();
     /// #
     /// # r.block_on(async {
-    ///     use rs_sdk::{Sdk, platform::{Identity, Fetch, dpp::identity::accessors::IdentityGettersV0}};
+    ///     use dash_sdk::{Sdk, platform::{Identity, Fetch, dpp::identity::accessors::IdentityGettersV0}};
     ///
     ///     let mut api = Sdk::new_mock();
     ///     // Define expected response
@@ -275,20 +307,21 @@ impl MockDashPlatformSdk {
     /// object must be a vector of objects.
     pub async fn expect_fetch_many<
         K: Ord,
-        O: FetchMany<K>,
-        Q: Query<<O as FetchMany<K>>::Request>,
+        O: FetchMany<K, R>,
+        Q: Query<<O as FetchMany<K, R>>::Request>,
+        R: FromIterator<(K, Option<O>)> + MockResponse + Send + Default,
     >(
         &mut self,
         query: Q,
-        objects: Option<BTreeMap<K, Option<O>>>,
+        objects: Option<R>,
     ) -> Result<&mut Self, Error>
     where
-        BTreeMap<K, Option<O>>: MockResponse,
-        <<O as FetchMany<K>>::Request as TransportRequest>::Response: Default,
-        BTreeMap<K, Option<O>>: FromProof<
-                <O as FetchMany<K>>::Request,
-                Request = <O as FetchMany<K>>::Request,
-                Response = <<O as FetchMany<K>>::Request as TransportRequest>::Response,
+        R: MockResponse,
+        <<O as FetchMany<K, R>>::Request as TransportRequest>::Response: Default,
+        R: FromProof<
+                <O as FetchMany<K, R>>::Request,
+                Request = <O as FetchMany<K, R>>::Request,
+                Response = <<O as FetchMany<K, R>>::Request as TransportRequest>::Response,
             > + Sync,
     {
         let grpc_request = query.query(self.prove).expect("query must be correct");
@@ -326,7 +359,7 @@ impl MockDashPlatformSdk {
         // This expectation will work for execute
         let mut dapi_guard = self.dapi.lock().await;
         // We don't really care about the response, as it will be mocked by from_proof, so we provide default()
-        dapi_guard.expect(&grpc_request, &Default::default())?;
+        dapi_guard.expect(&grpc_request, &Ok(Default::default()))?;
 
         Ok(())
     }

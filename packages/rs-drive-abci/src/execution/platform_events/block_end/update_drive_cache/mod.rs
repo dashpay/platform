@@ -7,6 +7,7 @@ use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
 
+use crate::execution::types::block_execution_context::BlockExecutionContext;
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
@@ -29,7 +30,11 @@ where
     /// * `Result<(), Error>` - If the state cache and quorums are successfully updated, it returns `Ok(())`.
     ///   If there is a problem with the update, it returns an `Error`.
     ///
-    pub fn update_drive_cache(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
+    pub fn update_drive_cache(
+        &self,
+        block_execution_context: &BlockExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
         match platform_version
             .drive_abci
             .methods
@@ -37,7 +42,7 @@ where
             .update_drive_cache
         {
             0 => {
-                self.update_drive_cache_v0();
+                self.update_drive_cache_v0(block_execution_context);
                 Ok(())
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

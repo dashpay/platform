@@ -3,6 +3,7 @@ use crate::state_transition_action::document::documents_batch::v0::DocumentsBatc
 use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::fee::Credits;
 use dpp::identity::SecurityLevel;
 use dpp::platform_value::Identifier;
 use dpp::prelude::UserFeeIncrease;
@@ -73,6 +74,31 @@ impl DocumentsBatchTransitionAction {
 }
 
 impl DocumentsBatchTransitionAction {
+    /// The sum of all purchases amount and all conflicting index collateral voting funds
+    pub fn all_used_balances(&self) -> Result<Option<Credits>, ProtocolError> {
+        match self {
+            DocumentsBatchTransitionAction::V0(v0) => v0.all_used_balances(),
+        }
+    }
+
+    /// The sum of all purchases amounts for all purchase transitions in the batch
+    pub fn all_purchases_amount(&self) -> Result<Option<Credits>, ProtocolError> {
+        match self {
+            DocumentsBatchTransitionAction::V0(v0) => v0.all_purchases_amount(),
+        }
+    }
+
+    /// The sum of all conflicting index collateral voting funds for all document create transitions in the batch
+    pub fn all_conflicting_index_collateral_voting_funds(
+        &self,
+    ) -> Result<Option<Credits>, ProtocolError> {
+        match self {
+            DocumentsBatchTransitionAction::V0(v0) => {
+                v0.all_conflicting_index_collateral_voting_funds()
+            }
+        }
+    }
+
     /// Determines the security level requirements for the batch transition action.
     ///
     /// This method performs the following steps:

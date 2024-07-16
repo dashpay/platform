@@ -5,9 +5,12 @@ use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::Credits;
 use dpp::identity::PartialIdentity;
+use dpp::prefunded_specialized_balance::PrefundedSpecializedBalanceIdentifier;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
+use std::collections::BTreeMap;
 
 use crate::error::execution::ExecutionError;
 use dpp::serialization::Signable;
@@ -92,7 +95,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
-    // Only Data contract state transitions do not have basic structure validation
+    // Only Data contract state transitions and Masternode vote do not have basic structure validation
     if state_transition.has_basic_structure_validation() {
         // We validate basic structure validation after verifying the identity,
         // this is structure validation that does not require state and is already checked on check_tx
@@ -133,6 +136,21 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
+    // The prefunded_balances are currently not used as we would only use them for a masternode vote
+    // however the masternode vote acts as a free operation, as it is paid for
+    let _prefunded_balances = if state_transition.uses_prefunded_specialized_balance_for_payment() {
+        Some(
+            state_transition.validate_minimum_prefunded_specialized_balance_pre_check(
+                platform.drive,
+                transaction,
+                &mut state_transition_execution_context,
+                platform_version,
+            )?,
+        )
+    } else {
+        None
+    };
+
     // Only identity update and data contract create have advanced structure validation without state
     if state_transition.has_advanced_structure_validation_without_state() {
         // Currently only used for Identity Update
@@ -163,7 +181,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
-    // Identity create and documents batch both have advanced structure validation with state
+    // Identity create, documents batch and masternode vote all have advanced structure validation with state
     let action = if state_transition.has_advanced_structure_validation_with_state() {
         // Currently used for identity create and documents batch
         let state_transition_action_result = state_transition.transform_into_action(
@@ -216,6 +234,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         action,
         platform,
         ValidationMode::Validator,
+        block_info,
         &mut state_transition_execution_context,
         transaction,
     )?;
@@ -377,7 +396,7 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
 }
 
 /// A trait for validating state transitions within a blockchain.
-pub(crate) trait StateTransitionBalanceValidationV0 {
+pub(crate) trait StateTransitionIdentityBalanceValidationV0 {
     /// Validates the state transition by analyzing the changes in the platform state after applying the transaction.
     ///
     /// # Arguments
@@ -406,6 +425,38 @@ pub(crate) trait StateTransitionBalanceValidationV0 {
     }
 }
 
+pub(crate) trait StateTransitionPrefundedSpecializedBalanceValidationV0 {
+    /// Validates the state transition by analyzing the changes in the platform state after applying the transaction.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - A reference to the platform containing the state data.
+    /// * `tx` - The transaction argument to be applied.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `C: CoreRPCLike` - A type constraint indicating that C should implement `CoreRPCLike`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ConsensusValidationResult<StateTransitionAction>, Error>` - A result with either a ConsensusValidationResult containing a StateTransitionAction or an Error.
+    fn validate_minimum_prefunded_specialized_balance_pre_check(
+        &self,
+        drive: &Drive,
+        tx: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<
+        ConsensusValidationResult<BTreeMap<PrefundedSpecializedBalanceIdentifier, Credits>>,
+        Error,
+    >;
+
+    /// Do we use a prefunded specialized balance for payment
+    fn uses_prefunded_specialized_balance_for_payment(&self) -> bool {
+        false
+    }
+}
+
 /// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionStateValidationV0:
     StateTransitionActionTransformerV0
@@ -429,6 +480,7 @@ pub(crate) trait StateTransitionStateValidationV0:
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -440,7 +492,9 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
-            StateTransition::DataContractCreate(_) | StateTransition::DataContractUpdate(_) => {
+            StateTransition::DataContractCreate(_)
+            | StateTransition::DataContractUpdate(_)
+            | StateTransition::MasternodeVote(_) => {
                 // no basic structure validation
                 Ok(SimpleConsensusValidationResult::new())
             }
@@ -459,7 +513,9 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
     fn has_basic_structure_validation(&self) -> bool {
         !matches!(
             self,
-            StateTransition::DataContractCreate(_) | StateTransition::DataContractUpdate(_)
+            StateTransition::DataContractCreate(_)
+                | StateTransition::DataContractUpdate(_)
+                | StateTransition::MasternodeVote(_)
         )
     }
 }
@@ -516,6 +572,13 @@ impl StateTransitionNonceValidationV0 for StateTransition {
                 execution_context,
                 platform_version,
             ),
+            StateTransition::MasternodeVote(st) => st.validate_nonces(
+                platform,
+                block_info,
+                tx,
+                execution_context,
+                platform_version,
+            ),
             _ => Ok(SimpleConsensusValidationResult::new()),
         }
     }
@@ -533,7 +596,7 @@ impl StateTransitionNonceValidationV0 for StateTransition {
     }
 }
 
-impl StateTransitionBalanceValidationV0 for StateTransition {
+impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
     fn validate_minimum_balance_pre_check(
         &self,
         identity: &PartialIdentity,
@@ -546,15 +609,17 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
             StateTransition::IdentityCreditWithdrawal(st) => {
                 st.validate_minimum_balance_pre_check(identity, platform_version)
             }
+            StateTransition::DocumentsBatch(st) => {
+                st.validate_minimum_balance_pre_check(identity, platform_version)
+            }
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
-            | StateTransition::DocumentsBatch(_)
             | StateTransition::IdentityUpdate(_) => {
                 self.validate_simple_pre_check_minimum_balance(identity, platform_version)
             }
-            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => {
-                Ok(SimpleConsensusValidationResult::new())
-            }
+            StateTransition::MasternodeVote(_)
+            | StateTransition::IdentityCreate(_)
+            | StateTransition::IdentityTopUp(_) => Ok(SimpleConsensusValidationResult::new()),
         }
     }
 
@@ -567,6 +632,38 @@ impl StateTransitionBalanceValidationV0 for StateTransition {
                 | StateTransition::DataContractUpdate(_)
                 | StateTransition::DocumentsBatch(_)
                 | StateTransition::IdentityUpdate(_)
+        )
+    }
+}
+
+impl StateTransitionPrefundedSpecializedBalanceValidationV0 for StateTransition {
+    fn validate_minimum_prefunded_specialized_balance_pre_check(
+        &self,
+        drive: &Drive,
+        tx: TransactionArg,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<
+        ConsensusValidationResult<BTreeMap<PrefundedSpecializedBalanceIdentifier, Credits>>,
+        Error,
+    > {
+        match self {
+            StateTransition::MasternodeVote(masternode_vote_transition) => {
+                masternode_vote_transition.validate_minimum_prefunded_specialized_balance_pre_check(
+                    drive,
+                    tx,
+                    execution_context,
+                    platform_version,
+                )
+            }
+            _ => Ok(ConsensusValidationResult::new()),
+        }
+    }
+
+    fn uses_prefunded_specialized_balance_for_payment(&self) -> bool {
+        matches!(
+            self,
+                | StateTransition::MasternodeVote(_)
         )
     }
 }
@@ -655,6 +752,12 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
                     platform_version,
                 )
             }
+            StateTransition::MasternodeVote(st) => st.validate_advanced_structure_from_state(
+                action,
+                maybe_identity,
+                execution_context,
+                platform_version,
+            ),
             _ => Ok(ConsensusValidationResult::new()),
         }
     }
@@ -663,7 +766,9 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
     fn has_advanced_structure_validation_with_state(&self) -> bool {
         matches!(
             self,
-            StateTransition::DocumentsBatch(_) | StateTransition::IdentityCreate(_)
+            StateTransition::DocumentsBatch(_)
+                | StateTransition::IdentityCreate(_)
+                | StateTransition::MasternodeVote(_)
         )
     }
 
@@ -691,6 +796,7 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
                 //Basic signature verification
                 Ok(self.validate_state_transition_identity_signed(
                     drive,
+                    true,
                     false,
                     tx,
                     execution_context,
@@ -702,6 +808,22 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
                 Ok(self.validate_state_transition_identity_signed(
                     drive,
                     true,
+                    true,
+                    tx,
+                    execution_context,
+                    platform_version,
+                )?)
+            }
+            StateTransition::MasternodeVote(_) => {
+                //Basic signature verification
+
+                // We do not request the balance because masternodes do not pay for their voting
+                //  themselves
+
+                Ok(self.validate_state_transition_identity_signed(
+                    drive,
+                    false,
+                    false,
                     tx,
                     execution_context,
                     platform_version,
@@ -750,18 +872,29 @@ impl StateTransitionStateValidationV0 for StateTransition {
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
             // The replay attack is prevented by checking if a data contract exists with this id first
-            StateTransition::DataContractCreate(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
-            }
+            StateTransition::DataContractCreate(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
             // The replay attack is prevented by identity data contract nonce
-            StateTransition::DataContractUpdate(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
-            }
+            StateTransition::DataContractUpdate(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
             StateTransition::IdentityCreate(st) => {
                 let action =
                     action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -779,9 +912,14 @@ impl StateTransitionStateValidationV0 for StateTransition {
                     tx,
                 )
             }
-            StateTransition::IdentityUpdate(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
-            }
+            StateTransition::IdentityUpdate(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
             StateTransition::IdentityTopUp(st) => {
                 // Nothing to validate from state
                 if let Some(action) = action {
@@ -797,16 +935,39 @@ impl StateTransitionStateValidationV0 for StateTransition {
                     )
                 }
             }
-            StateTransition::IdentityCreditWithdrawal(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
-            }
+            StateTransition::IdentityCreditWithdrawal(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
             // The replay attack is prevented by identity data contract nonce
-            StateTransition::DocumentsBatch(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
-            }
-            StateTransition::IdentityCreditTransfer(st) => {
-                st.validate_state(action, platform, validation_mode, execution_context, tx)
-            }
+            StateTransition::DocumentsBatch(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityCreditTransfer(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::MasternodeVote(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
         }
     }
 }

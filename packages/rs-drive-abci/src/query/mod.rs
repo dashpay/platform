@@ -1,10 +1,12 @@
 mod data_contract_based_queries;
 mod document_query;
 mod identity_based_queries;
+mod prefunded_specialized_balances;
 mod proofs;
 mod response_metadata;
 mod service;
 mod system;
+mod voting;
 
 use crate::error::query::QueryError;
 
@@ -19,26 +21,36 @@ pub type QueryValidationResult<TData> = ValidationResult<TData, QueryError>;
 mod tests {
     use crate::error::query::QueryError;
     use crate::platform_types::platform::Platform;
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::platform_state::PlatformState;
     use crate::query::QueryValidationResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::DataContract;
-    use drive::drive::batch::DataContractOperationType;
-    use drive::drive::batch::DriveOperation::DataContractOperation;
+
+    use drive::util::batch::DataContractOperationType;
+    use drive::util::batch::DriveOperation::DataContractOperation;
     use platform_version::version::PlatformVersion;
     use std::borrow::Cow;
     use std::sync::Arc;
 
-    pub fn setup_platform<'a>() -> (
+    pub fn setup_platform<'a>(
+        with_genesis_state: bool,
+    ) -> (
         TempPlatform<MockCoreRPCLike>,
         Arc<PlatformState>,
         &'a PlatformVersion,
     ) {
-        let platform = TestPlatformBuilder::new()
-            .build_with_mock_rpc()
-            .set_initial_state_structure();
+        let platform = if with_genesis_state {
+            TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state()
+        } else {
+            TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure()
+        };
 
         // We can't return a reference to Arc (`load` method) so we clone Arc (`load_full`).
         // This is a bit slower but we don't care since we are in test environment
@@ -63,7 +75,14 @@ mod tests {
 
         platform
             .drive
-            .apply_drive_operations(vec![operation], true, &block_info, None, platform_version)
+            .apply_drive_operations(
+                vec![operation],
+                true,
+                &block_info,
+                None,
+                platform_version,
+                None,
+            )
             .expect("expected to apply drive operations");
     }
 

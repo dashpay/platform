@@ -75,7 +75,7 @@ impl ExtendedDocument {
     /// Returns a `ProtocolError` if the document type is not found in the data contract.
     pub fn needs_revision(&self) -> Result<bool, ProtocolError> {
         match self {
-            ExtendedDocument::V0(v0) => v0.needs_revision(),
+            ExtendedDocument::V0(v0) => v0.requires_revision(),
         }
     }
 
@@ -338,6 +338,8 @@ mod test {
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
     use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
     use crate::tests::fixtures::get_dashpay_contract_fixture;
+    use base64::prelude::BASE64_STANDARD;
+    use base64::Engine;
 
     fn init() {
         let _ = env_logger::builder()
@@ -547,7 +549,7 @@ mod test {
         let string = serde_json::to_string(&document)?;
 
         assert_eq!(
-            "{\"version\":0,\"$type\":\"domain\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"document\":{\"$version\":\"0\",\"$id\":\"4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E\",\"$ownerId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"$protocolVersion\":0,\"$type\":\"domain\",\"label\":\"user-9999\",\"normalizedLabel\":\"user-9999\",\"normalizedParentDomainName\":\"dash\",\"preorderSalt\":\"BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0=\",\"records\":{\"dashUniqueIdentityId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\"},\"subdomainRules\":{\"allowSubdomains\":false},\"$revision\":1,\"$createdAt\":null,\"$updatedAt\":null,\"$createdAtBlockHeight\":null,\"$updatedAtBlockHeight\":null,\"$createdAtCoreBlockHeight\":null,\"$updatedAtCoreBlockHeight\":null}}",
+            "{\"version\":0,\"$type\":\"domain\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"document\":{\"$version\":\"0\",\"$id\":\"4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E\",\"$ownerId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"$protocolVersion\":0,\"$type\":\"domain\",\"label\":\"user-9999\",\"normalizedLabel\":\"user-9999\",\"normalizedParentDomainName\":\"dash\",\"preorderSalt\":\"BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0=\",\"records\":{\"dashUniqueIdentityId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\"},\"subdomainRules\":{\"allowSubdomains\":false},\"$revision\":1,\"$createdAt\":null,\"$updatedAt\":null,\"$transferredAt\":null,\"$createdAtBlockHeight\":null,\"$updatedAtBlockHeight\":null,\"$transferredAtBlockHeight\":null,\"$createdAtCoreBlockHeight\":null,\"$updatedAtCoreBlockHeight\":null,\"$transferredAtCoreBlockHeight\":null}}",
             string
         );
 
@@ -595,8 +597,6 @@ mod test {
             .to_pretty_json(LATEST_PLATFORM_VERSION)
             .expect("no errors");
 
-        println!("{:?}", json_document);
-
         assert_eq!(
             json_document["$id"],
             JsonValue::String(bs58::encode(&id).into_string())
@@ -611,11 +611,11 @@ mod test {
         );
         assert_eq!(
             json_document["alphaBinary"],
-            JsonValue::String(base64::encode(&alpha_value))
+            JsonValue::String(BASE64_STANDARD.encode(&alpha_value))
         );
         assert_eq!(
             json_document["alphaIdentifier"],
-            JsonValue::String(base64::encode(&alpha_value))
+            JsonValue::String(BASE64_STANDARD.encode(&alpha_value))
         );
     }
 

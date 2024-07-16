@@ -1,7 +1,7 @@
 use super::{common::setup_logs, config::Config};
+use dash_sdk::platform::{types::version_votes::MasternodeProtocolVoteEx, FetchMany};
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use drive_proof_verifier::types::MasternodeProtocolVote;
-use rs_sdk::platform::{types::version_votes::MasternodeProtocolVoteEx, FetchMany};
 
 /// Given protxhash with only zeros, when I fetch protocol version votes for nodes, I can retrieve them.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

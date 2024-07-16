@@ -2,6 +2,8 @@ use crate::asset_lock::reduced_asset_lock_value::AssetLockValue;
 
 pub mod reduced_asset_lock_value;
 
+pub type PastAssetLockStateTransitionHashes = Vec<Vec<u8>>;
+
 /// An enumeration of the possible states when querying platform to get the stored state of an outpoint
 /// representing if the asset lock was already used or not.
 pub enum StoredAssetLockInfo {

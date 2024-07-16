@@ -16,6 +16,7 @@ use crate::serialization::{
     PlatformSerializableWithPlatformVersion,
 };
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
+#[cfg(feature = "data-contract-value-conversion")]
 use platform_value::Value;
 use platform_version::TryIntoPlatformVersioned;
 
@@ -81,7 +82,7 @@ impl PlatformSerializableWithPlatformVersion for CreatedDataContract {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for CreatedDataContract {
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -103,7 +104,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Cre
             created_data_contract_in_serialization_format.data_contract_and_identity_nonce_owned();
         let data_contract = DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
-            validate,
+            full_validation,
+            &mut vec![],
             platform_version,
         )?;
         match platform_version
@@ -196,7 +198,7 @@ impl CreatedDataContract {
     #[cfg(feature = "data-contract-value-conversion")]
     pub fn from_object(
         raw_object: Value,
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version
@@ -204,9 +206,12 @@ impl CreatedDataContract {
             .contract_versions
             .created_data_contract_structure
         {
-            0 => Ok(
-                CreatedDataContractV0::from_object(raw_object, validate, platform_version)?.into(),
-            ),
+            0 => Ok(CreatedDataContractV0::from_object(
+                raw_object,
+                full_validation,
+                platform_version,
+            )?
+            .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "CreatedDataContract::from_object".to_string(),
                 known_versions: vec![0],

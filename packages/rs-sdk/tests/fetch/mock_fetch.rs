@@ -2,6 +2,10 @@
 //!
 
 use super::common::{mock_data_contract, mock_document_type};
+use dash_sdk::{
+    platform::{DocumentQuery, Fetch},
+    Sdk,
+};
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters,
@@ -14,15 +18,11 @@ use dpp::{
     prelude::{DataContract, Identifier, Identity},
     version::PlatformVersion,
 };
-use rs_sdk::{
-    platform::{DocumentQuery, Fetch},
-    Sdk,
-};
 
 #[tokio::test]
 /// Given some identity, when I fetch it using mock API, then I get the same identity
 async fn test_mock_fetch_identity() {
-    let sdk = Sdk::new_mock();
+    let mut sdk = Sdk::new_mock();
 
     let expected: Identity = Identity::from(IdentityV0::default());
     let query = expected.id();
@@ -43,7 +43,7 @@ async fn test_mock_fetch_identity() {
 #[tokio::test]
 /// When I define mock expectation twice for the same request, second call ends with error
 async fn test_mock_fetch_duplicate_expectation() {
-    let sdk = Sdk::new_mock();
+    let mut sdk = Sdk::new_mock();
 
     let expected: Identity = Identity::from(IdentityV0::default());
     let expected2 =
@@ -72,7 +72,7 @@ async fn test_mock_fetch_duplicate_expectation() {
 #[tokio::test]
 /// Given some random identity ID, when I fetch it using mock API, then I get None
 async fn test_mock_fetch_identity_not_found() {
-    let sdk = Sdk::new_mock();
+    let mut sdk = Sdk::new_mock();
 
     let id = Identifier::random();
 
@@ -91,7 +91,7 @@ async fn test_mock_fetch_identity_not_found() {
 /// Given some data contract, when I fetch it by ID, I get it.
 #[tokio::test]
 async fn test_mock_fetch_data_contract() {
-    let sdk = Sdk::new_mock();
+    let mut sdk = Sdk::new_mock();
 
     let document_type: DocumentType = mock_document_type();
     let expected = mock_data_contract(Some(&document_type));
@@ -114,7 +114,7 @@ async fn test_mock_fetch_data_contract() {
 async fn test_mock_fetch_document() {
     use dpp::document::DocumentV0Getters;
 
-    let sdk = Sdk::new_mock();
+    let mut sdk = Sdk::new_mock();
     let document_type: DocumentType = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
 

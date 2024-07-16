@@ -4,6 +4,7 @@ use crate::identity::{IdentityPublicKey, KeyCount, KeyID, KeyType, Purpose, Secu
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
+use crate::identity::contract_bounds::ContractBounds;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
@@ -269,6 +270,7 @@ impl IdentityPublicKey {
         purpose: Purpose,
         security_level: SecurityLevel,
         key_type: KeyType,
+        contract_bounds: Option<ContractBounds>,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, Vec<u8>), ProtocolError> {
         match platform_version
@@ -283,6 +285,7 @@ impl IdentityPublicKey {
                     purpose,
                     security_level,
                     key_type,
+                    contract_bounds,
                     platform_version,
                 )?;
                 Ok((key.into(), private_key))
@@ -333,6 +336,29 @@ impl IdentityPublicKey {
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng"
                     .to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    pub fn random_voting_key_with_rng(
+        id: KeyID,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_key_structure_version
+        {
+            0 => {
+                let (key, private_key) =
+                    IdentityPublicKeyV0::random_voting_key_with_rng(id, rng, platform_version)?;
+                Ok((key.into(), private_key))
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "IdentityPublicKey::random_voting_key_with_rng".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

@@ -44,66 +44,6 @@ pub struct DataContractV0 {
     pub(crate) schema_defs: Option<BTreeMap<DefinitionName, Value>>,
 }
 
-//
-// #[cfg(feature = "json-object")]
-// impl TryFrom<JsonValue> for DataContractV0 {
-//     type Error = ProtocolError;
-//     fn try_from(v: JsonValue) -> Result<Self, Self::Error> {
-//         DataContractV0::from_json_object(v)
-//     }
-// }
-//
-// #[cfg(feature = "platform-value")]
-// impl TryFrom<Value> for DataContractV0 {
-//     type Error = ProtocolError;
-//     fn try_from(value: Value) -> Result<Self, Self::Error> {
-//         DataContractV0::from_object(value)
-//     }
-// }
-//
-// impl TryFrom<DataContractV0> for Value {
-//     type Error = ProtocolError;
-//
-//     fn try_from(value: DataContractV0) -> Result<Self, Self::Error> {
-//         value.into_object()
-//     }
-// }
-//
-// impl TryFrom<&DataContractV0> for Value {
-//     type Error = ProtocolError;
-//
-//     fn try_from(value: &DataContractV0) -> Result<Self, Self::Error> {
-//         value.to_object()
-//     }
-// }
-//
-// #[cfg(feature = "platform-value")]
-// impl TryFrom<&str> for DataContractV0 {
-//     type Error = ProtocolError;
-//     fn try_from(v: &str) -> Result<Self, Self::Error> {
-//         let data_contract: DataContractV0 = serde_json::from_str(v)?;
-//         //todo: there's a better to do this, find it
-//         let value = data_contract.to_object()?;
-//         DataContractV0::from_object(value)
-//     }
-// }
-//
-// impl<'a> TryFrom<&'a [u8]> for DataContractV0 {
-//     type Error = ProtocolError;
-//
-//     fn try_from(_v: &[u8]) -> Result<Self, Self::Error> {
-//         todo!()
-//     }
-// }
-//
-// impl TryFrom<Vec<u8>> for DataContractV0 {
-//     type Error = ProtocolError;
-//
-//     fn try_from(_v: Vec<u8>) -> Result<Self, Self::Error> {
-//         todo!()
-//     }
-// }
-
 #[cfg(test)]
 mod test {
 

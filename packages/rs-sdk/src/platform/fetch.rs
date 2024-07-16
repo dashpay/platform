@@ -11,9 +11,11 @@
 use crate::mock::MockResponse;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto, ResponseMetadata};
-use dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use dpp::platform_value::Identifier;
-use dpp::{document::Document, prelude::Identity};
+use dpp::voting::votes::Vote;
+use dpp::{
+    block::extended_epoch_info::ExtendedEpochInfo, document::Document, platform_value::Identifier,
+    prelude::Identity,
+};
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::fmt::Debug;
@@ -26,6 +28,9 @@ use super::DocumentQuery;
 /// To fetch an object from the platform, you need to define some query (criteria that fetched object must match) and
 /// use [Fetch::fetch()] for your object type.
 ///
+/// Implementators of this trait should implement at least the [fetch_with_metadata()](Fetch::fetch_with_metadata)
+/// method, as other methods are convenience methods that call it with default settings.
+///
 /// ## Example
 ///
 /// A common use case is to fetch an [Identity] object by its [Identifier]. As [Identifier] implements [Query] for
@@ -34,7 +39,7 @@ use super::DocumentQuery;
 /// * call [Identity::fetch()] with the query and an instance of [Sdk].
 ///
 /// ```rust
-/// use rs_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
+/// use dash_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
 /// let sdk = Sdk::new_mock();
@@ -124,7 +129,7 @@ where
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
 
         let (object, response_metadata): (Option<Self>, ResponseMetadata) =
-            sdk.parse_proof_with_metadata(request, response)?;
+            sdk.parse_proof_with_metadata(request, response).await?;
 
         match object {
             Some(item) => Ok((item.into(), response_metadata)),
@@ -158,19 +163,8 @@ where
         query: Q,
         settings: RequestSettings,
     ) -> Result<Option<Self>, Error> {
-        let request = query.query(sdk.prove())?;
-
-        let response = request.clone().execute(sdk, settings).await?;
-
-        let object_type = std::any::type_name::<Self>().to_string();
-        tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
-
-        let object: Option<Self> = sdk.parse_proof(request, response)?;
-
-        match object {
-            Some(item) => Ok(item.into()),
-            None => Ok(None),
-        }
+        let (object, _) = Self::fetch_with_metadata(sdk, query, Some(settings)).await?;
+        Ok(object)
     }
 
     /// Fetch single object from the Platform by identifier.
@@ -219,6 +213,18 @@ impl Fetch for drive_proof_verifier::types::IdentityBalanceAndRevision {
     type Request = platform_proto::GetIdentityBalanceAndRevisionRequest;
 }
 
+impl Fetch for drive_proof_verifier::types::DataContractHistory {
+    type Request = platform_proto::GetDataContractHistoryRequest;
+}
+
 impl Fetch for ExtendedEpochInfo {
     type Request = platform_proto::GetEpochsInfoRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::PrefundedSpecializedBalance {
+    type Request = platform_proto::GetPrefundedSpecializedBalanceRequest;
+}
+
+impl Fetch for Vote {
+    type Request = platform_proto::GetContestedResourceIdentityVotesRequest;
 }

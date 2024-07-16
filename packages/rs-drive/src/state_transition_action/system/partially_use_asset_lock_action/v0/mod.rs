@@ -1,15 +1,15 @@
 use dpp::fee::Credits;
-use dpp::platform_value::Bytes36;
+use dpp::platform_value::{Bytes32, Bytes36};
 use dpp::prelude::UserFeeIncrease;
-use serde::{Deserialize, Serialize};
 mod transformer;
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Default, Debug, Clone)]
 pub struct PartiallyUseAssetLockActionV0 {
     /// asset lock outpoint
     pub asset_lock_outpoint: Bytes36,
     /// initial credit value
     pub initial_credit_value: Credits,
+    /// the previous transaction signable bytes hashes that tried to used this asset lock, but failed
+    pub previous_transaction_hashes: Vec<Bytes32>,
     /// asset lock script
     pub asset_lock_script: Vec<u8>,
     /// remaining credit value AFTER used credits are deducted
@@ -37,4 +37,7 @@ pub trait PartiallyUseAssetLockActionAccessorsV0 {
     fn used_credits(&self) -> Credits;
     /// fee multiplier
     fn user_fee_increase(&self) -> UserFeeIncrease;
+
+    /// the previous transaction signable bytes hashes that tried to used this asset lock, but failed
+    fn previous_transaction_hashes_ref(&self) -> &Vec<Bytes32>;
 }

@@ -3,6 +3,7 @@ use std::str::FromStr;
 use dashcore::bls_sig_utils::BLSSignature;
 use dashcore::hash_types::CycleHash;
 
+use crate::balances::credits::Duffs;
 use dashcore::secp256k1::rand::thread_rng;
 use dashcore::secp256k1::Secp256k1;
 use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
@@ -19,8 +20,9 @@ use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, Instan
 
 pub fn raw_instant_asset_lock_proof_fixture(
     one_time_private_key: Option<PrivateKey>,
+    amount: Option<Duffs>,
 ) -> InstantAssetLockProof {
-    let transaction = instant_asset_lock_proof_transaction_fixture(one_time_private_key);
+    let transaction = instant_asset_lock_proof_transaction_fixture(one_time_private_key, amount);
 
     let instant_lock = instant_asset_lock_is_lock_fixture(transaction.txid());
 
@@ -29,8 +31,9 @@ pub fn raw_instant_asset_lock_proof_fixture(
 
 pub fn instant_asset_lock_proof_fixture(
     one_time_private_key: Option<PrivateKey>,
+    amount: Option<Duffs>,
 ) -> AssetLockProof {
-    let transaction = instant_asset_lock_proof_transaction_fixture(one_time_private_key);
+    let transaction = instant_asset_lock_proof_transaction_fixture(one_time_private_key, amount);
 
     let instant_lock = instant_asset_lock_is_lock_fixture(transaction.txid());
 
@@ -41,6 +44,7 @@ pub fn instant_asset_lock_proof_fixture(
 
 pub fn instant_asset_lock_proof_transaction_fixture(
     one_time_private_key: Option<PrivateKey>,
+    amount: Option<Duffs>,
 ) -> Transaction {
     let mut rng = thread_rng();
     let secp = Secp256k1::new();
@@ -74,12 +78,12 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     let one_time_key_hash = one_time_public_key.pubkey_hash();
 
     let funding_output = TxOut {
-        value: 100000000, // 1 Dash
+        value: amount.unwrap_or(100000000), // 1 Dash
         script_pubkey: ScriptBuf::new_p2pkh(&one_time_key_hash),
     };
 
     let burn_output = TxOut {
-        value: 100000000, // 1 Dash
+        value: amount.unwrap_or(100000000), // 1 Dash
         script_pubkey: ScriptBuf::new_op_return(&[]),
     };
 

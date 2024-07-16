@@ -1,25 +1,21 @@
-use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
-use crate::drive::document::{
-    contract_document_type_path,
-    contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_primary_key_path, make_document_reference,
-};
+use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+use crate::drive::document::make_document_reference;
 
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::{
-    BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
-    QueryType,
-};
-use crate::drive::object_size_info::DocumentInfo::DocumentOwnedInfo;
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
-use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
-use crate::drive::object_size_info::{
-    DocumentAndContractInfo, DocumentInfoV0Methods, DriveKeyInfo, PathKeyInfo,
-};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::{
+    BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
+    QueryType,
+};
+use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
+use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
+use crate::util::object_size_info::PathKeyElementInfo::PathKeyRefElement;
+use crate::util::object_size_info::{
+    DocumentAndContractInfo, DocumentInfoV0Methods, DriveKeyInfo, PathKeyInfo,
+};
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -28,6 +24,12 @@ use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 
+use crate::drive::document::paths::{
+    contract_document_type_path,
+    contract_documents_keeping_history_primary_key_path_for_document_id,
+    contract_documents_primary_key_path,
+};
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
@@ -51,7 +53,9 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let drive_version = &platform_version.drive;
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        if !document_and_contract_info.document_type.documents_mutable() {
+        if !document_and_contract_info.document_type.requires_revision()
+        // if it requires revision then there are reasons for us to be able to update in drive
+        {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "documents for this contract are not mutable",
             )));
@@ -167,7 +171,7 @@ impl Drive {
 
         let mut batch_insertion_cache: HashSet<Vec<Vec<u8>>> = HashSet::new();
         // fourth we need to store a reference to the document for each index
-        for index in document_type.indices() {
+        for index in document_type.indexes().values() {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -195,7 +199,7 @@ impl Drive {
                 .get_raw_for_document_type(
                     &top_index_property.name,
                     document_type,
-                    owner_id,
+                    None, // We want to use the old owner id
                     None,
                     platform_version,
                 )?
@@ -223,6 +227,7 @@ impl Drive {
                             index_path.clone(),
                             document_top_field.as_slice(),
                         )),
+                        false,
                         storage_flags,
                         BatchInsertTreeApplyType::StatefulBatchInsertTree,
                         transaction,
@@ -266,7 +271,7 @@ impl Drive {
                     .get_raw_for_document_type(
                         &index_property.name,
                         document_type,
-                        owner_id,
+                        None, // We want to use the old owner_id
                         None,
                         platform_version,
                     )?
@@ -295,6 +300,7 @@ impl Drive {
                                 index_path.clone(),
                                 index_property.name.as_bytes(),
                             )),
+                            false,
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsertTree,
                             transaction,
@@ -326,6 +332,7 @@ impl Drive {
                                 index_path.clone(),
                                 document_index_field.as_slice(),
                             )),
+                            false,
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsertTree,
                             transaction,
@@ -402,6 +409,7 @@ impl Drive {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
                     self.batch_insert_empty_tree_if_not_exists(
                         PathKeyInfo::PathKeyRef::<0>((index_path.clone(), &[0])),
+                        false,
                         storage_flags,
                         BatchInsertTreeApplyType::StatefulBatchInsertTree,
                         transaction,

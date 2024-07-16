@@ -52,15 +52,29 @@ class CorePromiseClient {
   }
 
   /**
-   * @param {!GetStatusRequest} getStatusRequest
+   * @param {!GetBlockchainStatusRequest} getBlockchainStatusRequest
    * @param {?Object<string, string>} metadata
-   * @return {Promise<!GetStatusResponse>}
+   * @return {Promise<!GetBlockchainStatusResponse>}
    */
-  getStatus(getStatusRequest, metadata = {}) {
+  getBlockchainStatus(getBlockchainStatusRequest, metadata = {}) {
     return promisify(
-      this.client.getStatus.bind(this.client),
+      this.client.getBlockchainStatus.bind(this.client),
     )(
-      getStatusRequest,
+      getBlockchainStatusRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetMasternodeStatusRequest} getMasternodeStatusRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetMasternodeStatusResponse>}
+   */
+  getMasternodeStatus(getMasternodeStatusRequest, metadata = {}) {
+    return promisify(
+      this.client.getMasternodeStatus.bind(this.client),
+    )(
+      getMasternodeStatusRequest,
       metadata,
     );
   }
@@ -75,6 +89,20 @@ class CorePromiseClient {
       this.client.getBlock.bind(this.client),
     )(
       getBlockRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetBestBlockHeightRequest} getBestBlockHeightRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetBestBlockHeightResponse>}
+   */
+  getBestBlockHeight(getBestBlockHeightRequest, metadata = {}) {
+    return promisify(
+      this.client.getBestBlockHeight.bind(this.client),
+    )(
+      getBestBlockHeightRequest,
       metadata,
     );
   }
@@ -152,6 +180,22 @@ class CorePromiseClient {
     )
 
     rewireStream(stream);
+    return stream;
+  }
+
+  /**
+   * @param {MasternodeListRequest} masternodeListRequest The request proto
+   * @param {?Object<string, string>} metadata User defined call metadata
+   * @return {!grpc.web.ClientReadableStream<!MasternodeListResponse>|undefined}
+   */
+  subscribeToMasternodeList(masternodeListRequest, metadata = {}) {
+    const stream = this.client.subscribeToMasternodeList(
+      masternodeListRequest,
+      metadata
+    )
+
+    rewireStream(stream);
+
     return stream;
   }
 }

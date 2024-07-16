@@ -10,7 +10,7 @@ use platform_value::Bytes20;
 
 impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
     /// Get the original public key hash
-    fn hash(&self) -> Result<[u8; 20], ProtocolError> {
+    fn public_key_hash(&self) -> Result<[u8; 20], ProtocolError> {
         if self.data.is_empty() {
             return Err(ProtocolError::EmptyPublicKeyDataError);
         }

@@ -31,7 +31,7 @@ where
     /// state transitions, processing state transitions, or executing events.
     pub(in crate::execution) fn decode_raw_state_transitions<'a>(
         &self,
-        raw_state_transitions: &'a Vec<Vec<u8>>,
+        raw_state_transitions: &'a [impl AsRef<[u8]>],
         platform_version: &PlatformVersion,
     ) -> Result<StateTransitionContainer<'a>, Error> {
         match platform_version

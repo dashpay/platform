@@ -13,6 +13,8 @@ use bincode::{Decode, Encode};
     feature = "state-transition-validation"
 ))]
 use dashcore::signer;
+#[cfg(feature = "state-transition-validation")]
+use dashcore::signer::double_sha;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::PlatformVersion;
 
@@ -68,6 +70,7 @@ use crate::identity::Purpose;
 use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AssetLockProof, UserFeeIncrease};
+use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
 pub use state_transitions::*;
 
 use crate::serialization::Signable;
@@ -103,6 +106,9 @@ use crate::state_transition::identity_topup_transition::{
 use crate::state_transition::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
+
+use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 
@@ -120,6 +126,7 @@ macro_rules! call_method {
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
             StateTransition::IdentityUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
+            StateTransition::MasternodeVote(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -132,6 +139,7 @@ macro_rules! call_method {
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
             StateTransition::IdentityUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
+            StateTransition::MasternodeVote(st) => st.$method(),
         }
     };
 }
@@ -147,6 +155,7 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method($args)),
             StateTransition::IdentityUpdate(st) => Some(st.$method($args)),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method($args)),
+            StateTransition::MasternodeVote(st) => Some(st.$method($args)),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -159,6 +168,7 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method()),
             StateTransition::IdentityUpdate(st) => Some(st.$method()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method()),
+            StateTransition::MasternodeVote(st) => Some(st.$method()),
         }
     };
 }
@@ -174,6 +184,7 @@ macro_rules! call_method_identity_signed {
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
             StateTransition::IdentityUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
+            StateTransition::MasternodeVote(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -186,6 +197,7 @@ macro_rules! call_method_identity_signed {
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
             StateTransition::IdentityUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
+            StateTransition::MasternodeVote(st) => st.$method(),
         }
     };
 }
@@ -206,6 +218,7 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
             StateTransition::IdentityUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
+            StateTransition::MasternodeVote(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -222,9 +235,11 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
             StateTransition::IdentityUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
+            StateTransition::MasternodeVote(st) => st.$method(),
         }
     };
 }
+
 // TODO unused macros below
 // macro_rules! call_static_method {
 //     ($state_transition:expr, $method:ident ) => {
@@ -241,6 +256,7 @@ macro_rules! call_errorable_method_identity_signed {
 //             StateTransition::IdentityCreditTransfer(_) => {
 //                 IdentityCreditTransferTransition::$method()
 //             }
+//             StateTransition::MasternodeVote(_) => MasternodeVote::$method(),
 //         }
 //     };
 // }
@@ -272,6 +288,7 @@ pub enum StateTransition {
     IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition),
     IdentityUpdate(IdentityUpdateTransition),
     IdentityCreditTransfer(IdentityCreditTransferTransition),
+    MasternodeVote(MasternodeVoteTransition),
 }
 
 impl OptionallyAssetLockProved for StateTransition {
@@ -336,6 +353,7 @@ impl StateTransition {
             Self::IdentityCreditWithdrawal(_) => "IdentityCreditWithdrawal",
             Self::IdentityUpdate(_) => "IdentityUpdate",
             Self::IdentityCreditTransfer(_) => "IdentityCreditTransfer",
+            Self::MasternodeVote(_) => "MasternodeVote",
         }
     }
 
@@ -387,8 +405,8 @@ impl StateTransition {
     }
 
     /// set fee multiplier
-    pub fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
-        call_method!(self, set_user_fee_increase, fee_multiplier)
+    pub fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+        call_method!(self, set_user_fee_increase, user_fee_increase)
     }
 
     /// set a new signature
@@ -463,6 +481,10 @@ impl StateTransition {
                 return Err(ProtocolError::CorruptedCodeExecution(
                     "identity top up can not be called for identity signing".to_string(),
                 ))
+            }
+            StateTransition::MasternodeVote(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
             }
         }
         let data = self.signable_bytes()?;
@@ -645,15 +667,15 @@ impl StateTransition {
             ));
         }
         let data = self.signable_bytes()?;
-        signer::verify_data_signature(&data, self.signature().as_slice(), public_key_hash).map_err(
-            |_| {
+        let data_hash = double_sha(data);
+        signer::verify_hash_signature(&data_hash, self.signature().as_slice(), public_key_hash)
+            .map_err(|e| {
                 ProtocolError::from(ConsensusError::SignatureError(
                     SignatureError::InvalidStateTransitionSignatureError(
-                        InvalidStateTransitionSignatureError::new(),
+                        InvalidStateTransitionSignatureError::new(e.to_string()),
                     ),
                 ))
-            },
-        )
+            })
     }
 
     #[cfg(feature = "state-transition-validation")]
@@ -665,17 +687,15 @@ impl StateTransition {
             ));
         }
         let data = self.signable_bytes()?;
-        signer::verify_data_signature(&data, self.signature().as_slice(), public_key).map_err(
-            |_| {
-                // TODO: it shouldn't respond with consensus error
+        signer::verify_data_signature(&data, self.signature().as_slice(), public_key).map_err(|e| {
+            // TODO: it shouldn't respond with consensus error
 
-                ProtocolError::from(ConsensusError::SignatureError(
-                    SignatureError::InvalidStateTransitionSignatureError(
-                        InvalidStateTransitionSignatureError::new(),
-                    ),
-                ))
-            },
-        )
+            ProtocolError::from(ConsensusError::SignatureError(
+                SignatureError::InvalidStateTransitionSignatureError(
+                    InvalidStateTransitionSignatureError::new(e.to_string()),
+                ),
+            ))
+        })
     }
 
     #[cfg(feature = "state-transition-validation")]
@@ -695,11 +715,11 @@ impl StateTransition {
 
         bls.verify_signature(self.signature().as_slice(), &data, public_key)
             .map(|_| ())
-            .map_err(|_| {
+            .map_err(|e| {
                 // TODO: it shouldn't respond with consensus error
                 ProtocolError::from(ConsensusError::SignatureError(
                     SignatureError::InvalidStateTransitionSignatureError(
-                        InvalidStateTransitionSignatureError::new(),
+                        InvalidStateTransitionSignatureError::new(e.to_string()),
                     ),
                 ))
             })

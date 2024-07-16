@@ -26,6 +26,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::v0::{
     IdentityCreditWithdrawalTransitionV0, MIN_CORE_FEE_PER_BYTE,
 };
 
+use dpp::native_bls::NativeBlsModule;
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
@@ -33,7 +34,6 @@ use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
-use dpp::NativeBlsModule;
 use rand::prelude::{IteratorRandom, StdRng};
 use simple_signer::signer::SimpleSigner;
 
@@ -634,7 +634,7 @@ pub fn create_identities_state_transitions(
     count: u16,
     key_count: KeyID,
     extra_keys: &KeyMaps,
-    balance: u64,
+    _balance: u64,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
     asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
@@ -659,6 +659,7 @@ pub fn create_identities_state_transitions(
                         *purpose,
                         *security_level,
                         *key_type,
+                        None,
                         platform_version,
                     )?;
                     identity.add_public_key(key.clone());
@@ -711,6 +712,7 @@ pub fn create_identities_state_transitions(
                     &pk,
                     signer,
                     &NativeBlsModule,
+                    0,
                     platform_version,
                 ) {
                     Ok(identity_create_transition) => {
@@ -767,7 +769,7 @@ pub fn create_identities_state_transitions(
 /// - Conversion and encoding errors related to the cryptographic data.
 pub fn create_state_transitions_for_identities(
     identities: Vec<Identity>,
-    signer: &mut SimpleSigner,
+    signer: &SimpleSigner,
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> Vec<(Identity, StateTransition)> {
@@ -777,7 +779,7 @@ pub fn create_state_transitions_for_identities(
             let (_, pk) = ECDSA_SECP256K1
                 .random_public_and_private_key_data(rng, platform_version)
                 .unwrap();
-            let sk: [u8; 32] = pk.clone().try_into().unwrap();
+            let sk: [u8; 32] = pk.try_into().unwrap();
             let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
             let asset_lock_proof =
                 instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
@@ -785,9 +787,36 @@ pub fn create_state_transitions_for_identities(
                 IdentityCreateTransition::try_from_identity_with_signer(
                     &identity.clone(),
                     asset_lock_proof,
-                    pk.as_slice(),
+                    &sk,
                     signer,
                     &NativeBlsModule,
+                    0,
+                    platform_version,
+                )
+                .expect("expected to transform identity into identity create transition");
+            identity.set_id(identity_create_transition.owner_id());
+
+            (identity, identity_create_transition)
+        })
+        .collect()
+}
+
+pub fn create_state_transitions_for_identities_and_proofs(
+    identities_with_proofs: Vec<(Identity, [u8; 32], AssetLockProof)>,
+    signer: &mut SimpleSigner,
+    platform_version: &PlatformVersion,
+) -> Vec<(Identity, StateTransition)> {
+    identities_with_proofs
+        .into_iter()
+        .map(|(mut identity, private_key, asset_lock_proof)| {
+            let identity_create_transition =
+                IdentityCreateTransition::try_from_identity_with_signer(
+                    &identity.clone(),
+                    asset_lock_proof,
+                    &private_key,
+                    signer,
+                    &NativeBlsModule,
+                    0,
                     platform_version,
                 )
                 .expect("expected to transform identity into identity create transition");

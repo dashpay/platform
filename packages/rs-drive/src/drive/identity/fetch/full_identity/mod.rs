@@ -1,11 +1,11 @@
 mod fetch_full_identities;
 mod fetch_full_identity;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 
     mod fetch_full_identities {
         use super::*;

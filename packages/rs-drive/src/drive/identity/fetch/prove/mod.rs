@@ -2,5 +2,6 @@ mod prove_full_identities;
 mod prove_full_identities_by_unique_public_key_hashes;
 mod prove_full_identity;
 mod prove_full_identity_by_unique_public_key_hash;
+mod prove_identities_contract_keys;
 mod prove_identity_id_by_unique_public_key_hash;
 mod prove_identity_ids_by_unique_public_key_hashes;

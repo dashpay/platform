@@ -54,7 +54,7 @@ describe('GetProtocolVersionUpgradeVoteStatusResponse', () => {
     );
   });
 
-  it('should return vote statuses', () => {
+  it('should return votes statuses', () => {
     const versionSignals = getProtocolVersionUpgradeVoteStatus.getVersionSignals();
     const proof = getProtocolVersionUpgradeVoteStatus.getProof();
 

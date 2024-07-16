@@ -15,7 +15,8 @@ import semver from 'semver';
 
 import fs from 'fs';
 import {
-  NETWORK_TESTNET, PACKAGE_ROOT_DIR,
+  NETWORK_MAINNET,
+  PACKAGE_ROOT_DIR,
 } from '../../src/constants.js';
 import Config from '../../src/config/Config.js';
 
@@ -90,8 +91,45 @@ export default function getBaseConfigFactory(homeDir) {
         rpc: {
           host: '127.0.0.1',
           port: 9998,
-          user: 'dashrpc',
-          password: 'rpcpassword',
+          users: {
+            dashmate: {
+              password: 'rpcpassword',
+              whitelist: null,
+              lowPriority: false,
+            },
+            dapi: {
+              password: 'rpcpassword',
+              whitelist: [
+                'getbestblockhash', 'getblockhash', 'sendrawtransaction', 'getrawtransaction',
+                'getblockstats', 'getmerkleblocks', 'getrawtransactionmulti', 'getrawmempool',
+                'getblockcount', 'getbestchainlock', 'getblock', 'getblockheader', 'getblockheaders',
+                'protxdiff', 'getnetworkinfo', 'getblockchaininfo', 'mnsyncstatus', 'masternodestatus',
+              ],
+              lowPriority: true,
+            },
+            drive_consensus: {
+              password: 'rpcpassword',
+              whitelist: [
+                'getbestchainlock', 'getblockchaininfo', 'getrawtransaction', 'submitchainlock',
+                'verifychainlock', 'protxlistdiff', 'quorumlistextended', 'quoruminfo',
+                'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus',
+              ],
+              lowPriority: false,
+            },
+            drive_check_tx: {
+              password: 'rpcpassword',
+              whitelist: ['getrawtransaction'],
+              lowPriority: true,
+            },
+            tenderdash: {
+              password: 'rpcpassword',
+              whitelist: [
+                'quoruminfo', 'quorumverify', 'quorumsign', 'masternodestatus', 'masternodelist',
+                'ping', 'getnetworkinfo',
+              ],
+              lowPriority: false,
+            },
+          },
           allowIps: ['127.0.0.1', '172.16.0.0/12', '192.168.0.0/16'],
         },
         spork: {
@@ -125,34 +163,85 @@ export default function getBaseConfigFactory(homeDir) {
         indexes: true,
       },
       platform: {
-        dapi: {
-          envoy: {
-            docker: {
-              image: 'dashpay/envoy:1.22.11',
+        gateway: {
+          docker: {
+            image: 'dashpay/envoy:1.30.2-impr.1',
+          },
+          maxConnections: 1000,
+          maxHeapSizeInBytes: 125000000, // 1 Gb
+          upstreams: {
+            driveGrpc: {
+              maxRequests: 100,
             },
-            http: {
+            dapiApi: {
+              maxRequests: 100,
+            },
+            dapiCoreStreams: {
+              maxRequests: 100,
+            },
+            dapiJsonRpc: {
+              maxRequests: 100,
+            },
+          },
+          metrics: {
+            enabled: false,
+            host: '127.0.0.1',
+            port: 9090,
+          },
+          admin: {
+            enabled: false,
+            host: '127.0.0.1',
+            port: 9901,
+          },
+          listeners: {
+            dapiAndDrive: {
+              http2: {
+                maxConcurrentStreams: 10,
+              },
               host: '0.0.0.0',
               port: 443,
-              connectTimeout: '5s',
-              responseTimeout: '15s',
             },
-            rateLimiter: {
-              maxTokens: 300,
-              tokensPerFill: 150,
-              fillInterval: '60s',
-              enabled: true,
+          },
+          log: {
+            level: 'info',
+            accessLogs: [
+              {
+                type: 'stdout',
+                format: 'text',
+                template: null,
+              },
+            ],
+          },
+          rateLimiter: {
+            docker: {
+              image: 'envoyproxy/ratelimit:3fcc3609',
             },
-            ssl: {
+            metrics: {
               enabled: false,
-              provider: 'zerossl',
-              providerConfigs: {
-                zerossl: {
-                  apiKey: null,
-                  id: null,
-                },
+              docker: {
+                image: 'prom/statsd-exporter:v0.26.1',
+              },
+              host: '127.0.0.1',
+              port: 9102,
+            },
+            unit: 'minute',
+            requestsPerUnit: 150,
+            blacklist: [],
+            whitelist: [],
+            enabled: true,
+          },
+          ssl: {
+            enabled: false,
+            provider: 'zerossl',
+            providerConfigs: {
+              zerossl: {
+                apiKey: null,
+                id: null,
               },
             },
           },
+        },
+        dapi: {
           api: {
             docker: {
               image: `dashpay/dapi:${dockerImageVersion}`,
@@ -191,22 +280,48 @@ export default function getBaseConfigFactory(homeDir) {
               enabled: false,
               host: '127.0.0.1',
               port: 6669,
-              retention_secs: 60 * 3,
+              retention: 60 * 3,
             },
             validatorSet: {
-              llmqType: 4,
+              quorum: {
+                llmqType: 4,
+                dkgInterval: 24,
+                activeSigners: 24,
+                rotation: false,
+              },
             },
             chainLock: {
-              llmqType: 2,
-              dkgInterval: 288,
-              llmqSize: 400,
+              quorum: {
+                llmqType: 2,
+                dkgInterval: 288,
+                activeSigners: 4,
+                rotation: false,
+              },
+            },
+            instantLock: {
+              quorum: {
+                llmqType: 5,
+                dkgInterval: 288,
+                activeSigners: 32,
+                rotation: true,
+              },
+            },
+            metrics: {
+              enabled: false,
+              host: '127.0.0.1',
+              port: 29090,
+            },
+            grovedbVisualizer: {
+              enabled: false,
+              host: '127.0.0.1',
+              port: 8083,
             },
             epochTime: 788400,
           },
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:0.14.0-dev.4',
+              image: 'dashpay/tenderdash:1.0.0',
             },
             p2p: {
               host: '0.0.0.0',
@@ -241,6 +356,7 @@ export default function getBaseConfigFactory(homeDir) {
               txEnqueueTimeout: '0',
               txSendRateLimit: 0,
               txRecvRateLimit: 0,
+              maxConcurrentCheckTx: 250,
             },
             consensus: {
               createEmptyBlocks: true,
@@ -368,7 +484,7 @@ export default function getBaseConfigFactory(homeDir) {
         },
       },
       externalIp: null,
-      network: NETWORK_TESTNET,
+      network: NETWORK_MAINNET,
       environment: 'production',
     };
 

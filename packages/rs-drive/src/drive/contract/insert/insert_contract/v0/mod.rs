@@ -1,11 +1,11 @@
 use crate::drive::contract::paths;
 
-use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
-use crate::drive::{contract_documents_path, Drive, RootTree};
+use crate::drive::{contract_documents_path, votes, Drive, RootTree};
+use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
+use crate::util::storage_flags::StorageFlags;
 
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
@@ -15,6 +15,9 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
+use crate::drive::votes::paths::{
+    CONTESTED_DOCUMENT_INDEXES_TREE_KEY, CONTESTED_DOCUMENT_STORAGE_TREE_KEY,
+};
 use crate::error::contract::DataContractError;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -76,6 +79,7 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
+            None,
         )
     }
 
@@ -185,9 +189,81 @@ impl Drive {
             &platform_version.drive,
         )?;
 
+        // If the contract happens to contain any contested indexes then we add the contract to the
+        //  contested contracts
+
+        let document_types_with_contested_indexes =
+            contract.document_types_with_contested_indexes();
+
+        if !document_types_with_contested_indexes.is_empty() {
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                Self::add_estimation_costs_for_contested_document_tree_levels_up_to_contract(
+                    contract,
+                    None,
+                    estimated_costs_only_with_layer_info,
+                    &platform_version.drive,
+                )?;
+            }
+
+            let contested_contract_root_path =
+                votes::paths::vote_contested_resource_active_polls_tree_path();
+
+            self.batch_insert_empty_tree(
+                contested_contract_root_path,
+                KeyRef(contract.id_ref().as_bytes()),
+                storage_flags.as_ref(),
+                &mut batch_operations,
+                &platform_version.drive,
+            )?;
+
+            let contested_unique_index_contract_document_types_path =
+                votes::paths::vote_contested_resource_active_polls_contract_tree_path(
+                    contract.id_ref().as_bytes(),
+                );
+
+            for (type_key, _document_type) in document_types_with_contested_indexes.into_iter() {
+                self.batch_insert_empty_tree(
+                    contested_unique_index_contract_document_types_path,
+                    KeyRef(type_key.as_bytes()),
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+
+                let type_path = [
+                    contested_unique_index_contract_document_types_path[0],
+                    contested_unique_index_contract_document_types_path[1],
+                    contested_unique_index_contract_document_types_path[2],
+                    contested_unique_index_contract_document_types_path[3],
+                    type_key.as_bytes(),
+                ];
+
+                // primary key tree
+                let key_info_storage = Key(vec![CONTESTED_DOCUMENT_STORAGE_TREE_KEY]);
+                self.batch_insert_empty_tree(
+                    type_path,
+                    key_info_storage,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+
+                // index key tree
+                let key_info_indexes = Key(vec![CONTESTED_DOCUMENT_INDEXES_TREE_KEY]);
+                self.batch_insert_empty_tree(
+                    type_path,
+                    key_info_indexes,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+            }
+        }
+
         // next we should store each document type
         // right now we are referring them by name
-        // toDo: change this to be a reference by index
+        // todo: maybe change this to be a reference by index
         let contract_documents_path = contract_documents_path(contract.id_ref().as_bytes());
 
         for (type_key, document_type) in contract.document_types().iter() {

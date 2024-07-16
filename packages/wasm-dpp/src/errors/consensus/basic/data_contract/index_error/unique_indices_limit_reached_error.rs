@@ -23,7 +23,7 @@ impl UniqueIndicesLimitReachedErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getIndexLimit)]
-    pub fn get_index_limit(&self) -> usize {
+    pub fn get_index_limit(&self) -> u16 {
         self.inner.index_limit()
     }
 

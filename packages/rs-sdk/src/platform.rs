@@ -10,6 +10,7 @@ mod delegate;
 mod document_query;
 mod fetch;
 mod fetch_many;
+mod identities_contract_keys_query;
 mod query;
 pub mod transition;
 pub mod types;
@@ -20,7 +21,7 @@ pub use dpp::{
     document::Document,
     prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
 };
-pub use drive::query::DriveQuery;
+pub use drive::query::DriveDocumentQuery;
 pub use drive_proof_verifier::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use drive_proof_verifier::MockContextProvider;
@@ -29,5 +30,5 @@ pub use {
     document_query::DocumentQuery,
     fetch::Fetch,
     fetch_many::FetchMany,
-    query::{LimitQuery, Query, DEFAULT_EPOCH_QUERY_LIMIT},
+    query::{LimitQuery, Query, QueryStartInfo, DEFAULT_EPOCH_QUERY_LIMIT},
 };

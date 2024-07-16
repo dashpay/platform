@@ -1,13 +1,13 @@
 mod v0;
 
-use crate::drive::flags::StorageFlags;
+use crate::util::storage_flags::StorageFlags;
 
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
+use crate::util::object_size_info::{DocumentAndContractInfo, PathInfo};
 
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::document_type::IndexLevel;
 
 use dpp::version::PlatformVersion;

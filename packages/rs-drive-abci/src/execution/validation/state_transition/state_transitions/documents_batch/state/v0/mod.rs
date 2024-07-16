@@ -15,13 +15,18 @@ use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
+use crate::execution::validation::state_transition::documents_batch::action_validation::document_purchase_transition_action::DocumentPurchaseTransitionActionValidation;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
+use crate::execution::validation::state_transition::documents_batch::action_validation::document_transfer_transition_action::DocumentTransferTransitionActionValidation;
+use crate::execution::validation::state_transition::documents_batch::action_validation::document_update_price_transition_action::DocumentUpdatePriceTransitionActionValidation;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
 use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::documents_batch::transformer::v0::DocumentsBatchTransitionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 mod data_triggers;
+pub mod fetch_contender;
 pub mod fetch_documents;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStateValidationV0
@@ -30,6 +35,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
         &self,
         action: DocumentsBatchTransitionAction,
         platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -48,6 +55,8 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
         &self,
         mut state_transition_action: DocumentsBatchTransitionAction,
         platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -70,11 +79,60 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
         for transition in state_transition_action.transitions_take() {
             let transition_validation_result = match &transition {
                 DocumentTransitionAction::CreateAction(create_action) => create_action
-                    .validate_state(platform, owner_id, transaction, platform_version)?,
+                    .validate_state(
+                        platform,
+                        owner_id,
+                        block_info,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
                 DocumentTransitionAction::ReplaceAction(replace_action) => replace_action
-                    .validate_state(platform, owner_id, transaction, platform_version)?,
+                    .validate_state(
+                        platform,
+                        owner_id,
+                        block_info,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
+                DocumentTransitionAction::TransferAction(transfer_action) => transfer_action
+                    .validate_state(
+                        platform,
+                        owner_id,
+                        block_info,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
                 DocumentTransitionAction::DeleteAction(delete_action) => delete_action
-                    .validate_state(platform, owner_id, transaction, platform_version)?,
+                    .validate_state(
+                        platform,
+                        owner_id,
+                        block_info,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
+                DocumentTransitionAction::UpdatePriceAction(update_price_action) => {
+                    update_price_action.validate_state(
+                        platform,
+                        owner_id,
+                        block_info,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?
+                }
+                DocumentTransitionAction::PurchaseAction(purchase_action) => purchase_action
+                    .validate_state(
+                        platform,
+                        owner_id,
+                        block_info,
+                        execution_context,
+                        transaction,
+                        platform_version,
+                    )?,
                 DocumentTransitionAction::BumpIdentityDataContractNonce(..) => {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "we should never start with a bump identity data contract nonce",
@@ -113,11 +171,6 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
                 )?;
 
                 if !data_trigger_execution_result.is_valid() {
-                    tracing::debug!(
-                        "{:?} state transition data trigger was not valid, errors are {:?}",
-                        transition,
-                        data_trigger_execution_result.errors,
-                    );
                     // If a state transition isn't valid because of data triggers we still need
                     // to bump the identity data contract nonce
                     let consensus_errors: Vec<ConsensusError> = data_trigger_execution_result

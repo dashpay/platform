@@ -1,4 +1,4 @@
-use crate::drive::flags::StorageFlags;
+use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::DataContract;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::data_contracts;
@@ -14,8 +14,6 @@ use dpp::tests::fixtures::get_masternode_reward_shares_data_contract_fixture;
 use grovedb_costs::OperationCost;
 #[cfg(feature = "fixtures-and-mocks")]
 use platform_version::version::PlatformVersion;
-
-#[cfg(any(feature = "full", feature = "verify"))]
 /// DataContract and fetch information
 #[derive(PartialEq, Debug, Clone)]
 pub struct DataContractFetchInfo {

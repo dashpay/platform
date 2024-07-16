@@ -7,7 +7,7 @@ use dpp::platform_value::Value;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::version::PlatformVersion;
-use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::{document, ProtocolError};
@@ -64,7 +64,7 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
 
     let document_type = data_contract.document_type_for_name(withdrawal::NAME)?;
 
-    let drive_query = DriveQuery {
+    let drive_query = DriveDocumentQuery {
         contract: data_contract,
         document_type,
         internal_clauses: InternalClauses {
@@ -147,12 +147,13 @@ mod tests {
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
     use dpp::version::PlatformVersion;
-    use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
-    use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::withdrawal::Pooling;
     use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::v0::StateTransitionExecutionContextV0;
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
     #[test]
     fn should_throw_error_if_withdrawal_not_found() {
@@ -306,6 +307,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
 

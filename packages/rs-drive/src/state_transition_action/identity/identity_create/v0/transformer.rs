@@ -3,6 +3,7 @@ use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::Bytes36;
+use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 
 use dpp::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
 
@@ -10,6 +11,7 @@ impl IdentityCreateTransitionActionV0 {
     /// try from
     pub fn try_from(
         value: IdentityCreateTransitionV0,
+        signable_bytes_hasher: SignableBytesHasher,
         asset_lock_value_to_be_consumed: AssetLockValue,
     ) -> Result<Self, ConsensusError> {
         let IdentityCreateTransitionV0 {
@@ -27,6 +29,7 @@ impl IdentityCreateTransitionActionV0 {
         })?;
 
         Ok(IdentityCreateTransitionActionV0 {
+            signable_bytes_hasher,
             public_keys: public_keys.into_iter().map(|a| a.into()).collect(),
             asset_lock_value_to_be_consumed,
             identity_id,
@@ -38,6 +41,7 @@ impl IdentityCreateTransitionActionV0 {
     /// try from borrowed
     pub fn try_from_borrowed(
         value: &IdentityCreateTransitionV0,
+        signable_bytes_hasher: SignableBytesHasher,
         asset_lock_value_to_be_consumed: AssetLockValue,
     ) -> Result<Self, ConsensusError> {
         let IdentityCreateTransitionV0 {
@@ -56,6 +60,7 @@ impl IdentityCreateTransitionActionV0 {
         })?;
 
         Ok(IdentityCreateTransitionActionV0 {
+            signable_bytes_hasher,
             public_keys: public_keys.iter().map(|key| key.into()).collect(),
             asset_lock_value_to_be_consumed,
             identity_id: *identity_id,

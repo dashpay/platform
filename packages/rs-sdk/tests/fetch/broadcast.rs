@@ -7,7 +7,6 @@ mod online {
         WaitForStateTransitionResultRequest,
     };
     use rs_dapi_client::{DapiRequest, RequestSettings};
-    use rs_sdk::Sdk;
     use std::time::Duration;
 
     /// Send streaming request to the server and time out after 1 second (because we don't expect to receive anything)
@@ -20,7 +19,6 @@ mod online {
 
         let cfg = Config::new();
         let sdk = cfg.setup_api("test_wait_timeout").await;
-        let sdk_ref: &Sdk = sdk.as_ref();
 
         let request: WaitForStateTransitionResultRequest = WaitForStateTransitionResultRequestV0 {
             prove: false,
@@ -36,7 +34,7 @@ mod online {
         // we add few millis to duration to give chance to the server to time out before we kill request
         let response = tokio::time::timeout(
             TIMEOUT + Duration::from_millis(100),
-            request.execute(sdk_ref, settings),
+            request.execute(&sdk, settings),
         )
         .await
         .expect("expected request timeout, got tokio timeout");

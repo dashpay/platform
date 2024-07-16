@@ -1,5 +1,6 @@
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
@@ -15,7 +16,9 @@ impl DocumentType {
         schema_defs: Option<&BTreeMap<String, Value>>,
         default_keeps_history: bool,
         default_mutability: bool,
-        validate: bool,
+        default_can_be_deleted: bool,
+        full_validation: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version
@@ -32,7 +35,9 @@ impl DocumentType {
                 schema_defs,
                 default_keeps_history,
                 default_mutability,
-                validate,
+                default_can_be_deleted,
+                full_validation,
+                validation_operations,
                 platform_version,
             )
             .map(|document_type| document_type.into()),

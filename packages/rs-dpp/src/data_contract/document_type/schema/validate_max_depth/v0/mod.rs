@@ -1,66 +1,86 @@
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeSet;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::consensus::basic::BasicError;
+use crate::data_contract::document_type::schema::MaxDepthValidationResult;
 use crate::util::json_schema::resolve_uri;
-use crate::validation::SimpleConsensusValidationResult;
-
-const MAX_DEPTH: usize = 500;
+use crate::validation::ConsensusValidationResult;
 
 #[inline(always)]
-pub(super) fn validate_max_depth_v0(value: &Value) -> SimpleConsensusValidationResult {
-    let mut result = SimpleConsensusValidationResult::default();
-    let schema_depth = match calculate_max_depth(value) {
-        Ok(depth) => depth,
-        Err(err) => {
-            result.add_error(err);
-            return result;
-        }
-    };
-
-    if schema_depth > MAX_DEPTH {
-        result.add_error(BasicError::DataContractMaxDepthExceedError(
-            DataContractMaxDepthExceedError::new(schema_depth, MAX_DEPTH),
-        ));
-    }
-    result
-}
-
-fn calculate_max_depth(platform_value: &Value) -> Result<usize, BasicError> {
+pub(super) fn validate_max_depth_v0(
+    platform_value: &Value,
+    platform_version: &PlatformVersion,
+) -> ConsensusValidationResult<MaxDepthValidationResult> {
+    let max_allowed_depth = platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .max_depth as usize;
     let mut values_depth_queue: Vec<(&Value, usize)> = vec![(platform_value, 0)];
-    let mut max_depth: usize = 0;
+    let mut max_reached_depth: usize = 0;
     let mut visited: BTreeSet<*const Value> = BTreeSet::new();
     let ref_value = Value::Text("$ref".to_string());
+
+    let mut size: u64 = 1; // we start at 1, because we are a value
 
     while let Some((value, depth)) = values_depth_queue.pop() {
         match value {
             Value::Map(map) => {
                 let new_depth = depth + 1;
-                if max_depth < new_depth {
-                    max_depth = new_depth
+                if new_depth > max_allowed_depth {
+                    return ConsensusValidationResult::new_with_error(
+                        BasicError::DataContractMaxDepthExceedError(
+                            DataContractMaxDepthExceedError::new(max_allowed_depth),
+                        )
+                        .into(),
+                    );
+                }
+                if max_reached_depth < new_depth {
+                    max_reached_depth = new_depth
                 }
                 for (property_name, v) in map {
+                    size += 1;
                     // handling the internal references
                     if property_name == &ref_value {
                         if let Some(uri) = v.as_str() {
-                            let resolved = resolve_uri(platform_value, uri).map_err(|e| {
+                            let resolved = match resolve_uri(platform_value, uri).map_err(|e| {
                                 BasicError::InvalidJsonSchemaRefError(
                                     InvalidJsonSchemaRefError::new(format!(
                                         "invalid ref for max depth '{}': {}",
                                         uri, e
                                     )),
                                 )
-                            })?;
+                            }) {
+                                Ok(resolved) => resolved,
+                                Err(e) => {
+                                    return ConsensusValidationResult::new_with_data_and_errors(
+                                        MaxDepthValidationResult {
+                                            depth: max_reached_depth as u16, // Not possible this is bigger than u16 max
+                                            size,
+                                        },
+                                        vec![e.into()],
+                                    );
+                                }
+                            };
 
                             if visited.contains(&(resolved as *const Value)) {
-                                return Err(BasicError::InvalidJsonSchemaRefError(
-                                    InvalidJsonSchemaRefError::new(format!(
-                                        "the ref '{}' contains cycles",
-                                        uri
-                                    )),
-                                ));
+                                return ConsensusValidationResult::new_with_data_and_errors(
+                                    MaxDepthValidationResult {
+                                        depth: max_reached_depth as u16, // Not possible this is bigger than u16 max
+                                        size,
+                                    },
+                                    vec![BasicError::InvalidJsonSchemaRefError(
+                                        InvalidJsonSchemaRefError::new(format!(
+                                            "the ref '{}' contains cycles",
+                                            uri
+                                        )),
+                                    )
+                                    .into()],
+                                );
                             }
 
                             visited.insert(resolved as *const Value);
@@ -76,10 +96,11 @@ fn calculate_max_depth(platform_value: &Value) -> Result<usize, BasicError> {
             }
             Value::Array(array) => {
                 let new_depth = depth + 1;
-                if max_depth < new_depth {
-                    max_depth = new_depth
+                if max_reached_depth < new_depth {
+                    max_reached_depth = new_depth
                 }
                 for v in array {
+                    size += 1;
                     if v.is_map() || v.is_array() {
                         values_depth_queue.push((v, new_depth))
                     }
@@ -89,7 +110,10 @@ fn calculate_max_depth(platform_value: &Value) -> Result<usize, BasicError> {
         }
     }
 
-    Ok(max_depth)
+    ConsensusValidationResult::new_with_data(MaxDepthValidationResult {
+        depth: max_reached_depth as u16, // Not possible this is bigger than u16 max
+        size,
+    })
 }
 
 #[cfg(test)]
@@ -126,12 +150,13 @@ mod test {
               }
         )
         .into();
-        let result = calculate_max_depth(&schema);
 
-        let err = get_ref_error(result);
+        let result = validate_max_depth_v0(&schema, PlatformVersion::first());
+
+        let err = result.errors.first().expect("expected an error");
         assert_eq!(
-            err.message(),
-            "the ref '#/$defs/object' contains cycles".to_string()
+            err.to_string(),
+            "Invalid JSON Schema $ref: the ref '#/$defs/object' contains cycles".to_string()
         );
     }
 
@@ -162,8 +187,10 @@ mod test {
               }
         )
         .into();
-        let result = calculate_max_depth(&schema);
-        assert!(matches!(result, Ok(5)));
+        let result = validate_max_depth_v0(&schema, PlatformVersion::first())
+            .data
+            .expect("expected data");
+        assert_eq!(result, MaxDepthValidationResult { depth: 5, size: 19 });
     }
 
     #[test]
@@ -186,12 +213,12 @@ mod test {
               }
         )
         .into();
-        let result = calculate_max_depth(&schema);
+        let result = validate_max_depth_v0(&schema, PlatformVersion::first());
 
-        let err = get_ref_error(result);
+        let err = result.errors.first().expect("expected an error");
         assert_eq!(
-            err.message(),
-            "invalid ref for max depth '#/$defs/object': value decoding error: StructureError(\"unable to get property $defs in $defs.object\")"
+            err.to_string(),
+            "Invalid JSON Schema $ref: invalid ref for max depth '#/$defs/object': value decoding error: StructureError(\"unable to get property $defs in $defs.object\")"
                 .to_string()
         );
     }
@@ -216,12 +243,12 @@ mod test {
               }
         )
         .into();
-        let result = calculate_max_depth(&schema);
+        let result = validate_max_depth_v0(&schema, PlatformVersion::first());
 
-        let err = get_ref_error(result);
+        let err = result.errors.first().expect("expected an error");
         assert_eq!(
-            err.message(),
-            "invalid ref for max depth 'https://json-schema.org/some': invalid uri error: only local uri references are allowed"
+            err.to_string(),
+            "Invalid JSON Schema $ref: invalid ref for max depth 'https://json-schema.org/some': invalid uri error: only local uri references are allowed"
                 .to_string()
         );
     }
@@ -246,12 +273,12 @@ mod test {
               }
         )
         .into();
-        let result = calculate_max_depth(&schema);
+        let result = validate_max_depth_v0(&schema, PlatformVersion::first());
 
-        let err = get_ref_error(result);
+        let err = result.errors.first().expect("expected an error");
         assert_eq!(
-            err.message(),
-            "invalid ref for max depth '': invalid uri error: only local uri references are allowed"
+            err.to_string(),
+            "Invalid JSON Schema $ref: invalid ref for max depth '': invalid uri error: only local uri references are allowed"
                 .to_string()
         );
     }
@@ -273,13 +300,21 @@ mod test {
               }
         )
         .into();
-        assert!(matches!(calculate_max_depth(&schema), Ok(3)));
+        let found_depth = validate_max_depth_v0(&schema, PlatformVersion::first())
+            .data
+            .expect("expected data")
+            .depth;
+        assert_eq!(found_depth, 3);
     }
 
     #[test]
     fn should_calculate_valid_depth_for_empty_json() {
         let schema: Value = json!({}).into();
-        assert!(matches!(calculate_max_depth(&schema), Ok(1)));
+        let found_depth = validate_max_depth_v0(&schema, PlatformVersion::first())
+            .data
+            .expect("expected data")
+            .depth;
+        assert_eq!(found_depth, 1);
     }
 
     #[test]
@@ -297,16 +332,12 @@ mod test {
 
         })
         .into();
-        assert!(matches!(calculate_max_depth(&schema), Ok(4)));
-    }
 
-    pub fn get_ref_error<T>(result: Result<T, BasicError>) -> InvalidJsonSchemaRefError {
-        match result {
-            Ok(_) => panic!("expected to have validation error"),
-            Err(e) => match e {
-                BasicError::InvalidJsonSchemaRefError(err) => err,
-                _ => panic!("expected error to be a InvalidJsonSchemaRefError"),
-            },
-        }
+        let found_depth = validate_max_depth_v0(&schema, PlatformVersion::first())
+            .data
+            .expect("expected data")
+            .depth;
+
+        assert_eq!(found_depth, 4);
     }
 }

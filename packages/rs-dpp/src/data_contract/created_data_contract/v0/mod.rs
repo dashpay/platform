@@ -1,17 +1,19 @@
 use crate::data_contract::DataContract;
 use bincode::{Decode, Encode};
 
-#[cfg(feature = "data-contract-value-conversion")]
-use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-use crate::data_contract::created_data_contract::fields::property_names::{
-    DATA_CONTRACT, IDENTITY_NONCE,
-};
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::prelude::IdentityNonce;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{Error, Value};
+#[cfg(feature = "data-contract-value-conversion")]
+use crate::{
+    data_contract::{
+        conversion::value::v0::DataContractValueConversionMethodsV0,
+        created_data_contract::fields::property_names::{DATA_CONTRACT, IDENTITY_NONCE},
+    },
+    version::PlatformVersion,
+    ProtocolError,
+};
+#[cfg(feature = "data-contract-value-conversion")]
+use platform_value::{btreemap_extensions::BTreeValueRemoveFromMapHelper, Error, Value};
 
 // TODO: Decide on what we need ExtendedDataContract with metadata or CreatedDataContract or both.
 #[derive(Clone, Debug, PartialEq)]
@@ -30,7 +32,7 @@ impl CreatedDataContractV0 {
     #[cfg(feature = "data-contract-value-conversion")]
     pub fn from_object(
         raw_object: Value,
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut raw_map = raw_object
@@ -46,7 +48,7 @@ impl CreatedDataContractV0 {
             .map_err(ProtocolError::ValueError)?;
 
         let data_contract =
-            DataContract::from_value(raw_data_contract, validate, platform_version)?;
+            DataContract::from_value(raw_data_contract, full_validation, platform_version)?;
 
         Ok(Self {
             data_contract,

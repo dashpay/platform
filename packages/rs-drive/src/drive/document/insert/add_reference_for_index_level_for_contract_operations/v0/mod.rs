@@ -1,27 +1,28 @@
-use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
+use crate::drive::constants::STORAGE_FLAGS_SIZE;
 use crate::drive::document::{document_reference_size, make_document_reference};
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
-use crate::drive::object_size_info::DocumentInfo::{
-    DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
-    DocumentRefAndSerialization, DocumentRefInfo,
-};
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
-use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+use crate::util::object_size_info::DocumentInfo::{
+    DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
+    DocumentRefAndSerialization, DocumentRefInfo,
+};
+use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
+use crate::util::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
+use crate::util::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
+use crate::util::storage_flags::StorageFlags;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::IndexType;
 use dpp::document::DocumentV0Getters;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::AllSubtrees;
-use grovedb::EstimatedSumTrees::NoSumTrees;
+use grovedb::EstimatedLayerSizes::AllReference;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
@@ -32,7 +33,7 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         mut index_path_info: PathInfo<0>,
-        unique: bool,
+        index_type: IndexType,
         any_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
@@ -44,8 +45,10 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         // unique indexes will be stored under key "0"
-        // non unique indices should have a tree at key "0" that has all elements based off of primary key
-        if !unique || any_fields_null {
+        // non-unique indices should have a tree at key "0" that has all elements based off of primary key
+        if !index_type.is_unique() || any_fields_null {
+            // Tree generation, this happens for both non unique indexes, unique indexes with a null inside
+            // a member of the path
             let key_path_info = KeyRef(&[0]);
 
             let path_key_info = key_path_info.add_path_info(index_path_info.clone());
@@ -62,9 +65,13 @@ impl Drive {
                 }
             };
 
-            // here we are inserting an empty tree that will have a subtree of all other index properties
+            // Here we are inserting an empty tree that will have a subtree of all other index properties
+            // It is basically the 0
+            // Underneath we will have all elements if non unique index, or all identity contenders if
+            // a contested resource index
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
+                false,
                 *storage_flags,
                 apply_type,
                 transaction,
@@ -74,6 +81,8 @@ impl Drive {
             )?;
 
             index_path_info.push(Key(vec![0]))?;
+            // This is the simpler situation
+            // Under each tree we have all the references
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
@@ -83,9 +92,9 @@ impl Drive {
                     EstimatedLayerInformation {
                         is_sum_tree: false,
                         estimated_layer_count: PotentiallyAtMaxElements,
-                        estimated_layer_sizes: AllSubtrees(
+                        estimated_layer_sizes: AllReference(
                             DEFAULT_HASH_SIZE_U8,
-                            NoSumTrees,
+                            document_reference_size(document_and_contract_info.document_type),
                             storage_flags.map(|s| s.serialized_size()),
                         ),
                     },
@@ -120,7 +129,11 @@ impl Drive {
                                 .to_vec(),
                             max_size: DEFAULT_HASH_SIZE_U8,
                         },
-                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                        Element::required_item_space(
+                            *max_size,
+                            STORAGE_FLAGS_SIZE,
+                            &drive_version.grove_version,
+                        )?,
                     )),
                 };
 
@@ -160,7 +173,11 @@ impl Drive {
                                 .to_vec(),
                             max_size: 1,
                         },
-                        Element::required_item_space(*estimated_size, STORAGE_FLAGS_SIZE),
+                        Element::required_item_space(
+                            *estimated_size,
+                            STORAGE_FLAGS_SIZE,
+                            &drive_version.grove_version,
+                        )?,
                     )),
                 };
 

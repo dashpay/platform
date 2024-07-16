@@ -1,4 +1,6 @@
 use crate::Value;
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use std::fmt::{Display, Formatter};
 
 impl Display for Value {
@@ -45,9 +47,15 @@ impl Value {
             Value::I16(i) => format!("{}", i),
             Value::U8(i) => format!("{}", i),
             Value::I8(i) => format!("{}", i),
-            Value::Bytes20(bytes20) => format!("bytes20 {}", base64::encode(bytes20.as_slice())),
-            Value::Bytes32(bytes32) => format!("bytes32 {}", base64::encode(bytes32.as_slice())),
-            Value::Bytes36(bytes36) => format!("bytes36 {}", base64::encode(bytes36.as_slice())),
+            Value::Bytes20(bytes20) => {
+                format!("bytes20 {}", BASE64_STANDARD.encode(bytes20.as_slice()))
+            }
+            Value::Bytes32(bytes32) => {
+                format!("bytes32 {}", BASE64_STANDARD.encode(bytes32.as_slice()))
+            }
+            Value::Bytes36(bytes36) => {
+                format!("bytes36 {}", BASE64_STANDARD.encode(bytes36.as_slice()))
+            }
             Value::Identifier(identifier) => format!(
                 "identifier {}",
                 bs58::encode(identifier.as_slice()).into_string()
@@ -102,9 +110,15 @@ impl Value {
             Value::I16(i) => format!("(i16){}", i),
             Value::U8(i) => format!("(u8){}", i),
             Value::I8(i) => format!("(i8){}", i),
-            Value::Bytes20(bytes20) => format!("bytes20 {}", base64::encode(bytes20.as_slice())),
-            Value::Bytes32(bytes32) => format!("bytes32 {}", base64::encode(bytes32.as_slice())),
-            Value::Bytes36(bytes36) => format!("bytes36 {}", base64::encode(bytes36.as_slice())),
+            Value::Bytes20(bytes20) => {
+                format!("bytes20 {}", BASE64_STANDARD.encode(bytes20.as_slice()))
+            }
+            Value::Bytes32(bytes32) => {
+                format!("bytes32 {}", BASE64_STANDARD.encode(bytes32.as_slice()))
+            }
+            Value::Bytes36(bytes36) => {
+                format!("bytes36 {}", BASE64_STANDARD.encode(bytes36.as_slice()))
+            }
             Value::Identifier(identifier) => format!(
                 "identifier {}",
                 bs58::encode(identifier.as_slice()).into_string()

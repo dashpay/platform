@@ -1,9 +1,8 @@
 mod estimation_costs;
+mod fetch_elements;
 /// Genesis time module
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 pub mod genesis_time;
-/// Constants for the misc tree
-pub mod misc_tree_constants;
 /// Protocol version module
 pub mod protocol_version;
 

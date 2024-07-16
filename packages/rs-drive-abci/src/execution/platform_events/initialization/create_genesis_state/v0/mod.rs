@@ -1,31 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
@@ -45,12 +17,14 @@ use dpp::identity::IdentityV0;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::SystemDataContract;
-use drive::drive::batch::{
+use drive::util::batch::{
     DataContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
 
-use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use drive::query::TransactionArg;
+use drive::util::object_size_info::{
+    DataContractInfo, DocumentInfo, DocumentTypeInfo, OwnedDocumentInfo,
+};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
@@ -177,7 +151,11 @@ impl<C> Platform<C> {
             self.register_system_identity_operations(identity, &mut operations);
         }
 
-        self.register_dpns_top_level_domain_operations(&dpns_data_contract, &mut operations)?;
+        self.register_dpns_top_level_domain_operations(
+            &dpns_data_contract,
+            genesis_time,
+            &mut operations,
+        )?;
 
         let block_info = BlockInfo::default_with_time(genesis_time);
 
@@ -187,6 +165,7 @@ impl<C> Platform<C> {
             &block_info,
             transaction,
             platform_version,
+            None, // No previous_fee_versions needed for genesis state creation
         )?;
 
         Ok(())
@@ -201,7 +180,6 @@ impl<C> Platform<C> {
         let serialization =
             data_contract.serialize_to_bytes_with_platform_version(platform_version)?;
         operations.push(DriveOperation::DataContractOperation(
-            //todo: remove cbor
             DataContractOperationType::ApplyContractWithSerialization {
                 contract: Cow::Borrowed(data_contract),
                 serialized_contract: serialization,
@@ -227,6 +205,7 @@ impl<C> Platform<C> {
     fn register_dpns_top_level_domain_operations<'a>(
         &'a self,
         contract: &'a DataContract,
+        genesis_time: TimestampMillis,
         operations: &mut Vec<DriveOperation<'a>>,
     ) -> Result<(), Error> {
         let domain = "dash";
@@ -254,29 +233,29 @@ impl<C> Platform<C> {
             properties: document_stub_properties,
             owner_id: contract.owner_id(),
             revision: None,
-            created_at: None,
-            updated_at: None,
+            created_at: Some(genesis_time),
+            updated_at: Some(genesis_time),
+            transferred_at: Some(genesis_time),
             created_at_block_height: None,
             updated_at_block_height: None,
+            transferred_at_block_height: None,
             created_at_core_block_height: None,
             updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
         }
         .into();
 
         let document_type = contract.document_type_for_name("domain")?;
 
-        let operation =
-            DriveOperation::DocumentOperation(DocumentOperationType::AddDocumentForContract {
-                document_and_contract_info: DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
-                        owner_id: None,
-                    },
-                    contract,
-                    document_type,
-                },
-                override_document: false,
-            });
+        let operation = DriveOperation::DocumentOperation(DocumentOperationType::AddDocument {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
+                owner_id: None,
+            },
+            contract_info: DataContractInfo::BorrowedDataContract(contract),
+            document_type_info: DocumentTypeInfo::DocumentTypeRef(document_type),
+            override_document: false,
+        });
 
         operations.push(operation);
 
@@ -289,10 +268,12 @@ mod tests {
     mod create_genesis_state {
         use crate::config::PlatformConfig;
         use crate::test::helpers::setup::TestPlatformBuilder;
-        use drive::drive::config::DriveConfig;
+        use drive::config::DriveConfig;
+        use platform_version::version::PlatformVersion;
 
         #[test]
         pub fn should_create_genesis_state_deterministically() {
+            let platform_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .with_config(PlatformConfig {
                     drive: DriveConfig {
@@ -307,15 +288,15 @@ mod tests {
             let root_hash = platform
                 .drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should obtain root hash");
 
             assert_eq!(
                 root_hash,
                 [
-                    234, 164, 235, 118, 224, 151, 97, 37, 216, 180, 69, 227, 187, 186, 178, 82,
-                    251, 35, 184, 238, 104, 188, 106, 117, 182, 210, 91, 97, 218, 177, 130, 64
+                    37, 162, 178, 238, 218, 180, 162, 24, 34, 199, 191, 38, 43, 39, 197, 101, 133,
+                    229, 130, 128, 20, 135, 168, 126, 219, 15, 235, 112, 139, 89, 187, 115
                 ]
             )
         }

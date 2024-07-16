@@ -1,6 +1,8 @@
 use crate::error::Error;
 use crate::value_map::ValueMap;
 use crate::{to_value, Value};
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use serde::ser::{Impossible, Serialize};
 use std::fmt::Display;
 
@@ -45,28 +47,28 @@ impl Serialize for Value {
             Value::I8(i) => serializer.serialize_i8(*i),
             Value::Bytes(bytes) => {
                 if serializer.is_human_readable() {
-                    serializer.serialize_str(base64::encode(bytes).as_str())
+                    serializer.serialize_str(BASE64_STANDARD.encode(bytes).as_str())
                 } else {
                     serializer.serialize_bytes(bytes)
                 }
             }
             Value::Bytes20(bytes) => {
                 if serializer.is_human_readable() {
-                    serializer.serialize_str(base64::encode(bytes).as_str())
+                    serializer.serialize_str(BASE64_STANDARD.encode(bytes).as_str())
                 } else {
                     serializer.serialize_bytes(bytes)
                 }
             }
             Value::Bytes32(bytes) => {
                 if serializer.is_human_readable() {
-                    serializer.serialize_str(base64::encode(bytes).as_str())
+                    serializer.serialize_str(BASE64_STANDARD.encode(bytes).as_str())
                 } else {
                     serializer.serialize_bytes(bytes)
                 }
             }
             Value::Bytes36(bytes) => {
                 if serializer.is_human_readable() {
-                    serializer.serialize_str(base64::encode(bytes).as_str())
+                    serializer.serialize_str(BASE64_STANDARD.encode(bytes).as_str())
                 } else {
                     serializer.serialize_bytes(bytes)
                 }

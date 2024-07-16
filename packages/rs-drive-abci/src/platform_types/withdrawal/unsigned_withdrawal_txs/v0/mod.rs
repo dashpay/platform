@@ -47,7 +47,7 @@ impl UnsignedWithdrawalTxs {
         self.0.append(&mut other.0);
     }
 
-    /// Verifies that the collection of unsigned withdrawal transactions matches the given vote extensions
+    /// Verifies that the collection of unsigned withdrawal transactions matches the given votes extensions
     /// created based on these transactions
     pub fn are_matching_with_vote_extensions(&self, other: &[VoteExtension]) -> bool {
         if self.0.len() != other.len() {

@@ -2,8 +2,8 @@ use crate::drive::contract::DataContractFetchInfo;
 
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
+use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 
@@ -100,6 +100,7 @@ impl Drive {
                 epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )
             .map(Some)
         })?;
@@ -155,6 +156,7 @@ impl Drive {
                             epoch,
                             self.config.epochs_per_era,
                             platform_version,
+                            None,
                         )?;
 
                         let updated_contract_fetch_info = Arc::new(DataContractFetchInfo {

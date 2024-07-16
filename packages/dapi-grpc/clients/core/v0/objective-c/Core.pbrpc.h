@@ -18,14 +18,20 @@
 @class BlockHeadersWithChainLocksResponse;
 @class BroadcastTransactionRequest;
 @class BroadcastTransactionResponse;
+@class GetBestBlockHeightRequest;
+@class GetBestBlockHeightResponse;
 @class GetBlockRequest;
 @class GetBlockResponse;
+@class GetBlockchainStatusRequest;
+@class GetBlockchainStatusResponse;
 @class GetEstimatedTransactionFeeRequest;
 @class GetEstimatedTransactionFeeResponse;
-@class GetStatusRequest;
-@class GetStatusResponse;
+@class GetMasternodeStatusRequest;
+@class GetMasternodeStatusResponse;
 @class GetTransactionRequest;
 @class GetTransactionResponse;
+@class MasternodeListRequest;
+@class MasternodeListResponse;
 @class TransactionsWithProofsRequest;
 @class TransactionsWithProofsResponse;
 
@@ -43,13 +49,21 @@ NS_ASSUME_NONNULL_BEGIN
 
 @protocol Core2 <NSObject>
 
-#pragma mark getStatus(GetStatusRequest) returns (GetStatusResponse)
+#pragma mark getBlockchainStatus(GetBlockchainStatusRequest) returns (GetBlockchainStatusResponse)
 
-- (GRPCUnaryProtoCall *)getStatusWithMessage:(GetStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getBlockchainStatusWithMessage:(GetBlockchainStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getMasternodeStatus(GetMasternodeStatusRequest) returns (GetMasternodeStatusResponse)
+
+- (GRPCUnaryProtoCall *)getMasternodeStatusWithMessage:(GetMasternodeStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getBlock(GetBlockRequest) returns (GetBlockResponse)
 
 - (GRPCUnaryProtoCall *)getBlockWithMessage:(GetBlockRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getBestBlockHeight(GetBestBlockHeightRequest) returns (GetBestBlockHeightResponse)
+
+- (GRPCUnaryProtoCall *)getBestBlockHeightWithMessage:(GetBestBlockHeightRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark broadcastTransaction(BroadcastTransactionRequest) returns (BroadcastTransactionResponse)
 
@@ -71,6 +85,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)subscribeToTransactionsWithProofsWithMessage:(TransactionsWithProofsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark subscribeToMasternodeList(MasternodeListRequest) returns (stream MasternodeListResponse)
+
+- (GRPCUnaryProtoCall *)subscribeToMasternodeListWithMessage:(MasternodeListRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 @end
 
 /**
@@ -79,11 +97,18 @@ NS_ASSUME_NONNULL_BEGIN
  */
 @protocol Core <NSObject>
 
-#pragma mark getStatus(GetStatusRequest) returns (GetStatusResponse)
+#pragma mark getBlockchainStatus(GetBlockchainStatusRequest) returns (GetBlockchainStatusResponse)
 
-- (void)getStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)getBlockchainStatusWithRequest:(GetBlockchainStatusRequest *)request handler:(void(^)(GetBlockchainStatusResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCTogetStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetBlockchainStatusWithRequest:(GetBlockchainStatusRequest *)request handler:(void(^)(GetBlockchainStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getMasternodeStatus(GetMasternodeStatusRequest) returns (GetMasternodeStatusResponse)
+
+- (void)getMasternodeStatusWithRequest:(GetMasternodeStatusRequest *)request handler:(void(^)(GetMasternodeStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetMasternodeStatusWithRequest:(GetMasternodeStatusRequest *)request handler:(void(^)(GetMasternodeStatusResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getBlock(GetBlockRequest) returns (GetBlockResponse)
@@ -91,6 +116,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getBlockWithRequest:(GetBlockRequest *)request handler:(void(^)(GetBlockResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetBlockWithRequest:(GetBlockRequest *)request handler:(void(^)(GetBlockResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getBestBlockHeight(GetBestBlockHeightRequest) returns (GetBestBlockHeightResponse)
+
+- (void)getBestBlockHeightWithRequest:(GetBestBlockHeightRequest *)request handler:(void(^)(GetBestBlockHeightResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetBestBlockHeightWithRequest:(GetBestBlockHeightRequest *)request handler:(void(^)(GetBestBlockHeightResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark broadcastTransaction(BroadcastTransactionRequest) returns (BroadcastTransactionResponse)
@@ -126,6 +158,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)subscribeToTransactionsWithProofsWithRequest:(TransactionsWithProofsRequest *)request eventHandler:(void(^)(BOOL done, TransactionsWithProofsResponse *_Nullable response, NSError *_Nullable error))eventHandler;
 
 - (GRPCProtoCall *)RPCTosubscribeToTransactionsWithProofsWithRequest:(TransactionsWithProofsRequest *)request eventHandler:(void(^)(BOOL done, TransactionsWithProofsResponse *_Nullable response, NSError *_Nullable error))eventHandler;
+
+
+#pragma mark subscribeToMasternodeList(MasternodeListRequest) returns (stream MasternodeListResponse)
+
+- (void)subscribeToMasternodeListWithRequest:(MasternodeListRequest *)request eventHandler:(void(^)(BOOL done, MasternodeListResponse *_Nullable response, NSError *_Nullable error))eventHandler;
+
+- (GRPCProtoCall *)RPCTosubscribeToMasternodeListWithRequest:(MasternodeListRequest *)request eventHandler:(void(^)(BOOL done, MasternodeListResponse *_Nullable response, NSError *_Nullable error))eventHandler;
 
 
 @end

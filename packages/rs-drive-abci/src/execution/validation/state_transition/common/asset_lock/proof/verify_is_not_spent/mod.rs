@@ -9,6 +9,7 @@ use dpp::dashcore::OutPoint;
 use dpp::fee::Credits;
 
 use dpp::prelude::AssetLockProof;
+use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -35,6 +36,7 @@ pub trait AssetLockProofVerifyIsNotSpent {
     fn verify_is_not_spent_and_has_enough_balance<C>(
         &self,
         platform_ref: &PlatformRef<C>,
+        signable_bytes_hasher: &mut SignableBytesHasher,
         required_balance: Credits,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -45,6 +47,7 @@ impl AssetLockProofVerifyIsNotSpent for AssetLockProof {
     fn verify_is_not_spent_and_has_enough_balance<C>(
         &self,
         platform_ref: &PlatformRef<C>,
+        signable_bytes_hasher: &mut SignableBytesHasher,
         required_balance: Credits,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -52,12 +55,14 @@ impl AssetLockProofVerifyIsNotSpent for AssetLockProof {
         match self {
             AssetLockProof::Instant(proof) => proof.verify_is_not_spent_and_has_enough_balance(
                 platform_ref,
+                signable_bytes_hasher,
                 required_balance,
                 transaction,
                 platform_version,
             ),
             AssetLockProof::Chain(proof) => proof.verify_is_not_spent_and_has_enough_balance(
                 platform_ref,
+                signable_bytes_hasher,
                 required_balance,
                 transaction,
                 platform_version,
@@ -69,6 +74,7 @@ impl AssetLockProofVerifyIsNotSpent for AssetLockProof {
 #[inline(always)]
 fn verify_asset_lock_is_not_spent_and_has_enough_balance<C>(
     platform_ref: &PlatformRef<C>,
+    signable_bytes_hasher: &mut SignableBytesHasher,
     out_point: OutPoint,
     required_balance: Credits,
     transaction: TransactionArg,
@@ -84,6 +90,7 @@ fn verify_asset_lock_is_not_spent_and_has_enough_balance<C>(
     {
         0 => verify_asset_lock_is_not_spent_and_has_enough_balance_v0(
             platform_ref,
+            signable_bytes_hasher,
             out_point,
             required_balance,
             transaction,

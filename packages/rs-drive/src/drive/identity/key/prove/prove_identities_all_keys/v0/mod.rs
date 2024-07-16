@@ -35,13 +35,12 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
-        let identity_query = Self::fetch_identities_all_keys_query(self, identity_ids, limit)?;
-        self.grove_get_proved_path_query(
-            &identity_query,
-            false,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )
+        let identity_query = Self::fetch_identities_all_keys_query(
+            self,
+            identity_ids,
+            limit,
+            &drive_version.grove_version,
+        )?;
+        self.grove_get_proved_path_query(&identity_query, transaction, &mut vec![], drive_version)
     }
 }

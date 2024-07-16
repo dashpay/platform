@@ -1,10 +1,7 @@
 use crate::execution::types::state_transition_container::v0::{
-    StateTransitionContainerGettersV0, StateTransitionContainerV0,
+    DecodedStateTransition, StateTransitionContainerV0,
 };
 use derive_more::From;
-use dpp::consensus::ConsensusError;
-use dpp::state_transition::StateTransition;
-use dpp::ProtocolError;
 
 pub(crate) mod v0;
 
@@ -12,43 +9,34 @@ pub(crate) mod v0;
 pub enum StateTransitionContainer<'a> {
     V0(StateTransitionContainerV0<'a>),
 }
-impl<'a> StateTransitionContainerGettersV0<'a> for StateTransitionContainer<'a> {
-    fn valid_state_transitions(&'a self) -> &'a [(&'a Vec<u8>, StateTransition)] {
+
+impl<'a> IntoIterator for &'a StateTransitionContainer<'a> {
+    type Item = &'a DecodedStateTransition<'a>;
+    type IntoIter = std::slice::Iter<'a, DecodedStateTransition<'a>>;
+
+    fn into_iter(self) -> Self::IntoIter {
         match self {
-            StateTransitionContainer::V0(container) => &container.valid_state_transitions,
+            StateTransitionContainer::V0(v0) => v0.into_iter(),
         }
     }
+}
 
-    fn invalid_state_transitions(&'a self) -> &'a [(&'a Vec<u8>, ConsensusError)] {
+impl<'a> IntoIterator for StateTransitionContainer<'a> {
+    type Item = DecodedStateTransition<'a>;
+    type IntoIter = std::vec::IntoIter<DecodedStateTransition<'a>>;
+
+    fn into_iter(self) -> Self::IntoIter {
         match self {
-            StateTransitionContainer::V0(container) => &container.invalid_state_transitions,
+            StateTransitionContainer::V0(v0) => v0.into_iter(),
         }
     }
+}
 
-    fn invalid_state_transitions_with_protocol_error(
-        &'a self,
-    ) -> &'a [(&'a Vec<u8>, ProtocolError)] {
+#[allow(clippy::from_over_into)]
+impl<'a> Into<Vec<DecodedStateTransition<'a>>> for StateTransitionContainer<'a> {
+    fn into(self) -> Vec<DecodedStateTransition<'a>> {
         match self {
-            StateTransitionContainer::V0(container) => {
-                &container.invalid_state_transitions_with_protocol_error
-            }
-        }
-    }
-
-    // The destructure method's signature and return type need to be adjusted to match the trait.
-    fn destructure(
-        self,
-    ) -> (
-        Vec<(&'a Vec<u8>, StateTransition)>,
-        Vec<(&'a Vec<u8>, ConsensusError)>,
-        Vec<(&'a Vec<u8>, ProtocolError)>,
-    ) {
-        match self {
-            StateTransitionContainer::V0(container) => (
-                container.valid_state_transitions,
-                container.invalid_state_transitions,
-                container.invalid_state_transitions_with_protocol_error,
-            ),
+            StateTransitionContainer::V0(v0) => v0.into(),
         }
     }
 }

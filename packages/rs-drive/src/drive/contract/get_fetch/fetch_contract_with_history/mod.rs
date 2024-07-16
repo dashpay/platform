@@ -79,14 +79,14 @@ impl Drive {
     }
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
 
     use super::*;
     use crate::error::drive::DriveError;
     use crate::error::Error;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::config::v0::DataContractConfigSettersV0;
@@ -160,6 +160,7 @@ mod tests {
                     "niceDocument",
                     updated_document.clone(),
                     true,
+                    &mut vec![],
                     platform_version,
                 )
                 .expect("to be able to set document schema");

@@ -238,6 +238,7 @@ mod test {
         let data_contract = DataContract::try_from_platform_versioned(
             data.state_transition.data_contract().clone(),
             false,
+            &mut vec![],
             LATEST_PLATFORM_VERSION,
         )
         .expect("to get data contract");

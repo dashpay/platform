@@ -9,10 +9,11 @@ use crate::data_contract::config::DataContractConfig;
 #[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
+#[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::data_contract::DataContract;
+use crate::data_contract::{DataContract, INITIAL_DATA_CONTRACT_VERSION};
 use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -81,14 +82,14 @@ impl DataContractFactoryV0 {
         let format = DataContractInSerializationFormat::V0(DataContractInSerializationFormatV0 {
             id: data_contract_id,
             config: config.unwrap_or(DataContractConfig::default_for_version(platform_version)?),
-            version: 1,
+            version: INITIAL_DATA_CONTRACT_VERSION,
             owner_id,
             document_schemas: documents_map,
             schema_defs: defs,
         });
 
         let data_contract =
-            DataContract::try_from_platform_versioned(format, true, platform_version)?;
+            DataContract::try_from_platform_versioned(format, true, &mut vec![], platform_version)?;
 
         CreatedDataContract::from_contract_and_identity_nonce(
             data_contract,
@@ -102,7 +103,7 @@ impl DataContractFactoryV0 {
     pub fn create_from_object(
         &self,
         data_contract_object: Value,
-        validate: bool,
+        full_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         match platform_version
@@ -110,10 +111,12 @@ impl DataContractFactoryV0 {
             .contract_versions
             .contract_structure_version
         {
-            0 => Ok(
-                DataContractV0::from_value(data_contract_object, validate, platform_version)?
-                    .into(),
-            ),
+            0 => Ok(DataContractV0::from_value(
+                data_contract_object,
+                full_validation,
+                platform_version,
+            )?
+            .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractFactoryV0::create_from_object".to_string(),
                 known_versions: vec![0],
@@ -344,6 +347,7 @@ mod tests {
         let contract_value = DataContract::try_from_platform_versioned(
             result.data_contract().to_owned(),
             false,
+            &mut vec![],
             platform_version,
         )
         .unwrap()

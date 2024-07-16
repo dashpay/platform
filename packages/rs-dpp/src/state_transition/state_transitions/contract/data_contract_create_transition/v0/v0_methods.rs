@@ -46,15 +46,24 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
         let mut state_transition: StateTransition = transition.into();
         let value = state_transition.signable_bytes()?;
 
-        let public_key =
-            identity
-                .loaded_public_keys
-                .get(&key_id)
-                .ok_or(ProtocolError::NonConsensusError(
-                    NonConsensusError::StateTransitionCreationError(
-                        "public key did not exist".to_string(),
-                    ),
-                ))?;
+        // The public key ids don't always match the keys in the map, so we need to do this.
+        let matching_key = identity
+            .loaded_public_keys
+            .iter()
+            .find_map(|(&key, public_key)| {
+                if public_key.id() == key_id {
+                    Some(key)
+                } else {
+                    None
+                }
+            })
+            .expect("No matching public key id found in the map");
+
+        let public_key = identity.loaded_public_keys.get(&matching_key).ok_or(
+            ProtocolError::NonConsensusError(NonConsensusError::StateTransitionCreationError(
+                "public key did not exist".to_string(),
+            )),
+        )?;
 
         let security_level_requirements = state_transition.security_level_requirement().ok_or(
             ProtocolError::CorruptedCodeExecution(

@@ -65,7 +65,8 @@ where
         epoch_info: EpochInfo,
         transaction: &Transaction,
         last_committed_platform_state: &PlatformState,
-        platform_version: &PlatformVersion,
+        mut block_platform_state: PlatformState,
+        platform_version: &'static PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
         tracing::trace!(
@@ -77,16 +78,30 @@ where
             block_proposal.round,
         );
 
+        // Run block proposal determines version by itself based on the previous
+        // state and block time.
+        // It should provide correct version on prepare proposal to block header
+        // and validate it on process proposal.
+        // If version set to 0 (default number value) it means we are on prepare proposal,
+        // so there is no need for validation.
+        if !known_from_us
+            && block_proposal.consensus_versions.app != platform_version.protocol_version as u64
+        {
+            return Ok(ValidationResult::new_with_error(
+                AbciError::BadRequest(format!(
+                    "received a block proposal with protocol version {}, expected: {}",
+                    block_proposal.consensus_versions.app, platform_version.protocol_version
+                ))
+                .into(),
+            ));
+        }
+
         let last_block_time_ms = last_committed_platform_state.last_committed_block_time_ms();
         let last_block_height = last_committed_platform_state.last_committed_known_block_height_or(
             self.config.abci.genesis_height.saturating_sub(1),
         );
         let last_block_core_height = last_committed_platform_state
             .last_committed_known_core_height_or(self.config.abci.genesis_core_height);
-        let hpmn_list_len = last_committed_platform_state.hpmn_list_len() as u32;
-
-        // Create a bock state from previous committed state
-        let mut block_platform_state = last_committed_platform_state.clone();
 
         // Init block execution context
         let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(
@@ -121,6 +136,29 @@ where
             Epoch::new(epoch_info.current_epoch_index())
                 .expect("current epoch index should be in range"),
         );
+
+        if epoch_info.is_epoch_change_but_not_genesis() {
+            tracing::info!(
+                epoch_index = epoch_info.current_epoch_index(),
+                "epoch change occurring from epoch {} to epoch {}",
+                epoch_info
+                    .previous_epoch_index()
+                    .expect("must be set since we aren't on genesis"),
+                epoch_info.current_epoch_index(),
+            );
+        }
+
+        // Update block platform state with current and next epoch protocol versions
+        // if it was proposed
+        // This is happening only on epoch change
+        self.upgrade_protocol_version_on_epoch_change(
+            &block_info,
+            &epoch_info,
+            last_committed_platform_state,
+            &mut block_platform_state,
+            transaction,
+            platform_version,
+        )?;
 
         // If there is a core chain lock update, we should start by verifying it
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
@@ -218,6 +256,7 @@ where
         )?;
 
         // Update the validator proposed app version
+        // It should be called after protocol version upgrade
         self.drive
             .update_validator_proposed_app_version(
                 proposer_pro_tx_hash,
@@ -228,55 +267,6 @@ where
             .map_err(|e| {
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
-
-        // Determine a new protocol version if enough proposers voted
-        if epoch_info.is_epoch_change_but_not_genesis() {
-            tracing::info!(
-                epoch_index = epoch_info.current_epoch_index(),
-                "epoch change occurring from epoch {} to epoch {}",
-                epoch_info
-                    .previous_epoch_index()
-                    .expect("must be set since we aren't on genesis"),
-                epoch_info.current_epoch_index(),
-            );
-
-            if block_platform_state.current_protocol_version_in_consensus()
-                == block_platform_state.next_epoch_protocol_version()
-            {
-                tracing::trace!(
-                    epoch_index = epoch_info.current_epoch_index(),
-                    "protocol version remains the same {}",
-                    block_platform_state.current_protocol_version_in_consensus(),
-                );
-            } else {
-                tracing::info!(
-                    epoch_index = epoch_info.current_epoch_index(),
-                    "protocol version changed from {} to {}",
-                    block_platform_state.current_protocol_version_in_consensus(),
-                    block_platform_state.next_epoch_protocol_version(),
-                );
-            }
-
-            // Set current protocol version to the version from upcoming epoch
-            block_platform_state.set_current_protocol_version_in_consensus(
-                block_platform_state.next_epoch_protocol_version(),
-            );
-
-            // Determine new protocol version based on votes for the next epoch
-            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
-                hpmn_list_len,
-                block_platform_state.current_protocol_version_in_consensus(),
-                transaction,
-            )?;
-
-            if let Some(new_protocol_version) = maybe_new_protocol_version {
-                block_platform_state.set_next_epoch_protocol_version(new_protocol_version);
-            } else {
-                block_platform_state.set_next_epoch_protocol_version(
-                    block_platform_state.current_protocol_version_in_consensus(),
-                );
-            }
-        }
 
         // Mark all previously broadcasted and chainlocked withdrawals as complete
         // only when we are on a new core height
@@ -301,6 +291,17 @@ where
                 Some(transaction),
                 platform_version,
             )?;
+
+        // Run all dao platform events, such as vote tallying and distribution of contested documents
+        // This must be done before state transition processing
+        // Otherwise we would expect a proof after a successful vote that has since been cleaned up.
+        self.run_dao_platform_events(
+            &block_info,
+            last_committed_platform_state,
+            &block_platform_state,
+            Some(transaction),
+            platform_version,
+        )?;
 
         // Process transactions
         let state_transitions_result = self.process_raw_state_transitions(
@@ -327,7 +328,9 @@ where
             block_execution_context::v0::BlockExecutionContextV0 {
                 block_state_info: block_state_info.into(),
                 epoch_info: epoch_info.clone(),
-                hpmn_count: hpmn_list_len,
+                // TODO: It doesn't seem correct to use previous block count of hpmns.
+                //  We currently not using this field in the codebase. We probably should just remove it.
+                hpmn_count: last_committed_platform_state.hpmn_list_len() as u32,
                 unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
                 block_platform_state,
                 proposer_results: None,
@@ -339,8 +342,7 @@ where
 
         // Process fees
         let processed_block_fees = self.process_block_fees(
-            block_execution_context.block_state_info(),
-            &epoch_info,
+            &block_execution_context,
             block_fees_v0.into(),
             transaction,
             platform_version,
@@ -351,7 +353,7 @@ where
         let root_hash = self
             .drive
             .grove
-            .root_hash(Some(transaction))
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
 
@@ -360,6 +362,7 @@ where
             .set_app_hash(Some(root_hash));
 
         let validator_set_update = self.validator_set_update(
+            block_proposal.proposer_pro_tx_hash,
             last_committed_platform_state,
             &mut block_execution_context,
             platform_version,
@@ -369,8 +372,11 @@ where
             tracing::trace!(
                 method = "run_block_proposal_v0",
                 app_hash = hex::encode(root_hash),
-                platform_state_fingerprint =
-                    hex::encode(block_execution_context.block_platform_state().fingerprint()),
+                platform_state_fingerprint = hex::encode(
+                    block_execution_context
+                        .block_platform_state()
+                        .fingerprint()?
+                ),
                 "Block proposal executed successfully",
             );
         }
@@ -380,8 +386,7 @@ where
                 app_hash: root_hash,
                 state_transitions_result,
                 validator_set_update,
-                // TODO: We already know the version outside sine we have state and platform version what pass here
-                protocol_version: platform_version.protocol_version,
+                platform_version,
                 block_execution_context,
             },
         ))

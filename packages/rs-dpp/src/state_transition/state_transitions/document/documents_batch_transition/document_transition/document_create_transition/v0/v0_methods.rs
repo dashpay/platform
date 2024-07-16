@@ -3,6 +3,7 @@ use crate::state_transition::documents_batch_transition::document_create_transit
 
 use platform_value::Value;
 
+use crate::fee::Credits;
 use std::collections::BTreeMap;
 
 pub trait DocumentCreateTransitionV0Methods {
@@ -41,6 +42,10 @@ pub trait DocumentCreateTransitionV0Methods {
     ///
     /// * `data` - An `Option` containing a `BTreeMap<String, Value>` to set.
     fn set_data(&mut self, data: BTreeMap<String, Value>);
+    fn prefunded_voting_balance(&self) -> &Option<(String, Credits)>;
+    fn prefunded_voting_balances_mut(&mut self) -> &mut Option<(String, Credits)>;
+    fn set_prefunded_voting_balance(&mut self, index_name: String, amount: Credits);
+    fn clear_prefunded_voting_balance(&mut self);
 }
 
 impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
@@ -74,5 +79,20 @@ impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
 
     fn set_data(&mut self, data: BTreeMap<String, Value>) {
         self.data = data;
+    }
+
+    fn prefunded_voting_balance(&self) -> &Option<(String, Credits)> {
+        &self.prefunded_voting_balance
+    }
+
+    fn prefunded_voting_balances_mut(&mut self) -> &mut Option<(String, Credits)> {
+        &mut self.prefunded_voting_balance
+    }
+
+    fn set_prefunded_voting_balance(&mut self, index_name: String, amount: Credits) {
+        self.prefunded_voting_balance = Some((index_name, amount));
+    }
+    fn clear_prefunded_voting_balance(&mut self) {
+        self.prefunded_voting_balance = None;
     }
 }

@@ -21,7 +21,16 @@ pub fn start(
     cancel: CancellationToken,
 ) {
     let query_service = QueryService::new(Arc::clone(&platform));
-    let check_tx_service = CheckTxAbciApplication::new(Arc::clone(&platform));
+
+    let check_tx_core_rpc = DefaultCoreRPC::open(
+        &config.core.check_tx_rpc.url(),
+        config.core.check_tx_rpc.username,
+        config.core.check_tx_rpc.password,
+    )
+    .expect("failed to open check tx core rpc");
+
+    let check_tx_service =
+        CheckTxAbciApplication::new(Arc::clone(&platform), Arc::new(check_tx_core_rpc));
 
     let grpc_server = dapi_grpc::tonic::transport::Server::builder()
         .add_service(dapi_grpc::platform::v0::platform_server::PlatformServer::new(query_service))

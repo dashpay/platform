@@ -34,6 +34,11 @@ use std::{
 pub struct MockDapiClient {
     expectations: Expectations,
 }
+/// Result of executing a mock request
+pub type MockResult<T> = Result<
+    <T as TransportRequest>::Response,
+    DapiClientError<<<T as TransportRequest>::Client as TransportClient>::Error>,
+>;
 
 impl MockDapiClient {
     /// Create a new mock client
@@ -42,7 +47,11 @@ impl MockDapiClient {
     }
 
     /// Add a new expectation for a request
-    pub fn expect<R>(&mut self, request: &R, response: &R::Response) -> Result<&mut Self, MockError>
+    pub fn expect<R>(
+        &mut self,
+        request: &R,
+        response: &MockResult<R>,
+    ) -> Result<&mut Self, MockError>
     where
         R: TransportRequest + Mockable,
         R::Response: Mockable,
@@ -52,7 +61,7 @@ impl MockDapiClient {
         tracing::trace!(
             %key,
             request_type = std::any::type_name::<R>(),
-            response_typr = std::any::type_name::<R::Response>(),
+            response_type = std::any::type_name::<R::Response>(),
             "mock added expectation"
         );
 
@@ -71,7 +80,7 @@ impl MockDapiClient {
     pub fn load<T: TransportRequest, P: AsRef<std::path::Path>>(
         &mut self,
         file: P,
-    ) -> Result<(T, T::Response), std::io::Error>
+    ) -> Result<(T, MockResult<T>), std::io::Error>
     where
         T: Mockable,
         T::Response: Mockable,
@@ -100,7 +109,7 @@ impl DapiRequestExecutor for MockDapiClient {
         &self,
         request: R,
         _settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
+    ) -> MockResult<R>
     where
         R: Mockable,
         R::Response: Mockable,
@@ -116,7 +125,7 @@ impl DapiRequestExecutor for MockDapiClient {
         );
 
         return if let Some(response) = response {
-            Ok(response)
+            response
         } else {
             Err(MockError::MockExpectationNotFound(format!(
                 "unexpected mock request with key {}, use MockDapiClient::expect(): {:?}",
@@ -177,6 +186,7 @@ impl Display for Key {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 /// Mock errors
 pub enum MockError {
     #[error("mock expectation not found for request: {0}")]

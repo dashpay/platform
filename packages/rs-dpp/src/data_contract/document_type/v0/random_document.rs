@@ -3,27 +3,28 @@
 //! This module defines the CreateRandomDocument trait and its functions, which
 //! create various types of random documents.
 //!
+//!
 
-use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT};
+use platform_value::{Bytes32, Identifier};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use crate::document::property_names::{
-    CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT_BLOCK_HEIGHT,
-    UPDATED_AT_CORE_BLOCK_HEIGHT,
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
+    UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
-use crate::document::{Document, DocumentV0};
+use crate::document::{Document, DocumentV0, INITIAL_REVISION};
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::Identity;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::{Bytes32, Identifier};
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
 
 impl CreateRandomDocument for DocumentTypeV0 {
     /// Creates a random Document using a seed if given, otherwise entropy.
@@ -157,8 +158,8 @@ impl CreateRandomDocument for DocumentTypeV0 {
             })
             .collect();
 
-        let revision = if self.documents_mutable {
-            Some(1)
+        let revision = if self.requires_revision() {
+            Some(INITIAL_REVISION)
         } else {
             None
         };
@@ -247,10 +248,13 @@ impl CreateRandomDocument for DocumentTypeV0 {
                 revision,
                 created_at,
                 updated_at,
+                transferred_at: None,
                 created_at_block_height,
                 updated_at_block_height,
+                transferred_at_block_height: None,
                 created_at_core_block_height,
                 updated_at_core_block_height,
+                transferred_at_core_block_height: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

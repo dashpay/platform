@@ -1,10 +1,11 @@
 use grovedb::{Element, TransactionArg};
 
+use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Returns the given proposer's block count
@@ -13,10 +14,16 @@ impl Drive {
         epoch: &Epoch,
         proposer_tx_hash: &[u8; 32],
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<u64, Error> {
         let element = self
             .grove
-            .get(&epoch.get_proposers_path(), proposer_tx_hash, transaction)
+            .get(
+                &epoch.get_proposers_path(),
+                proposer_tx_hash,
+                transaction,
+                &platform_version.drive.grove_version,
+            )
             .unwrap()
             .map_err(Error::GroveDB)?;
 
@@ -41,16 +48,16 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::drive::batch::GroveDbOpBatch;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::batch::GroveDbOpBatch;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use grovedb::Element;
 
-    use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+    use crate::drive::credit_pools::epochs::paths::EpochProposers;
     use crate::error::drive::DriveError;
     use crate::error::Error;
-    use crate::fee_pools::epochs::operations_factory::EpochOperations;
-    use crate::fee_pools::epochs::paths::EpochProposers;
+    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
     use dpp::version::PlatformVersion;
 

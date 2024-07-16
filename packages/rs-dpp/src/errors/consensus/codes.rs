@@ -36,9 +36,12 @@ impl ErrorWithCode for BasicError {
             Self::UnsupportedProtocolVersionError(_) => 10003,
             Self::IncompatibleProtocolVersionError(_) => 10004,
             Self::VersionError(_) => 10005,
+            Self::UnsupportedFeatureError(_) => 10006,
 
             // Structure Errors: 10100-10199
+            #[cfg(feature = "json-schema-validation")]
             Self::JsonSchemaCompilationError(..) => 10100,
+            #[cfg(feature = "json-schema-validation")]
             Self::JsonSchemaError(_) => 10101,
             Self::InvalidIdentifierError { .. } => 10102,
             Self::ValueError(_) => 10103,
@@ -51,6 +54,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidDataContractIdError { .. } => 10204,
             Self::InvalidIndexedPropertyConstraintError { .. } => 10205,
             Self::InvalidIndexPropertyTypeError { .. } => 10206,
+            #[cfg(feature = "json-schema-validation")]
             Self::InvalidJsonSchemaRefError { .. } => 10207,
             Self::SystemPropertyIndexAlreadyPresentError { .. } => 10208,
             Self::UndefinedIndexPropertyError { .. } => 10209,
@@ -58,7 +62,7 @@ impl ErrorWithCode for BasicError {
             Self::DuplicateIndexNameError { .. } => 10211,
             Self::InvalidDataContractVersionError { .. } => 10212,
             Self::IncompatibleDataContractSchemaError { .. } => 10213,
-            Self::DataContractEmptySchemaError { .. } => 10214,
+            Self::ContractError(DataContractError::DocumentTypesAreMissingError { .. }) => 10214,
             Self::DataContractImmutablePropertiesUpdateError { .. } => 10215,
             Self::DataContractUniqueIndicesChangedError { .. } => 10216,
             Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 10217,
@@ -87,6 +91,12 @@ impl ErrorWithCode for BasicError {
             Self::ContractError(DataContractError::InvalidURI(_)) => 10240,
             Self::ContractError(DataContractError::KeyWrongBounds(_)) => 10241,
             Self::ContractError(DataContractError::KeyValueMustExist(_)) => 10242,
+            Self::UnknownTransferableTypeError { .. } => 10243,
+            Self::UnknownTradeModeError { .. } => 10244,
+            Self::UnknownDocumentCreationRestrictionModeError { .. } => 10245,
+            Self::IncompatibleDocumentTypeSchemaError { .. } => 10246,
+            Self::ContractError(DataContractError::RegexError(_)) => 10247,
+            Self::ContestedUniqueIndexOnMutableDocumentTypeError(_) => 10248,
 
             // Document Errors: 10400-10499
             Self::DataContractNotPresentError { .. } => 10400,
@@ -105,6 +115,7 @@ impl ErrorWithCode for BasicError {
             Self::DocumentTransitionsAreAbsentError { .. } => 10413,
             Self::NonceOutOfBoundsError(_) => 10414,
             Self::InvalidDocumentTypeNameError(_) => 10415,
+            Self::DocumentCreationNotAllowedError(_) => 10416,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
@@ -138,11 +149,15 @@ impl ErrorWithCode for BasicError {
             Self::IdentityCreditTransferToSelfError(_) => 10528,
             Self::MasterPublicKeyUpdateError(_) => 10529,
             Self::IdentityAssetLockTransactionOutPointNotEnoughBalanceError(_) => 10530,
+            Self::IdentityAssetLockStateTransitionReplayError(_) => 10531,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,
             Self::MissingStateTransitionTypeError { .. } => 10601,
             Self::StateTransitionMaxSizeExceededError { .. } => 10602,
+
+            // General Errors 10700-10799
+            Self::OverflowError(_) => 10700,
         }
     }
 }
@@ -191,6 +206,11 @@ impl ErrorWithCode for StateError {
             Self::DuplicateUniqueIndexError { .. } => 40105,
             Self::InvalidDocumentRevisionError { .. } => 40106,
             Self::DocumentTimestampsAreEqualError(_) => 40107,
+            Self::DocumentNotForSaleError(_) => 40108,
+            Self::DocumentIncorrectPurchasePriceError(_) => 40109,
+            Self::DocumentContestCurrentlyLockedError(_) => 40110,
+            Self::DocumentContestNotJoinableError(_) => 40111,
+            Self::DocumentContestIdentityAlreadyContestantError(_) => 40112,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -206,6 +226,20 @@ impl ErrorWithCode for StateError {
             Self::IdentityInsufficientBalanceError(_) => 40210,
             Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 40211,
             Self::DocumentTypeUpdateError(_) => 40212,
+            Self::DataContractUpdatePermissionError(_) => 40213,
+
+            // Voting Errors: 40300-40399
+            Self::MasternodeNotFoundError(_) => 40300,
+            Self::VotePollNotFoundError(_) => 40301,
+            Self::VotePollNotAvailableForVotingError(_) => 40302,
+            Self::MasternodeVotedTooManyTimesError(_) => 40303,
+            Self::MasternodeVoteAlreadyPresentError(_) => 40304,
+            Self::MasternodeIncorrectVotingAddressError(_) => 40305,
+            Self::MasternodeIncorrectVoterIdentityIdError(_) => 40306,
+
+            // Prefunded specialized balances Errors: 40400-40499
+            Self::PrefundedSpecializedBalanceInsufficientError(_) => 40400,
+            Self::PrefundedSpecializedBalanceNotFoundError(_) => 40401,
 
             // Data trigger errors: 40500-40799
             #[cfg(feature = "state-transition-validation")]

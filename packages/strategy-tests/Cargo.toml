@@ -1,6 +1,6 @@
 [package]
 name = "strategy-tests"
-version = "1.0.0-dev.9"
+version = "1.0.0-beta.2"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -22,6 +22,7 @@ hex = "0.4.3"
 serde_json = "1.0"
 dpp = { path = "../rs-dpp", features = [
   "abci",
+  "bls-signatures",
   "client",
   "random-documents",
   "state-transitions",
@@ -36,6 +37,8 @@ dpp = { path = "../rs-dpp", features = [
 ] }
 simple-signer = { path = "../simple-signer" }
 platform-version = { path = "../rs-platform-version" }
+platform-serialization = { path = "../rs-platform-serialization" }
+platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 
 [dev-dependencies]
 platform-version = { path = "../rs-platform-version", features = [
@@ -43,4 +46,4 @@ platform-version = { path = "../rs-platform-version", features = [
 ] }
 
 # For tests of grovedb verify
-rocksdb = { version = "0.21.0" }
+rocksdb = { version = "0.22.0" }

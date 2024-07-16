@@ -10,8 +10,8 @@ service Platform {
   rpc broadcastStateTransition(BroadcastStateTransitionRequest)
       returns (BroadcastStateTransitionResponse);
   rpc getIdentity(GetIdentityRequest) returns (GetIdentityResponse);
-  rpc getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse);
   rpc getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
+  rpc getIdentitiesContractKeys(GetIdentitiesContractKeysRequest) returns (GetIdentitiesContractKeysResponse);
   rpc getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse);
   rpc getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
@@ -25,8 +25,6 @@ service Platform {
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
-  rpc getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest)
-      returns (GetIdentitiesByPublicKeyHashesResponse);
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
   rpc waitForStateTransitionResult(WaitForStateTransitionResultRequest)
@@ -36,6 +34,18 @@ service Platform {
   rpc getProtocolVersionUpgradeState(GetProtocolVersionUpgradeStateRequest) returns (GetProtocolVersionUpgradeStateResponse);
   rpc getProtocolVersionUpgradeVoteStatus(GetProtocolVersionUpgradeVoteStatusRequest) returns (GetProtocolVersionUpgradeVoteStatusResponse);
   rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
+  // What votes are currently happening for a specific contested index
+  rpc getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse);
+  // What's the state of a contested resource vote? (ie who is winning?)
+  rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
+  // Who voted for a contested resource to go to a specific identity?
+  rpc getContestedResourceVotersForIdentity(GetContestedResourceVotersForIdentityRequest) returns (GetContestedResourceVotersForIdentityResponse);
+  // How did an identity vote?
+  rpc getContestedResourceIdentityVotes(GetContestedResourceIdentityVotesRequest) returns (GetContestedResourceIdentityVotesResponse);
+  // What vote polls will end soon?
+  rpc getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse);
+  rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
+  rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -62,6 +72,14 @@ message StateTransitionBroadcastError {
   uint32 code = 1;
   string message = 2;
   bytes data = 3;
+}
+
+enum KeyPurpose {
+  AUTHENTICATION = 0;
+  ENCRYPTION = 1;
+  DECRYPTION = 2;
+  TRANSFER = 3;
+  VOTING = 5;
 }
 
 message BroadcastStateTransitionRequest { bytes state_transition = 1; }
@@ -131,37 +149,6 @@ message GetIdentityResponse {
   }
 
   oneof version { GetIdentityResponseV0 v0 = 1; }
-}
-
-message GetIdentitiesRequest {
-
-  message GetIdentitiesRequestV0 {
-    repeated bytes ids = 1;  // List of identity IDs to retrieve
-    bool prove = 2;          // Flag to request a proof as the response
-  }
-
-  oneof version { GetIdentitiesRequestV0 v0 = 1; }
-}
-
-message GetIdentitiesResponse {
-
-  message IdentityValue { bytes value = 1; }  // Represents a single identity's value
-
-  message IdentityEntry {
-    bytes key = 1;            // The key associated with the identity
-    IdentityValue value = 2;  // The value of the identity
-  }
-
-  message Identities { repeated IdentityEntry identity_entries = 1; }  // Collection of identity entries
-
-  message GetIdentitiesResponseV0 {
-    oneof result {
-      Identities identities = 1;  // The actual identities retrieved
-      Proof proof = 2;            // Proof of the identities, if requested
-    }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
-  }
-  oneof version { GetIdentitiesResponseV0 v0 = 1; }
 }
 
 message GetIdentityNonceResponse {
@@ -278,14 +265,60 @@ message GetIdentityKeysResponse {
   oneof version { GetIdentityKeysResponseV0 v0 = 1; }
 }
 
+message GetIdentitiesContractKeysRequest {
+  message GetIdentitiesContractKeysRequestV0 {
+    repeated bytes identities_ids = 1;
+    bytes contract_id = 2;
+    optional string document_type_name = 3;
+    repeated KeyPurpose purposes = 4;
+    bool prove = 5;
+  }
+
+  oneof version {
+    GetIdentitiesContractKeysRequestV0 v0 = 1;
+  }
+}
+
+message GetIdentitiesContractKeysResponse {
+  message GetIdentitiesContractKeysResponseV0 {
+    message PurposeKeys {
+      KeyPurpose purpose = 1;
+      repeated bytes keys_bytes = 2;
+    }
+
+    message IdentityKeys {
+      bytes identity_id = 1;
+      repeated PurposeKeys keys = 2;
+    }
+
+    message IdentitiesKeys {
+      repeated IdentityKeys entries = 1;
+    };
+
+    oneof result {
+      IdentitiesKeys identities_keys = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetIdentitiesContractKeysResponseV0 v0 = 1; }
+}
+
 message GetProofsRequest {
   message GetProofsRequestV0 {
     // DocumentRequest specifies a request for a document proof
     message DocumentRequest {
+      enum DocumentContestedStatus {
+        NOT_CONTESTED = 0;
+        MAYBE_CONTESTED = 1;
+        CONTESTED = 2;
+      }
       bytes contract_id = 1;                 // ID of the contract the document belongs to
       string document_type = 2;              // Type of document being requested
       bool document_type_keeps_history = 3;  // Indicates if the document type keeps a history of changes
       bytes document_id = 4;                 // ID of the specific document being requested
+      DocumentContestedStatus document_contested_status = 5;
     }
 
     // IdentityRequest specifies a request for an identity proof
@@ -303,9 +336,22 @@ message GetProofsRequest {
     // ContractRequest specifies a request for a data contract proof.
     message ContractRequest { bytes contract_id = 1; }  // ID of the contract for which the proof is requested
 
+    message VoteStatusRequest {
+      message ContestedResourceVoteStatusRequest {
+        bytes contract_id = 1;
+        string document_type_name = 2;
+        string index_name = 3;
+        repeated bytes index_values = 4;
+        bytes voter_identifier = 5;
+      }
+
+      oneof request_type { ContestedResourceVoteStatusRequest contested_resource_vote_status_request = 1; }
+    }
+
     repeated IdentityRequest identities = 1;  // List of identity requests
     repeated ContractRequest contracts = 2;   // List of contract requests
     repeated DocumentRequest documents = 3;   // List of document requests
+    repeated VoteStatusRequest votes = 4;
   }
 
   oneof version { GetProofsRequestV0 v0 = 1; }
@@ -436,37 +482,6 @@ message GetDocumentsResponse {
     ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
   oneof version { GetDocumentsResponseV0 v0 = 1; }
-}
-
-message GetIdentitiesByPublicKeyHashesRequest {
-  message GetIdentitiesByPublicKeyHashesRequestV0 {
-    repeated bytes public_key_hashes = 1;  // List of public key hashes for which identities are requested
-    bool prove = 2;                        // Flag to request a proof as the response
-  }
-  oneof version { GetIdentitiesByPublicKeyHashesRequestV0 v0 = 1; }
-}
-
-message GetIdentitiesByPublicKeyHashesResponse {
-  // Represents a single entry of identity associated with a public key hash.
-  message PublicKeyHashIdentityEntry {
-    bytes public_key_hash = 1;             // The public key hash
-    google.protobuf.BytesValue value = 2;  // The value of the identity associated with the public key hash
-  }
-
-  // A collection of identity entries indexed by public key hashes
-  message IdentitiesByPublicKeyHashes {
-    repeated PublicKeyHashIdentityEntry identity_entries = 1;  // List of identity entries
-  }
-
-  message GetIdentitiesByPublicKeyHashesResponseV0 {
-    oneof result {
-      IdentitiesByPublicKeyHashes identities = 1;  // The actual identities associated with the provided public key hashes
-      Proof proof = 2;                             // Cryptographic proof for the response data, if requested
-    }
-
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
-  }
-  oneof version { GetIdentitiesByPublicKeyHashesResponseV0 v0 = 1; }
 }
 
 message GetIdentityByPublicKeyHashRequest {
@@ -636,6 +651,7 @@ message GetEpochsInfoResponse {
       uint32 first_core_block_height = 3;  // The height of the first Core block in this epoch
       uint64 start_time = 4;               // The start time of the epoch
       double fee_multiplier = 5;           // The fee multiplier applicable in this epoch
+      uint32 protocol_version = 6;
     }
 
     oneof result {
@@ -647,5 +663,316 @@ message GetEpochsInfoResponse {
 
   oneof version {
     GetEpochsInfoResponseV0 v0 = 1;
+  }
+}
+
+message GetContestedResourcesRequest {
+  message GetContestedResourcesRequestV0 {
+    message StartAtValueInfo {
+      bytes start_value = 1;
+      bool start_value_included = 2;
+    }
+
+    bytes contract_id = 1;
+    string document_type_name = 2;
+    string index_name = 3;
+    repeated bytes start_index_values = 4;
+    repeated bytes end_index_values = 5;
+    optional StartAtValueInfo start_at_value_info = 6;
+    optional uint32 count = 7;
+    bool order_ascending = 8;
+    bool prove = 9;
+  }
+
+  oneof version {
+    GetContestedResourcesRequestV0 v0 = 1;
+  }
+}
+
+message GetContestedResourcesResponse {
+  message GetContestedResourcesResponseV0 {
+    message ContestedResourceValues {
+      repeated bytes contested_resource_values = 1;
+    }
+
+    oneof result {
+      ContestedResourceValues contested_resource_values = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetContestedResourcesResponseV0 v0 = 1;
+  }
+}
+
+message GetVotePollsByEndDateRequest {
+  message GetVotePollsByEndDateRequestV0 {
+    message StartAtTimeInfo {
+      uint64 start_time_ms = 1;
+      bool start_time_included = 2;
+    }
+    message EndAtTimeInfo {
+      uint64 end_time_ms = 1;
+      bool end_time_included = 2;
+    }
+    optional StartAtTimeInfo start_time_info = 1;
+    optional EndAtTimeInfo end_time_info = 2;
+    optional uint32 limit = 3;
+    optional uint32 offset = 4;
+    bool ascending = 5;
+    bool prove = 6;
+  }
+
+  oneof version {
+    GetVotePollsByEndDateRequestV0 v0 = 1;
+  }
+}
+
+message GetVotePollsByEndDateResponse {
+  message GetVotePollsByEndDateResponseV0 {
+    message SerializedVotePollsByTimestamp {
+      uint64 timestamp = 1;
+      repeated bytes serialized_vote_polls = 2;
+    }
+
+    message SerializedVotePollsByTimestamps {
+      repeated SerializedVotePollsByTimestamp vote_polls_by_timestamps = 1;
+      bool finished_results = 2;
+    }
+
+    oneof result {
+      SerializedVotePollsByTimestamps vote_polls_by_timestamps = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetVotePollsByEndDateResponseV0 v0 = 1;
+  }
+}
+
+// What's the state of a contested resource vote? (ie who is winning?)
+message GetContestedResourceVoteStateRequest {
+  message GetContestedResourceVoteStateRequestV0 {
+    message StartAtIdentifierInfo {
+      bytes start_identifier = 1;
+      bool start_identifier_included = 2;
+    }
+    enum ResultType {
+      DOCUMENTS = 0;
+      VOTE_TALLY = 1;
+      DOCUMENTS_AND_VOTE_TALLY = 2;
+    }
+
+    bytes contract_id = 1;
+    string document_type_name = 2;
+    string index_name = 3;
+    repeated bytes index_values = 4;
+    ResultType result_type = 5;
+    bool allow_include_locked_and_abstaining_vote_tally = 6;
+    optional StartAtIdentifierInfo start_at_identifier_info = 7;
+    optional uint32 count = 8;
+    bool prove = 9;
+  }
+
+  oneof version {
+    GetContestedResourceVoteStateRequestV0 v0 = 1;
+  }
+}
+
+message GetContestedResourceVoteStateResponse {
+  message GetContestedResourceVoteStateResponseV0 {
+    message FinishedVoteInfo {
+      enum FinishedVoteOutcome {
+        TOWARDS_IDENTITY = 0;
+        LOCKED = 1;
+        NO_PREVIOUS_WINNER = 2;
+      }
+      FinishedVoteOutcome finished_vote_outcome = 1;
+      optional bytes won_by_identity_id = 2; // Only used when vote_choice_type is TOWARDS_IDENTITY
+      uint64 finished_at_block_height = 3;
+      uint32 finished_at_core_block_height = 4;
+      uint64 finished_at_block_time_ms = 5;
+      uint32 finished_at_epoch = 6;
+    }
+
+    message ContestedResourceContenders {
+      repeated Contender contenders = 1;
+      optional uint32 abstain_vote_tally = 2;
+      optional uint32 lock_vote_tally = 3;
+      optional FinishedVoteInfo finished_vote_info = 4;
+    }
+
+    message Contender {
+      bytes identifier = 1;
+      optional uint32 vote_count = 2;
+      optional bytes document = 3;
+    }
+
+    oneof result {
+      ContestedResourceContenders contested_resource_contenders = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetContestedResourceVoteStateResponseV0 v0 = 1;
+  }
+}
+
+// Who voted for a contested resource to go to a specific identity?
+message GetContestedResourceVotersForIdentityRequest {
+  message GetContestedResourceVotersForIdentityRequestV0 {
+    message StartAtIdentifierInfo {
+      bytes start_identifier = 1;
+      bool start_identifier_included = 2;
+    }
+    bytes contract_id = 1;
+    string document_type_name = 2;
+    string index_name = 3;
+    repeated bytes index_values = 4;
+    bytes contestant_id = 5;
+    optional StartAtIdentifierInfo start_at_identifier_info = 6;
+    optional uint32 count = 7;
+    bool order_ascending = 8;
+    bool prove = 9;
+  }
+
+  oneof version {
+    GetContestedResourceVotersForIdentityRequestV0 v0 = 1;
+  }
+}
+
+message GetContestedResourceVotersForIdentityResponse {
+  message GetContestedResourceVotersForIdentityResponseV0 {
+    message ContestedResourceVoters {
+      repeated bytes voters = 1;
+      bool finished_results = 2;
+    }
+
+    oneof result {
+      ContestedResourceVoters contested_resource_voters = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetContestedResourceVotersForIdentityResponseV0 v0 = 1;
+  }
+}
+
+// How did an identity vote?
+message GetContestedResourceIdentityVotesRequest {
+  message GetContestedResourceIdentityVotesRequestV0 {
+    message StartAtVotePollIdInfo {
+      bytes start_at_poll_identifier = 1;
+      bool start_poll_identifier_included = 2;
+    }
+    bytes identity_id = 1;
+    google.protobuf.UInt32Value limit = 2;
+    google.protobuf.UInt32Value offset = 3;
+    bool order_ascending = 4;
+    optional StartAtVotePollIdInfo start_at_vote_poll_id_info = 5;
+    bool prove = 6;
+  }
+
+  oneof version {
+    GetContestedResourceIdentityVotesRequestV0 v0 = 1;
+  }
+}
+
+message GetContestedResourceIdentityVotesResponse {
+  message GetContestedResourceIdentityVotesResponseV0 {
+    message ContestedResourceIdentityVotes {
+      repeated ContestedResourceIdentityVote contested_resource_identity_votes = 1;
+      bool finished_results = 2;
+    }
+
+    message ResourceVoteChoice {
+      enum VoteChoiceType {
+        TOWARDS_IDENTITY = 0;
+        ABSTAIN = 1;
+        LOCK = 2;
+      }
+      VoteChoiceType vote_choice_type = 1;
+      optional bytes identity_id = 2; // Only used when vote_choice_type is TOWARDS_IDENTITY
+    }
+
+    message ContestedResourceIdentityVote {
+      bytes contract_id = 1;
+      string document_type_name = 2;
+      repeated bytes serialized_index_storage_values = 3;
+      ResourceVoteChoice vote_choice = 4;
+    }
+
+    oneof result {
+      ContestedResourceIdentityVotes votes = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetContestedResourceIdentityVotesResponseV0 v0 = 1;
+  }
+}
+
+message GetPrefundedSpecializedBalanceRequest {
+
+  message GetPrefundedSpecializedBalanceRequestV0 {
+    bytes id = 1;
+    bool prove = 2;
+  }
+
+  oneof version { GetPrefundedSpecializedBalanceRequestV0 v0 = 1; }
+}
+
+message GetPrefundedSpecializedBalanceResponse {
+
+  message GetPrefundedSpecializedBalanceResponseV0 {
+    oneof result {
+      uint64 balance = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetPrefundedSpecializedBalanceResponseV0 v0 = 1; }
+}
+
+
+message GetPathElementsRequest {
+  message GetPathElementsRequestV0 {
+    repeated bytes path = 1;
+    repeated bytes keys = 2;
+    bool prove = 3;
+  }
+
+  oneof version {
+    GetPathElementsRequestV0 v0 = 1;
+  }
+}
+
+message GetPathElementsResponse {
+  message GetPathElementsResponseV0 {
+    message Elements {
+      repeated bytes elements = 1;
+    }
+
+    oneof result {
+      Elements elements = 1;
+
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetPathElementsResponseV0 v0 = 1;
   }
 }

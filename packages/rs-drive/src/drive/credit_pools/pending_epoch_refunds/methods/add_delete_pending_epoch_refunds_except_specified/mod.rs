@@ -1,9 +1,9 @@
 mod v0;
 
-use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::batch::GroveDbOpBatch;
 use dpp::fee::epoch::CreditsPerEpoch;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
@@ -38,6 +38,7 @@ impl Drive {
                 batch,
                 refunds_per_epoch,
                 transaction,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_delete_pending_epoch_refunds_except_specified_operations".to_string(),
