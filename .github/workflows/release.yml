@@ -32,7 +32,9 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Retrieve JS build artifacts
         uses: strophy/actions-cache@opendal-update
@@ -69,7 +71,7 @@ jobs:
           CARGO_BUILD_PROFILE: release
           RUSTC_WRAPPER: sccache
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/wasm/wasm32
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
 
@@ -193,8 +195,9 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
-          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Retrieve JS build artifacts
         uses: strophy/actions-cache@opendal-update
