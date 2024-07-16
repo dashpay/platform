@@ -8,7 +8,7 @@ use std::fmt::{Debug, Formatter};
 #[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
 use arc_swap::ArcSwap;
-use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
+use dpp::version::INITIAL_PROTOCOL_VERSION;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::atomic::AtomicU64;

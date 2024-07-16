@@ -4,8 +4,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use crate::fee_pools::epochs::epoch_key_constants;
-use crate::fee_pools::epochs::paths::EpochProposers;
+use crate::drive::credit_pools::epochs::epoch_key_constants;
+use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
 use platform_version::version::PlatformVersion;
 
@@ -16,7 +16,7 @@ impl Drive {
         epoch_tree: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<f64, Error> {
+    ) -> Result<u64, Error> {
         let element = self
             .grove
             .get(
@@ -34,7 +34,7 @@ impl Drive {
             )));
         };
 
-        Ok(f64::from_be_bytes(
+        Ok(u64::from_be_bytes(
             encoded_multiplier.as_slice().try_into().map_err(|_| {
                 Error::Drive(DriveError::CorruptedSerialization(String::from(
                     "epochs multiplier must be f64",
@@ -46,14 +46,14 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-    use crate::drive::batch::GroveDbOpBatch;
+    use crate::drive::credit_pools::epochs::epoch_key_constants;
+    use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+    use crate::drive::credit_pools::epochs::paths::EpochProposers;
     use crate::error::drive::DriveError;
     use crate::error::Error;
-    use crate::fee_pools::epochs::epoch_key_constants;
-    use crate::fee_pools::epochs::operations_factory::EpochOperations;
-    use crate::fee_pools::epochs::paths::EpochProposers;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use crate::util::batch::GroveDbOpBatch;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use dpp::version::PlatformVersion;
     use grovedb::Element;
@@ -112,7 +112,7 @@ mod tests {
 
         let epoch = Epoch::new(0).unwrap();
 
-        let multiplier = 42.0;
+        let multiplier = 42000;
 
         let mut batch = GroveDbOpBatch::new();
 

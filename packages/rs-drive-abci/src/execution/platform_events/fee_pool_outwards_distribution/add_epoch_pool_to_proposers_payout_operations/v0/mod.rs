@@ -9,11 +9,12 @@ use dpp::block::epoch::Epoch;
 use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use drive::drive::batch::DriveOperation;
-use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::AddToIdentityBalance;
+use drive::util::batch::DriveOperation;
+use drive::util::batch::DriveOperation::IdentityOperation;
+use drive::util::batch::IdentityOperationType::AddToIdentityBalance;
 
 use drive::grovedb::Transaction;
 
@@ -186,10 +187,11 @@ mod tests {
         use dpp::block::block_info::BlockInfo;
         use dpp::identity::accessors::IdentityGettersV0;
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-        use drive::common::test_utils::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
-        use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-        use drive::drive::batch::GroveDbOpBatch;
-        use drive::fee_pools::epochs::operations_factory::EpochOperations;
+
+        use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
+        use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+        use drive::util::batch::GroveDbOpBatch;
+        use drive::util::test_helpers::test_utils::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
         use rust_decimal::Decimal;
         use rust_decimal_macros::dec;
 
@@ -217,7 +219,16 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            unpaid_epoch_tree.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
+            unpaid_epoch_tree.add_init_current_operations(
+                platform_version
+                    .fee_version
+                    .uses_version_fee_multiplier_permille
+                    .expect("expected a fee multiplier"),
+                1,
+                1,
+                1,
+                &mut batch,
+            );
 
             batch.push(
                 unpaid_epoch_tree
@@ -232,7 +243,10 @@ mod tests {
             );
 
             next_epoch_tree.add_init_current_operations(
-                1.0,
+                platform_version
+                    .fee_version
+                    .uses_version_fee_multiplier_permille
+                    .expect("expected a fee multiplier"),
                 proposers_count as u64 + 1,
                 1,
                 10,
@@ -293,6 +307,7 @@ mod tests {
                     &BlockInfo::default(),
                     Some(&transaction),
                     platform_version,
+                    None,
                 )
                 .expect("should apply batch");
 

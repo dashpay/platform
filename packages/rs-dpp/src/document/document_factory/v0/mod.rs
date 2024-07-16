@@ -516,8 +516,8 @@ impl DocumentFactoryV0 {
         documents
             .into_iter()
             .map(|(document, document_type)| {
-                if !document_type.documents_mutable() {
-                    return Err(DocumentError::TryingToDeleteImmutableDocument {
+                if !document_type.documents_can_be_deleted() {
+                    return Err(DocumentError::TryingToDeleteIndelibleDocument {
                         document: Box::new(document),
                     }
                     .into());
@@ -550,5 +550,72 @@ impl DocumentFactoryV0 {
 
     fn is_ownership_the_same<'a>(ids: impl IntoIterator<Item = &'a Identifier>) -> bool {
         ids.into_iter().all_equal()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use data_contracts::SystemDataContract;
+    use platform_version::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::document::document_factory::DocumentFactoryV0;
+    use crate::document::{Document, DocumentV0};
+    use crate::identifier::Identifier;
+    use crate::system_data_contracts::load_system_data_contract;
+
+    #[test]
+    /// Create a delete transition in DocumentFactoryV0 for an immutable but deletable document type
+    fn delete_immutable_but_deletable_documents() {
+        // Get a ref to the dpns preorder document type to pass to the factory
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest()).unwrap();
+        let document_type = dpns_contract
+            .document_type_borrowed_for_name("preorder")
+            .unwrap();
+        let document_type_ref = document_type.as_ref();
+
+        // Create a preorder document
+        let document_id = Identifier::random();
+        let owner_id = Identifier::random();
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "saltedDomainHash".to_string(),
+            platform_value::Value::Array(vec![]),
+        );
+        let document_v0 = DocumentV0 {
+            id: document_id,
+            owner_id,
+            properties,
+            revision: Some(1),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+        };
+        let document = Document::V0(document_v0);
+
+        // This will be passed to the factory
+        let documents = vec![(document, document_type_ref)];
+        let mut nonce_counter = BTreeMap::new();
+        let platform_version = PlatformVersion::latest();
+
+        // Try to create the delete transition in the factory
+        let result = DocumentFactoryV0::document_delete_transitions(
+            documents,
+            &mut nonce_counter,
+            &platform_version,
+        );
+
+        // Checks
+        assert!(result.is_ok(), "The function should succeed");
+        let transitions = result.unwrap();
+        assert_eq!(transitions.len(), 1, "There should be one transition");
     }
 }

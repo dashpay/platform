@@ -9,7 +9,7 @@ use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 #[cfg(feature = "server")]
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use dpp::block::block_info::BlockInfo;
@@ -291,6 +291,7 @@ impl ContestedDocumentVotePollDriveQuery {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -338,6 +339,7 @@ impl ContestedDocumentVotePollDriveQuery {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {

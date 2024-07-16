@@ -21,7 +21,7 @@ pub use dpp::{
     document::Document,
     prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
 };
-pub use drive::query::DriveQuery;
+pub use drive::query::DriveDocumentQuery;
 pub use drive_proof_verifier::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use drive_proof_verifier::MockContextProvider;

@@ -1,4 +1,4 @@
-use crate::drive::defaults::{AVERAGE_BALANCE_SIZE, DEFAULT_HASH_SIZE_U8};
+use crate::drive::constants::AVERAGE_BALANCE_SIZE;
 
 use crate::drive::Drive;
 
@@ -9,9 +9,9 @@ use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 
 use crate::drive::balances::balance_path_vec;
 
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::EstimatedSumTrees::SomeSumTrees;
 use std::collections::HashMap;
-
 // we need to construct the reference from the split height of the key
 // type which is at 4
 // 0 represents document storage

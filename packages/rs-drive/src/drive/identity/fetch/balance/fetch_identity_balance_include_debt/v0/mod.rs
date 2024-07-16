@@ -1,7 +1,7 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::balances::credits::Creditable;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
@@ -54,6 +54,7 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
+            None,
         )?;
         Ok((value, fees))
     }

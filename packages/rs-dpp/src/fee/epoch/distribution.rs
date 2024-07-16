@@ -248,6 +248,7 @@ where
         let era_start_epoch_index = start_epoch_index + epochs_per_era * era;
 
         for epoch_index in era_start_epoch_index..era_start_epoch_index + epochs_per_era {
+            //todo: this can lead to many many calls once we are further along in epochs
             map_function(epoch_index, epoch_fee_share)?;
 
             distribution_leftover_credits = distribution_leftover_credits

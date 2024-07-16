@@ -260,8 +260,8 @@ mod tests {
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use dpp::tests::json_document::json_document_to_contract;
     use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
-    use drive::drive::flags::StorageFlags;
-    use drive::query::DriveQuery;
+    use drive::query::DriveDocumentQuery;
+    use drive::util::storage_flags::StorageFlags;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
@@ -281,7 +281,7 @@ mod tests {
         use dpp::util::hash::hash_double;
         use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
         use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
-        use drive::drive::object_size_info::DataContractResolvedInfo;
+        use drive::util::object_size_info::DataContractResolvedInfo;
         use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
         use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
         use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
@@ -862,7 +862,7 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 500_000_000, 900); //less than a week
+            fast_forward_to_block(&platform, 500_000_000, 900, 0); //less than a week
 
             let platform_state = platform.state.load();
 
@@ -875,7 +875,7 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 1_000_000_000, 900); //more than a week, less than 2 weeks
+            fast_forward_to_block(&platform, 1_000_000_000, 900, 0); //more than a week, less than 2 weeks
 
             let platform_state = platform.state.load();
 
@@ -1008,7 +1008,7 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 200_000_000, 900); //less than a week
+            fast_forward_to_block(&platform, 200_000_000, 900, 0); //less than a week
 
             let platform_state = platform.state.load();
 
@@ -1021,7 +1021,7 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 2_000_000_000, 900); //more than two weeks
+            fast_forward_to_block(&platform, 2_000_000_000, 900, 0); //more than two weeks
 
             let platform_state = platform.state.load();
 
@@ -1375,7 +1375,8 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 3810570);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 3837600);
+            // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
         #[test]
@@ -1515,7 +1516,8 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 102690);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 103200);
+            // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
         #[test]
@@ -1599,7 +1601,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -1609,7 +1611,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -1694,7 +1696,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1253950);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 1261600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -1798,7 +1800,8 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1244470);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 1252800);
+            // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
     }
 
@@ -1937,7 +1940,8 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 5588830);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 5612800);
+            // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
         #[test]
@@ -2098,7 +2102,8 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1253950);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 1261600);
+            // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
         #[test]
@@ -2259,7 +2264,8 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 9945520);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 9993800);
+            // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
         #[test]
@@ -2402,7 +2408,8 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1507670);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 1516000);
+            // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
         #[test]
@@ -2491,7 +2498,8 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1244470);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 1252800);
+            // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
     }
 
@@ -2650,7 +2658,8 @@ mod tests {
 
             assert_eq!(processing_result.aggregated_fees().storage_fee, 0); // There is no storage fee, as there are no indexes that will change
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 4926670);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 4972400);
+            // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
         #[test]
@@ -2736,7 +2745,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2746,7 +2755,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2841,7 +2850,7 @@ mod tests {
                 Some(14992395)
             );
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 8622720);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 8691400); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -2940,7 +2949,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2950,7 +2959,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3033,7 +3042,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1253950);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 1261600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -3090,7 +3099,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3100,7 +3109,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3183,7 +3192,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 25090);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 25600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -3285,7 +3294,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3295,7 +3304,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3378,7 +3387,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 9549440);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 9622200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -3445,7 +3454,8 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1107610);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 1115600);
+            // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
     }
 
@@ -3532,7 +3542,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3688,7 +3698,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3698,7 +3708,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3781,7 +3791,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 6075290);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 6133600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -3902,11 +3912,11 @@ mod tests {
                     .change(),
                 &BalanceChange::RemoveFromBalance {
                     required_removed_balance: 123579000,
-                    desired_removed_balance: 127933560,
+                    desired_removed_balance: 127991300, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
                 }
             );
 
-            let original_creation_cost = 127933560;
+            let original_creation_cost = 127991300; // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             platform
                 .drive
@@ -3930,7 +3940,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3940,7 +3950,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", purchaser.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -4033,7 +4043,7 @@ mod tests {
                 None
             );
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 6075290);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 6133600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let seller_balance = platform
                 .drive
@@ -4044,8 +4054,8 @@ mod tests {
             // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
             assert_eq!(
                 seller_balance,
-                dash_to_credits!(0.1) - 6075290 - 216000 - original_creation_cost
-            );
+                dash_to_credits!(0.1) - original_creation_cost - 6349600
+            ); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -4139,7 +4149,7 @@ mod tests {
 
             assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 10134040);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 10210200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             assert_eq!(
                 processing_result
@@ -4173,8 +4183,8 @@ mod tests {
             // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
             assert_eq!(
                 seller_balance,
-                dash_to_credits!(0.2) - 6075290 - 216000 - original_creation_cost + 22704503
-            );
+                dash_to_credits!(0.2) - original_creation_cost + 16354903
+            ); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let buyers_balance = platform
                 .drive
@@ -4183,7 +4193,7 @@ mod tests {
                 .expect("expected that purchaser exists");
 
             // the buyer payed 0.1, but also storage and processing fees
-            assert_eq!(buyers_balance, dash_to_credits!(0.9) - 10134040 - 64611000);
+            assert_eq!(buyers_balance, dash_to_credits!(0.9) - 74821200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         }
 
         #[test]
@@ -4754,7 +4764,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -4764,7 +4774,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", purchaser.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -4956,7 +4966,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -4966,7 +4976,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -5049,7 +5059,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 6075290);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 6133600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let query_sender_results = platform
                 .drive
@@ -5278,12 +5288,12 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 25090);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 25600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),

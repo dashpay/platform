@@ -69,6 +69,7 @@ where
                 state_read_guard.last_block_info(),
                 transaction,
                 platform_ref.state.current_platform_version()?,
+                platform_ref.state.previous_fee_versions(),
             )
         } else {
             Ok(UnpaidConsensusExecutionError(
@@ -178,6 +179,7 @@ where
                 platform_ref.state.last_block_info(),
                 None,
                 platform_version,
+                platform_ref.state.previous_fee_versions(),
             )?;
 
             let (estimated_fee_result, errors) = validation_result.into_data_and_errors()?;
@@ -476,7 +478,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3055480);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3085850); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
         let check_result = platform
             .check_tx(
@@ -678,7 +680,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 905380);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 909400); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
         let check_result = platform
             .check_tx(
@@ -830,7 +832,7 @@ mod tests {
         // since a fee multiplier of 100 means 100% more of 1 (gives 2)
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            3055480 * 2
+            3085850 * 2 // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
         );
 
         let check_result = platform
@@ -1088,7 +1090,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3055480);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3085850); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
         platform
             .drive
@@ -1172,8 +1174,8 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            7420280
-        );
+            7446290
+        ); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
         let check_result = platform
             .check_tx(
@@ -1294,7 +1296,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3055480);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3085850); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
         platform
             .drive
@@ -1414,7 +1416,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1231050);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1238700); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
         let check_result = platform
             .check_tx(

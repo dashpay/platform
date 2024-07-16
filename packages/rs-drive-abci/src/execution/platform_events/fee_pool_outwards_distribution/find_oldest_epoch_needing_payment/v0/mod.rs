@@ -132,10 +132,10 @@ mod tests {
     mod find_oldest_epoch_needing_payment {
         use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Methods;
         use crate::test::helpers::setup::TestPlatformBuilder;
-        use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-        use drive::drive::batch::GroveDbOpBatch;
-        use drive::fee_pools::epochs::operations_factory::EpochOperations;
-        use drive::fee_pools::update_unpaid_epoch_index_operation;
+        use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
+        use drive::drive::credit_pools::operations::update_unpaid_epoch_index_operation;
+        use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+        use drive::util::batch::GroveDbOpBatch;
 
         use super::*;
 

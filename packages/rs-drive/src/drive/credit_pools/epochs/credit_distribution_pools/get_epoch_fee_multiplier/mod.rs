@@ -28,7 +28,7 @@ impl Drive {
         epoch_tree: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<f64, Error> {
+    ) -> Result<u64, Error> {
         match platform_version
             .drive
             .methods

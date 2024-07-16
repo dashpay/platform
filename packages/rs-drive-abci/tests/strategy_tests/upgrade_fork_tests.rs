@@ -6,7 +6,7 @@ mod tests {
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::version::PlatformVersion;
-    use drive::drive::config::DriveConfig;
+    use drive::config::DriveConfig;
     use std::collections::{BTreeMap, HashMap};
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};

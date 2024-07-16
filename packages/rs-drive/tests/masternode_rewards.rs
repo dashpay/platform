@@ -2,8 +2,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contracts::SystemDataContract;
 use dpp::identifier::Identifier;
 use dpp::system_data_contracts::load_system_data_contract;
-use drive::query::DriveQuery;
-use drive::tests::helpers::setup::setup_drive_with_initial_state_structure;
+use drive::query::DriveDocumentQuery;
+use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use platform_version::version::PlatformVersion;
 
 mod reward_share {
@@ -30,7 +30,7 @@ mod reward_share {
             )
             .expect("should apply contract");
 
-        let query = DriveQuery::from_sql_expr(
+        let query = DriveDocumentQuery::from_sql_expr(
             &format!(
                 "SELECT * FROM rewardShare WHERE $ownerId == '{}'",
                 Identifier::random()
@@ -66,7 +66,7 @@ mod reward_share {
             )
             .expect("should apply contract");
 
-        let query = DriveQuery::from_sql_expr(
+        let query = DriveDocumentQuery::from_sql_expr(
             &format!(
                 "SELECT * FROM rewardShare WHERE $ownerId == '{}' AND payToId == '{}'",
                 Identifier::random(),

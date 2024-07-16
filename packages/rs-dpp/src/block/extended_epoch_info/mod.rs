@@ -52,9 +52,9 @@ impl ExtendedEpochInfoV0Getters for ExtendedEpochInfo {
         }
     }
 
-    fn fee_multiplier(&self) -> f64 {
+    fn fee_multiplier_permille(&self) -> u64 {
         match self {
-            ExtendedEpochInfo::V0(v0) => v0.fee_multiplier,
+            ExtendedEpochInfo::V0(v0) => v0.fee_multiplier_permille,
         }
     }
 

@@ -5,26 +5,24 @@ use ciborium::cbor;
 #[cfg(feature = "server")]
 use dpp::data_contract::DataContractFactory;
 #[cfg(feature = "server")]
-use drive::common;
-#[cfg(feature = "server")]
-use drive::common::setup_contract;
-#[cfg(feature = "server")]
-use drive::drive::batch::GroveDbOpBatch;
-#[cfg(feature = "server")]
-use drive::drive::config::DriveConfig;
-#[cfg(feature = "server")]
-use drive::drive::flags::StorageFlags;
-#[cfg(feature = "server")]
-use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use drive::config::DriveConfig;
 #[cfg(feature = "server")]
 use drive::drive::Drive;
 #[cfg(feature = "server")]
 use drive::error::{query::QuerySyntaxError, Error};
 #[cfg(feature = "server")]
-use drive::query::DriveQuery;
+use drive::query::DriveDocumentQuery;
+#[cfg(feature = "server")]
+use drive::util::batch::GroveDbOpBatch;
+#[cfg(feature = "server")]
+use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+#[cfg(feature = "server")]
+use drive::util::storage_flags::StorageFlags;
 #[cfg(feature = "server")]
 #[cfg(test)]
-use drive::tests::helpers::setup::setup_drive;
+use drive::util::test_helpers::setup::setup_drive;
+#[cfg(feature = "server")]
+use drive::util::test_helpers::setup_contract;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use rand::random;
@@ -38,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 #[cfg(feature = "server")]
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 #[cfg(feature = "server")]
 use std::collections::HashMap;
 #[cfg(feature = "server")]
@@ -66,30 +65,31 @@ use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
 };
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::identity::TimestampMillis;
 use dpp::platform_value;
-
 #[cfg(feature = "server")]
 use dpp::prelude::DataContract;
-
 use dpp::tests::json_document::json_document_to_contract;
 #[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
+use once_cell::sync::Lazy;
 
 use dpp::version::PlatformVersion;
 
-use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "server")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
+use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 #[cfg(feature = "server")]
 use drive::drive::document::query::QuerySerializedDocumentsOutcome;
-use drive::drive::object_size_info::DocumentInfo;
-use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
+use drive::util::object_size_info::DocumentInfo;
+use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 
 use drive::query::{WhereClause, WhereOperator};
-use drive::tests::helpers::setup::setup_drive_with_initial_state_structure;
+use drive::util::test_helpers;
+use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 
 #[cfg(feature = "server")]
 #[derive(Serialize, Deserialize)]
@@ -108,12 +108,15 @@ struct Person {
 #[cfg(feature = "server")]
 impl Person {
     fn random_people(count: u32, seed: u64) -> Vec<Self> {
-        let first_names =
-            common::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
-        let middle_names =
-            common::text_file_strings("tests/supporting_files/contract/family/middle-names.txt");
-        let last_names =
-            common::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
+        let first_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/first-names.txt",
+        );
+        let middle_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/middle-names.txt",
+        );
+        let last_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/last-names.txt",
+        );
         let mut vec: Vec<Person> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -149,12 +152,15 @@ struct PersonWithOptionalValues {
 #[cfg(feature = "server")]
 impl PersonWithOptionalValues {
     fn random_people(count: u32, seed: u64) -> Vec<Self> {
-        let first_names =
-            common::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
-        let middle_names =
-            common::text_file_strings("tests/supporting_files/contract/family/middle-names.txt");
-        let last_names =
-            common::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
+        let first_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/first-names.txt",
+        );
+        let middle_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/middle-names.txt",
+        );
+        let last_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/last-names.txt",
+        );
         let mut vec: Vec<PersonWithOptionalValues> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -207,7 +213,7 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
         .expect("expected to create contracts tree successfully");
 
     // setup code
-    let contract = common::setup_contract(
+    let contract = test_helpers::setup_contract(
         &drive,
         "tests/supporting_files/contract/family/family-contract.json",
         None,
@@ -243,6 +249,7 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -276,7 +283,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
         .expect("expected to create contracts tree successfully");
 
     // setup code
-    let contract = common::setup_contract(
+    let contract = test_helpers::setup_contract(
         &drive,
         "tests/supporting_files/contract/family/family-contract-fields-optional.json",
         None,
@@ -311,6 +318,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -344,7 +352,7 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
         .expect("expected to create contracts tree successfully");
 
     // setup code
-    let contract = common::setup_contract(
+    let contract = test_helpers::setup_contract(
         &drive,
         "tests/supporting_files/contract/family/family-contract-only-first-name-index.json",
         None,
@@ -380,6 +388,7 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -561,8 +570,9 @@ impl Domain {
         seed: u64,
         normalized_parent_domain_name: &str,
     ) -> Vec<Self> {
-        let first_names =
-            common::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
+        let first_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/first-names.txt",
+        );
         let mut vec: Vec<Domain> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -624,6 +634,7 @@ pub fn add_domains_to_contract(
                 true,
                 transaction,
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -794,6 +805,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -843,6 +855,7 @@ fn test_query_many() {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("document should be inserted");
     }
@@ -883,7 +896,7 @@ fn test_reference_proof_single_index() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -931,7 +944,7 @@ fn test_non_existence_reference_proof_single_index() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -998,7 +1011,7 @@ fn test_family_basic_queries() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -1329,7 +1342,7 @@ fn test_family_basic_queries() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -1385,7 +1398,7 @@ fn test_family_basic_queries() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -1436,7 +1449,7 @@ fn test_family_basic_queries() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -1488,7 +1501,7 @@ fn test_family_basic_queries() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -1548,7 +1561,7 @@ fn test_family_basic_queries() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -1596,7 +1609,7 @@ fn test_family_basic_queries() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -1656,7 +1669,7 @@ fn test_family_basic_queries() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -1715,7 +1728,7 @@ fn test_family_basic_queries() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -1829,6 +1842,7 @@ fn test_family_basic_queries() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -1873,6 +1887,7 @@ fn test_family_basic_queries() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -2289,6 +2304,9 @@ fn test_family_person_update() {
 
     let platform_version = PlatformVersion::latest();
 
+    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+
     let db_transaction = drive.grove.start_transaction();
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(84594);
@@ -2335,6 +2353,7 @@ fn test_family_person_update() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -2363,6 +2382,7 @@ fn test_family_person_update() {
             None,
             Some(&db_transaction),
             platform_version,
+            Some(&epoch_change_fee_version_test),
         )
         .expect("expected to override document");
     assert!(fee.storage_fee > 0);
@@ -2378,7 +2398,7 @@ fn test_family_person_update() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -2460,7 +2480,7 @@ fn test_family_starts_at_queries() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -2519,7 +2539,7 @@ fn test_family_starts_at_queries() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -2572,7 +2592,7 @@ fn test_family_starts_at_queries() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -2631,7 +2651,7 @@ fn test_family_starts_at_queries() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -2693,7 +2713,7 @@ fn test_family_sql_query() {
         None,
     )
     .expect("expected to serialize to cbor");
-    let query1 = DriveQuery::from_cbor(
+    let query1 = DriveDocumentQuery::from_cbor(
         query_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -2702,8 +2722,9 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-        .expect("should build query");
+    let query2 =
+        DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+            .expect("should build query");
 
     assert_eq!(query1, query2);
 
@@ -2717,7 +2738,7 @@ fn test_family_sql_query() {
         None,
     )
     .expect("expected to serialize to cbor");
-    let query1 = DriveQuery::from_cbor(
+    let query1 = DriveDocumentQuery::from_cbor(
         query_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -2726,8 +2747,9 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person where firstName = 'Chris'";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-        .expect("should build query");
+    let query2 =
+        DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+            .expect("should build query");
 
     assert_eq!(query1, query2);
 
@@ -2745,7 +2767,7 @@ fn test_family_sql_query() {
         None,
     )
     .expect("expected to serialize to cbor");
-    let query1 = DriveQuery::from_cbor(
+    let query1 = DriveDocumentQuery::from_cbor(
         query_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -2755,8 +2777,9 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName < 'Chris' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-        .expect("should build query");
+    let query2 =
+        DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+            .expect("should build query");
 
     assert_eq!(query1, query2);
 
@@ -2774,7 +2797,7 @@ fn test_family_sql_query() {
         None,
     )
     .expect("expected to serialize to cbor");
-    let query1 = DriveQuery::from_cbor(
+    let query1 = DriveDocumentQuery::from_cbor(
         query_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -2784,8 +2807,9 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName like 'C%' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-        .expect("should build query");
+    let query2 =
+        DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+            .expect("should build query");
 
     assert_eq!(query1, query2);
 
@@ -2804,7 +2828,7 @@ fn test_family_sql_query() {
         None,
     )
     .expect("expected to serialize to cbor");
-    let query1 = DriveQuery::from_cbor(
+    let query1 = DriveDocumentQuery::from_cbor(
         query_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -2813,8 +2837,9 @@ fn test_family_sql_query() {
     .expect("should build query");
 
     let sql_string = "select * from person where firstName > 'Chris' and firstName <= 'Noellyn' order by firstName asc limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-        .expect("should build query");
+    let query2 =
+        DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+            .expect("should build query");
 
     assert_eq!(query1, query2);
 
@@ -2833,7 +2858,7 @@ fn test_family_sql_query() {
         None,
     )
     .expect("expected to serialize to cbor");
-    let query1 = DriveQuery::from_cbor(
+    let query1 = DriveDocumentQuery::from_cbor(
         query_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -2843,8 +2868,9 @@ fn test_family_sql_query() {
 
     let sql_string =
         "select * from person where firstName in ('a', 'b') order by firstName limit 100";
-    let query2 = DriveQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-        .expect("should build query");
+    let query2 =
+        DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+            .expect("should build query");
 
     assert_eq!(query1, query2);
 }
@@ -2855,6 +2881,9 @@ fn test_family_with_nulls_query() {
     let (drive, contract) = setup_family_tests_with_nulls(10, 30004);
 
     let platform_version = PlatformVersion::latest();
+
+    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -2899,7 +2928,7 @@ fn test_family_with_nulls_query() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -2960,6 +2989,7 @@ fn test_family_with_nulls_query() {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&epoch_change_fee_version_test),
             )
             .expect("expected to be able to delete the document");
     }
@@ -3172,7 +3202,7 @@ fn test_dpns_query() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -3223,7 +3253,7 @@ fn test_dpns_query() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -3303,7 +3333,7 @@ fn test_dpns_query() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -3361,7 +3391,7 @@ fn test_dpns_query() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -3436,7 +3466,7 @@ fn test_dpns_query() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -3492,7 +3522,7 @@ fn test_dpns_query() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -3540,7 +3570,7 @@ fn test_dpns_query() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -3729,7 +3759,7 @@ fn test_dpns_query_start_at() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -3823,7 +3853,7 @@ fn test_dpns_query_start_after() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -3917,7 +3947,7 @@ fn test_dpns_query_start_at_desc() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -4011,7 +4041,7 @@ fn test_dpns_query_start_after_desc() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -4103,6 +4133,7 @@ fn test_dpns_query_start_at_with_null_id() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4145,6 +4176,7 @@ fn test_dpns_query_start_at_with_null_id() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4202,7 +4234,7 @@ fn test_dpns_query_start_at_with_null_id() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -4303,6 +4335,7 @@ fn test_dpns_query_start_after_with_null_id() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4346,6 +4379,7 @@ fn test_dpns_query_start_after_with_null_id() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4403,7 +4437,7 @@ fn test_dpns_query_start_after_with_null_id() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -4508,6 +4542,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4551,6 +4586,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -4618,7 +4654,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -4672,7 +4708,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -4726,7 +4762,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let domain_document_type = contract
         .document_type_for_name("domain")
         .expect("contract should have a domain document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         domain_document_type,
@@ -4978,6 +5014,7 @@ fn test_query_documents_by_created_at() {
             true,
             None,
             platform_version,
+            None,
         )
         .expect("should add document");
 
@@ -4997,7 +5034,7 @@ fn test_query_documents_by_created_at() {
         .document_type_for_name("indexedDocument")
         .expect("should get document type");
 
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         &query_bytes,
         &contract,
         document_type,

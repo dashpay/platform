@@ -421,11 +421,12 @@ mod test {
         path::{Path, PathBuf},
     };
 
-    use ::drive::{drive::Drive, fee_pools::epochs::paths::EpochProposers, query::Element};
+    use ::drive::{drive::Drive, query::Element};
     use dpp::block::epoch::Epoch;
-    use drive::fee_pools::epochs::epoch_key_constants;
+    use drive::drive::credit_pools::epochs::epoch_key_constants;
 
     use dpp::version::PlatformVersion;
+    use drive::drive::credit_pools::epochs::paths::EpochProposers;
     use drive_abci::logging::LogLevel;
     use rocksdb::{IteratorMode, Options};
 

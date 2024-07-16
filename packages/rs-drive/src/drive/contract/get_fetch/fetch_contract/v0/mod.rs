@@ -1,11 +1,11 @@
 use crate::drive::contract::{paths, DataContractFetchInfo};
 
-use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
+use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::DataContract;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
@@ -94,7 +94,8 @@ impl Drive {
                             Some(vec![drive_operation]),
                             epoch,
                             self.config.epochs_per_era,
-                            platform_version
+                            platform_version,
+                            None,
                         )
                     ))
                 } else {
@@ -149,7 +150,8 @@ impl Drive {
                                     Some(vec![drive_operation]),
                                     epoch,
                                     self.config.epochs_per_era,
-                                    platform_version
+                                    platform_version,
+                                    None,
                                 )
                             ))
                         } else {

@@ -32,12 +32,15 @@
 //! Fee costs for Known Platform operations
 //!
 
-use crate::block::epoch::Epoch;
-use crate::block::epoch::EpochIndex;
-use lazy_static::lazy_static;
-use std::collections::HashMap;
+use crate::block::epoch::{Epoch, EpochIndex};
+use crate::fee::Credits;
+use platform_version::version::fee::FeeVersion;
+use platform_version::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 pub mod constants;
+
+pub type CachedEpochIndexFeeVersions = BTreeMap<EpochIndex, FeeVersion>;
 
 /// A Known Cost Item is an item that changes costs depending on the Epoch
 #[derive(Eq, PartialEq, Copy, Clone, Hash)]
@@ -57,10 +60,10 @@ pub enum KnownCostItem {
     FetchIdentityBalanceProcessingCost,
     /// The cost for fetching an identity key
     FetchSingleIdentityKeyProcessingCost,
-    /// The cost for a Double SHA256 operation
-    DoubleSHA256,
-    /// The cost for a Single SHA256 operation
-    SingleSHA256,
+    /// The cost for a Single SHA256 operation, with a specific size
+    SingleSHA256(usize),
+    /// The cost for a Blake3 operation, with a specific size
+    Blake3(usize),
     /// The cost for a EcdsaSecp256k1 signature verification
     VerifySignatureEcdsaSecp256k1,
     /// The cost for a BLS12_381 signature verification
@@ -73,58 +76,104 @@ pub enum KnownCostItem {
     VerifySignatureEddsa25519Hash160,
 }
 
-const EPOCH_COST_UPDATE_VERSIONS: [u16; 1] = [0];
+impl KnownCostItem {
+    #[inline]
+    pub fn lookup_cost(&self, fee_version: &FeeVersion) -> Credits {
+        match self {
+            KnownCostItem::StorageDiskUsageCreditPerByte => {
+                fee_version.storage.storage_disk_usage_credit_per_byte
+            }
+            KnownCostItem::StorageProcessingCreditPerByte => {
+                fee_version.storage.storage_processing_credit_per_byte
+            }
+            KnownCostItem::StorageLoadCreditPerByte => {
+                fee_version.storage.storage_load_credit_per_byte
+            }
+            KnownCostItem::NonStorageLoadCreditPerByte => {
+                fee_version.storage.non_storage_load_credit_per_byte
+            }
+            KnownCostItem::StorageSeekCost => fee_version.storage.storage_seek_cost,
+            KnownCostItem::FetchIdentityBalanceProcessingCost => {
+                fee_version
+                    .processing
+                    .fetch_identity_balance_processing_cost
+            }
+            KnownCostItem::FetchSingleIdentityKeyProcessingCost => {
+                fee_version
+                    .processing
+                    .fetch_single_identity_key_processing_cost
+            }
+            KnownCostItem::Blake3(size) => {
+                fee_version.hashing.blake3_base
+                    + fee_version.hashing.blake3_per_block * *size as u64
+            }
+            KnownCostItem::SingleSHA256(size) => {
+                fee_version.hashing.single_sha256_base
+                    + fee_version.hashing.sha256_per_block * *size as u64
+            }
+            KnownCostItem::VerifySignatureEcdsaSecp256k1 => {
+                fee_version.signature.verify_signature_ecdsa_secp256k1
+            }
+            KnownCostItem::VerifySignatureBLS12_381 => {
+                fee_version.signature.verify_signature_bls12_381
+            }
+            KnownCostItem::VerifySignatureEcdsaHash160 => {
+                fee_version.signature.verify_signature_ecdsa_hash160
+            }
+            KnownCostItem::VerifySignatureBip13ScriptHash => {
+                fee_version.signature.verify_signature_bip13_script_hash
+            }
+            KnownCostItem::VerifySignatureEddsa25519Hash160 => {
+                fee_version.signature.verify_signature_eddsa25519_hash160
+            }
+        }
+    }
 
-lazy_static! {
-    static ref EPOCH_COSTS: HashMap<EpochIndex, HashMap<KnownCostItem, u64>> = HashMap::from([(
-        0,
-        HashMap::from([
-            (KnownCostItem::StorageDiskUsageCreditPerByte, 27000u64),
-            (KnownCostItem::StorageProcessingCreditPerByte, 400u64),
-            (KnownCostItem::StorageLoadCreditPerByte, 400u64),
-            (KnownCostItem::NonStorageLoadCreditPerByte, 30u64),
-            (KnownCostItem::StorageSeekCost, 4000u64),
-            (KnownCostItem::FetchIdentityBalanceProcessingCost, 10000u64),
-            (
-                KnownCostItem::FetchSingleIdentityKeyProcessingCost,
-                10000u64
-            ),
-            (KnownCostItem::DoubleSHA256, 800u64),
-            (KnownCostItem::SingleSHA256, 500u64),
-            (KnownCostItem::VerifySignatureEcdsaSecp256k1, 3000u64),
-            (KnownCostItem::VerifySignatureBLS12_381, 6000u64),
-            (KnownCostItem::VerifySignatureEcdsaHash160, 4000u64),
-            (KnownCostItem::VerifySignatureBip13ScriptHash, 6000u64),
-            (KnownCostItem::VerifySignatureEddsa25519Hash160, 3000u64),
-        ])
-    )]);
+    pub fn lookup_cost_on_epoch<T: EpochCosts>(
+        &self,
+        epoch: &T,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
+    ) -> Credits {
+        let version = epoch.active_fee_version(cached_fee_version);
+        self.lookup_cost(&version)
+    }
 }
 
 /// Costs for Epochs
 pub trait EpochCosts {
-    //todo: should just have a static lookup table
     /// Get the closest epoch in the past that has a cost table
     /// This is where the base costs last changed
-    fn get_closest_epoch_index_cost_update_version(&self) -> EpochIndex;
+    fn active_fee_version(&self, cached_fee_version: &CachedEpochIndexFeeVersions) -> FeeVersion;
     /// Get the cost for the known cost item
-    fn cost_for_known_cost_item(&self, cost_item: KnownCostItem) -> u64;
+    fn cost_for_known_cost_item(
+        &self,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
+        cost_item: KnownCostItem,
+    ) -> Credits;
 }
 
 impl EpochCosts for Epoch {
-    //todo: should just have a static lookup table
-    /// Get the closest epoch in the past that has a cost table
-    /// This is where the base costs last changed
-    fn get_closest_epoch_index_cost_update_version(&self) -> EpochIndex {
-        match EPOCH_COST_UPDATE_VERSIONS.binary_search(&self.index) {
-            Ok(_) => self.index,
-            Err(pos) => EPOCH_COST_UPDATE_VERSIONS[pos - 1],
+    /// Get the active fee version for an epoch
+    fn active_fee_version(&self, cached_fee_version: &CachedEpochIndexFeeVersions) -> FeeVersion {
+        // If the exact EpochIndex is matching to a FeeVersion update
+        if let Some(fee_version) = cached_fee_version.get(&self.index) {
+            return fee_version.clone();
         }
+        // else return the FeeVersion at  lower adjacent EpochIndex (if available, else the FeeVersion of first PlatformVersion)
+        cached_fee_version
+            .range(..=self.index)
+            .next_back()
+            .map(|(_, fee_version)| fee_version)
+            .unwrap_or_else(|| &PlatformVersion::first().fee_version)
+            .clone()
     }
 
     /// Get the cost for the known cost item
-    fn cost_for_known_cost_item(&self, cost_item: KnownCostItem) -> u64 {
-        let epoch = self.get_closest_epoch_index_cost_update_version();
-        let specific_epoch_costs = EPOCH_COSTS.get(&epoch).unwrap();
-        *specific_epoch_costs.get(&cost_item).unwrap()
+    fn cost_for_known_cost_item(
+        &self,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
+        cost_item: KnownCostItem,
+    ) -> Credits {
+        cost_item.lookup_cost_on_epoch(self, cached_fee_version)
     }
 }

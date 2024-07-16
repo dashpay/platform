@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::drive::batch::DriveOperation;
+use crate::util::batch::DriveOperation;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;

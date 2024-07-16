@@ -1,9 +1,9 @@
 use grovedb::TransactionArg;
 
+use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
 use platform_version::version::drive_versions::DriveVersion;
 

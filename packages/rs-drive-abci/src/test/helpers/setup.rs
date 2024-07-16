@@ -46,7 +46,7 @@ use dpp::nft::TradeMode;
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
-use drive::drive::flags::StorageFlags;
+use drive::util::storage_flags::StorageFlags;
 use tempfile::TempDir;
 
 /// A test platform builder.

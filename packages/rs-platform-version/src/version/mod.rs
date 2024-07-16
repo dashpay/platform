@@ -15,3 +15,4 @@ pub mod v1;
 pub type ProtocolVersion = u32;
 
 pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_1;
+pub const INITIAL_PROTOCOL_VERSION: ProtocolVersion = 1;

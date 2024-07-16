@@ -6,10 +6,10 @@ use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
+use drive::util::batch::DriveOperation;
 
-use drive::fee_pools::epochs::operations_factory::EpochOperations;
-use drive::fee_pools::update_storage_fee_distribution_pool_operation;
+use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
+use drive::drive::credit_pools::operations::update_storage_fee_distribution_pool_operation;
 use drive::grovedb::TransactionArg;
 use drive::{error, grovedb};
 
@@ -75,13 +75,13 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use dpp::block::block_info::BlockInfo;
-    use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
     use crate::test::helpers::setup::TestPlatformBuilder;
 
     use crate::execution::types::block_fees;
     use crate::execution::types::block_fees::v0::BlockFeesV0Methods;
-    use drive::drive::batch::GroveDbOpBatch;
+    use drive::util::batch::GroveDbOpBatch;
 
     #[test]
     fn test_distribute_block_fees_into_uncommitted_epoch_on_epoch_change() {
@@ -97,7 +97,16 @@ mod tests {
 
         let mut inner_batch = GroveDbOpBatch::new();
 
-        current_epoch_tree.add_init_current_operations(1.0, 1, 1, 1, &mut inner_batch);
+        current_epoch_tree.add_init_current_operations(
+            platform_version
+                .fee_version
+                .uses_version_fee_multiplier_permille
+                .expect("expected a fee multiplier"),
+            1,
+            1,
+            1,
+            &mut inner_batch,
+        );
 
         batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
 
@@ -126,6 +135,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("should apply batch");
 
@@ -159,7 +169,16 @@ mod tests {
 
         let mut batch = GroveDbOpBatch::new();
 
-        current_epoch_tree.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
+        current_epoch_tree.add_init_current_operations(
+            platform_version
+                .fee_version
+                .uses_version_fee_multiplier_permille
+                .expect("expected a fee multiplier"),
+            1,
+            1,
+            1,
+            &mut batch,
+        );
 
         // Apply new pool structure
         platform
@@ -194,6 +213,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("should apply batch");
 

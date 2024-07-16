@@ -7,7 +7,7 @@ use dpp::fee::Credits;
 use grovedb::{Element, TransactionArg};
 use platform_version::version::PlatformVersion;
 
-use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
+use crate::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
 
 impl Drive {
     /// Returns the amount of credits in the storage fee distribution pool.
@@ -41,13 +41,13 @@ impl Drive {
 mod tests {
     use super::*;
 
-    use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+    use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
 
     mod get_storage_fees_from_distribution_pool {
         use super::*;
-        use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-        use crate::drive::batch::GroveDbOpBatch;
         use crate::drive::credit_pools::paths::pools_vec_path;
+        use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+        use crate::util::batch::GroveDbOpBatch;
         use dpp::version::PlatformVersion;
 
         #[test]

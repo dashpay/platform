@@ -1,13 +1,13 @@
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
 use crate::drive::identity::{
     identity_contract_info_group_path, identity_contract_info_root_path_vec, identity_path_vec,
 };
-use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -173,12 +173,12 @@ impl Drive {
             )?
         };
 
-        let nonce_to_set = if estimated_costs_only_with_layer_info.is_some() {
+        let (nonce_to_set, is_new) = if estimated_costs_only_with_layer_info.is_some() {
             // we are just getting estimated costs
-            revision_nonce
+            (revision_nonce, true)
         } else if let Some(existing_nonce) = existing_nonce {
             let actual_existing_revision = existing_nonce & IDENTITY_NONCE_VALUE_FILTER;
-            match actual_existing_revision.cmp(&revision_nonce) {
+            let nonce_to_set = match actual_existing_revision.cmp(&revision_nonce) {
                 std::cmp::Ordering::Equal => {
                     // we were not able to update the revision as it is the same as we already had
                     return Ok((NonceAlreadyPresentAtTip, drive_operations));
@@ -236,7 +236,8 @@ impl Drive {
                         }
                     }
                 }
-            }
+            };
+            (nonce_to_set, false)
         } else if revision_nonce >= MISSING_IDENTITY_REVISIONS_MAX_BYTES {
             // we are too far away from the actual revision
             return Ok((NonceTooFarInFuture, drive_operations));
@@ -254,7 +255,7 @@ impl Drive {
                 0
             };
 
-            missing_revisions_bytes | revision_nonce
+            (missing_revisions_bytes | revision_nonce, true)
         };
 
         let identity_contract_nonce_bytes = nonce_to_set.to_be_bytes().to_vec();
@@ -262,15 +263,28 @@ impl Drive {
 
         //println!("{} is {:b}, existing was {:?}", nonce_to_set,  nonce_to_set, existing_nonce);
 
-        self.batch_insert(
-            PathKeyElementInfo::PathFixedSizeKeyRefElement((
-                identity_contract_info_group_path(&identity_id, &contract_id),
-                &[IdentityContractNonceKey as u8],
-                identity_contract_nonce_element,
-            )),
-            &mut drive_operations,
-            &platform_version.drive,
-        )?;
+        if is_new {
+            self.batch_insert(
+                PathKeyElementInfo::PathFixedSizeKeyRefElement((
+                    identity_contract_info_group_path(&identity_id, &contract_id),
+                    &[IdentityContractNonceKey as u8],
+                    identity_contract_nonce_element,
+                )),
+                &mut drive_operations,
+                &platform_version.drive,
+            )?;
+        } else {
+            // We are replacing the nonce, matters for fees
+            self.batch_replace(
+                PathKeyElementInfo::PathFixedSizeKeyRefElement((
+                    identity_contract_info_group_path(&identity_id, &contract_id),
+                    &[IdentityContractNonceKey as u8],
+                    identity_contract_nonce_element,
+                )),
+                &mut drive_operations,
+                &platform_version.drive,
+            )?;
+        }
 
         Ok((MergeIdentityNonceSuccess(nonce_to_set), drive_operations))
     }
@@ -280,7 +294,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;
-    use crate::tests::helpers::setup::setup_drive;
+    use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;

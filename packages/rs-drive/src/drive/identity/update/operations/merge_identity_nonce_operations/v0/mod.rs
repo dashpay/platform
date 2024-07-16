@@ -3,7 +3,7 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use grovedb::batch::KeyInfoPath;
 
 use dpp::prelude::IdentityNonce;
@@ -12,7 +12,7 @@ use dpp::version::PlatformVersion;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use crate::drive::identity::IdentityRootStructure::IdentityTreeNonce;
-use crate::drive::object_size_info::PathKeyElementInfo;
+use crate::util::object_size_info::PathKeyElementInfo;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::identity_nonce::MergeIdentityNonceResult::{
     MergeIdentityNonceSuccess, NonceAlreadyPresentAtTip, NonceAlreadyPresentInPast,
@@ -169,7 +169,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;
-    use crate::tests::helpers::setup::setup_drive;
+    use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;

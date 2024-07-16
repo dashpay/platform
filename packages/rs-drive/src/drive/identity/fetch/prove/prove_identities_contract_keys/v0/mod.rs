@@ -1,6 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::identity::Purpose;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;

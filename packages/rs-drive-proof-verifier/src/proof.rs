@@ -47,7 +47,7 @@ use drive::query::contested_resource_votes_given_by_identity_query::ContestedRes
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
-use drive::query::{DriveQuery, VotePollsByEndDateDriveQuery};
+use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
@@ -1123,7 +1123,7 @@ impl FromProof<GetPathElementsRequest> for Elements {
 // #[cfg_attr(feature = "mocks", mockall::automock)]
 impl<'dq, Q> FromProof<Q> for Documents
 where
-    Q: TryInto<DriveQuery<'dq>> + Clone + 'dq,
+    Q: TryInto<DriveDocumentQuery<'dq>> + Clone + 'dq,
     Q::Error: std::fmt::Display,
 {
     type Request = Q;
@@ -1142,7 +1142,7 @@ where
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
 
-        let request: DriveQuery<'dq> =
+        let request: DriveDocumentQuery<'dq> =
             request
                 .clone()
                 .try_into()
@@ -1201,7 +1201,7 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
                         contract_id,
                         document_type_name,
                         purposes,
-                        prove: _,
+                        ..
                     } = v0;
                     let identifiers = identities_ids
                         .into_iter()

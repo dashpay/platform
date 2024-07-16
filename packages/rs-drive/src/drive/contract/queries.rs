@@ -1,4 +1,3 @@
-use crate::common::encode::encode_u64;
 use crate::drive::contract::paths::{
     contract_keeping_history_root_path_vec, contract_root_path_vec,
 };
@@ -8,6 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
 use crate::query::{Query, QueryItem};
+use crate::util::common::encode::encode_u64;
 use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
 
