@@ -5,17 +5,7 @@ use ciborium::cbor;
 #[cfg(feature = "server")]
 use dpp::data_contract::DataContractFactory;
 #[cfg(feature = "server")]
-use drive::common;
-#[cfg(feature = "server")]
-use drive::common::setup_contract;
-#[cfg(feature = "server")]
-use drive::drive::batch::GroveDbOpBatch;
-#[cfg(feature = "server")]
-use drive::drive::config::DriveConfig;
-#[cfg(feature = "server")]
-use drive::drive::flags::StorageFlags;
-#[cfg(feature = "server")]
-use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use drive::config::DriveConfig;
 #[cfg(feature = "server")]
 use drive::drive::Drive;
 #[cfg(feature = "server")]
@@ -23,8 +13,16 @@ use drive::error::{query::QuerySyntaxError, Error};
 #[cfg(feature = "server")]
 use drive::query::DriveDocumentQuery;
 #[cfg(feature = "server")]
+use drive::util::batch::GroveDbOpBatch;
+#[cfg(feature = "server")]
+use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+#[cfg(feature = "server")]
+use drive::util::storage_flags::StorageFlags;
+#[cfg(feature = "server")]
 #[cfg(test)]
-use drive::tests::helpers::setup::setup_drive;
+use drive::util::test_helpers::setup::setup_drive;
+#[cfg(feature = "server")]
+use drive::util::test_helpers::setup_contract;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
 use rand::random;
@@ -79,18 +77,19 @@ use once_cell::sync::Lazy;
 
 use dpp::version::PlatformVersion;
 
-use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "server")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
+use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 #[cfg(feature = "server")]
 use drive::drive::document::query::QuerySerializedDocumentsOutcome;
-use drive::drive::object_size_info::DocumentInfo;
-use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
+use drive::util::object_size_info::DocumentInfo;
+use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 
 use drive::query::{WhereClause, WhereOperator};
-use drive::tests::helpers::setup::setup_drive_with_initial_state_structure;
+use drive::util::test_helpers;
+use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 
 #[cfg(feature = "server")]
 #[derive(Serialize, Deserialize)]
@@ -109,12 +108,15 @@ struct Person {
 #[cfg(feature = "server")]
 impl Person {
     fn random_people(count: u32, seed: u64) -> Vec<Self> {
-        let first_names =
-            common::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
-        let middle_names =
-            common::text_file_strings("tests/supporting_files/contract/family/middle-names.txt");
-        let last_names =
-            common::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
+        let first_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/first-names.txt",
+        );
+        let middle_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/middle-names.txt",
+        );
+        let last_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/last-names.txt",
+        );
         let mut vec: Vec<Person> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -150,12 +152,15 @@ struct PersonWithOptionalValues {
 #[cfg(feature = "server")]
 impl PersonWithOptionalValues {
     fn random_people(count: u32, seed: u64) -> Vec<Self> {
-        let first_names =
-            common::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
-        let middle_names =
-            common::text_file_strings("tests/supporting_files/contract/family/middle-names.txt");
-        let last_names =
-            common::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
+        let first_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/first-names.txt",
+        );
+        let middle_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/middle-names.txt",
+        );
+        let last_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/last-names.txt",
+        );
         let mut vec: Vec<PersonWithOptionalValues> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -208,7 +213,7 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
         .expect("expected to create contracts tree successfully");
 
     // setup code
-    let contract = common::setup_contract(
+    let contract = test_helpers::setup_contract(
         &drive,
         "tests/supporting_files/contract/family/family-contract.json",
         None,
@@ -278,7 +283,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
         .expect("expected to create contracts tree successfully");
 
     // setup code
-    let contract = common::setup_contract(
+    let contract = test_helpers::setup_contract(
         &drive,
         "tests/supporting_files/contract/family/family-contract-fields-optional.json",
         None,
@@ -347,7 +352,7 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
         .expect("expected to create contracts tree successfully");
 
     // setup code
-    let contract = common::setup_contract(
+    let contract = test_helpers::setup_contract(
         &drive,
         "tests/supporting_files/contract/family/family-contract-only-first-name-index.json",
         None,
@@ -565,8 +570,9 @@ impl Domain {
         seed: u64,
         normalized_parent_domain_name: &str,
     ) -> Vec<Self> {
-        let first_names =
-            common::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
+        let first_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/first-names.txt",
+        );
         let mut vec: Vec<Domain> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);

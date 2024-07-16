@@ -3,7 +3,7 @@ use dpp::data_contracts::SystemDataContract;
 use dpp::identifier::Identifier;
 use dpp::system_data_contracts::load_system_data_contract;
 use drive::query::DriveDocumentQuery;
-use drive::tests::helpers::setup::setup_drive_with_initial_state_structure;
+use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use platform_version::version::PlatformVersion;
 
 mod reward_share {

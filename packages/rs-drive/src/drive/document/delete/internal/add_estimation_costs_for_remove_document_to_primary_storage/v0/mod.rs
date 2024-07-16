@@ -8,11 +8,9 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 
 use std::collections::HashMap;
 
-use crate::drive::defaults::{
-    AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE, DEFAULT_HASH_SIZE_U8,
-};
+use crate::drive::constants::{AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE};
 
-use crate::drive::flags::StorageFlags;
+use crate::util::storage_flags::StorageFlags;
 
 use crate::drive::Drive;
 
@@ -21,6 +19,7 @@ use crate::error::Error;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::version::PlatformVersion;
 
 impl Drive {

@@ -73,7 +73,7 @@ mod tests {
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
-    use drive::drive::config::DEFAULT_QUERY_LIMIT;
+    use drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformTestConfig, ValidatorSetConfig,

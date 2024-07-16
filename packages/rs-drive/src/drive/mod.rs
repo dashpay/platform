@@ -3,77 +3,52 @@ use grovedb::GroveDb;
 use std::fmt;
 
 #[cfg(any(feature = "server", feature = "verify"))]
-use crate::drive::config::DriveConfig;
+use crate::config::DriveConfig;
 
 #[cfg(feature = "server")]
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod balances;
-/// Batch module
-#[cfg(feature = "server")]
-pub mod batch;
-/// Drive Cache
-#[cfg(feature = "server")]
-pub mod cache;
 #[cfg(any(feature = "server", feature = "verify"))]
-pub mod config;
+pub mod constants;
 ///DataContract module
 #[cfg(any(feature = "server", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod contract;
 /// Fee pools module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod credit_pools;
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod defaults;
 /// Document module
 #[cfg(any(feature = "server", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod document;
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod flags;
 
-/// Low level GroveDB operations
-#[cfg(feature = "server")]
-pub mod grove_operations;
 /// Identity module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod identity;
 #[cfg(feature = "server")]
 pub mod initialization;
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod object_size_info;
 
 /// Protocol upgrade module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod protocol_upgrade;
-#[cfg(feature = "server")]
-mod shared_estimation_costs;
 #[cfg(feature = "server")]
 mod system;
 
 #[cfg(feature = "server")]
 mod asset_lock;
 #[cfg(feature = "server")]
-pub(crate) mod fee;
-#[cfg(feature = "server")]
-mod open;
-#[cfg(feature = "server")]
-mod operations;
-#[cfg(feature = "server")]
 mod platform_state;
-mod prefunded_specialized_balances;
-#[cfg(feature = "server")]
-mod prove;
-/// Contains a set of useful grovedb proof verification functions
-#[cfg(feature = "verify")]
-pub mod verify;
+pub(crate) mod prefunded_specialized_balances;
 
 /// Vote module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod votes;
 
 #[cfg(feature = "server")]
-use crate::drive::cache::DriveCache;
+mod shared;
+
+#[cfg(feature = "server")]
+use crate::cache::DriveCache;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 

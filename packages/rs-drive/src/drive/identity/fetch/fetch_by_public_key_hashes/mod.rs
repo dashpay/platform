@@ -11,7 +11,7 @@ mod has_unique_public_key_hash;
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive;
+    use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;

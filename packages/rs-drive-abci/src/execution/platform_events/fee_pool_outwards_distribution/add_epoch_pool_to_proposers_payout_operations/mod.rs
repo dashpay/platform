@@ -6,8 +6,8 @@ use crate::platform_types::platform::Platform;
 use dpp::fee::Credits;
 
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
 use drive::grovedb::Transaction;
+use drive::util::batch::DriveOperation;
 
 mod v0;
 

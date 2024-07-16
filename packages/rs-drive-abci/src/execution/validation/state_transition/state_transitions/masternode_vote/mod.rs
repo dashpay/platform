@@ -104,7 +104,7 @@ mod tests {
     use dpp::voting::vote_polls::VotePoll;
     use dpp::voting::votes::resource_vote::ResourceVote;
     use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
-    use drive::drive::object_size_info::DataContractResolvedInfo;
+    use drive::util::object_size_info::DataContractResolvedInfo;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
     use dpp::identifier::Identifier;
     use dpp::prelude::DataContract;

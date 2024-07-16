@@ -258,8 +258,8 @@ mod tests {
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use dpp::tests::json_document::json_document_to_contract;
     use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
-    use drive::drive::flags::StorageFlags;
     use drive::query::DriveDocumentQuery;
+    use drive::util::storage_flags::StorageFlags;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
@@ -279,7 +279,7 @@ mod tests {
         use dpp::util::hash::hash_double;
         use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
         use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
-        use drive::drive::object_size_info::DataContractResolvedInfo;
+        use drive::util::object_size_info::DataContractResolvedInfo;
         use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
         use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
         use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;

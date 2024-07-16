@@ -8,9 +8,9 @@ use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
 
+use crate::drive::credit_pools::epochs::epoch_key_constants::KEY_PROTOCOL_VERSION;
 use crate::drive::credit_pools::pools_vec_path;
 use crate::error::query::QuerySyntaxError;
-use crate::fee_pools::epochs::epoch_key_constants::KEY_PROTOCOL_VERSION;
 use crate::query::QueryItem;
 use dpp::version::PlatformVersion;
 

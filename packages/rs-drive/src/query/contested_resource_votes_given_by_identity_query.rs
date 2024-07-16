@@ -7,7 +7,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 #[cfg(feature = "server")]
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
@@ -21,6 +21,7 @@ use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::TransactionArg;
 use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
+#[cfg(feature = "server")]
 use std::collections::BTreeMap;
 
 /// Vote Poll Drive Query struct

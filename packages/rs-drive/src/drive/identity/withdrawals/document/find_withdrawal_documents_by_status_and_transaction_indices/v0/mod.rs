@@ -96,9 +96,9 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::drive::config::DEFAULT_QUERY_LIMIT;
+    use crate::config::DEFAULT_QUERY_LIMIT;
     use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
-    use crate::tests::helpers::setup::{
+    use crate::util::test_helpers::setup::{
         setup_document, setup_drive_with_initial_state_structure, setup_system_data_contract,
     };
     use dpp::data_contract::accessors::v0::DataContractV0Getters;

@@ -8,9 +8,9 @@ use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
 use drive::drive::Drive;
 use drive::grovedb::Transaction;
+use drive::util::batch::DriveOperation;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -26,7 +26,7 @@ use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use drive::fee_pools::epochs::operations_factory::EpochOperations;
+use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
 
 /// From the Dash Improvement Proposal:
 
@@ -202,7 +202,7 @@ mod tests {
 
     use crate::config::ExecutionConfig;
     use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
-    use drive::common::test_utils::identities::create_test_masternode_identities;
+    use drive::util::test_helpers::test_utils::identities::create_test_masternode_identities;
 
     mod helpers {
         use super::*;
@@ -213,7 +213,7 @@ mod tests {
         use crate::platform_types::epoch_info::EpochInfo;
         use crate::platform_types::platform_state::PlatformState;
         use dpp::fee::epoch::{perpetual_storage_epochs, CreditsPerEpoch, GENESIS_EPOCH_INDEX};
-        use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
+        use platform_version::version::INITIAL_PROTOCOL_VERSION;
 
         /// Process and validate block fees
         pub fn process_and_validate_block_fees<C>(

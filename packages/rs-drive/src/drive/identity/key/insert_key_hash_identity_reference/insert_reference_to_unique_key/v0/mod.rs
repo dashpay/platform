@@ -2,8 +2,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation::FunctionOperation;
-use crate::fee::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
+use crate::fees::op::LowLevelDriveOperation::FunctionOperation;
+use crate::fees::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::IdentityPublicKey;

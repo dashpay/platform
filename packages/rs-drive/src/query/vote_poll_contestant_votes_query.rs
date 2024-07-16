@@ -1,3 +1,4 @@
+#[cfg(feature = "verify")]
 use super::ContractLookupFn;
 use crate::drive::votes::paths::VotePollPaths;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -7,7 +8,7 @@ use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_
 use crate::drive::Drive;
 use crate::error::Error;
 #[cfg(feature = "server")]
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;

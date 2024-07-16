@@ -45,7 +45,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use dpp::version::drive_versions::DriveVersion;
 

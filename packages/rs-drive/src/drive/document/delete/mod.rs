@@ -58,13 +58,13 @@ mod tests {
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    use crate::common::setup_contract;
-    use crate::drive::config::DriveConfig;
+    use crate::config::DriveConfig;
     use crate::drive::document::tests::setup_dashpay;
-    use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
-    use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup_contract;
 
     use crate::query::DriveDocumentQuery;
     use dpp::block::epoch::Epoch;
@@ -75,7 +75,7 @@ mod tests {
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
     static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =

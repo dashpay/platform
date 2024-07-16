@@ -106,7 +106,7 @@ pub(crate) mod tests {
     use dpp::voting::votes::resource_vote::ResourceVote;
     use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
     use dpp::voting::votes::Vote;
-    use drive::drive::object_size_info::DataContractResolvedInfo;
+    use drive::util::object_size_info::DataContractResolvedInfo;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
     use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
     use drive::query::vote_poll_vote_state_query::{ContestedDocumentVotePollDriveQueryResultType, ResolvedContestedDocumentVotePollDriveQuery};

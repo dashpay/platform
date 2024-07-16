@@ -1,4 +1,4 @@
-use crate::drive::flags::StorageFlags;
+use crate::util::storage_flags::StorageFlags;
 use dpp::data_contract::DataContract;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::data_contracts;
