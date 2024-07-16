@@ -11,17 +11,12 @@
 #[cfg(feature = "server")]
 extern crate core;
 
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod common;
 /// Drive module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive;
 /// Error module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod error;
-/// Fee pools module
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod fee_pools;
 /// Query module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod query;
@@ -41,11 +36,23 @@ pub use grovedb_costs;
 
 #[cfg(feature = "server")]
 pub use grovedb_storage;
+/// Drive Cache
 #[cfg(feature = "server")]
-mod fee;
+pub mod cache;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod config;
+#[cfg(feature = "server")]
+mod fees;
+#[cfg(feature = "server")]
+mod open;
+#[cfg(feature = "server")]
+mod prove;
 /// State transition action module
 #[cfg(feature = "server")]
 pub mod state_transition_action;
-/// Test helpers
-#[cfg(feature = "fixtures-and-mocks")]
-pub mod tests;
+/// Util module
+#[cfg(any(feature = "server", feature = "verify", feature = "fixtures-and-mocks"))]
+pub mod util;
+/// Contains a set of useful grovedb proof verification functions
+#[cfg(feature = "verify")]
+pub mod verify;

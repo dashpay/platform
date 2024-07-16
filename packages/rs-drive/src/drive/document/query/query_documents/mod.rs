@@ -1,7 +1,8 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::query::DriveQuery;
+use crate::query::DriveDocumentQuery;
+use derive_more::From;
 use dpp::block::epoch::Epoch;
 use dpp::document::Document;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -16,6 +17,7 @@ pub use v0::*;
 /// This enum provides versioning for the outcomes of querying documents.
 /// As the system evolves, new versions of the outcome structure can be
 /// added to this enum without breaking existing implementations.
+#[derive(From, Debug)]
 pub enum QueryDocumentsOutcome {
     /// Version 0 of the `QueryDocumentsOutcome`.
     ///
@@ -53,12 +55,12 @@ impl QueryDocumentsOutcomeV0Methods for QueryDocumentsOutcome {
 impl Drive {
     /// Performs a specified drive query and returns the result, along with any skipped items and the cost.
     ///
-    /// This function is used to execute a given [DriveQuery]. It has options to operate in a dry-run mode
+    /// This function is used to execute a given [DriveDocumentQuery]. It has options to operate in a dry-run mode
     /// and supports different protocol versions. In case an epoch is specified, it calculates the fee.
     ///
     /// # Arguments
     ///
-    /// * `query` - The [DriveQuery] being executed.
+    /// * `query` - The [DriveDocumentQuery] being executed.
     /// * `epoch` - An `Option<&Epoch>`. If provided, it will be used to calculate the processing fee.
     /// * `dry_run` - If true, the function will not perform any actual operation and return a default `QueryDocumentsOutcome`.
     /// * `transaction` - The `TransactionArg` holding the transaction data.
@@ -71,7 +73,7 @@ impl Drive {
     ///    number of skipped items, and cost. If the operation fails, it returns an `Error`.
     pub fn query_documents(
         &self,
-        query: DriveQuery,
+        query: DriveDocumentQuery,
         epoch: Option<&Epoch>,
         dry_run: bool,
         transaction: TransactionArg,

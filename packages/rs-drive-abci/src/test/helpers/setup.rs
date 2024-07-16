@@ -35,6 +35,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 #[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::fixture::abci::static_system_identity_public_keys_v0;
@@ -45,7 +46,7 @@ use dpp::nft::TradeMode;
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
-use drive::drive::flags::StorageFlags;
+use drive::util::storage_flags::StorageFlags;
 use tempfile::TempDir;
 
 /// A test platform builder.

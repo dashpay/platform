@@ -644,6 +644,24 @@ GPB_FINAL @interface InstantSendLockMessages : GPBMessage
 
 @end
 
+#pragma mark - MasternodeListRequest
+
+GPB_FINAL @interface MasternodeListRequest : GPBMessage
+
+@end
+
+#pragma mark - MasternodeListResponse
+
+typedef GPB_ENUM(MasternodeListResponse_FieldNumber) {
+  MasternodeListResponse_FieldNumber_MasternodeListDiff = 1,
+};
+
+GPB_FINAL @interface MasternodeListResponse : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *masternodeListDiff;
+
+@end
+
 NS_ASSUME_NONNULL_END
 
 CF_EXTERN_C_END

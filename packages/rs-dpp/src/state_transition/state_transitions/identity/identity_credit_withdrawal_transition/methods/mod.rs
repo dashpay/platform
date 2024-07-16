@@ -12,6 +12,7 @@ use crate::identity::Identity;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::core_script::CoreScript;
+use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
@@ -29,6 +30,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity<S: Signer>(
         identity: &Identity,
+        withdrawal_key_to_use: Option<&IdentityPublicKey>,
         output_script: CoreScript,
         amount: u64,
         pooling: Pooling,
@@ -47,6 +49,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
         ) {
             0 => Ok(IdentityCreditWithdrawalTransitionV0::try_from_identity(
                 identity,
+                withdrawal_key_to_use,
                 output_script,
                 amount,
                 pooling,

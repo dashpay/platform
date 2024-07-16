@@ -15,7 +15,8 @@ import semver from 'semver';
 
 import fs from 'fs';
 import {
-  NETWORK_TESTNET, PACKAGE_ROOT_DIR,
+  NETWORK_MAINNET,
+  PACKAGE_ROOT_DIR,
 } from '../../src/constants.js';
 import Config from '../../src/config/Config.js';
 
@@ -90,8 +91,45 @@ export default function getBaseConfigFactory(homeDir) {
         rpc: {
           host: '127.0.0.1',
           port: 9998,
-          user: 'dashrpc',
-          password: 'rpcpassword',
+          users: {
+            dashmate: {
+              password: 'rpcpassword',
+              whitelist: null,
+              lowPriority: false,
+            },
+            dapi: {
+              password: 'rpcpassword',
+              whitelist: [
+                'getbestblockhash', 'getblockhash', 'sendrawtransaction', 'getrawtransaction',
+                'getblockstats', 'getmerkleblocks', 'getrawtransactionmulti', 'getrawmempool',
+                'getblockcount', 'getbestchainlock', 'getblock', 'getblockheader', 'getblockheaders',
+                'protxdiff', 'getnetworkinfo', 'getblockchaininfo', 'mnsyncstatus', 'masternodestatus',
+              ],
+              lowPriority: true,
+            },
+            drive_consensus: {
+              password: 'rpcpassword',
+              whitelist: [
+                'getbestchainlock', 'getblockchaininfo', 'getrawtransaction', 'submitchainlock',
+                'verifychainlock', 'protxlistdiff', 'quorumlistextended', 'quoruminfo',
+                'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus',
+              ],
+              lowPriority: false,
+            },
+            drive_check_tx: {
+              password: 'rpcpassword',
+              whitelist: ['getrawtransaction'],
+              lowPriority: true,
+            },
+            tenderdash: {
+              password: 'rpcpassword',
+              whitelist: [
+                'quoruminfo', 'quorumverify', 'quorumsign', 'masternodestatus', 'masternodelist',
+                'ping', 'getnetworkinfo',
+              ],
+              lowPriority: false,
+            },
+          },
           allowIps: ['127.0.0.1', '172.16.0.0/12', '192.168.0.0/16'],
         },
         spork: {
@@ -245,12 +283,28 @@ export default function getBaseConfigFactory(homeDir) {
               retention: 60 * 3,
             },
             validatorSet: {
-              llmqType: 4,
+              quorum: {
+                llmqType: 4,
+                dkgInterval: 24,
+                activeSigners: 24,
+                rotation: false,
+              },
             },
             chainLock: {
-              llmqType: 2,
-              dkgInterval: 288,
-              llmqSize: 400,
+              quorum: {
+                llmqType: 2,
+                dkgInterval: 288,
+                activeSigners: 4,
+                rotation: false,
+              },
+            },
+            instantLock: {
+              quorum: {
+                llmqType: 5,
+                dkgInterval: 288,
+                activeSigners: 32,
+                rotation: true,
+              },
             },
             metrics: {
               enabled: false,
@@ -262,7 +316,7 @@ export default function getBaseConfigFactory(homeDir) {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:0.14.0-dev.6',
+              image: 'dashpay/tenderdash:1.0.0',
             },
             p2p: {
               host: '0.0.0.0',
@@ -425,7 +479,7 @@ export default function getBaseConfigFactory(homeDir) {
         },
       },
       externalIp: null,
-      network: NETWORK_TESTNET,
+      network: NETWORK_MAINNET,
       environment: 'production',
     };
 

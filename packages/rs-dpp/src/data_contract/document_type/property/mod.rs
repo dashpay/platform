@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Cursor, Read};
 
 use crate::data_contract::errors::DataContractError;
 
@@ -11,7 +11,7 @@ use array::ArrayItemType;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -28,14 +28,26 @@ pub struct DocumentProperty {
     pub required: bool,
 }
 
+#[derive(Debug, PartialEq, Clone, Serialize)]
+pub struct StringPropertySizes {
+    pub min_length: Option<u16>,
+    pub max_length: Option<u16>,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize)]
+pub struct ByteArrayPropertySizes {
+    pub min_size: Option<u16>,
+    pub max_size: Option<u16>,
+}
+
 // @append_only
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub enum DocumentPropertyType {
     ///Todo decompose integer
     Integer,
     Number,
-    String(Option<u16>, Option<u16>),    // TODO use structure
-    ByteArray(Option<u16>, Option<u16>), // TODO user structure
+    String(StringPropertySizes),
+    ByteArray(ByteArrayPropertySizes),
     Identifier,
     Boolean,
     Date,
@@ -62,8 +74,8 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => "integer".to_string(),
             DocumentPropertyType::Number => "number".to_string(),
-            DocumentPropertyType::String(_, _) => "string".to_string(),
-            DocumentPropertyType::ByteArray(_, _) => "byteArray".to_string(),
+            DocumentPropertyType::String(_) => "string".to_string(),
+            DocumentPropertyType::ByteArray(_) => "byteArray".to_string(),
             DocumentPropertyType::Identifier => "identifier".to_string(),
             DocumentPropertyType::Boolean => "boolean".to_string(),
             DocumentPropertyType::Date => "date".to_string(),
@@ -77,13 +89,13 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Some(8),
             DocumentPropertyType::Number => Some(8),
-            DocumentPropertyType::String(min_length, _) => match min_length {
+            DocumentPropertyType::String(sizes) => match sizes.min_length {
                 None => Some(0),
-                Some(size) => Some(*size),
+                Some(size) => Some(size),
             },
-            DocumentPropertyType::ByteArray(min_size, _) => match min_size {
+            DocumentPropertyType::ByteArray(sizes) => match sizes.min_size {
                 None => Some(0),
-                Some(size) => Some(*size),
+                Some(size) => Some(size),
             },
             DocumentPropertyType::Boolean => Some(1),
             DocumentPropertyType::Date => Some(8),
@@ -101,13 +113,13 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Some(8),
             DocumentPropertyType::Number => Some(8),
-            DocumentPropertyType::String(min_length, _) => match min_length {
+            DocumentPropertyType::String(sizes) => match sizes.min_length {
                 None => Some(0),
-                Some(size) => Some(*size * 4),
+                Some(size) => Some(size * 4),
             },
-            DocumentPropertyType::ByteArray(min_size, _) => match min_size {
+            DocumentPropertyType::ByteArray(sizes) => match sizes.min_size {
                 None => Some(0),
-                Some(size) => Some(*size),
+                Some(size) => Some(size),
             },
             DocumentPropertyType::Boolean => Some(1),
             DocumentPropertyType::Date => Some(8),
@@ -125,13 +137,13 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Some(8),
             DocumentPropertyType::Number => Some(8),
-            DocumentPropertyType::String(_, max_length) => match max_length {
+            DocumentPropertyType::String(sizes) => match sizes.max_length {
                 None => Some(u16::MAX),
-                Some(size) => Some(*size * 4),
+                Some(size) => Some(size * 4),
             },
-            DocumentPropertyType::ByteArray(_, max_size) => match max_size {
+            DocumentPropertyType::ByteArray(sizes) => match sizes.max_size {
                 None => Some(u16::MAX),
-                Some(size) => Some(*size),
+                Some(size) => Some(size),
             },
             DocumentPropertyType::Boolean => Some(1),
             DocumentPropertyType::Date => Some(8),
@@ -149,13 +161,13 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Some(8),
             DocumentPropertyType::Number => Some(8),
-            DocumentPropertyType::String(_, max_length) => match max_length {
+            DocumentPropertyType::String(sizes) => match sizes.max_length {
                 None => Some(16383),
-                Some(size) => Some(*size),
+                Some(size) => Some(size),
             },
-            DocumentPropertyType::ByteArray(_, max_size) => match max_size {
+            DocumentPropertyType::ByteArray(sizes) => match sizes.max_size {
                 None => Some(u16::MAX),
-                Some(size) => Some(*size),
+                Some(size) => Some(size),
             },
             DocumentPropertyType::Boolean => Some(1),
             DocumentPropertyType::Date => Some(8),
@@ -231,7 +243,7 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Value::I64(rng.gen::<i64>()),
             DocumentPropertyType::Number => Value::Float(rng.gen::<f64>()),
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 let size = self.random_size(rng);
                 Value::Text(
                     rng.sample_iter(Alphanumeric)
@@ -240,7 +252,7 @@ impl DocumentPropertyType {
                         .collect(),
                 )
             }
-            DocumentPropertyType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_) => {
                 let size = self.random_size(rng);
                 if self.min_size() == self.max_size() {
                     match size {
@@ -290,7 +302,7 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Value::I64(rng.gen::<i64>()),
             DocumentPropertyType::Number => Value::Float(rng.gen::<f64>()),
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 let size = self.min_size().unwrap();
                 Value::Text(
                     rng.sample_iter(Alphanumeric)
@@ -299,7 +311,7 @@ impl DocumentPropertyType {
                         .collect(),
                 )
             }
-            DocumentPropertyType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_) => {
                 let size = self.min_size().unwrap();
                 Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
             }
@@ -330,7 +342,7 @@ impl DocumentPropertyType {
         match self {
             DocumentPropertyType::Integer => Value::I64(rng.gen::<i64>()),
             DocumentPropertyType::Number => Value::Float(rng.gen::<f64>()),
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 let size = self.max_size().unwrap();
                 Value::Text(
                     rng.sample_iter(Alphanumeric)
@@ -339,7 +351,7 @@ impl DocumentPropertyType {
                         .collect(),
                 )
             }
-            DocumentPropertyType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_) => {
                 let size = self.max_size().unwrap();
                 Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
             }
@@ -401,7 +413,7 @@ impl DocumentPropertyType {
             }
         }
         match self {
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 let bytes = Self::read_varint_value(buf)?;
                 let string = String::from_utf8(bytes).map_err(|_| {
                     DataContractError::CorruptedSerialization(
@@ -437,11 +449,11 @@ impl DocumentPropertyType {
                     _ => Ok((Some(Value::Bool(true)), false)),
                 }
             }
-            DocumentPropertyType::ByteArray(min, max) => {
-                match (min, max) {
+            DocumentPropertyType::ByteArray(sizes) => {
+                match (sizes.min_size, sizes.max_size) {
                     (Some(min), Some(max)) if min == max => {
                         // if min == max, then we don't need a varint for the length
-                        let len = *min as usize;
+                        let len = min as usize;
                         let mut bytes = vec![0; len];
                         buf.read_exact(&mut bytes).map_err(|_| {
                             DataContractError::DecodingContractError(DecodingError::new(format!(
@@ -543,7 +555,7 @@ impl DocumentPropertyType {
             return Ok(vec![]);
         }
         match self {
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 if let Value::Text(value) = value {
                     let vec = value.into_bytes();
                     let mut r_vec = vec.len().encode_var_vec();
@@ -589,7 +601,7 @@ impl DocumentPropertyType {
                     Ok(r_vec)
                 }
             }
-            DocumentPropertyType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_) => {
                 let mut bytes = value.into_binary_bytes()?;
 
                 let mut r_vec = bytes.len().encode_var_vec();
@@ -677,7 +689,7 @@ impl DocumentPropertyType {
             return Ok(vec![]);
         }
         return match self {
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 let value_as_text = value
                     .as_text()
                     .ok_or_else(|| get_field_type_matching_error(value))?;
@@ -708,7 +720,7 @@ impl DocumentPropertyType {
                 let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 Ok(value_as_f64.to_be_bytes().to_vec())
             }
-            DocumentPropertyType::ByteArray(min, max) => match (min, max) {
+            DocumentPropertyType::ByteArray(sizes) => match (sizes.min_size, sizes.max_size) {
                 (Some(min), Some(max)) if min == max => Ok(value.to_binary_bytes()?),
                 _ => {
                     let mut bytes = value.to_binary_bytes()?;
@@ -792,7 +804,7 @@ impl DocumentPropertyType {
             return Ok(vec![]);
         }
         match self {
-            DocumentPropertyType::String(_, _) => {
+            DocumentPropertyType::String(_) => {
                 let value_as_text = value
                     .as_text()
                     .ok_or_else(|| get_field_type_matching_error(value))?;
@@ -815,7 +827,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::Number => Ok(Self::encode_float(
                 value.to_float().map_err(ProtocolError::ValueError)?,
             )),
-            DocumentPropertyType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_) => {
                 value.to_binary_bytes().map_err(ProtocolError::ValueError)
             }
             DocumentPropertyType::Identifier => value
@@ -846,19 +858,88 @@ impl DocumentPropertyType {
         }
     }
 
+    // Given a field type and a Vec<u8> this function chooses and executes the right decoding method
+    pub fn decode_value_for_tree_keys(&self, value: &[u8]) -> Result<Value, ProtocolError> {
+        if value.is_empty() {
+            return Ok(Value::Null);
+        }
+        match self {
+            DocumentPropertyType::String(_) => {
+                if value == &vec![0] {
+                    // we don't want to collide with the definition of an empty string
+                    Ok(Value::Text("".to_string()))
+                } else {
+                    Ok(Value::Text(String::from_utf8(value.to_vec()).map_err(
+                        |_| {
+                            ProtocolError::DecodingError(
+                                "could not decode utf8 bytes into string".to_string(),
+                            )
+                        },
+                    )?))
+                }
+            }
+            DocumentPropertyType::Date => {
+                let timestamp = DocumentPropertyType::decode_date_timestamp(value).ok_or(
+                    ProtocolError::DecodingError("could not decode data timestamp".to_string()),
+                )?;
+                Ok(Value::U64(timestamp))
+            }
+            DocumentPropertyType::Integer => {
+                let integer = DocumentPropertyType::decode_i64(value).ok_or(
+                    ProtocolError::DecodingError("could not decode integer".to_string()),
+                )?;
+                Ok(Value::I64(integer))
+            }
+            DocumentPropertyType::Number => {
+                let float = DocumentPropertyType::decode_float(value).ok_or(
+                    ProtocolError::DecodingError("could not decode float".to_string()),
+                )?;
+                Ok(Value::Float(float))
+            }
+            DocumentPropertyType::ByteArray(_) => Ok(Value::Bytes(value.to_vec())),
+            DocumentPropertyType::Identifier => {
+                let identifier = Identifier::from_bytes(value)?;
+                Ok(identifier.into())
+            }
+            DocumentPropertyType::Boolean => {
+                if value == &vec![0] {
+                    Ok(Value::Bool(false))
+                } else if value == &vec![1] {
+                    Ok(Value::Bool(true))
+                } else {
+                    Err(ProtocolError::DecodingError(
+                        "could not decode bool".to_string(),
+                    ))
+                }
+            }
+            DocumentPropertyType::Object(_) => Err(ProtocolError::DataContractError(
+                DataContractError::EncodingDataStructureNotSupported(
+                    "we should never try decoding an object".to_string(),
+                ),
+            )),
+            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
+                Err(ProtocolError::DataContractError(
+                    DataContractError::EncodingDataStructureNotSupported(
+                        "we should never try decoding an array".to_string(),
+                    ),
+                ))
+            }
+        }
+    }
+
     // Given a field type and a value this function chooses and executes the right encoding method
     pub fn value_from_string(&self, str: &str) -> Result<Value, DataContractError> {
         match self {
-            DocumentPropertyType::String(min, max) => {
-                if let Some(min) = min {
-                    if str.len() < *min as usize {
+            DocumentPropertyType::String(sizes) => {
+                if let Some(min) = sizes.min_length {
+                    if str.len() < min as usize {
                         return Err(DataContractError::FieldRequirementUnmet(
                             "string is too small".to_string(),
                         ));
                     }
                 }
-                if let Some(max) = max {
-                    if str.len() > *max as usize {
+                if let Some(max) = sizes.max_length {
+                    if str.len() > max as usize {
                         return Err(DataContractError::FieldRequirementUnmet(
                             "string is too big".to_string(),
                         ));
@@ -876,16 +957,16 @@ impl DocumentPropertyType {
                     )
                 })
             }
-            DocumentPropertyType::ByteArray(min, max) => {
-                if let Some(min) = min {
-                    if str.len() / 2 < *min as usize {
+            DocumentPropertyType::ByteArray(sizes) => {
+                if let Some(min) = sizes.min_size {
+                    if str.len() / 2 < min as usize {
                         return Err(DataContractError::FieldRequirementUnmet(
                             "byte array is too small".to_string(),
                         ));
                     }
                 }
-                if let Some(max) = max {
-                    if str.len() / 2 > *max as usize {
+                if let Some(max) = sizes.max_size {
+                    if str.len() / 2 > max as usize {
                         return Err(DataContractError::FieldRequirementUnmet(
                             "byte array is too big".to_string(),
                         ));
@@ -929,6 +1010,10 @@ impl DocumentPropertyType {
         Self::encode_u64(val)
     }
 
+    pub fn decode_date_timestamp(val: &[u8]) -> Option<TimestampMillis> {
+        Self::decode_u64(val)
+    }
+
     pub fn encode_u64(val: u64) -> Vec<u8> {
         // Positive integers are represented in binary with the signed bit set to 0
         // Negative integers are represented in 2's complement form
@@ -952,6 +1037,28 @@ impl DocumentPropertyType {
         wtr[0] ^= 0b1000_0000;
 
         wtr
+    }
+
+    /// Decodes an unsigned integer on 64 bits.
+    pub fn decode_u64(val: &[u8]) -> Option<u64> {
+        // Flip the sign bit
+        // to deal with interaction between the domains
+        // 2's complement values have the sign bit set to 1
+        // this makes them greater than the positive domain in terms of sort order
+        // to fix this, we just flip the sign bit
+        // so positive integers have the high bit and negative integers have the low bit
+        // the relative order of elements in each domain is still maintained, as the
+        // change was uniform across all elements
+        let mut val = val.to_vec();
+        val[0] ^= 0b1000_0000;
+
+        // Decode the integer in big endian form
+        // This ensures that most significant bits are compared first
+        // a bigger positive number would be greater than a smaller one
+        // and a bigger negative number would be greater than a smaller one
+        // maintains sort order for each domain
+        let mut rdr = val.as_slice();
+        rdr.read_u64::<BigEndian>().ok()
     }
 
     pub fn encode_u32(val: u32) -> Vec<u8> {
@@ -979,6 +1086,28 @@ impl DocumentPropertyType {
         wtr
     }
 
+    /// Decodes an unsigned integer on 32 bits.
+    pub fn decode_u32(val: &[u8]) -> Option<u32> {
+        // Flip the sign bit
+        // to deal with interaction between the domains
+        // 2's complement values have the sign bit set to 1
+        // this makes them greater than the positive domain in terms of sort order
+        // to fix this, we just flip the sign bit
+        // so positive integers have the high bit and negative integers have the low bit
+        // the relative order of elements in each domain is still maintained, as the
+        // change was uniform across all elements
+        let mut val = val.to_vec();
+        val[0] ^= 0b1000_0000;
+
+        // Decode the integer in big endian form
+        // This ensures that most significant bits are compared first
+        // a bigger positive number would be greater than a smaller one
+        // and a bigger negative number would be greater than a smaller one
+        // maintains sort order for each domain
+        let mut rdr = val.as_slice();
+        rdr.read_u32::<BigEndian>().ok()
+    }
+
     pub fn encode_i64(val: i64) -> Vec<u8> {
         // Positive integers are represented in binary with the signed bit set to 0
         // Negative integers are represented in 2's complement form
@@ -1002,6 +1131,27 @@ impl DocumentPropertyType {
         wtr[0] ^= 0b1000_0000;
 
         wtr
+    }
+
+    pub fn decode_i64(val: &[u8]) -> Option<i64> {
+        // Flip the sign bit
+        // to deal with interaction between the domains
+        // 2's complement values have the sign bit set to 1
+        // this makes them greater than the positive domain in terms of sort order
+        // to fix this, we just flip the sign bit
+        // so positive integers have the high bit and negative integers have the low bit
+        // the relative order of elements in each domain is still maintained, as the
+        // change was uniform across all elements
+        let mut val = val.to_vec();
+        val[0] ^= 0b1000_0000;
+
+        // Decode the integer in big endian form
+        // This ensures that most significant bits are compared first
+        // a bigger positive number would be greater than a smaller one
+        // and a bigger negative number would be greater than a smaller one
+        // maintains sort order for each domain
+        let mut rdr = val.as_slice();
+        rdr.read_i64::<BigEndian>().ok()
     }
 
     pub fn encode_float(val: f64) -> Vec<u8> {
@@ -1041,6 +1191,27 @@ impl DocumentPropertyType {
         }
 
         wtr
+    }
+
+    /// Decodes a float on 64 bits.
+    pub fn decode_float(encoded: &[u8]) -> Option<f64> {
+        // Check if the value is negative by looking at the original sign bit
+        let is_negative = (encoded[0] & 0b1000_0000) == 0;
+
+        // Create a mutable copy of the encoded vector to apply transformations
+        let mut wtr = encoded.to_vec();
+
+        if is_negative {
+            // For originally negative values, flip all the bits back
+            wtr = wtr.iter().map(|byte| !byte).collect();
+        } else {
+            // For originally positive values, just flip the sign bit back
+            wtr[0] ^= 0b1000_0000;
+        }
+
+        // Read the float value from the transformed vector
+        let mut cursor = Cursor::new(wtr);
+        cursor.read_f64::<BigEndian>().ok()
     }
 }
 

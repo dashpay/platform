@@ -105,6 +105,28 @@ export default {
       additionalProperties: false,
       required: ['enabled', 'host', 'port'],
     },
+    quorum: {
+      type: 'object',
+      properties: {
+        llmqType: {
+          type: 'integer',
+          enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107],
+        },
+        dkgInterval: {
+          type: 'integer',
+          minimum: 1,
+        },
+        activeSigners: {
+          type: 'integer',
+          minimum: 1,
+        },
+        rotation: {
+          type: 'boolean',
+        },
+      },
+      required: ['llmqType', 'dkgInterval', 'activeSigners', 'rotation'],
+      additionalProperties: false,
+    },
   },
   properties: {
     description: {
@@ -231,13 +253,35 @@ export default {
             port: {
               $ref: '#/definitions/port',
             },
-            user: {
-              type: 'string',
-              minLength: 1,
-            },
-            password: {
-              type: 'string',
-              minLength: 1,
+            users: {
+              type: 'object',
+              minProperties: 1,
+              propertyNames: {
+                type: 'string',
+                minLength: 1,
+              },
+              additionalProperties: {
+                type: 'object',
+                properties: {
+                  password: {
+                    type: 'string',
+                    minLength: 1,
+                  },
+                  whitelist: {
+                    type: ['null', 'array'],
+                    items: {
+                      type: 'string',
+                      minLength: 1,
+                    },
+                    minItems: 1,
+                  },
+                  lowPriority: {
+                    type: 'boolean',
+                  },
+                },
+                required: ['password', 'whitelist', 'lowPriority'],
+                additionalProperties: false,
+              },
             },
             allowIps: {
               type: 'array',
@@ -246,7 +290,7 @@ export default {
               },
             },
           },
-          required: ['host', 'port', 'user', 'password'],
+          required: ['host', 'port', 'users', 'allowIps'],
           additionalProperties: false,
         },
         spork: {
@@ -766,34 +810,32 @@ export default {
                 validatorSet: {
                   type: 'object',
                   properties: {
-                    llmqType: {
-                      type: 'number',
-                      // https://github.com/dashpay/dashcore-lib/blob/843176fed9fc81feae43ccf319d99e2dd942fe1f/lib/constants/index.js#L50-L99
-                      enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107],
+                    quorum: {
+                      $ref: '#/definitions/quorum',
                     },
                   },
                   additionalProperties: false,
-                  required: ['llmqType'],
+                  required: ['quorum'],
                 },
                 chainLock: {
                   type: 'object',
                   properties: {
-                    llmqType: {
-                      type: 'number',
-                      // https://github.com/dashpay/dashcore-lib/blob/843176fed9fc81feae43ccf319d99e2dd942fe1f/lib/constants/index.js#L50-L99
-                      enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107],
-                    },
-                    llmqSize: {
-                      type: 'integer',
-                      minimum: 0,
-                    },
-                    dkgInterval: {
-                      type: 'integer',
-                      minimum: 0,
+                    quorum: {
+                      $ref: '#/definitions/quorum',
                     },
                   },
                   additionalProperties: false,
-                  required: ['llmqType', 'llmqSize', 'dkgInterval'],
+                  required: ['quorum'],
+                },
+                instantLock: {
+                  type: 'object',
+                  properties: {
+                    quorum: {
+                      $ref: '#/definitions/quorum',
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['quorum'],
                 },
                 epochTime: {
                   type: 'integer',

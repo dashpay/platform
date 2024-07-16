@@ -1,9 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform_types::platform::Platform;
+use crate::platform_types::platform::{Platform, PlatformRef};
 
 use crate::abci::AbciError;
-use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::FeeResult;
@@ -93,11 +92,11 @@ where
         &self,
         raw_tx: &[u8],
         check_tx_level: CheckTxLevel,
-        platform_state: &PlatformState,
+        platform_ref: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
         match platform_version.drive_abci.methods.engine.check_tx {
-            0 => self.check_tx_v0(raw_tx, check_tx_level, platform_state, platform_version),
+            0 => self.check_tx_v0(raw_tx, check_tx_level, platform_ref, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "check_tx".to_string(),
                 known_versions: vec![0],

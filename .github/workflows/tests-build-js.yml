@@ -4,12 +4,14 @@ on:
 jobs:
   build-js:
     name: Build JS
-    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]
+    runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
     steps:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       # TODO: Use upload artifacts action instead
       - name: Cache build artifacts
@@ -50,7 +52,7 @@ jobs:
         env:
           RUSTC_WRAPPER: sccache
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/wasm/wasm32
 
       - name: Ignore only already cached artifacts

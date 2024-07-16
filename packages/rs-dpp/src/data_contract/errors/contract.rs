@@ -3,7 +3,6 @@ use crate::consensus::basic::decode::DecodingError;
 use crate::consensus::basic::BasicError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-use platform_value::Identifier;
 use thiserror::Error;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
@@ -12,7 +11,9 @@ use crate::data_contract::errors::json_schema_error::JsonSchemaError;
 use crate::ProtocolError;
 
 // @append_only
-#[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
+#[derive(
+    Error, Debug, PartialEq, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone,
+)]
 pub enum DataContractError {
     #[error(transparent)]
     DecodingContractError(DecodingError),
@@ -31,6 +32,9 @@ pub enum DataContractError {
 
     #[error("field requirement unmet: {0}")]
     FieldRequirementUnmet(String),
+
+    #[error("regex error: {0}")]
+    RegexError(String),
 
     #[error("key wrong type error: {0}")]
     KeyWrongType(String),
@@ -79,7 +83,7 @@ pub enum DataContractError {
     #[error("Corrupted Serialization: {0}")]
     CorruptedSerialization(String),
 
-    #[error("Corrupted Code Execution: {0}")]
+    #[error("Json schema error: {0}")]
     JsonSchema(JsonSchemaError),
 }
 

@@ -3,6 +3,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+
 use dpp::version::PlatformVersion;
 
 use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
@@ -10,7 +11,7 @@ use drive::grovedb::TransactionArg;
 
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-use drive::drive::config::DEFAULT_QUERY_LIMIT;
+use drive::config::DEFAULT_QUERY_LIMIT;
 
 use crate::{
     error::{execution::ExecutionError, Error},
@@ -131,6 +132,7 @@ where
             block_info,
             transaction,
             platform_version,
+            None,
         )?;
 
         Ok(())
@@ -148,7 +150,7 @@ mod tests {
     use dpp::identity::core_script::CoreScript;
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
     use dpp::withdrawal::Pooling;
-    use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
+    use drive::util::test_helpers::setup::{setup_document, setup_system_data_contract};
 
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;

@@ -19,6 +19,10 @@ pub trait DataContractV0Getters {
     /// Returns the identifier of the contract owner.
     fn owner_id(&self) -> Identifier;
     fn document_type_cloned_for_name(&self, name: &str) -> Result<DocumentType, DataContractError>;
+    fn document_type_borrowed_for_name(
+        &self,
+        name: &str,
+    ) -> Result<&DocumentType, DataContractError>;
 
     /// Returns the document type for the given document name.
     fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, DataContractError>;
@@ -27,6 +31,7 @@ pub trait DataContractV0Getters {
     fn document_type_cloned_optional_for_name(&self, name: &str) -> Option<DocumentType>;
 
     fn has_document_type_for_name(&self, name: &str) -> bool;
+    fn document_types_with_contested_indexes(&self) -> BTreeMap<&DocumentName, &DocumentType>;
 
     /// Returns a mapping of document names to their corresponding document types.
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType>;

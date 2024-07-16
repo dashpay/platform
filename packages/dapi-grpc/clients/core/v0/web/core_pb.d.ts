@@ -827,3 +827,41 @@ export namespace InstantSendLockMessages {
   }
 }
 
+export class MasternodeListRequest extends jspb.Message {
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): MasternodeListRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: MasternodeListRequest): MasternodeListRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: MasternodeListRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): MasternodeListRequest;
+  static deserializeBinaryFromReader(message: MasternodeListRequest, reader: jspb.BinaryReader): MasternodeListRequest;
+}
+
+export namespace MasternodeListRequest {
+  export type AsObject = {
+  }
+}
+
+export class MasternodeListResponse extends jspb.Message {
+  getMasternodeListDiff(): Uint8Array | string;
+  getMasternodeListDiff_asU8(): Uint8Array;
+  getMasternodeListDiff_asB64(): string;
+  setMasternodeListDiff(value: Uint8Array | string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): MasternodeListResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: MasternodeListResponse): MasternodeListResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: MasternodeListResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): MasternodeListResponse;
+  static deserializeBinaryFromReader(message: MasternodeListResponse, reader: jspb.BinaryReader): MasternodeListResponse;
+}
+
+export namespace MasternodeListResponse {
+  export type AsObject = {
+    masternodeListDiff: Uint8Array | string,
+  }
+}
+

@@ -14,13 +14,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let balance_query = Self::balance_for_identity_id_query(identity_id);
-        self.grove_get_proved_path_query(
-            &balance_query,
-            false,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )
+        self.grove_get_proved_path_query(&balance_query, transaction, &mut vec![], drive_version)
     }
 
     /// Proves an Identity's balance and revision from the backing store
@@ -30,14 +24,11 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
-        let balance_query = Self::balance_and_revision_for_identity_id_query(identity_id);
-        self.grove_get_proved_path_query(
-            &balance_query,
-            true,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )
+        let balance_query = Self::balance_and_revision_for_identity_id_query(
+            identity_id,
+            &drive_version.grove_version,
+        );
+        self.grove_get_proved_path_query(&balance_query, transaction, &mut vec![], drive_version)
     }
 
     /// Proves multiple Identity balances from the backing store
@@ -47,21 +38,16 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
-        let balance_query = Self::balances_for_identity_ids_query(identity_ids)?;
-        self.grove_get_proved_path_query(
-            &balance_query,
-            false,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )
+        let balance_query =
+            Self::balances_for_identity_ids_query(identity_ids, &drive_version.grove_version)?;
+        self.grove_get_proved_path_query(&balance_query, transaction, &mut vec![], drive_version)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::Identity;
 

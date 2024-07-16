@@ -1,12 +1,9 @@
-use crate::drive::defaults::{
-    AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE, DEFAULT_FLOAT_SIZE,
-    DEFAULT_FLOAT_SIZE_U8, DEFAULT_HASH_SIZE_U8,
-};
-use crate::drive::document::contract_documents_keeping_history_primary_key_path_for_document_id;
-use crate::drive::flags::StorageFlags;
+use crate::drive::constants::{AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE};
+use crate::drive::document::paths::contract_documents_keeping_history_primary_key_path_for_document_id;
+use crate::util::storage_flags::StorageFlags;
 
-use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use crate::drive::Drive;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 
 use crate::error::Error;
 
@@ -22,6 +19,9 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 
+use crate::util::type_constants::{
+    DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8, DEFAULT_HASH_SIZE_U8,
+};
 use std::collections::HashMap;
 
 impl Drive {

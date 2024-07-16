@@ -26,6 +26,12 @@ impl ValidatorSetV0Getters for ValidatorSet {
         }
     }
 
+    fn quorum_index(&self) -> Option<u32> {
+        match self {
+            ValidatorSet::V0(v0) => v0.quorum_index(),
+        }
+    }
+
     fn core_height(&self) -> u32 {
         match self {
             ValidatorSet::V0(v0) => v0.core_height(),
@@ -61,6 +67,12 @@ impl ValidatorSetV0Setters for ValidatorSet {
     fn set_quorum_hash(&mut self, quorum_hash: QuorumHash) {
         match self {
             ValidatorSet::V0(v0) => v0.set_quorum_hash(quorum_hash),
+        }
+    }
+
+    fn set_quorum_index(&mut self, index: Option<u32>) {
+        match self {
+            ValidatorSet::V0(v0) => v0.set_quorum_index(index),
         }
     }
 

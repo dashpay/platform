@@ -385,6 +385,11 @@ impl DocumentsBatchTransitionWasm {
         self.0.is_identity_state_transition()
     }
 
+    #[wasm_bindgen(js_name=isVotingStateTransition)]
+    pub fn is_voting_state_transition(&self) -> bool {
+        self.0.is_voting_state_transition()
+    }
+
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
         let bytes = PlatformSerializable::serialize_to_bytes(&StateTransition::DocumentsBatch(

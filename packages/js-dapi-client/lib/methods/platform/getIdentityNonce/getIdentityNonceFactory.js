@@ -14,7 +14,7 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
  */
 function getIdentityNonceFactory(grpcTransport) {
   /**
-   * Fetch the version upgrade vote status
+   * Fetch the version upgrade votes status
    * @typedef {getIdentityNonce}
    * @param {Buffer} identityId
    * @param {DAPIClientOptions & {prove: boolean}} [options]

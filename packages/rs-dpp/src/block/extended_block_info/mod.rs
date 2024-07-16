@@ -72,6 +72,12 @@ impl ExtendedBlockInfoV0Getters for ExtendedBlockInfo {
         }
     }
 
+    fn proposer_pro_tx_hash(&self) -> &[u8; 32] {
+        match self {
+            ExtendedBlockInfo::V0(v0) => &v0.proposer_pro_tx_hash,
+        }
+    }
+
     fn block_id_hash(&self) -> &[u8; 32] {
         match self {
             ExtendedBlockInfo::V0(v0) => &v0.block_id_hash,
@@ -146,6 +152,7 @@ mod tests {
             app_hash: [1; 32],
             quorum_hash: [2; 32],
             block_id_hash: [3; 32],
+            proposer_pro_tx_hash: [4; 32],
             signature: [3; 96],
             round: 1,
         }

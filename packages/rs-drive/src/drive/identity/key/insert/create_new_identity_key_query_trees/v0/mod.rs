@@ -1,10 +1,10 @@
 use crate::drive::identity::{
     identity_query_keys_purpose_tree_path, identity_query_keys_tree_path,
 };
-use crate::drive::object_size_info::DriveKeyInfo;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::object_size_info::DriveKeyInfo;
 use dpp::identity::{Purpose, SecurityLevel};
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;

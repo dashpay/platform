@@ -52,7 +52,8 @@ where
         let mut initial_platform_state = PlatformState::default_with_protocol_versions(
             request.initial_protocol_version,
             request.initial_protocol_version,
-        );
+            &self.config,
+        )?;
 
         let genesis_block_info = BlockInfo {
             height: request.initial_height,
@@ -102,7 +103,7 @@ where
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
-                platform_state_fingerprint = hex::encode(initial_platform_state.fingerprint()),
+                platform_state_fingerprint = hex::encode(initial_platform_state.fingerprint()?),
                 "platform runtime state",
             );
         }
@@ -112,7 +113,7 @@ where
         let app_hash = self
             .drive
             .grove
-            .root_hash(Some(transaction))
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .map_err(GroveDB)?;
 

@@ -25,6 +25,8 @@ import generateRandomString from '../../../util/generateRandomString.js';
  * @param {configureNodeTask} configureNodeTask
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
  * @param {DefaultConfigs} defaultConfigs
+ * @param {verifySystemRequirementsTask} verifySystemRequirementsTask
+ * @param {importCoreDataTask} importCoreDataTask
  */
 export default function setupRegularPresetTaskFactory(
   configFile,
@@ -35,6 +37,8 @@ export default function setupRegularPresetTaskFactory(
   configureNodeTask,
   configureSSLCertificateTask,
   defaultConfigs,
+  importCoreDataTask,
+  verifySystemRequirementsTask,
 ) {
   /**
    * @typedef {setupRegularPresetTask}
@@ -79,6 +83,7 @@ export default function setupRegularPresetTaskFactory(
 
           ctx.config = defaultConfigs.get(ctx.preset);
 
+          // TODO: We need to change this and enable platform on mainnet
           ctx.config.set('platform.enable', ctx.isHP && ctx.config.get('network') !== PRESET_MAINNET);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
 
@@ -88,8 +93,10 @@ export default function setupRegularPresetTaskFactory(
             ctx.config.set('platform.drive.tenderdash.mode', 'full');
           }
 
-          ctx.config.set('core.rpc.user', generateRandomString(8));
-          ctx.config.set('core.rpc.password', generateRandomString(12));
+          Object.values(ctx.config.get('core.rpc.users')).forEach((options) => {
+            // eslint-disable-next-line no-param-reassign
+            options.password = generateRandomString(12);
+          });
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.nodeType ? ctx.nodeType : nodeTypeName;
@@ -97,6 +104,9 @@ export default function setupRegularPresetTaskFactory(
         options: {
           persistentOutput: true,
         },
+      },
+      {
+        task: () => verifySystemRequirementsTask(),
       },
       {
         enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE,
@@ -130,6 +140,10 @@ export default function setupRegularPresetTaskFactory(
       {
         enabled: (ctx) => !ctx.isMasternodeRegistered && ctx.nodeType === NODE_TYPE_MASTERNODE,
         task: () => registerMasternodeGuideTask(),
+      },
+      {
+        enabled: (ctx) => ctx.isMasternodeRegistered,
+        task: () => importCoreDataTask(),
       },
       {
         enabled: (ctx) => ctx.isMasternodeRegistered || ctx.nodeType === NODE_TYPE_FULLNODE,

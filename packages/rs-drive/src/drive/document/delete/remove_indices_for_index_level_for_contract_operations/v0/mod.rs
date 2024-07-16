@@ -9,18 +9,18 @@ use dpp::data_contract::document_type::IndexLevel;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
-use crate::drive::flags::StorageFlags;
+use crate::util::storage_flags::StorageFlags;
 
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
+use crate::util::object_size_info::DriveKeyInfo::KeyRef;
 
-use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::drive::Drive;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::PlatformVersion;
 
@@ -61,11 +61,11 @@ impl Drive {
             );
         }
 
-        if let Some(unique) = index_level.has_index_with_uniqueness() {
+        if let Some(index_type) = index_level.has_index_with_type() {
             self.remove_reference_for_index_level_for_contract_operations(
                 document_and_contract_info,
                 index_path_info.clone(),
-                unique,
+                index_type,
                 any_fields_null,
                 storage_flags,
                 previous_batch_operations,

@@ -1,3 +1,4 @@
+mod contested_unique_index_on_mutable_document_type_error;
 mod data_contract_have_new_unique_index_error;
 mod data_contract_immutable_properties_update_error;
 mod data_contract_invalid_index_definition_update_error;
@@ -49,6 +50,7 @@ pub use system_property_index_already_present_error::*;
 pub use undefined_index_property_error::*;
 pub use unique_indices_limit_reached_error::*;
 
+pub use contested_unique_index_on_mutable_document_type_error::*;
 pub use incompatible_document_type_schema_error::*;
 pub use invalid_document_type_name_error::*;
 pub use unknown_document_creation_restriction_mode_error::*;

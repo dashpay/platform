@@ -112,6 +112,13 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 execution_context,
                 tx,
             ),
+            StateTransition::MasternodeVote(st) => st.transform_into_action(
+                platform,
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
         }
     }
 }

@@ -38,8 +38,6 @@ function validatePort(port, parameterName) {
  */
 function validateConfig(config) {
   const validationResults = [];
-  validationResults.push(validateHost(config.dashcore.p2p.host, 'DASHCORE_P2P_HOST'));
-  validationResults.push(validatePort(config.dashcore.p2p.port, 'DASHCORE_P2P_PORT'));
   validationResults.push(validateHost(config.dashcore.rpc.host, 'DASHCORE_RPC_HOST'));
   validationResults.push(validatePort(config.dashcore.rpc.port, 'DASHCORE_RPC_PORT'));
   validationResults.push(validateHost(config.dashcore.zmq.host, 'DASHCORE_ZMQ_HOST'));

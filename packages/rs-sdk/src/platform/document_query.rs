@@ -19,7 +19,7 @@ use dpp::{
     prelude::{DataContract, Identifier},
     ProtocolError,
 };
-use drive::query::{DriveQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
+use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
@@ -34,7 +34,7 @@ use super::fetch::Fetch;
 /// This is an abstraction layer built on top of [GetDocumentsRequest] to address issues with missing details
 /// required to correctly verify proofs returned by the Dash Platform.
 ///
-/// Conversions are implemented between this type, [GetDocumentsRequest] and [DriveQuery] using [TryFrom] trait.
+/// Conversions are implemented between this type, [GetDocumentsRequest] and [DriveDocumentQuery] using [TryFrom] trait.
 #[derive(Debug, Clone, dapi_grpc_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentQuery {
@@ -74,8 +74,8 @@ impl DocumentQuery {
         })
     }
 
-    /// Create new document query based on a [DriveQuery].
-    pub fn new_with_drive_query(d: &DriveQuery) -> Self {
+    /// Create new document query based on a [DriveDocumentQuery].
+    pub fn new_with_drive_query(d: &DriveDocumentQuery) -> Self {
         Self::from(d)
     }
 
@@ -198,14 +198,14 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         Self: Sized + 'a,
     {
         let request: Self::Request = request.into();
-        let drive_query: DriveQuery =
+        let drive_query: DriveDocumentQuery =
             (&request)
                 .try_into()
-                .map_err(|e| drive_proof_verifier::Error::RequestDecodeError {
+                .map_err(|e| drive_proof_verifier::Error::RequestError {
                     error: format!("Failed to convert DocumentQuery to DriveQuery: {}", e),
                 })?;
 
-        <drive_proof_verifier::types::Documents as FromProof<DriveQuery>>::maybe_from_proof_with_metadata(
+        <drive_proof_verifier::types::Documents as FromProof<DriveDocumentQuery>>::maybe_from_proof_with_metadata(
             drive_query,
             response,
             version,
@@ -239,8 +239,8 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
     }
 }
 
-impl<'a> From<&'a DriveQuery<'a>> for DocumentQuery {
-    fn from(value: &'a DriveQuery<'a>) -> Self {
+impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
+    fn from(value: &'a DriveDocumentQuery<'a>) -> Self {
         let data_contract = value.contract.clone();
         let document_type_name = value.document_type.name();
         let where_clauses = value.internal_clauses.clone().into();
@@ -267,8 +267,8 @@ impl<'a> From<&'a DriveQuery<'a>> for DocumentQuery {
     }
 }
 
-impl<'a> From<DriveQuery<'a>> for DocumentQuery {
-    fn from(value: DriveQuery<'a>) -> Self {
+impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
+    fn from(value: DriveDocumentQuery<'a>) -> Self {
         let data_contract = value.contract.clone();
         let document_type_name = value.document_type.name();
         let where_clauses = value.internal_clauses.clone().into();
@@ -295,7 +295,7 @@ impl<'a> From<DriveQuery<'a>> for DocumentQuery {
     }
 }
 
-impl<'a> TryFrom<&'a DocumentQuery> for DriveQuery<'a> {
+impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
     type Error = crate::error::Error;
 
     fn try_from(request: &'a DocumentQuery) -> Result<Self, Self::Error> {

@@ -8,12 +8,11 @@ mod tests {
     use crate::drive::identity::withdrawals::{
         WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
     };
-    use crate::{
-        drive::batch::DriveOperation,
-        tests::helpers::setup::setup_drive_with_initial_state_structure,
-    };
+    use crate::util::batch::DriveOperation;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
     #[test]
@@ -52,6 +51,7 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("to apply batch");
 
@@ -73,6 +73,7 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("to apply batch");
 
@@ -96,6 +97,7 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("to apply batch");
 

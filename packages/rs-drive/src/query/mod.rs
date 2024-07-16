@@ -1,9 +1,14 @@
+use std::sync::Arc;
+
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
     conditions::{WhereClause, WhereOperator},
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     ordering::OrderClause,
     single_document_drive_query::SingleDocumentDriveQuery,
+    single_document_drive_query::SingleDocumentDriveQueryContestedStatus,
+    vote_polls_by_end_date_query::VotePollsByEndDateDriveQuery,
+    vote_query::IdentityBasedVoteDriveQuery,
 };
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -37,7 +42,7 @@ use {
 };
 
 #[cfg(feature = "verify")]
-use crate::drive::verify::RootHash;
+use crate::verify::RootHash;
 
 #[cfg(feature = "server")]
 pub use grovedb::{
@@ -47,16 +52,16 @@ pub use grovedb::{
 
 #[cfg(feature = "server")]
 use {
-    crate::{
-        drive::{grove_operations::QueryType::StatefulQuery, Drive},
-        error::Error::GroveDB,
-        fee::op::LowLevelDriveOperation,
-    },
+    crate::{drive::Drive, error::Error::GroveDB, fees::op::LowLevelDriveOperation},
     dpp::block::block_info::BlockInfo,
 };
 
 // Crate-local unconditional imports
-use crate::{common::encode::encode_u64, drive::config::DriveConfig};
+use crate::config::DriveConfig;
+// Crate-local unconditional imports
+use crate::util::common::encode::encode_u64;
+#[cfg(feature = "server")]
+use crate::util::grove_operations::QueryType::StatefulQuery;
 
 // Module declarations that are conditional on either "server" or "verify" features
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -71,6 +76,62 @@ mod single_document_drive_query;
 // Module declarations exclusively for "server" feature
 #[cfg(feature = "server")]
 mod test_index;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Vote poll vote state query module
+pub mod vote_poll_vote_state_query;
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Vote Query module
+pub mod vote_query;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Vote poll contestant votes query module
+pub mod vote_poll_contestant_votes_query;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Vote polls by end date query
+pub mod vote_polls_by_end_date_query;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Vote polls by document type query
+pub mod vote_polls_by_document_type_query;
+
+/// Function type for looking up a contract by identifier
+///
+/// This function is used to look up a contract by its identifier.
+/// It should be implemented by the caller in order to provide data
+/// contract required for operations like proof verification.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub type ContractLookupFn<'a> = dyn Fn(&dpp::identifier::Identifier) -> Result<Option<Arc<DataContract>>, crate::error::Error>
+    + 'a;
+
+/// Creates a [ContractLookupFn] function that returns provided data contract when requested.
+///
+/// # Arguments
+///
+/// * `data_contract` - [Arc<DataContract>](DataContract) to return
+///
+/// # Returns
+///
+/// [ContractLookupFn] that will return the `data_contract`, or `None` if
+/// the requested contract is not the same as the provided one.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn contract_lookup_fn_for_contract<'a>(
+    data_contract: Arc<DataContract>,
+) -> Box<ContractLookupFn<'a>> {
+    let func = move
+        |id: &dpp::identifier::Identifier| -> Result<Option<Arc<DataContract>>, crate::error::Error> {
+            if data_contract.id().ne(id) {
+                return Ok(None);
+            }
+            Ok(Some(Arc::clone(&data_contract)))
+        };
+    Box::new(func)
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// A query to get the votes given out by an identity
+pub mod contested_resource_votes_given_by_identity_query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct
@@ -220,38 +281,9 @@ impl From<InternalClauses> for Vec<WhereClause> {
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
-/// The encoding returned by queries
-#[derive(Debug, PartialEq)]
-pub enum QueryResultEncoding {
-    /// Cbor encoding
-    #[cfg(feature = "ciborium")]
-    CborEncodedQueryResult,
-    /// Platform base encoding
-    PlatformEncodedQueryResult,
-}
-
-//todo: this needs to be fixed
-#[cfg(any(feature = "server", feature = "verify"))]
-impl QueryResultEncoding {
-    /// Encode the value based on the encoding desired
-    pub fn encode_value(&self, value: &Value) -> Result<Vec<u8>, Error> {
-        match self {
-            #[cfg(feature = "ciborium")]
-            QueryResultEncoding::CborEncodedQueryResult => {
-                let mut buffer = vec![];
-                ciborium::ser::into_writer(value, &mut buffer)
-                    .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
-                Ok(buffer)
-            }
-            QueryResultEncoding::PlatformEncodedQueryResult => Ok(vec![]),
-        }
-    }
-}
-
-#[cfg(any(feature = "server", feature = "verify"))]
 /// Drive query struct
 #[derive(Debug, PartialEq, Clone)]
-pub struct DriveQuery<'a> {
+pub struct DriveDocumentQuery<'a> {
     ///DataContract
     pub contract: &'a DataContract,
     /// Document type
@@ -264,7 +296,7 @@ pub struct DriveQuery<'a> {
     pub limit: Option<u16>,
     /// Order by
     pub order_by: IndexMap<String, OrderClause>,
-    /// Start at
+    /// Start at document id
     pub start_at: Option<[u8; 32]>,
     /// Start at included
     pub start_at_included: bool,
@@ -272,13 +304,11 @@ pub struct DriveQuery<'a> {
     pub block_time_ms: Option<u64>,
 }
 
-// TODO: expose this also
-//  also figure out main export
-impl<'a> DriveQuery<'a> {
+impl<'a> DriveDocumentQuery<'a> {
     #[cfg(feature = "server")]
     /// Returns any item
     pub fn any_item_query(contract: &'a DataContract, document_type: DocumentTypeRef<'a>) -> Self {
-        DriveQuery {
+        DriveDocumentQuery {
             contract,
             document_type,
             internal_clauses: Default::default(),
@@ -488,7 +518,7 @@ impl<'a> DriveQuery<'a> {
             ))));
         }
 
-        Ok(DriveQuery {
+        Ok(DriveDocumentQuery {
             contract,
             document_type,
             internal_clauses,
@@ -569,7 +599,7 @@ impl<'a> DriveQuery<'a> {
             .map(|order_clause| Ok((order_clause.field.clone(), order_clause.to_owned())))
             .collect::<Result<IndexMap<String, OrderClause>, Error>>()?;
 
-        Ok(DriveQuery {
+        Ok(DriveDocumentQuery {
             contract,
             document_type,
             internal_clauses,
@@ -731,7 +761,7 @@ impl<'a> DriveQuery<'a> {
             })
             .transpose()?;
 
-        Ok(DriveQuery {
+        Ok(DriveDocumentQuery {
             contract,
             document_type: document_type.as_ref(),
             internal_clauses,
@@ -746,7 +776,7 @@ impl<'a> DriveQuery<'a> {
 
     /// Serialize drive query to CBOR format.
     ///
-    /// FIXME: The data contract is only refered as ID, and document type as its name.
+    /// FIXME: The data contract is only referred as ID, and document type as its name.
     /// This can change in the future to include full data contract and document type.
     #[cfg(feature = "cbor_query")]
     pub fn to_cbor(&self) -> Result<Vec<u8>, Error> {
@@ -878,8 +908,11 @@ impl<'a> DriveQuery<'a> {
 
         if let Some(start_at_path_query) = start_at_path_query {
             let limit = main_path_query.query.limit.take();
-            let mut merged =
-                PathQuery::merge(vec![&start_at_path_query, &main_path_query]).map_err(GroveDB)?;
+            let mut merged = PathQuery::merge(
+                vec![&start_at_path_query, &main_path_query],
+                &platform_version.drive.grove_version,
+            )
+            .map_err(GroveDB)?;
             merged.query.limit = limit.map(|a| a.saturating_add(1));
             Ok(merged)
         } else {
@@ -1137,7 +1170,7 @@ impl<'a> DriveQuery<'a> {
             .ok_or(Error::Query(
                 QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
                     "query must be for valid indexes, valid indexes are: {:?}",
-                    self.document_type.indices()
+                    self.document_type.indexes()
                 )),
             ))?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
@@ -1320,7 +1353,7 @@ impl<'a> DriveQuery<'a> {
                             left_to_right,
                             platform_version,
                         )?;
-                        DriveQuery::recursive_insert_on_query(
+                        DriveDocumentQuery::recursive_insert_on_query(
                             Some(&mut inner_query),
                             left_over,
                             unique,
@@ -1355,7 +1388,7 @@ impl<'a> DriveQuery<'a> {
                                 non_conditional_included,
                             );
 
-                            DriveQuery::recursive_insert_on_query(
+                            DriveDocumentQuery::recursive_insert_on_query(
                                 Some(&mut non_conditional_query),
                                 left_over,
                                 unique,
@@ -1369,7 +1402,7 @@ impl<'a> DriveQuery<'a> {
                         } else {
                             let mut inner_query = Query::new_with_direction(first.ascending);
                             inner_query.insert_all();
-                            DriveQuery::recursive_insert_on_query(
+                            DriveDocumentQuery::recursive_insert_on_query(
                                 Some(&mut inner_query),
                                 left_over,
                                 unique,
@@ -1619,6 +1652,7 @@ impl<'a> DriveQuery<'a> {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -1645,7 +1679,6 @@ impl<'a> DriveQuery<'a> {
         )?;
         drive.grove_get_proved_path_query(
             &path_query,
-            false,
             transaction,
             drive_operations,
             &platform_version.drive,
@@ -1675,6 +1708,7 @@ impl<'a> DriveQuery<'a> {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -1702,7 +1736,6 @@ impl<'a> DriveQuery<'a> {
 
         let proof = drive.grove_get_proved_path_query(
             &path_query,
-            self.start_at.is_some(),
             transaction,
             drive_operations,
             &platform_version.drive,
@@ -1733,6 +1766,7 @@ impl<'a> DriveQuery<'a> {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -1818,8 +1852,8 @@ impl<'a> DriveQuery<'a> {
 }
 
 /// Convert DriveQuery to a BTreeMap of values
-impl<'a> From<&DriveQuery<'a>> for BTreeMap<String, Value> {
-    fn from(query: &DriveQuery<'a>) -> Self {
+impl<'a> From<&DriveDocumentQuery<'a>> for BTreeMap<String, Value> {
+    fn from(query: &DriveDocumentQuery<'a>) -> Self {
         let mut response = BTreeMap::<String, Value>::new();
 
         //  contract
@@ -1890,16 +1924,16 @@ mod tests {
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
-    use crate::query::DriveQuery;
+    use crate::query::DriveDocumentQuery;
+    use crate::util::storage_flags::StorageFlags;
 
     use dpp::data_contract::DataContract;
 
     use serde_json::Value::Null;
 
-    use crate::drive::config::DriveConfig;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::config::DriveConfig;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::tests::fixtures::get_data_contract_fixture;
@@ -1993,12 +2027,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type, &config)
-            .expect("deserialize cbor shouldn't fail");
+        let query =
+            DriveDocumentQuery::from_cbor(where_cbor.as_slice(), &contract, document_type, &config)
+                .expect("deserialize cbor shouldn't fail");
 
         let cbor = query.to_cbor().expect("should serialize cbor");
 
-        let deserialized = DriveQuery::from_cbor(&cbor, &contract, document_type, &config)
+        let deserialized = DriveDocumentQuery::from_cbor(&cbor, &contract, document_type, &config)
             .expect("should deserialize cbor");
 
         assert_eq!(query, deserialized);
@@ -2028,7 +2063,7 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(
+        DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,
@@ -2057,7 +2092,7 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(
+        DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,
@@ -2087,7 +2122,7 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(
+        DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,
@@ -2117,7 +2152,7 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(
+        DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,
@@ -2146,7 +2181,7 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(
+        DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,
@@ -2179,7 +2214,7 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,
@@ -2268,7 +2303,7 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,
@@ -2302,7 +2337,7 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,
@@ -2341,7 +2376,7 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,
@@ -2380,7 +2415,7 @@ mod tests {
         // The is actually valid, however executing it is not
         // This is in order to optimize query execution
 
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,
@@ -2412,7 +2447,7 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(
+        DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,
@@ -2440,7 +2475,7 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(
+        DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,
@@ -2468,7 +2503,7 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(
+        DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,
@@ -2496,7 +2531,7 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(
+        DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type,

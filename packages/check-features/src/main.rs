@@ -4,19 +4,19 @@ use toml::Value;
 
 fn main() {
     let crates = [
-        "rs-sdk",
-        "rs-drive-abci",
-        "rs-dpp",
-        "rs-drive",
-        "rs-drive-proof-verifier",
+        ("rs-sdk", vec![]),
+        ("rs-drive-abci", vec![]),
+        ("rs-dpp", vec![]),
+        ("rs-drive", vec![]),
+        ("rs-drive-proof-verifier", vec![]),
     ];
 
-    for specific_crate in crates {
-        check_crate(specific_crate)
+    for (specific_crate, to_ignore) in crates {
+        check_crate(specific_crate, to_ignore)
     }
 }
 
-fn check_crate(crate_name: &str) {
+fn check_crate(crate_name: &str, to_ignore: Vec<&str>) {
     // Construct the path to the Cargo.toml file for each crate
     let cargo_toml_path = format!("packages/{}/Cargo.toml", crate_name);
 
@@ -77,7 +77,10 @@ fn check_crate(crate_name: &str) {
 
     for (feature, _) in features.as_table().unwrap().iter() {
         // Skip special feature groups
-        if feature == "default" || feature.ends_with("features") {
+        if feature == "default"
+            || feature.ends_with("features")
+            || to_ignore.contains(&feature.as_str())
+        {
             continue;
         }
 

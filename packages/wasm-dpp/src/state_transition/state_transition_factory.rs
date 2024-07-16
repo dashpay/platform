@@ -7,6 +7,7 @@ use crate::identity::state_transition::{
     IdentityUpdateTransitionWasm,
 };
 use crate::state_transition::errors::invalid_state_transition_error::InvalidStateTransitionErrorWasm;
+use crate::voting::state_transition::masternode_vote_transition::MasternodeVoteTransitionWasm;
 use dpp::state_transition::errors::StateTransitionError;
 use dpp::state_transition::state_transition_factory::StateTransitionFactory;
 use dpp::state_transition::StateTransition;
@@ -57,6 +58,9 @@ impl StateTransitionFactoryWasm {
                 }
                 StateTransition::DocumentsBatch(st) => {
                     Ok(DocumentsBatchTransitionWasm::from(st).into())
+                }
+                StateTransition::MasternodeVote(st) => {
+                    Ok(MasternodeVoteTransitionWasm::from(st).into())
                 }
             },
             Err(dpp::ProtocolError::StateTransitionError(e)) => match e {

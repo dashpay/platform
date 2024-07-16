@@ -1,10 +1,12 @@
-use serde::{Deserialize, Serialize};
+#[cfg(feature = "index-serde-conversion")]
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Eq)]
+#[derive(Debug, PartialEq, PartialOrd, Clone, Eq)]
+#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
 pub enum OrderBy {
-    #[serde(rename = "asc")]
+    #[cfg_attr(feature = "index-serde-conversion", serde(rename = "asc"))]
     Asc,
-    #[serde(rename = "desc")]
+    #[cfg_attr(feature = "index-serde-conversion", serde(rename = "desc"))]
     Desc,
 }
 
@@ -13,19 +15,254 @@ use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
 use anyhow::anyhow;
 
+use crate::data_contract::document_type::ContestedIndexResolution::MasternodeVote;
+use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
+use regex::Regex;
+#[cfg(feature = "index-serde-conversion")]
+use serde::de::{VariantAccess, Visitor};
+use std::cmp::Ordering;
+#[cfg(feature = "index-serde-conversion")]
+use std::fmt;
 use std::{collections::BTreeMap, convert::TryFrom};
 
 pub mod random_index;
 
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+pub enum ContestedIndexResolution {
+    MasternodeVote = 0,
+}
+
+impl TryFrom<u8> for ContestedIndexResolution {
+    type Error = ProtocolError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(MasternodeVote),
+            value => Err(ProtocolError::UnknownStorageKeyRequirements(format!(
+                "contested index resolution unknown: {}",
+                value
+            ))),
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug)]
+pub enum ContestedIndexFieldMatch {
+    Regex(regex::Regex),
+    PositiveIntegerMatch(u128),
+}
+
+#[cfg(feature = "index-serde-conversion")]
+impl Serialize for ContestedIndexFieldMatch {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match *self {
+            ContestedIndexFieldMatch::Regex(ref regex) => serializer.serialize_newtype_variant(
+                "ContestedIndexFieldMatch",
+                0,
+                "Regex",
+                regex.as_str(),
+            ),
+            ContestedIndexFieldMatch::PositiveIntegerMatch(ref num) => serializer
+                .serialize_newtype_variant(
+                    "ContestedIndexFieldMatch",
+                    1,
+                    "PositiveIntegerMatch",
+                    num,
+                ),
+        }
+    }
+}
+
+#[cfg(feature = "index-serde-conversion")]
+impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
+    fn deserialize<D>(deserializer: D) -> Result<ContestedIndexFieldMatch, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Regex,
+            PositiveIntegerMatch,
+        }
+
+        struct FieldVisitor;
+
+        impl<'de> Visitor<'de> for FieldVisitor {
+            type Value = Field;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("`regex` or `positive_integer_match`")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Field, E>
+            where
+                E: de::Error,
+            {
+                match value {
+                    "regex" => Ok(Field::Regex),
+                    "positive_integer_match" => Ok(Field::PositiveIntegerMatch),
+                    _ => Err(de::Error::unknown_variant(
+                        value,
+                        &["regex", "positive_integer_match"],
+                    )),
+                }
+            }
+        }
+
+        struct ContestedIndexFieldMatchVisitor;
+
+        impl<'de> Visitor<'de> for ContestedIndexFieldMatchVisitor {
+            type Value = ContestedIndexFieldMatch;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("enum ContestedIndexFieldMatch")
+            }
+
+            fn visit_enum<V>(self, visitor: V) -> Result<ContestedIndexFieldMatch, V::Error>
+            where
+                V: de::EnumAccess<'de>,
+            {
+                match visitor.variant()? {
+                    (Field::Regex, v) => {
+                        let regex_str: &str = v.newtype_variant()?;
+                        Regex::new(regex_str)
+                            .map(ContestedIndexFieldMatch::Regex)
+                            .map_err(de::Error::custom)
+                    }
+                    (Field::PositiveIntegerMatch, v) => {
+                        let num: u128 = v.newtype_variant()?;
+                        Ok(ContestedIndexFieldMatch::PositiveIntegerMatch(num))
+                    }
+                }
+            }
+        }
+
+        deserializer.deserialize_enum(
+            "ContestedIndexFieldMatch",
+            &["regex", "positive_integer_match"],
+            ContestedIndexFieldMatchVisitor,
+        )
+    }
+}
+
+impl PartialOrd for ContestedIndexFieldMatch {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        use ContestedIndexFieldMatch::*;
+        match (self, other) {
+            // Comparing two integers
+            (PositiveIntegerMatch(a), PositiveIntegerMatch(b)) => a.partial_cmp(b),
+
+            // Arbitrarily decide that any Regex is less than any PositiveIntegerMatch
+            (Regex(_), PositiveIntegerMatch(_)) => Some(Ordering::Less),
+            (PositiveIntegerMatch(_), Regex(_)) => Some(Ordering::Greater),
+
+            // Comparing Regex with Regex, perhaps based on pattern length
+            (Regex(a), Regex(b)) => a.as_str().len().partial_cmp(&b.as_str().len()),
+        }
+    }
+}
+
+impl Ord for ContestedIndexFieldMatch {
+    fn cmp(&self, other: &Self) -> Ordering {
+        use ContestedIndexFieldMatch::*;
+        match (self, other) {
+            // Directly compare integers
+            (PositiveIntegerMatch(a), PositiveIntegerMatch(b)) => a.cmp(b),
+
+            // Compare Regex based on pattern string length
+            (Regex(a), Regex(b)) => a.as_str().len().cmp(&b.as_str().len()),
+
+            // Regex is considered less than a positive integer
+            (Regex(_), PositiveIntegerMatch(_)) => Ordering::Less,
+            (PositiveIntegerMatch(_), Regex(_)) => Ordering::Greater,
+        }
+    }
+}
+
+impl Clone for ContestedIndexFieldMatch {
+    fn clone(&self) -> Self {
+        match self {
+            ContestedIndexFieldMatch::Regex(regex) => {
+                ContestedIndexFieldMatch::Regex(regex::Regex::new(regex.as_str()).unwrap())
+            }
+            ContestedIndexFieldMatch::PositiveIntegerMatch(int) => {
+                ContestedIndexFieldMatch::PositiveIntegerMatch(*int)
+            }
+        }
+    }
+}
+
+impl PartialEq for ContestedIndexFieldMatch {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            ContestedIndexFieldMatch::Regex(regex) => match other {
+                ContestedIndexFieldMatch::Regex(other_regex) => {
+                    regex.as_str() == other_regex.as_str()
+                }
+                _ => false,
+            },
+            ContestedIndexFieldMatch::PositiveIntegerMatch(int) => match other {
+                ContestedIndexFieldMatch::PositiveIntegerMatch(other_int) => int == other_int,
+                _ => false,
+            },
+        }
+    }
+}
+
+impl Eq for ContestedIndexFieldMatch {}
+
+impl ContestedIndexFieldMatch {
+    pub fn matches(&self, value: &Value) -> bool {
+        match self {
+            ContestedIndexFieldMatch::Regex(regex) => {
+                if let Some(string) = value.as_str() {
+                    regex.is_match(string)
+                } else {
+                    false
+                }
+            }
+            ContestedIndexFieldMatch::PositiveIntegerMatch(int) => value
+                .as_integer::<u128>()
+                .map(|i| i == *int)
+                .unwrap_or(false),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+pub struct ContestedIndexInformation {
+    pub field_matches: BTreeMap<String, ContestedIndexFieldMatch>,
+    pub resolution: ContestedIndexResolution,
+}
+
+impl Default for ContestedIndexInformation {
+    fn default() -> Self {
+        ContestedIndexInformation {
+            field_matches: BTreeMap::new(),
+            resolution: ContestedIndexResolution::MasternodeVote,
+        }
+    }
+}
+
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
 pub struct Index {
     pub name: String,
     pub properties: Vec<IndexProperty>,
     pub unique: bool,
+    /// Contested indexes are useful when a resource is considered valuable
+    pub contested_index: Option<ContestedIndexInformation>,
 }
 
 impl Index {
@@ -52,9 +289,17 @@ impl Index {
             .map(|property| property.name.clone())
             .collect()
     }
+
+    /// Get values
+    pub fn extract_values(&self, data: &BTreeMap<String, Value>) -> Vec<Value> {
+        self.properties
+            .iter()
+            .map(|property| data.get(&property.name).cloned().unwrap_or(Value::Null))
+            .collect()
+    }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
 pub struct IndexProperty {
     pub name: String,
@@ -187,6 +432,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
 
         let mut unique = false;
         let mut name = None;
+        let mut contested_index = None;
         let mut index_properties: Vec<IndexProperty> = Vec::new();
 
         for (key_value, value_value) in index_type_value_map {
@@ -207,6 +453,92 @@ impl TryFrom<&[(Value, Value)]> for Index {
                     if value_value.is_bool() {
                         unique = value_value.as_bool().expect("confirmed as bool");
                     }
+                }
+                "contested" => {
+                    let contested_properties_value_map = value_value.to_map()?;
+
+                    let mut contested_index_information = ContestedIndexInformation::default();
+
+                    for (contested_key_value, contested_value) in contested_properties_value_map {
+                        let contested_key = contested_key_value
+                            .to_str()
+                            .map_err(|e| DataContractError::ValueDecodingError(e.to_string()))?;
+                        match contested_key {
+                            "fieldMatches" => {
+                                let field_matches_array = contested_value.to_array_ref()?;
+                                for field_match in field_matches_array {
+                                    let field_match_map = field_match.to_map()?;
+                                    let mut name = None;
+                                    let mut field_matches = None;
+                                    for (field_match_key_as_value, field_match_value) in
+                                        field_match_map
+                                    {
+                                        let field_match_key =
+                                            field_match_key_as_value.to_str().map_err(|e| {
+                                                DataContractError::ValueDecodingError(e.to_string())
+                                            })?;
+                                        match field_match_key {
+                                            "field" => {
+                                                let field = field_match_value.to_str()?.to_owned();
+                                                name = Some(field);
+                                            }
+                                            "regexPattern" => {
+                                                let regex = field_match_value.to_str()?.to_owned();
+                                                field_matches =
+                                                    Some(ContestedIndexFieldMatch::Regex(
+                                                        Regex::new(&regex).map_err(|e| {
+                                                            RegexError(format!(
+                                                                "invalid field match regex: {}",
+                                                                e.to_string()
+                                                            ))
+                                                        })?,
+                                                    ));
+                                            }
+                                            key => {
+                                                return Err(DataContractError::ValueWrongType(
+                                                    format!("unexpected field match key {}", key),
+                                                ));
+                                            }
+                                        }
+                                    }
+                                    if name.is_none() {
+                                        return Err(DataContractError::FieldRequirementUnmet(
+                                            format!(
+                                                "field not present in contested fieldMatches {}",
+                                                key
+                                            ),
+                                        ));
+                                    }
+                                    if field_matches.is_none() {
+                                        return Err(DataContractError::FieldRequirementUnmet(
+                                            format!(
+                                                "field not present in contested fieldMatches {}",
+                                                key
+                                            ),
+                                        ));
+                                    }
+                                    contested_index_information
+                                        .field_matches
+                                        .insert(name.unwrap(), field_matches.unwrap());
+                                }
+                            }
+                            "resolution" => {
+                                let resolution_int = contested_value.to_integer::<u8>()?;
+                                contested_index_information.resolution =
+                                    resolution_int.try_into().map_err(|e: ProtocolError| {
+                                        DataContractError::ValueWrongType(e.to_string())
+                                    })?;
+                            }
+                            "description" => {}
+                            key => {
+                                return Err(DataContractError::ValueWrongType(format!(
+                                    "unexpected contested key {}",
+                                    key
+                                )));
+                            }
+                        }
+                    }
+                    contested_index = Some(contested_index_information);
                 }
                 "properties" => {
                     let properties =
@@ -235,14 +567,20 @@ impl TryFrom<&[(Value, Value)]> for Index {
             }
         }
 
+        if contested_index.is_some() && !unique {
+            return Err(DataContractError::InvalidContractStructure(
+                "contest supported only for unique indexes".to_string(),
+            ));
+        }
+
         // if the index didn't have a name let's make one
-        //todo: we should remove the name altogether
         let name = name.unwrap_or_else(|| Alphanumeric.sample_string(&mut rand::thread_rng(), 24));
 
         Ok(Index {
             name,
             properties: index_properties,
             unique,
+            contested_index,
         })
     }
 }

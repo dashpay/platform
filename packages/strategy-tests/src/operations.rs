@@ -16,10 +16,15 @@ use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
 };
+use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::ProtocolError;
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
+use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+use drive::util::object_size_info::DataContractOwnedResolvedInfo;
 use platform_version::version::PlatformVersion;
-use platform_version::TryIntoPlatformVersioned;
+use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
+use rand::distributions::{Distribution, WeightedIndex};
+use rand::prelude::StdRng;
 use std::collections::BTreeMap;
 use std::ops::Range;
 
@@ -347,6 +352,148 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
     }
 }
 
+#[derive(Debug, PartialEq, Clone, Encode, Decode)]
+pub struct ContestedDocumentResourceVotePollWithSerializableContract {
+    /// The contract information associated with the document.
+    pub contract: DataContractInSerializationFormat,
+    /// The name of the document type.
+    pub document_type_name: String,
+    /// The name of the index.
+    pub index_name: String,
+    /// The values used in the index for the poll.
+    pub index_values: Vec<Value>,
+}
+
+impl TryFromPlatformVersioned<ContestedDocumentResourceVotePollWithContractInfo>
+    for ContestedDocumentResourceVotePollWithSerializableContract
+{
+    type Error = ProtocolError;
+    fn try_from_platform_versioned(
+        value: ContestedDocumentResourceVotePollWithContractInfo,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        let ContestedDocumentResourceVotePollWithContractInfo {
+            contract,
+            document_type_name,
+            index_name,
+            index_values,
+        } = value;
+        Ok(ContestedDocumentResourceVotePollWithSerializableContract {
+            contract: contract
+                .into_owned()
+                .try_into_platform_versioned(platform_version)?,
+            document_type_name,
+            index_name,
+            index_values,
+        })
+    }
+}
+
+impl TryFromPlatformVersioned<ContestedDocumentResourceVotePollWithSerializableContract>
+    for ContestedDocumentResourceVotePollWithContractInfo
+{
+    type Error = ProtocolError;
+    fn try_from_platform_versioned(
+        value: ContestedDocumentResourceVotePollWithSerializableContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        let ContestedDocumentResourceVotePollWithSerializableContract {
+            contract,
+            document_type_name,
+            index_name,
+            index_values,
+        } = value;
+        Ok(ContestedDocumentResourceVotePollWithContractInfo {
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(
+                DataContract::try_from_platform_versioned(
+                    contract,
+                    false,
+                    &mut vec![],
+                    platform_version,
+                )?,
+            ),
+            document_type_name,
+            index_name,
+            index_values,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResourceVoteOp {
+    pub resolved_vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
+    pub action: VoteAction,
+}
+
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+pub struct ResourceVoteOpSerializable {
+    pub resolved_vote_poll: ContestedDocumentResourceVotePollWithSerializableContract,
+    pub action: VoteAction,
+}
+
+impl TryFromPlatformVersioned<ResourceVoteOpSerializable> for ResourceVoteOp {
+    type Error = ProtocolError;
+
+    fn try_from_platform_versioned(
+        value: ResourceVoteOpSerializable,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        let ResourceVoteOpSerializable {
+            resolved_vote_poll,
+            action,
+        } = value;
+
+        Ok(ResourceVoteOp {
+            resolved_vote_poll: resolved_vote_poll.try_into_platform_versioned(platform_version)?,
+            action,
+        })
+    }
+}
+
+impl TryFromPlatformVersioned<ResourceVoteOp> for ResourceVoteOpSerializable {
+    type Error = ProtocolError;
+
+    fn try_from_platform_versioned(
+        value: ResourceVoteOp,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        let ResourceVoteOp {
+            resolved_vote_poll,
+            action,
+        } = value;
+
+        Ok(ResourceVoteOpSerializable {
+            resolved_vote_poll: resolved_vote_poll.try_into_platform_versioned(platform_version)?,
+            action,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+pub struct VoteAction {
+    pub vote_choices_with_weights: Vec<(ResourceVoteChoice, u8)>,
+}
+
+impl VoteAction {
+    // Function to choose a ResourceVoteChoice based on weights
+    pub fn choose_weighted_choice(&self, rng: &mut StdRng) -> ResourceVoteChoice {
+        if self.vote_choices_with_weights.is_empty() {
+            ResourceVoteChoice::Abstain
+        } else if self.vote_choices_with_weights.len() == 1 {
+            self.vote_choices_with_weights[0].0
+        } else {
+            let weights: Vec<u8> = self
+                .vote_choices_with_weights
+                .iter()
+                .map(|(_, weight)| *weight)
+                .collect();
+            let dist = WeightedIndex::new(weights).unwrap();
+            let index = dist.sample(rng);
+            self.vote_choices_with_weights[index].0
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum OperationType {
     Document(DocumentOp),
@@ -356,6 +503,7 @@ pub enum OperationType {
     ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
     ContractUpdate(DataContractUpdateOp),
     IdentityTransfer,
+    ResourceVote(ResourceVoteOp),
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
@@ -367,6 +515,7 @@ enum OperationTypeInSerializationFormat {
     ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
     ContractUpdate(Vec<u8>),
     IdentityTransfer,
+    ResourceVote(ResourceVoteOpSerializable),
 }
 
 impl PlatformSerializableWithPlatformVersion for OperationType {
@@ -410,6 +559,11 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                 )
             }
             OperationType::IdentityTransfer => OperationTypeInSerializationFormat::IdentityTransfer,
+            OperationType::ResourceVote(resource_vote_op) => {
+                let vote_op_in_serialization_format =
+                    resource_vote_op.try_into_platform_versioned(platform_version)?;
+                OperationTypeInSerializationFormat::ResourceVote(vote_op_in_serialization_format)
+            }
         };
         let config = bincode::config::standard()
             .with_big_endian()
@@ -466,6 +620,10 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 OperationType::ContractUpdate(update_op)
             }
             OperationTypeInSerializationFormat::IdentityTransfer => OperationType::IdentityTransfer,
+            OperationTypeInSerializationFormat::ResourceVote(resource_vote_op) => {
+                let vote_op = resource_vote_op.try_into_platform_versioned(platform_version)?;
+                OperationType::ResourceVote(vote_op)
+            }
         })
     }
 }

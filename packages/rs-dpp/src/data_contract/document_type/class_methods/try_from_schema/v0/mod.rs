@@ -11,10 +11,7 @@ use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 #[cfg(feature = "validation")]
-use crate::data_contract::document_type::schema::{
-    byte_array_has_no_items_as_parent_validator, pattern_is_valid_regex_validator,
-    traversal_validator, validate_max_depth,
-};
+use crate::data_contract::document_type::schema::validate_max_depth;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
@@ -24,10 +21,10 @@ use std::collections::HashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
+#[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumentTypeError;
 #[cfg(any(test, feature = "validation"))]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
-#[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::InvalidDocumentTypeRequiredSecurityLevelError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
 #[cfg(feature = "validation")]
@@ -39,7 +36,9 @@ use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
     TRADE_MODE, TRANSFERABLE,
 };
-use crate::data_contract::document_type::{property_names, DocumentType};
+use crate::data_contract::document_type::{
+    property_names, ByteArrayPropertySizes, DocumentType, StringPropertySizes,
+};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
@@ -51,8 +50,6 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
-
-const UNIQUE_INDEX_LIMIT_V0: usize = 16;
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
 const SYSTEM_PROPERTIES: [&str; 11] = [
@@ -149,34 +146,12 @@ impl DocumentTypeV0 {
                 )
             })?;
 
-            json_schema_validator.compile(&root_json_schema, platform_version)?;
-
             // Validate against JSON Schema
             DOCUMENT_META_SCHEMA_V0
-                .validate(&root_schema.try_to_validating_json().map_err(|e| {
-                    ProtocolError::ConsensusError(
-                        ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
-                    )
-                })?)
+                .validate(&root_json_schema)
                 .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 
-            // TODO: Are we still aiming to use RE2 with linear time complexity to protect from ReDoS attacks?
-            //  If not we can remove this validation
-            // Validate reg exp compatibility with RE2 and byteArray usage
-            let mut traversal_validator_result = traversal_validator(
-                &root_schema,
-                &[
-                    pattern_is_valid_regex_validator,
-                    byte_array_has_no_items_as_parent_validator,
-                ],
-                platform_version,
-            )?;
-
-            if !traversal_validator_result.is_valid() {
-                let error = traversal_validator_result.errors.remove(0);
-
-                return Err(ProtocolError::ConsensusError(Box::new(error)));
-            }
+            json_schema_validator.compile(&root_json_schema, platform_version)?;
         }
 
         // This has already been validated, but we leave the map_err here for consistency
@@ -307,7 +282,10 @@ impl DocumentTypeV0 {
         #[cfg(feature = "validation")]
         let mut unique_indices_count = 0;
 
-        let indices: Vec<Index> = index_values
+        #[cfg(feature = "validation")]
+        let mut contested_indices_count = 0;
+
+        let indices: BTreeMap<String, Index> = index_values
             .map(|index_values| {
                 index_values
                     .iter()
@@ -332,11 +310,56 @@ impl DocumentTypeV0 {
                             // so we need to limit their number to prevent of spikes and DoS attacks
                             if index.unique {
                                 unique_indices_count += 1;
-                                if unique_indices_count > UNIQUE_INDEX_LIMIT_V0 {
+                                if unique_indices_count
+                                    > platform_version
+                                        .dpp
+                                        .validation
+                                        .document_type
+                                        .unique_index_limit
+                                {
                                     return Err(ProtocolError::ConsensusError(Box::new(
                                         UniqueIndicesLimitReachedError::new(
                                             name.to_string(),
-                                            UNIQUE_INDEX_LIMIT_V0,
+                                            platform_version
+                                                .dpp
+                                                .validation
+                                                .document_type
+                                                .unique_index_limit,
+                                            false,
+                                        )
+                                        .into(),
+                                    )));
+                                }
+                            }
+
+                            if index.contested_index.is_some() {
+                                contested_indices_count += 1;
+                                if contested_indices_count
+                                    > platform_version
+                                        .dpp
+                                        .validation
+                                        .document_type
+                                        .contested_index_limit
+                                {
+                                    return Err(ProtocolError::ConsensusError(Box::new(
+                                        UniqueIndicesLimitReachedError::new(
+                                            name.to_string(),
+                                            platform_version
+                                                .dpp
+                                                .validation
+                                                .document_type
+                                                .contested_index_limit,
+                                            true,
+                                        )
+                                        .into(),
+                                    )));
+                                }
+
+                                if documents_mutable {
+                                    return Err(ProtocolError::ConsensusError(Box::new(
+                                        ContestedUniqueIndexOnMutableDocumentTypeError::new(
+                                            name.to_string(),
+                                            index.name,
                                         )
                                         .into(),
                                     )));
@@ -383,7 +406,7 @@ impl DocumentTypeV0 {
                                         })?;
 
                                     // Validate indexed property type
-                                    match property_definition.property_type {
+                                    match &property_definition.property_type {
                                         // Array and objects aren't supported for indexing yet
                                         DocumentPropertyType::Array(_)
                                         | DocumentPropertyType::Object(_)
@@ -399,9 +422,9 @@ impl DocumentTypeV0 {
                                             )))
                                         }
                                         // Indexed byte array size must be limited
-                                        DocumentPropertyType::ByteArray(_, maybe_max_size)
-                                            if maybe_max_size.is_none()
-                                                || maybe_max_size.unwrap()
+                                        DocumentPropertyType::ByteArray(sizes)
+                                            if sizes.max_size.is_none()
+                                                || sizes.max_size.unwrap()
                                                     > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH =>
                                         {
                                             Err(ProtocolError::ConsensusError(Box::new(
@@ -419,9 +442,9 @@ impl DocumentTypeV0 {
                                             )))
                                         }
                                         // Indexed string length must be limited
-                                        DocumentPropertyType::String(_, maybe_max_length)
-                                            if maybe_max_length.is_none()
-                                                || maybe_max_length.unwrap()
+                                        DocumentPropertyType::String(sizes)
+                                            if sizes.max_length.is_none()
+                                                || sizes.max_length.unwrap()
                                                     > MAX_INDEXED_STRING_PROPERTY_LENGTH =>
                                         {
                                             Err(ProtocolError::ConsensusError(Box::new(
@@ -446,15 +469,15 @@ impl DocumentTypeV0 {
                             })?;
                         }
 
-                        Ok(index)
+                        Ok((index.name.clone(), index))
                     })
-                    .collect::<Result<Vec<Index>, ProtocolError>>()
+                    .collect::<Result<BTreeMap<String, Index>, ProtocolError>>()
             })
             .transpose()?
             .unwrap_or_default();
 
         let index_structure =
-            IndexLevel::try_from_indices(indices.as_slice(), name, platform_version)?;
+            IndexLevel::try_from_indices(indices.values(), name, platform_version)?;
 
         // Collect binary and identifier properties
         let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
@@ -471,20 +494,6 @@ impl DocumentTypeV0 {
             .map(SecurityLevel::try_from)
             .transpose()?
             .unwrap_or(SecurityLevel::HIGH);
-
-        #[cfg(feature = "validation")]
-        if full_validation && security_level_requirement == SecurityLevel::MASTER {
-            return Err(ConsensusError::BasicError(
-                BasicError::InvalidDocumentTypeRequiredSecurityLevelError(
-                    InvalidDocumentTypeRequiredSecurityLevelError::new(
-                        security_level_requirement,
-                        data_contract_id,
-                        name.to_string(),
-                    ),
-                ),
-            )
-            .into());
-        }
 
         let requires_identity_encryption_bounded_key = schema
             .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)
@@ -567,12 +576,14 @@ fn insert_values(
                                 Some("application/x.dash.dpp.identifier") => {
                                     DocumentPropertyType::Identifier
                                 }
-                                Some(_) | None => DocumentPropertyType::ByteArray(
-                                    inner_properties
-                                        .get_optional_integer(property_names::MIN_ITEMS)?,
-                                    inner_properties
-                                        .get_optional_integer(property_names::MAX_ITEMS)?,
-                                ),
+                                Some(_) | None => {
+                                    DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                                        min_size: inner_properties
+                                            .get_optional_integer(property_names::MIN_ITEMS)?,
+                                        max_size: inner_properties
+                                            .get_optional_integer(property_names::MAX_ITEMS)?,
+                                    })
+                                }
                             }
                         } else {
                             return Err(DataContractError::InvalidContractStructure(
@@ -580,11 +591,12 @@ fn insert_values(
                             ));
                         }
                     }
-                    // TODO: Contract indices and new encoding format don't support arrays
-                    //   but we still can use them as document fields with current cbor encoding
-                    //   This is a temporary workaround to bring back v0.22 behavior and should be
-                    //   replaced with a proper array support in future versions
-                    None => DocumentPropertyType::Array(ArrayItemType::Boolean),
+                    // TODO: Update when arrays are implemented
+                    None => {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "only byte arrays are supported now".to_string(),
+                        ));
+                    }
                 };
 
                 document_properties.insert(
@@ -622,10 +634,12 @@ fn insert_values(
             }
 
             "string" => {
-                field_type = DocumentPropertyType::String(
-                    inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
-                    inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
-                );
+                field_type = DocumentPropertyType::String(StringPropertySizes {
+                    min_length: inner_properties
+                        .get_optional_integer(property_names::MIN_LENGTH)?,
+                    max_length: inner_properties
+                        .get_optional_integer(property_names::MAX_LENGTH)?,
+                });
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -673,10 +687,10 @@ fn insert_values_nested(
     let field_type = match type_value {
         "integer" => DocumentPropertyType::Integer,
         "number" => DocumentPropertyType::Number,
-        "string" => DocumentPropertyType::String(
-            inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
-            inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
-        ),
+        "string" => DocumentPropertyType::String(StringPropertySizes {
+            min_length: inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
+            max_length: inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
+        }),
         "array" => {
             // Only handling bytearrays for v1
             // Return an error if it is not a byte array
@@ -689,10 +703,14 @@ fn insert_values_nested(
                             Some("application/x.dash.dpp.identifier") => {
                                 DocumentPropertyType::Identifier
                             }
-                            Some(_) | None => DocumentPropertyType::ByteArray(
-                                inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
-                                inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
-                            ),
+                            Some(_) | None => {
+                                DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                                    min_size: inner_properties
+                                        .get_optional_integer(property_names::MIN_ITEMS)?,
+                                    max_size: inner_properties
+                                        .get_optional_integer(property_names::MAX_ITEMS)?,
+                                })
+                            }
                         }
                     } else {
                         return Err(DataContractError::InvalidContractStructure(

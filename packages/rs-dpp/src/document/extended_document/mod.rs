@@ -597,8 +597,6 @@ mod test {
             .to_pretty_json(LATEST_PLATFORM_VERSION)
             .expect("no errors");
 
-        println!("{:?}", json_document);
-
         assert_eq!(
             json_document["$id"],
             JsonValue::String(bs58::encode(&id).into_string())

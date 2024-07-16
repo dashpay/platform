@@ -15,7 +15,7 @@ use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
-use drive::query::DriveQuery;
+use drive::query::DriveDocumentQuery;
 
 impl<C> Platform<C> {
     pub(super) fn query_documents_v0(
@@ -114,21 +114,22 @@ impl<C> Platform<C> {
             )));
         }
 
-        let drive_query = check_validation_result_with_data!(DriveQuery::from_decomposed_values(
-            where_clause,
-            order_by,
-            Some(if limit == 0 {
-                self.config.drive.default_query_limit
-            } else {
-                limit as u16
-            }),
-            start_at,
-            start_at_included,
-            None,
-            contract_ref,
-            document_type,
-            &self.config.drive,
-        ));
+        let drive_query =
+            check_validation_result_with_data!(DriveDocumentQuery::from_decomposed_values(
+                where_clause,
+                order_by,
+                Some(if limit == 0 {
+                    self.config.drive.default_query_limit
+                } else {
+                    limit as u16
+                }),
+                start_at,
+                start_at_included,
+                None,
+                contract_ref,
+                document_type,
+                &self.config.drive,
+            ));
 
         let response = if prove {
             let proof =

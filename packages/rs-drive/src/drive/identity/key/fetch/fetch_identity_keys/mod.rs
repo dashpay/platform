@@ -4,7 +4,7 @@ use crate::drive::identity::key::fetch::{IdentityKeysRequest, IdentityPublicKeyR
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::PlatformVersion;
 

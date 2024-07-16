@@ -3,7 +3,9 @@ use crate::error::{
     Error, InvalidJsonPatchOperationPathError, UndefinedReplacementAllowedCallbackError,
     UnsupportedSchemaKeywordError,
 };
-use crate::{CompatibilityRules, JsonSchemaChange, KEYWORD_COMPATIBILITY_RULES};
+use crate::{
+    CompatibilityRules, CompatibilityRulesCollection, JsonSchemaChange, KEYWORD_COMPATIBILITY_RULES,
+};
 use json_patch::PatchOperation;
 use serde_json::Value;
 
@@ -30,6 +32,18 @@ impl CompatibilityValidationResult {
     }
 }
 
+/// Options for the compatibility validation.
+#[derive(Debug, Clone, Default)]
+pub struct Options {
+    /// Allows to override or add a new schema keyword compatibility rules.
+    pub override_rules: CompatibilityRulesCollection,
+}
+
+impl AsRef<Options> for Options {
+    fn as_ref(&self) -> &Options {
+        self
+    }
+}
 /// Validates the backward compatibility of two JSON schemas and returns
 /// the [CompatibilityValidationResult]. If two schemas are compatible,
 /// it means that data that valid for the original schema is also valid
@@ -37,7 +51,7 @@ impl CompatibilityValidationResult {
 ///
 /// ```
 /// use serde_json::json;
-/// use json_schema_compatibility_validator::validate_schemas_compatibility;
+/// use json_schema_compatibility_validator::{validate_schemas_compatibility, Options};
 ///
 /// let original_schema = json!({
 ///     "type": "object",
@@ -58,15 +72,65 @@ impl CompatibilityValidationResult {
 ///     "required": ["name"]
 /// });
 ///
-/// let result = validate_schemas_compatibility(&original_schema, &new_schema)
+/// let result = validate_schemas_compatibility(&original_schema, &new_schema, Options::default())
 ///  .expect("compatibility validation failed");
 ///
 /// assert!(result.is_compatible());
 /// ```
 ///
-pub fn validate_schemas_compatibility(
+/// The validator accepts options to customize the behavior:
+///
+/// ```
+/// use serde_json::json;
+/// use assert_matches::assert_matches;
+/// use json_schema_compatibility_validator::{
+///    validate_schemas_compatibility,
+///    KEYWORD_COMPATIBILITY_RULES,
+///    Options,
+///    CompatibilityRulesCollection,
+///    JsonSchemaChange,
+///    RemoveOperation,
+/// };
+///
+/// let mut required_rule = KEYWORD_COMPATIBILITY_RULES
+///     .get("required")
+///     .expect("required rule must be present")
+///     .clone();
+///
+/// required_rule.allow_removal = false;
+///
+/// required_rule
+///    .inner
+///    .as_mut()
+///    .expect("required rule must have inner rules")
+///    .allow_removal = false;///
+///
+/// let mut override_rules = CompatibilityRulesCollection::new();
+/// override_rules.insert("required", required_rule);
+///
+/// let options = Options { override_rules };
+///
+/// let original_schema = json!({
+///     "required": ["first_name", "last_name"]
+/// });
+///
+/// let new_schema = json!({
+///     "required": ["first_name"]
+/// });
+///
+/// let result = validate_schemas_compatibility(&original_schema, &new_schema, options)
+///     .expect("compatibility validation shouldn't fail");
+///
+/// assert_matches!(
+///     result.incompatible_changes(),
+///     [JsonSchemaChange::Remove(RemoveOperation { path })] if path == "/required/1"
+/// );
+/// ```
+///
+pub fn validate_schemas_compatibility<O: AsRef<Options>>(
     original_schema: &Value,
     new_schema: &Value,
+    options: O,
 ) -> Result<CompatibilityValidationResult, Error> {
     let patch = json_patch::diff(original_schema, new_schema);
 
@@ -75,7 +139,7 @@ pub fn validate_schemas_compatibility(
     for operation in patch.0.into_iter() {
         let path = operation.path();
 
-        let Some(rules) = find_compatibility_rules(path)? else {
+        let Some(rules) = find_compatibility_rules(path, options.as_ref())? else {
             return Err(Error::InvalidJsonPatchOperationPath(
                 InvalidJsonPatchOperationPathError {
                     path: path.to_string(),
@@ -120,7 +184,10 @@ fn is_compatible_operation(
 }
 
 /// Travers through the JSON Pointer path and find corresponding compatibility rules
-fn find_compatibility_rules(path: &str) -> Result<Option<&CompatibilityRules>, Error> {
+fn find_compatibility_rules<'a>(
+    path: &str,
+    options: &'a Options,
+) -> Result<Option<&'a CompatibilityRules>, Error> {
     let mut path_segments = path.split('/');
 
     // Remove the first empty segment
@@ -150,12 +217,14 @@ fn find_compatibility_rules(path: &str) -> Result<Option<&CompatibilityRules>, E
         }
 
         // The first segment is always a keyword
-        let rules = KEYWORD_COMPATIBILITY_RULES.get(segment).ok_or_else(|| {
-            UnsupportedSchemaKeywordError {
+        let rules = options
+            .override_rules
+            .get(segment)
+            .or_else(|| KEYWORD_COMPATIBILITY_RULES.get(segment))
+            .ok_or_else(|| UnsupportedSchemaKeywordError {
                 keyword: segment.to_string(),
                 path: path.to_string(),
-            }
-        })?;
+            })?;
 
         levels_to_subschema = rules.subschema_levels_depth;
 
@@ -171,7 +240,8 @@ mod tests {
 
     #[test]
     fn test_find_compatibility_rules() {
-        let result = find_compatibility_rules("/properties/prop1")
+        let options = Options::default();
+        let result = find_compatibility_rules("/properties/prop1", &options)
             .expect("should find keyword without failure");
 
         assert_eq!(
@@ -186,7 +256,7 @@ mod tests {
             )
         );
 
-        let result = find_compatibility_rules("/properties/prop1/properties/type")
+        let result = find_compatibility_rules("/properties/prop1/properties/type", &options)
             .expect("failed to find a keyword rule");
 
         assert_eq!(

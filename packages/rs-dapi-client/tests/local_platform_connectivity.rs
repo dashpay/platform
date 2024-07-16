@@ -1,7 +1,10 @@
 #[cfg(not(feature = "offline-testing"))]
 mod tests {
-    use dapi_grpc::platform::v0::{
-        self as platform_proto, get_identity_response, GetIdentityResponse, ResponseMetadata,
+    use dapi_grpc::{
+        platform::v0::{
+            self as platform_proto, get_identity_response, GetIdentityResponse, ResponseMetadata,
+        },
+        tonic::transport::Uri,
     };
     use rs_dapi_client::{AddressList, DapiClient, DapiRequest, RequestSettings};
 
@@ -13,7 +16,7 @@ mod tests {
     #[tokio::test]
     async fn get_identity() {
         let mut address_list = AddressList::new();
-        address_list.add_uri(rs_dapi_client::Uri::from_static("http://127.0.0.1:2443"));
+        address_list.add_uri(Uri::from_static("http://127.0.0.1:2443"));
 
         let mut client = DapiClient::new(address_list, RequestSettings::default());
         let request = platform_proto::GetIdentityRequest {

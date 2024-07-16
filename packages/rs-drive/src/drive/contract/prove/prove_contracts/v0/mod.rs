@@ -38,6 +38,7 @@ impl Drive {
         // we first need to fetch all contracts
         let contracts = self.grove_get_raw_path_query_with_optional(
             &contracts_query,
+            true,
             transaction,
             &mut vec![],
             &platform_version.drive,
@@ -84,11 +85,11 @@ impl Drive {
         let contracts_query = Self::fetch_contracts_query(
             non_historical_contracts.as_slice(),
             historical_contracts.as_slice(),
+            platform_version,
         )?;
 
         self.grove_get_proved_path_query(
             &contracts_query,
-            true,
             transaction,
             &mut vec![],
             &platform_version.drive,

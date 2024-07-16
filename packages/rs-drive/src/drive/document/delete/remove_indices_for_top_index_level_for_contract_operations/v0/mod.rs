@@ -7,20 +7,21 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
-use crate::drive::document::{contract_document_type_path_vec, unique_event_id};
+use crate::drive::document::unique_event_id;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
-use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::drive::Drive;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
+use crate::drive::document::paths::contract_document_type_path_vec;
 use dpp::version::PlatformVersion;
 
 impl Drive {
@@ -139,7 +140,7 @@ impl Drive {
                 // This is a stateless operation
                 PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
             } else {
-                PathInfo::PathIterator::<0>(index_path)
+                PathInfo::PathAsVec::<0>(index_path)
             };
 
             // we push the actual value of the index path

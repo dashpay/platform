@@ -9,11 +9,12 @@ use dpp::block::epoch::Epoch;
 use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use drive::drive::batch::DriveOperation;
-use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::AddToIdentityBalance;
+use drive::util::batch::DriveOperation;
+use drive::util::batch::DriveOperation::IdentityOperation;
+use drive::util::batch::IdentityOperationType::AddToIdentityBalance;
 
 use drive::grovedb::Transaction;
 
@@ -64,6 +65,17 @@ impl<C> Platform<C> {
             .map_err(Error::Drive)?;
 
         let proposers_len = proposers.len() as u16;
+
+        tracing::trace!(
+            unpaid_block_count = unpaid_epoch_block_count,
+            unpaid_epoch_index = unpaid_epoch.epoch_index(),
+            fees = storage_and_processing_fees,
+            core_block_rewards,
+            total_payouts,
+            "Pay {total_payouts} credits to {proposers_len} proposers for {} proposed blocks in epoch {}",
+            unpaid_epoch_block_count,
+            unpaid_epoch.epoch_index(),
+        );
 
         for (i, (proposer_tx_hash, proposed_block_count)) in proposers.into_iter().enumerate() {
             let i = i as u16;
@@ -163,6 +175,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
     mod add_epoch_pool_to_proposers_payout_operations {
         use super::*;
@@ -174,10 +187,11 @@ mod tests {
         use dpp::block::block_info::BlockInfo;
         use dpp::identity::accessors::IdentityGettersV0;
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-        use drive::common::test_utils::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
-        use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-        use drive::drive::batch::GroveDbOpBatch;
-        use drive::fee_pools::epochs::operations_factory::EpochOperations;
+
+        use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
+        use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+        use drive::util::batch::GroveDbOpBatch;
+        use drive::util::test_helpers::test_utils::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
         use rust_decimal::Decimal;
         use rust_decimal_macros::dec;
 
@@ -205,7 +219,16 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            unpaid_epoch_tree.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
+            unpaid_epoch_tree.add_init_current_operations(
+                platform_version
+                    .fee_version
+                    .uses_version_fee_multiplier_permille
+                    .expect("expected a fee multiplier"),
+                1,
+                1,
+                1,
+                &mut batch,
+            );
 
             batch.push(
                 unpaid_epoch_tree
@@ -220,7 +243,10 @@ mod tests {
             );
 
             next_epoch_tree.add_init_current_operations(
-                1.0,
+                platform_version
+                    .fee_version
+                    .uses_version_fee_multiplier_permille
+                    .expect("expected a fee multiplier"),
                 proposers_count as u64 + 1,
                 1,
                 10,
@@ -281,6 +307,7 @@ mod tests {
                     &BlockInfo::default(),
                     Some(&transaction),
                     platform_version,
+                    None,
                 )
                 .expect("should apply batch");
 
@@ -289,7 +316,7 @@ mod tests {
             // check we paid 500 to every mn identity
             let paid_mn_identities_balances = platform
                 .drive
-                .fetch_identities_balances(&pro_tx_hashes, Some(&transaction))
+                .fetch_identities_balances(&pro_tx_hashes, Some(&transaction), platform_version)
                 .expect("expected to get identities");
 
             let total_fees = Decimal::from(storage_fees + processing_fees);
@@ -319,7 +346,7 @@ mod tests {
 
             let refetched_share_identities_balances = platform
                 .drive
-                .fetch_identities_balances(&share_identities, Some(&transaction))
+                .fetch_identities_balances(&share_identities, Some(&transaction), platform_version)
                 .expect("expected to get identities");
 
             for (_, balance) in refetched_share_identities_balances {

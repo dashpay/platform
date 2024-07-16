@@ -1,10 +1,10 @@
 mod v0;
 
-use crate::drive::object_size_info::DocumentAndContractInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::object_size_info::DocumentAndContractInfo;
 use dpp::block::block_info::BlockInfo;
 
 use dpp::version::PlatformVersion;
