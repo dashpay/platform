@@ -1,12 +1,12 @@
-use crate::common::encode::encode_u64;
+use crate::util::common::encode::encode_u64;
 use crate::drive::contract::paths;
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use crate::drive::object_size_info::PathKeyElementInfo::{
+use crate::util::storage_flags::StorageFlags;
+use crate::util::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
+use crate::util::object_size_info::DriveKeyInfo::KeyRef;
+use crate::util::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElementSize,
 };
-use crate::drive::object_size_info::PathKeyInfo;
+use crate::util::object_size_info::PathKeyInfo;
 use crate::drive::Drive;
 use crate::drive::LowLevelDriveOperation;
 use crate::error::drive::DriveError;

@@ -1,5 +1,5 @@
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
-use crate::drive::{defaults, RootTree};
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
+use crate::drive::{constants, RootTree};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -93,7 +93,7 @@ pub fn contract_documents_keeping_history_primary_key_path_for_unknown_document_
 fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
     document_type_name_len: u32,
 ) -> u32 {
-    defaults::BASE_CONTRACT_DOCUMENTS_KEEPING_HISTORY_PRIMARY_KEY_PATH_FOR_DOCUMENT_ID_SIZE
+    constants::BASE_CONTRACT_DOCUMENTS_KEEPING_HISTORY_PRIMARY_KEY_PATH_FOR_DOCUMENT_ID_SIZE
         + document_type_name_len
 }
 
@@ -102,6 +102,6 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
 pub fn contract_documents_keeping_history_storage_time_reference_path_size(
     document_type_name_len: u32,
 ) -> u32 {
-    defaults::BASE_CONTRACT_DOCUMENTS_KEEPING_HISTORY_STORAGE_TIME_REFERENCE_PATH
+    constants::BASE_CONTRACT_DOCUMENTS_KEEPING_HISTORY_STORAGE_TIME_REFERENCE_PATH
         + document_type_name_len
 }

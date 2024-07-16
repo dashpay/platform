@@ -7,7 +7,7 @@ use dpp::fee::epoch::distribution::{
 };
 use dpp::fee::epoch::SignedCreditsPerEpoch;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::GroveDbOpBatch;
+use drive::util::batch::GroveDbOpBatch;
 use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C> {
@@ -86,12 +86,12 @@ mod tests {
         };
         use dpp::fee::Credits;
 
-        use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-        use drive::drive::batch::DriveOperation;
-        use drive::drive::config::DriveConfig;
+        use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+        use drive::util::batch::DriveOperation;
+        use drive::config::DriveConfig;
         use drive::drive::Drive;
-        use drive::fee_pools::epochs::operations_factory::EpochOperations;
-        use drive::fee_pools::update_storage_fee_distribution_pool_operation;
+        use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
+        use drive::drive::credit_pools::operations::update_storage_fee_distribution_pool_operation;
 
         use crate::test::helpers::setup::TestPlatformBuilder;
 

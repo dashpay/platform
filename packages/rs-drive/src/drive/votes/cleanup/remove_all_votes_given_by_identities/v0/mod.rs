@@ -4,7 +4,7 @@ use std::ops::RangeFull;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use crate::drive::grove_operations::BatchDeleteApplyType;
+use crate::util::grove_operations::BatchDeleteApplyType;
 use crate::drive::votes::paths::{
     vote_contested_resource_identity_votes_tree_path_for_identity,
     vote_contested_resource_identity_votes_tree_path_vec,

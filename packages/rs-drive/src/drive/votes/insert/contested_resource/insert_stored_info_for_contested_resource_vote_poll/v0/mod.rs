@@ -1,9 +1,9 @@
-use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
+use crate::util::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::drive::votes::paths::{VotePollPaths, RESOURCE_STORED_INFO_KEY_U8_32};
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::serialization::PlatformSerializable;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use grovedb::{Element, TransactionArg};

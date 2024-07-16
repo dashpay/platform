@@ -2,7 +2,7 @@ mod v0;
 
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;

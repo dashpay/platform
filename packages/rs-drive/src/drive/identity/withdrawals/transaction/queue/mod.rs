@@ -8,14 +8,12 @@ mod tests {
     use crate::drive::identity::withdrawals::{
         WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
     };
-    use crate::{
-        drive::batch::DriveOperation,
-        tests::helpers::setup::setup_drive_with_initial_state_structure,
-    };
+    use crate::util::batch::DriveOperation;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
 
     use dpp::version::PlatformVersion;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 
     #[test]
     fn test_enqueue_and_dequeue() {

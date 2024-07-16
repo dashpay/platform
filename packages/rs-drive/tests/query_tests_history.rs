@@ -1,31 +1,4 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
+
 
 //! Query Tests History
 //!
@@ -53,25 +26,22 @@ use std::fmt::{Debug, Formatter};
 use std::option::Option::None;
 
 #[cfg(feature = "server")]
-use drive::common;
+use drive::util::test_helpers::setup::setup_drive;
 
 #[cfg(feature = "server")]
-use drive::tests::helpers::setup::setup_drive;
-
+use drive::util::batch::GroveDbOpBatch;
 #[cfg(feature = "server")]
-use drive::drive::batch::GroveDbOpBatch;
-#[cfg(feature = "server")]
-use drive::drive::config::DriveConfig;
+use drive::config::DriveConfig;
 #[cfg(feature = "server")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
 #[cfg(feature = "server")]
-use drive::drive::flags::StorageFlags;
+use drive::util::storage_flags::StorageFlags;
 #[cfg(feature = "server")]
-use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 #[cfg(feature = "server")]
 use drive::drive::Drive;
 #[cfg(feature = "server")]
-use drive::error::{query::QuerySyntaxError, Error};
+use drive::error::{Error, query::QuerySyntaxError};
 #[cfg(feature = "server")]
 use drive::query::DriveDocumentQuery;
 
@@ -86,9 +56,10 @@ use dpp::document::DocumentV0Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "server")]
-use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
+use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+use drive::util::test_helpers;
 
 #[cfg(feature = "server")]
 #[derive(Serialize, Deserialize)]
@@ -128,12 +99,12 @@ impl Person {
         block_times: Vec<u64>,
     ) -> BTreeMap<u64, Vec<Self>> {
         let first_names =
-            common::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
+            test_helpers::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
         let middle_names =
-            common::text_file_strings("tests/supporting_files/contract/family/middle-names.txt");
+            test_helpers::text_file_strings("tests/supporting_files/contract/family/middle-names.txt");
         let last_names =
-            common::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
-        let quotes = common::text_file_strings("tests/supporting_files/contract/family/quotes.txt");
+            test_helpers::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
+        let quotes = test_helpers::text_file_strings("tests/supporting_files/contract/family/quotes.txt");
         let mut people: Vec<Person> = Vec::with_capacity(count);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -209,7 +180,7 @@ pub fn setup(
         .expect("expected to create contracts tree successfully");
 
     // setup code
-    let contract = common::setup_contract(
+    let contract = test_helpers::setup_contract(
         &drive,
         "tests/supporting_files/contract/family/family-contract-with-history.json",
         None,

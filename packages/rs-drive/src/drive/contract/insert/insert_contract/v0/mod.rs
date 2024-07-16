@@ -1,11 +1,11 @@
 use crate::drive::contract::paths;
 
-use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
+use crate::util::storage_flags::StorageFlags;
+use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::{contract_documents_path, votes, Drive, RootTree};
 
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;

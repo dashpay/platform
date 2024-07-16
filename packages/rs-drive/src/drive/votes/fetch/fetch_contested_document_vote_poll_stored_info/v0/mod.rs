@@ -1,4 +1,4 @@
-use crate::drive::grove_operations::DirectQueryType;
+use crate::util::grove_operations::DirectQueryType;
 use crate::drive::votes::paths::{VotePollPaths, RESOURCE_STORED_INFO_KEY_U8_32};
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use crate::drive::Drive;

@@ -1,7 +1,7 @@
 /// resolver module
 pub mod resolve;
 
-use crate::drive::object_size_info::{DataContractOwnedResolvedInfo, DataContractResolvedInfo};
+use crate::util::object_size_info::{DataContractOwnedResolvedInfo, DataContractResolvedInfo};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;

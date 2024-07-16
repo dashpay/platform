@@ -1,21 +1,20 @@
-use crate::drive::defaults::{
-    CONTESTED_DOCUMENT_REFERENCE_SIZE, DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE, U8_SIZE_U32,
-    U8_SIZE_U8,
+use crate::drive::constants::{
+    CONTESTED_DOCUMENT_REFERENCE_SIZE, STORAGE_FLAGS_SIZE,
 };
 use crate::drive::document::make_document_contested_reference;
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
-use crate::drive::object_size_info::DocumentInfo::{
+use crate::util::storage_flags::StorageFlags;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::DocumentInfo::{
     DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
     DocumentRefAndSerialization, DocumentRefInfo,
 };
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
+use crate::util::object_size_info::DriveKeyInfo::KeyRef;
+use crate::util::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
+use crate::util::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
@@ -25,6 +24,7 @@ use grovedb::EstimatedLayerSizes::{AllItems, Mix};
 use grovedb::EstimatedSumTrees::AllSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U8_SIZE_U32, U8_SIZE_U8};
 
 impl Drive {
     /// Adds the terminal reference.

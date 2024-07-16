@@ -1,31 +1,4 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
+
 
 //! Deterministic Root Hash Tests
 
@@ -41,9 +14,6 @@ use dpp::document::Document;
 #[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
 #[cfg(feature = "server")]
-use drive::common;
-
-#[cfg(feature = "server")]
 use grovedb::{Element, Transaction, TransactionArg};
 #[cfg(feature = "server")]
 use rand::seq::SliceRandom;
@@ -53,10 +23,10 @@ use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "server")]
-use drive::drive::flags::StorageFlags;
+use drive::util::storage_flags::StorageFlags;
 
 #[cfg(feature = "server")]
-use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 #[cfg(feature = "server")]
 use drive::drive::{Drive, RootTree};
 
@@ -68,8 +38,9 @@ use dpp::document::serialization_traits::DocumentCborMethodsV0;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::version::PlatformVersion;
 
-use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
-use drive::tests::helpers::setup::setup_drive;
+use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+use drive::util::test_helpers;
+use drive::util::test_helpers::setup::setup_drive;
 
 #[cfg(feature = "server")]
 /// Contains the unique ID for a Dash identity.
@@ -106,7 +77,7 @@ impl Domain {
         normalized_parent_domain_name: &str,
     ) -> Vec<Self> {
         let first_names =
-            common::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
+            test_helpers::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
         let mut vec: Vec<Domain> = Vec::with_capacity(count as usize);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);

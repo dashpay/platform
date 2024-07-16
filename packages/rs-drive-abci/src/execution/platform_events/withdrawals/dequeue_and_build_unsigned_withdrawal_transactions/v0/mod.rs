@@ -13,7 +13,7 @@ use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::withdrawals_contract;
 use drive::dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
-use drive::drive::batch::DriveOperation;
+use drive::util::batch::DriveOperation;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use drive::query::TransactionArg;
 
@@ -26,7 +26,7 @@ use crate::{
 };
 use dpp::errors::ProtocolError;
 
-use drive::drive::config::DEFAULT_QUERY_LIMIT;
+use drive::config::DEFAULT_QUERY_LIMIT;
 
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
 

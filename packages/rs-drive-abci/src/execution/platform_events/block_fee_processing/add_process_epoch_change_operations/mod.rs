@@ -1,7 +1,7 @@
 mod v0;
 
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
+use drive::util::batch::DriveOperation;
 use drive::grovedb::Transaction;
 
 use crate::error::Error;

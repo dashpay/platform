@@ -1,31 +1,4 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
+
 
 //! Epoch Start Blocks
 //!
@@ -55,16 +28,16 @@ pub struct StartBlockInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 
     mod get_epoch_start_block_height {
         use super::*;
         use crate::error::drive::DriveError;
         use crate::error::Error;
-        use crate::fee_pools::epochs::epoch_key_constants::{
+        use crate::drive::credit_pools::epochs::epoch_key_constants::{
             KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT,
         };
-        use crate::fee_pools::epochs::paths::EpochProposers;
+        use crate::drive::credit_pools::epochs::paths::EpochProposers;
         use dpp::block::epoch::Epoch;
         use dpp::version::PlatformVersion;
         use grovedb::Element;
@@ -238,9 +211,9 @@ mod tests {
 
     mod get_first_epoch_start_block_height_between_epochs {
         use super::*;
-        use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-        use crate::drive::batch::GroveDbOpBatch;
-        use crate::fee_pools::epochs::operations_factory::EpochOperations;
+        use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+        use crate::util::batch::GroveDbOpBatch;
+        use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
         use dpp::block::epoch::Epoch;
         use dpp::version::PlatformVersion;
 

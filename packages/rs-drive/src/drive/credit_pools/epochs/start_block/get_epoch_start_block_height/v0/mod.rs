@@ -4,8 +4,8 @@ use crate::error::Error;
 
 use dpp::block::epoch::Epoch;
 
-use crate::fee_pools::epochs::epoch_key_constants::KEY_START_BLOCK_HEIGHT;
-use crate::fee_pools::epochs::paths::EpochProposers;
+use crate::drive::credit_pools::epochs::epoch_key_constants::KEY_START_BLOCK_HEIGHT;
+use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use grovedb::{Element, TransactionArg};
 use platform_version::version::PlatformVersion;
 

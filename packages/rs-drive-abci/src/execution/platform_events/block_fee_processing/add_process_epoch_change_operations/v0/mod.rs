@@ -38,8 +38,8 @@ use std::option::Option::None;
 use dpp::block::epoch::Epoch;
 use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX};
 use dpp::version::PlatformVersion;
-use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
+use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use drive::util::batch::{DriveOperation, GroveDbOpBatch};
 use drive::error;
 use drive::grovedb::Transaction;
 
@@ -54,7 +54,7 @@ use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use drive::fee_pools::epochs::operations_factory::EpochOperations;
+use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
 
 /// From the Dash Improvement Proposal:
 
@@ -179,7 +179,7 @@ mod tests {
         use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::CreditsPerEpoch;
 
-        use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
+        use platform_version::version::INITIAL_PROTOCOL_VERSION;
 
         /// Process and validate an epoch change
         pub fn process_and_validate_epoch_change<C>(

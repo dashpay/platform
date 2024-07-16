@@ -12,7 +12,6 @@ use dpp::identity::{Identity, PartialIdentity};
 use dpp::serialization::PlatformDeserializable;
 use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::verify::RootHash;
 use drive::drive::Drive;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::abci::AbciError;
@@ -26,6 +25,7 @@ use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};
 use tenderdash_abci::signatures::{Hashable, Signable};
+use drive::verify::RootHash;
 
 #[derive(Clone, Debug, Default)]
 pub struct QueryStrategy {

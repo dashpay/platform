@@ -10,25 +10,25 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 use std::option::Option::None;
 
-use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
-use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DocumentInfo::{
+use crate::drive::constants::STORAGE_FLAGS_SIZE;
+use crate::util::storage_flags::StorageFlags;
+use crate::util::object_size_info::DocumentInfo::{
     DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
     DocumentRefAndSerialization, DocumentRefInfo,
 };
 
-use crate::drive::object_size_info::PathKeyElementInfo::{
+use crate::util::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyUnknownElementSize,
 };
-use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeySize};
-use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
+use crate::util::object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeySize};
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -45,6 +45,7 @@ use crate::drive::document::paths::{
     contract_documents_primary_key_path,
 };
 use dpp::version::PlatformVersion;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 impl Drive {
     /// Adds a document to primary storage.

@@ -1,4 +1,4 @@
-use crate::drive::defaults::DEFAULT_HASH_SIZE_USIZE;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_USIZE;
 use crate::drive::votes::paths::{
     ACTIVE_POLLS_TREE_KEY, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
 };

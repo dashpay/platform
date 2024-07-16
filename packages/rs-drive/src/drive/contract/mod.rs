@@ -41,8 +41,8 @@ mod tests {
     use std::borrow::Cow;
     use std::option::Option::None;
 
-    use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::{
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::object_size_info::{
         DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
     };
     use crate::drive::Drive;
@@ -63,7 +63,7 @@ mod tests {
     use dpp::tests::json_document::json_document_to_contract;
 
     use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec};
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
     #[allow(dead_code)]

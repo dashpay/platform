@@ -21,13 +21,13 @@ use grovedb::TransactionArg;
 use crate::drive::Drive;
 
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
-use crate::drive::verify::RootHash;
+use crate::verify::RootHash;
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use crate::error::query::QuerySyntaxError;
 #[cfg(feature = "fixtures-and-mocks")]
 use crate::error::Error;
 #[cfg(feature = "fixtures-and-mocks")]
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "fixtures-and-mocks")]
 use crate::query::DriveDocumentQuery;
 #[cfg(all(

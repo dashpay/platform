@@ -14,9 +14,9 @@ mod fetch;
 mod prove;
 
 #[cfg(feature = "server")]
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "server")]
-use crate::drive::batch::GroveDbOpBatch;
+use crate::util::batch::GroveDbOpBatch;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::{Drive, RootTree};
 

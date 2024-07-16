@@ -17,11 +17,11 @@ use dpp::identity::IdentityV0;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::SystemDataContract;
-use drive::drive::batch::{
+use drive::util::batch::{
     DataContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
 
-use drive::drive::object_size_info::{
+use drive::util::object_size_info::{
     DataContractInfo, DocumentInfo, DocumentTypeInfo, OwnedDocumentInfo,
 };
 use drive::query::TransactionArg;
@@ -268,7 +268,7 @@ mod tests {
     mod create_genesis_state {
         use crate::config::PlatformConfig;
         use crate::test::helpers::setup::TestPlatformBuilder;
-        use drive::drive::config::DriveConfig;
+        use drive::config::DriveConfig;
         use platform_version::version::PlatformVersion;
 
         #[test]

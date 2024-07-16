@@ -1,7 +1,7 @@
-use crate::drive::object_size_info::DocumentAndContractInfo;
+use crate::util::object_size_info::DocumentAndContractInfo;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;

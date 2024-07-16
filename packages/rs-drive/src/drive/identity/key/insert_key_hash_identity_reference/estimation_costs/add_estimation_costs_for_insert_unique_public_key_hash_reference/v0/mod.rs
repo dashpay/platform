@@ -1,6 +1,4 @@
-use crate::drive::defaults::{DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U32};
-
-use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
+use crate::drive::{Drive, unique_key_hashes_tree_path_vec};
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
@@ -8,6 +6,7 @@ use grovedb::EstimatedLayerSizes::AllItems;
 
 use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
+use crate::util::type_constants::{DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U32};
 
 impl Drive {
     /// Adds the estimation costs for the insertion of a unique public key hash reference

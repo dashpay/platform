@@ -3,9 +3,9 @@
 use grovedb_path::SubtreePath;
 
 use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
-use crate::drive::batch::GroveDbOpBatch;
+use crate::util::batch::GroveDbOpBatch;
 
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::system::misc_path_vec;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
@@ -192,7 +192,7 @@ impl Drive {
 mod tests {
     use crate::drive::RootTree;
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
     use grovedb::query_result_type::QueryResultType::QueryElementResultType;
     use grovedb::{PathQuery, Query, SizedQuery};

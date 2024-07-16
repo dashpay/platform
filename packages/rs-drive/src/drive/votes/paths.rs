@@ -1,4 +1,4 @@
-use crate::common::encode::encode_u64;
+use crate::util::common::encode::encode_u64;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::{
     ContestedDocumentResourceVotePollWithContractInfo,
     ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed,

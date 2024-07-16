@@ -1,14 +1,14 @@
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use crate::drive::document::unique_event_id;
 
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
 
-use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::drive::Drive;
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;

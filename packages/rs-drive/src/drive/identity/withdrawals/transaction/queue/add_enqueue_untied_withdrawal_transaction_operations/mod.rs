@@ -1,4 +1,4 @@
-use crate::drive::batch::DriveOperation;
+use crate::util::batch::DriveOperation;
 use crate::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;

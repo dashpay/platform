@@ -1,5 +1,5 @@
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
+use crate::util::object_size_info::DriveKeyInfo::KeyRef;
+use crate::util::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 
 use crate::drive::{
     non_unique_key_hashes_sub_tree_path_vec, non_unique_key_hashes_tree_path, Drive,
@@ -8,7 +8,7 @@ use crate::drive::{
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;

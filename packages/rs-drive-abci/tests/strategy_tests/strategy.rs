@@ -26,7 +26,7 @@ use dpp::state_transition::data_contract_update_transition::DataContractUpdateTr
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
-use drive::drive::flags::StorageFlags::SingleEpoch;
+use drive::util::storage_flags::StorageFlags::SingleEpoch;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 

@@ -1,7 +1,7 @@
-use crate::drive::batch::drive_op_batch::{
+use crate::util::batch::drive_op_batch::{
     DocumentOperation, DocumentOperationsForContractDocumentType, UpdateOperationInfo,
 };
-use crate::drive::batch::{DocumentOperationType, DriveOperation};
+use crate::util::batch::{DocumentOperationType, DriveOperation};
 use crate::drive::Drive;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;

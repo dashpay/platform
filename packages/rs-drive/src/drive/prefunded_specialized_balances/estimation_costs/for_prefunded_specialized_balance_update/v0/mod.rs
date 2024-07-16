@@ -5,12 +5,13 @@ use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 
-use crate::drive::defaults::{AVERAGE_BALANCE_SIZE, DEFAULT_HASH_SIZE_U8};
+use crate::drive::constants::AVERAGE_BALANCE_SIZE;
 use crate::drive::prefunded_specialized_balances::{
     prefunded_specialized_balances_for_voting_path_vec, prefunded_specialized_balances_path,
 };
 use grovedb::EstimatedSumTrees::{AllSumTrees, SomeSumTrees};
 use std::collections::HashMap;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 impl Drive {
     /// Adds estimation costs for total system credits update.

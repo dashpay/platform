@@ -6,7 +6,7 @@ use crate::error::Error;
 use grovedb::batch::KeyInfoPath;
 use std::collections::HashMap;
 
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::{EstimatedLayerInformation, TransactionArg};

@@ -10,8 +10,8 @@ use dpp::block::block_info::BlockInfo;
 
 use dpp::version::PlatformVersion;
 
-use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::AddNewIdentity;
+use drive::util::batch::DriveOperation::IdentityOperation;
+use drive::util::batch::IdentityOperationType::AddNewIdentity;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 

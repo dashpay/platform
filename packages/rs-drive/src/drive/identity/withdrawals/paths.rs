@@ -1,7 +1,8 @@
 use grovedb::Element;
 
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use crate::drive::{batch::GroveDbOpBatch, Drive, RootTree};
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::drive::{Drive, RootTree};
+use crate::util::batch::GroveDbOpBatch;
 
 /// constant key for transaction counter
 pub const WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY: [u8; 1] = [0];

@@ -1,9 +1,9 @@
-use crate::drive::grove_operations::DirectQueryType;
+use crate::util::grove_operations::DirectQueryType;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::GroveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 
 use crate::drive::prefunded_specialized_balances::{
     prefunded_specialized_balances_for_voting_path,

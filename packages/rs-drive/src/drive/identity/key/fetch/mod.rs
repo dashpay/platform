@@ -1,12 +1,10 @@
-// Grouping std imports
-use std::{
-    collections::{BTreeMap, HashSet},
-    ops::RangeFull,
-};
-
 // Conditional imports for the features "server" or "verify"
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
+    std::{
+        collections::BTreeMap,
+        ops::RangeFull
+    },
     crate::{
         drive::identity::{
             identity_contract_info_group_path_key_purpose_vec, identity_key_tree_path_vec,
@@ -29,6 +27,7 @@ use {
 // Conditional imports for the feature "server"
 #[cfg(feature = "server")]
 use {
+    std::collections::HashSet,
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
     dpp::{
         fee::Credits,
@@ -999,7 +998,7 @@ impl IdentityKeysRequest {
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive;
+    use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;

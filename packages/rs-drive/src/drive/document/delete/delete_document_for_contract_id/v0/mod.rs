@@ -10,7 +10,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;

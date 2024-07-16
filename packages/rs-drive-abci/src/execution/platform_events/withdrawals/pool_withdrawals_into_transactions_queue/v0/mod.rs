@@ -11,7 +11,7 @@ use drive::grovedb::TransactionArg;
 
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-use drive::drive::config::DEFAULT_QUERY_LIMIT;
+use drive::config::DEFAULT_QUERY_LIMIT;
 
 use crate::{
     error::{execution::ExecutionError, Error},
@@ -150,7 +150,7 @@ mod tests {
     use dpp::identity::core_script::CoreScript;
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
     use dpp::withdrawal::Pooling;
-    use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
+    use drive::util::test_helpers::setup::{setup_document, setup_system_data_contract};
 
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;

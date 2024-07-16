@@ -1,5 +1,5 @@
-use crate::drive::batch::drive_op_batch::WithdrawalOperationType;
-use crate::drive::batch::DriveOperation;
+use crate::util::batch::drive_op_batch::WithdrawalOperationType;
+use crate::util::batch::DriveOperation;
 use crate::drive::identity::withdrawals::paths::get_withdrawal_transactions_queue_path_vec;
 use crate::drive::identity::withdrawals::{
     WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,

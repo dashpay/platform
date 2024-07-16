@@ -1,5 +1,5 @@
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::batch::{DriveOperation, GroveDbOpBatch};
 use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;

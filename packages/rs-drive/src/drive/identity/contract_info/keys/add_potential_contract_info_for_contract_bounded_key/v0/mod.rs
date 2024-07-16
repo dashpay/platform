@@ -1,5 +1,5 @@
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::drive::identity::contract_info::keys::IdentityDataContractKeyApplyInfo;
 use crate::drive::identity::contract_info::ContractInfoStructure::ContractInfoKeysKey;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
@@ -8,12 +8,12 @@ use crate::drive::identity::{
     identity_contract_info_group_path_vec, identity_contract_info_root_path_vec,
     identity_key_location_within_identity_vec, identity_path_vec,
 };
-use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
+use crate::util::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 use crate::drive::Drive;
 use crate::error::contract::DataContractError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;

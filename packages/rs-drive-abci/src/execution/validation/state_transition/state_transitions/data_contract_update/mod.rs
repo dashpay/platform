@@ -82,7 +82,7 @@ mod tests {
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::PlatformVersion;
-    use drive::drive::flags::StorageFlags;
+    use drive::util::storage_flags::StorageFlags;
     use simple_signer::signer::SimpleSigner;
 
     struct TestData<T> {

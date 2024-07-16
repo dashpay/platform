@@ -1,7 +1,7 @@
 #[cfg(feature = "server")]
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "server")]
-use crate::drive::batch::GroveDbOpBatch;
+use crate::util::batch::GroveDbOpBatch;
 use crate::drive::Drive;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::RootTree;

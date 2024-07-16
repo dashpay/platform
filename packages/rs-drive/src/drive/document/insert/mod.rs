@@ -1,31 +1,4 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
+
 
 //! Insert Documents.
 //!
@@ -78,19 +51,19 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use rand::{random, Rng};
 
-    use crate::common::setup_contract;
+    use crate::util::test_helpers::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
-    use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-    use crate::fee::op::LowLevelDriveOperation;
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::fees::op::LowLevelDriveOperation;
     use once_cell::sync::Lazy;
     use std::collections::BTreeMap;
 
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
-    use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::fee_result::FeeResult;

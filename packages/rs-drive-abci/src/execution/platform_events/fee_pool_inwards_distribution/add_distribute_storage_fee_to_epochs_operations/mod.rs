@@ -7,7 +7,7 @@ use crate::execution::types::storage_fee_distribution_outcome::v0::StorageFeeDis
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::EpochIndex;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::GroveDbOpBatch;
+use drive::util::batch::GroveDbOpBatch;
 use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C> {

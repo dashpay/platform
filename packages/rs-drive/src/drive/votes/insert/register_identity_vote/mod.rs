@@ -8,7 +8,7 @@ use crate::error::Error;
 use dpp::fee::fee_result::FeeResult;
 
 use crate::drive::votes::resolved::votes::ResolvedVote;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;

@@ -1,21 +1,21 @@
-use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::make_document_reference;
 
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::{
+use crate::util::storage_flags::StorageFlags;
+use crate::util::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
 };
-use crate::drive::object_size_info::DocumentInfo::DocumentOwnedInfo;
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
-use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
-use crate::drive::object_size_info::{
+use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
+use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
+use crate::util::object_size_info::PathKeyElementInfo::PathKeyRefElement;
+use crate::util::object_size_info::{
     DocumentAndContractInfo, DocumentInfoV0Methods, DriveKeyInfo, PathKeyInfo,
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;

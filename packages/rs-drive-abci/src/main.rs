@@ -7,7 +7,7 @@ use dpp::version::PlatformVersion;
 use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
 use drive_abci::logging::{LogBuilder, LogConfig, LogDestination, Loggers};
-use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
+use drive_abci::metrics::{DEFAULT_PROMETHEUS_PORT, Prometheus};
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::DefaultCoreRPC;
 use drive_abci::{logging, server};
@@ -421,13 +421,14 @@ mod test {
         path::{Path, PathBuf},
     };
 
-    use ::drive::{drive::Drive, fee_pools::epochs::paths::EpochProposers, query::Element};
+    use ::drive::{drive::Drive, query::Element};
     use dpp::block::epoch::Epoch;
-    use drive::fee_pools::epochs::epoch_key_constants;
+    use drive::drive::credit_pools::epochs::epoch_key_constants;
 
     use dpp::version::PlatformVersion;
     use drive_abci::logging::LogLevel;
     use rocksdb::{IteratorMode, Options};
+    use drive::drive::credit_pools::epochs::paths::EpochProposers;
 
     /// Setup drive database by creating initial state structure and inserting some data.
     ///

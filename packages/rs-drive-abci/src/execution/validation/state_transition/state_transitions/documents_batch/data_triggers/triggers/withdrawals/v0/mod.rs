@@ -147,8 +147,8 @@ mod tests {
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
     use dpp::version::PlatformVersion;
-    use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
-    use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::withdrawal::Pooling;
     use drive::drive::contract::DataContractFetchInfo;

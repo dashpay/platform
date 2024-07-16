@@ -1,13 +1,13 @@
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
 use crate::drive::identity::{
     identity_contract_info_group_path, identity_contract_info_root_path_vec, identity_path_vec,
 };
-use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
+use crate::util::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -294,7 +294,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;
-    use crate::tests::helpers::setup::setup_drive;
+    use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;

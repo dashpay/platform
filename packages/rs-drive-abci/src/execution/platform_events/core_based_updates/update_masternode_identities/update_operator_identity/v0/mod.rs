@@ -18,9 +18,9 @@ use dpp::identity::Purpose::TRANSFER;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
-use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::{
+use drive::util::batch::DriveOperation;
+use drive::util::batch::DriveOperation::IdentityOperation;
+use drive::util::batch::IdentityOperationType::{
     AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys,
 };
 use drive::drive::identity::key::fetch::{

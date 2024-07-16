@@ -98,8 +98,8 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::setup_platform;
-    use drive::drive::grove_operations::BatchInsertApplyType;
-    use drive::drive::object_size_info::PathKeyElementInfo;
+    use drive::util::grove_operations::BatchInsertApplyType;
+    use drive::util::object_size_info::PathKeyElementInfo;
     use drive::drive::protocol_upgrade::{
         desired_version_for_validators_path, desired_version_for_validators_path_vec,
         versions_counter_path,

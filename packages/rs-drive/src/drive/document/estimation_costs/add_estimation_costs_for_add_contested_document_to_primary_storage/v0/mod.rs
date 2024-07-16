@@ -1,9 +1,9 @@
-use crate::drive::defaults::{
-    AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE, DEFAULT_HASH_SIZE_U8,
+use crate::drive::constants::{
+    AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
 };
-use crate::drive::flags::StorageFlags;
+use crate::util::storage_flags::StorageFlags;
 
-use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use crate::drive::Drive;
 
 use crate::error::Error;
@@ -17,6 +17,7 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllItems;
 
 use std::collections::HashMap;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 impl Drive {
     /// Adds estimated storage costs for adding a document to primary storage.

@@ -1,19 +1,17 @@
-use crate::common::encode::encode_u64;
-use crate::drive::defaults::{
-    AVERAGE_CONTESTED_RESOURCE_ITEM_REFERENCE_SIZE, DEFAULT_HASH_SIZE_U8, U64_SIZE_U8,
-};
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
-use crate::drive::object_size_info::PathKeyElementInfo::{PathKeyElementSize, PathKeyRefElement};
-use crate::drive::object_size_info::{DriveKeyInfo, PathInfo, PathKeyElementInfo};
+use crate::util::common::encode::encode_u64;
+use crate::drive::constants::AVERAGE_CONTESTED_RESOURCE_ITEM_REFERENCE_SIZE;
+use crate::util::storage_flags::StorageFlags;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+use crate::util::object_size_info::PathKeyElementInfo::{PathKeyElementSize, PathKeyRefElement};
+use crate::util::object_size_info::{DriveKeyInfo, PathInfo, PathKeyElementInfo};
 use crate::drive::votes::paths::{
     vote_contested_resource_end_date_queries_at_time_tree_path_vec,
     vote_end_date_queries_tree_path, vote_end_date_queries_tree_path_vec,
 };
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::TimestampMillis;
 use dpp::serialization::PlatformSerializable;
@@ -26,6 +24,7 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
+use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U64_SIZE_U8};
 
 impl Drive {
     /// We add votes poll references by end date in order to be able to check on every new block if
