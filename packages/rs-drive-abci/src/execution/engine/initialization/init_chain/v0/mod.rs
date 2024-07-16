@@ -52,7 +52,8 @@ where
         let mut initial_platform_state = PlatformState::default_with_protocol_versions(
             request.initial_protocol_version,
             request.initial_protocol_version,
-        );
+            &self.config,
+        )?;
 
         let genesis_block_info = BlockInfo {
             height: request.initial_height,
@@ -60,6 +61,17 @@ where
             time_ms: genesis_time,
             ..Default::default()
         };
+
+        // !!! Very important to understand !!!
+        // We update the core info at the initial core height. This means that we use the quorums
+        // at the initial core height for block 1.
+        // The initial core height is either the height of the fork at which platform activates
+        //  or it is the request.initial_core_height.
+        // Block 1 is signed with the quorum chosen based on this info/height.
+        // It is also worth saying that the quorum chosen will be the most recently built quorum.
+        // On block 1 the proposer will most likely propose a new core chain locked height.
+        // That will cause the core info to update again, so very often block 2 will be signed by
+        //  a different quorum.
 
         self.update_core_info(
             None,
@@ -91,7 +103,7 @@ where
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
-                platform_state_fingerprint = hex::encode(initial_platform_state.fingerprint()),
+                platform_state_fingerprint = hex::encode(initial_platform_state.fingerprint()?),
                 "platform runtime state",
             );
         }
@@ -101,7 +113,7 @@ where
         let app_hash = self
             .drive
             .grove
-            .root_hash(Some(transaction))
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .map_err(GroveDB)?;
 

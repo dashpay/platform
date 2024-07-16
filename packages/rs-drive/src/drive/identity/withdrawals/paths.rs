@@ -1,25 +1,28 @@
 use grovedb::Element;
 
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use crate::drive::{batch::GroveDbOpBatch, RootTree};
+use crate::drive::{Drive, RootTree};
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::batch::GroveDbOpBatch;
 
 /// constant key for transaction counter
 pub const WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY: [u8; 1] = [0];
 /// constant id for subtree containing transactions queue
 pub const WITHDRAWAL_TRANSACTIONS_QUEUE_KEY: [u8; 1] = [1];
 
-/// Add operations for creating initial withdrawal state structure
-pub fn add_initial_withdrawal_state_structure_operations(batch: &mut GroveDbOpBatch) {
-    batch.add_insert(
-        vec![vec![RootTree::WithdrawalTransactions as u8]],
-        WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY.to_vec(),
-        Element::Item(0u64.to_be_bytes().to_vec(), None),
-    );
+impl Drive {
+    /// Add operations for creating initial withdrawal state structure
+    pub fn add_initial_withdrawal_state_structure_operations(batch: &mut GroveDbOpBatch) {
+        batch.add_insert(
+            vec![vec![RootTree::WithdrawalTransactions as u8]],
+            WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY.to_vec(),
+            Element::Item(0u64.to_be_bytes().to_vec(), None),
+        );
 
-    batch.add_insert_empty_tree(
-        vec![vec![RootTree::WithdrawalTransactions as u8]],
-        WITHDRAWAL_TRANSACTIONS_QUEUE_KEY.to_vec(),
-    );
+        batch.add_insert_empty_tree(
+            vec![vec![RootTree::WithdrawalTransactions as u8]],
+            WITHDRAWAL_TRANSACTIONS_QUEUE_KEY.to_vec(),
+        );
+    }
 }
 
 /// Helper function to get root path

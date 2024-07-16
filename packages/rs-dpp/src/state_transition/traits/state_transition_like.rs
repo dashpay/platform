@@ -19,6 +19,8 @@ pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 5] = [
     StateTransitionType::IdentityCreditWithdrawal,
 ];
 
+pub const VOTING_TRANSITION_TYPE: [StateTransitionType; 1] = [StateTransitionType::MasternodeVote];
+
 pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 2] = [
     StateTransitionType::DataContractCreate,
     StateTransitionType::DataContractUpdate,
@@ -40,7 +42,7 @@ pub trait StateTransitionLike:
     /// returns the fee multiplier
     fn user_fee_increase(&self) -> UserFeeIncrease;
     /// set a fee multiplier
-    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease);
+    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease);
     /// get modified ids list
     fn modified_data_ids(&self) -> Vec<Identifier>;
 
@@ -55,6 +57,11 @@ pub trait StateTransitionLike:
     /// return true if state transition is an identity state transition
     fn is_identity_state_transition(&self) -> bool {
         IDENTITY_TRANSITION_TYPE.contains(&self.state_transition_type())
+    }
+
+    /// return true if state transition is a voting state transition
+    fn is_voting_state_transition(&self) -> bool {
+        VOTING_TRANSITION_TYPE.contains(&self.state_transition_type())
     }
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>);

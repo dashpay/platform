@@ -8,7 +8,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{DataContract, Identifier};
-use drive::query::DriveQuery;
+use drive::query::{DriveDocumentQuery, OrderClause, WhereClause};
 
 /// Given some data contract ID, document type and document ID, when I fetch it, then I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -103,8 +103,6 @@ async fn document_read_no_document() {
 
 /// Given some data contract ID and document type with at least one document, when I fetch many documents using DriveQuery
 /// as a query, then I get one or more items.
-///
-/// This test is ignored because it requires a running Platform. To run it, set constants in `common.rs` and run:
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn document_list_drive_query() {
     setup_logs();
@@ -123,7 +121,7 @@ async fn document_list_drive_query() {
         .document_type_for_name(&cfg.existing_document_type_name)
         .expect("document type not found");
 
-    let query = DriveQuery {
+    let query = DriveDocumentQuery {
         contract: &data_contract,
         document_type: doctype,
         internal_clauses: Default::default(),
@@ -180,4 +178,49 @@ async fn document_list_document_query() {
         .collect();
 
     tracing::info!(documents=?doc_ids, "fetched documents");
+}
+
+/// Check if bug when processing Where clause containing `Value::Text("l")` string is fixed.
+///
+///query: storage: protocol: value error: structure error: value was a string, but could not be decoded from base 58
+/// Given document query with where clause contains to `"l"` string,
+/// when I fetch documents,
+/// then I don't get error:
+///     `query: storage: protocol: value error: structure error: value was a string, but could not be decoded from base 58`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[allow(non_snake_case)]
+#[ignore = "disabled due to bug PLAN-653"]
+async fn document_list_bug_value_text_decode_base58_PLAN_653() {
+    setup_logs();
+
+    let cfg = Config::new();
+    let sdk = cfg
+        .setup_api("document_list_bug_value_text_decode_base58")
+        .await;
+
+    let data_contract_id = cfg.existing_data_contract_id;
+
+    let contract = Arc::new(
+        DataContract::fetch(&sdk, data_contract_id)
+            .await
+            .expect("fetch data contract")
+            .expect("data contract not found"),
+    );
+
+    // Fetch multiple documents so that we get document ID
+    let query = DocumentQuery::new(Arc::clone(&contract), &cfg.existing_document_type_name)
+        .expect("create SdkDocumentQuery")
+        .with_where(WhereClause {
+            field: "records.dashUniqueIdentityId".to_string(),
+            operator: drive::query::WhereOperator::Equal,
+            value: dpp::platform_value::Value::Text("l".into()),
+        })
+        .with_order_by(OrderClause {
+            field: "records.dashUniqueIdentityId".to_string(),
+            ascending: true,
+        });
+
+    let _docs = Document::fetch_many(&sdk, query)
+        .await
+        .expect("fetch many documents");
 }

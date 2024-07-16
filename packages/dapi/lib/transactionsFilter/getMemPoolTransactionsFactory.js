@@ -1,4 +1,4 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
+const getTransactions = require('./getTransactions');
 
 /**
  * @param {CoreRpcClient} coreAPI
@@ -10,17 +10,8 @@ function getMemPoolTransactionsFactory(coreAPI) {
    * @returns {Promise<Transaction[]>}
    */
   async function getMemPoolTransactions() {
-    const result = [];
     const memPoolTransactionIds = await coreAPI.getRawMemPool(false);
-
-    for (const txId of memPoolTransactionIds) {
-      const rawTransaction = await coreAPI.getRawTransaction(txId);
-
-      const transaction = new Transaction(rawTransaction);
-      result.push(transaction);
-    }
-
-    return result;
+    return getTransactions(coreAPI, memPoolTransactionIds);
   }
 
   return getMemPoolTransactions;

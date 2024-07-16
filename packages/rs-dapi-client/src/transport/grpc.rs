@@ -8,10 +8,10 @@ use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::core::v0::{self as core_proto};
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
+use dapi_grpc::tonic::transport::Uri;
 use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{transport::Channel, IntoRequest};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
-use http::Uri;
 
 /// Platform Client using gRPC transport.
 pub type PlatformGrpcClient = PlatformClient<Channel>;
@@ -279,6 +279,58 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_data_contracts
+);
+
+// rpc getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContestedResourcesRequest,
+    platform_proto::GetContestedResourcesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contested_resources
+);
+
+//  rpc getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContestedResourceVoteStateRequest,
+    platform_proto::GetContestedResourceVoteStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contested_resource_vote_state
+);
+
+// rpc getContestedResourceVotersForIdentity(GetContestedResourceVotersForIdentityRequest) returns (GetContestedResourceVotersForIdentityResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContestedResourceVotersForIdentityRequest,
+    platform_proto::GetContestedResourceVotersForIdentityResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contested_resource_voters_for_identity
+);
+// rpc getContestedResourceIdentityVoteStatus(GetContestedResourceIdentityVoteStatusRequest) returns (GetContestedResourceIdentityVoteStatusResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContestedResourceIdentityVotesRequest,
+    platform_proto::GetContestedResourceIdentityVotesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contested_resource_identity_votes
+);
+// rpc GetVotePollsByEndDateRequest(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetVotePollsByEndDateRequest,
+    platform_proto::GetVotePollsByEndDateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_vote_polls_by_end_date
+);
+
+// rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetPrefundedSpecializedBalanceRequest,
+    platform_proto::GetPrefundedSpecializedBalanceResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_prefunded_specialized_balance
 );
 
 // Link to each core gRPC request what client and method to use:

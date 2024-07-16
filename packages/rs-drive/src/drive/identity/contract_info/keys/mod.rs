@@ -2,7 +2,7 @@ use crate::drive::identity::contract_info::keys::IdentityDataContractKeyApplyInf
 use crate::drive::Drive;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;

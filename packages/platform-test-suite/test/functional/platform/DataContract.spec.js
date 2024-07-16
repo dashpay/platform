@@ -12,7 +12,7 @@ const {
   PlatformProtocol: {
     IdentityNotFoundError,
     InvalidDataContractVersionError,
-    IncompatibleDataContractSchemaError,
+    IncompatibleDocumentTypeSchemaError,
   },
 } = Dash;
 
@@ -105,7 +105,6 @@ describe('Platform', () => {
       expect(broadcastError.getCause()).to.be.an.instanceOf(InvalidDataContractVersionError);
     });
 
-    // TODO(versioning): this test is not passing
     it('should not be able to update an existing data contract if schema is not backward compatible', async () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
@@ -127,8 +126,8 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(10213);
-      expect(broadcastError.getCause()).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
+      expect(broadcastError.getCause().getCode()).to.equal(10246);
+      expect(broadcastError.getCause()).to.be.an.instanceOf(IncompatibleDocumentTypeSchemaError);
     });
 
     it('should be able to update an existing data contract', async () => {

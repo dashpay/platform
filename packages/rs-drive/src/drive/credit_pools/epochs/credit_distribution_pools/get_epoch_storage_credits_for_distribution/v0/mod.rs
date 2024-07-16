@@ -1,13 +1,13 @@
 use dpp::balances::credits::Creditable;
 use grovedb::{Element, TransactionArg};
 
+use crate::drive::credit_pools::epochs::epoch_key_constants;
+use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
-
-use crate::fee_pools::epochs::epoch_key_constants;
-use crate::fee_pools::epochs::paths::EpochProposers;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Gets the amount of storage credits to be distributed for the Epoch.
@@ -15,6 +15,7 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<u64, Error> {
         let element = self
             .grove
@@ -22,6 +23,7 @@ impl Drive {
                 &epoch_tree.get_path(),
                 epoch_key_constants::KEY_POOL_STORAGE_FEES.as_slice(),
                 transaction,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;
@@ -42,9 +44,9 @@ mod tests {
     use crate::error::drive::DriveError;
     use crate::error::Error;
 
-    use crate::fee_pools::epochs::paths::EpochProposers;
-    use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
+    use crate::drive::credit_pools::epochs::paths::EpochProposers;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use dpp::version::PlatformVersion;
     use grovedb::Element;
@@ -72,6 +74,7 @@ mod tests {
 
     #[test]
     fn test_error_if_value_has_invalid_length_v0() {
+        let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure();
         let transaction = drive.grove.start_transaction();
 
@@ -85,12 +88,16 @@ mod tests {
                 Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                 None,
                 Some(&transaction),
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .expect("should insert invalid data");
 
-        let result =
-            drive.get_epoch_storage_credits_for_distribution_v0(&epoch, Some(&transaction));
+        let result = drive.get_epoch_storage_credits_for_distribution_v0(
+            &epoch,
+            Some(&transaction),
+            platform_version,
+        );
 
         assert!(matches!(
             result,

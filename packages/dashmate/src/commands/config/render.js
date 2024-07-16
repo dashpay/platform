@@ -31,6 +31,6 @@ Force dashmate to render all config's service configs
     writeServiceConfigs(config.getName(), configFiles);
 
     // eslint-disable-next-line no-console
-    console.log(`Config "${config.getName()}" service configs rendered`);
+    console.log(`"${config.getName()}" service configs rendered`);
   }
 }

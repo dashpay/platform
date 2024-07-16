@@ -13,7 +13,7 @@ use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
 use indexmap::IndexMap;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 pub use v0::*;
 
 impl DocumentTypeV0Getters for DocumentType {
@@ -35,9 +35,9 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
-    fn indices(&self) -> &Vec<Index> {
+    fn indexes(&self) -> &BTreeMap<String, Index> {
         match self {
-            DocumentType::V0(v0) => v0.indices(),
+            DocumentType::V0(v0) => v0.indexes(),
         }
     }
 
@@ -136,6 +136,12 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.security_level_requirement(),
         }
     }
+
+    fn find_contested_index(&self) -> Option<&Index> {
+        match self {
+            DocumentType::V0(v0) => v0.find_contested_index(),
+        }
+    }
 }
 
 impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
@@ -157,9 +163,9 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
-    fn indices(&self) -> &Vec<Index> {
+    fn indexes(&self) -> &BTreeMap<String, Index> {
         match self {
-            DocumentTypeRef::V0(v0) => v0.indices(),
+            DocumentTypeRef::V0(v0) => v0.indexes(),
         }
     }
 
@@ -258,6 +264,12 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
             DocumentTypeRef::V0(v0) => v0.security_level_requirement(),
         }
     }
+
+    fn find_contested_index(&self) -> Option<&Index> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.find_contested_index(),
+        }
+    }
 }
 
 impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
@@ -279,9 +291,9 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         }
     }
 
-    fn indices(&self) -> &Vec<Index> {
+    fn indexes(&self) -> &BTreeMap<String, Index> {
         match self {
-            DocumentTypeMutRef::V0(v0) => v0.indices(),
+            DocumentTypeMutRef::V0(v0) => v0.indexes(),
         }
     }
 
@@ -378,6 +390,12 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
     fn security_level_requirement(&self) -> SecurityLevel {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.security_level_requirement(),
+        }
+    }
+
+    fn find_contested_index(&self) -> Option<&Index> {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.find_contested_index(),
         }
     }
 }

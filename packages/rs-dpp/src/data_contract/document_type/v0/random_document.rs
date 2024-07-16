@@ -3,14 +3,18 @@
 //! This module defines the CreateRandomDocument trait and its functions, which
 //! create various types of random documents.
 //!
+//!
 
+use platform_value::{Bytes32, Identifier};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
@@ -21,9 +25,6 @@ use crate::identity::Identity;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::{Bytes32, Identifier};
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
 
 impl CreateRandomDocument for DocumentTypeV0 {
     /// Creates a random Document using a seed if given, otherwise entropy.

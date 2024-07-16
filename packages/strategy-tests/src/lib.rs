@@ -42,8 +42,8 @@ use dpp::state_transition::data_contract_update_transition::methods::DataContrac
 use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
+use rand::seq::SliceRandom;
 use rand::Rng;
-use tracing::error;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -124,10 +124,11 @@ pub struct StrategyConfig {
 /// Identities to register on the first block of the strategy
 #[derive(Clone, Debug, PartialEq, Default, Encode, Decode)]
 pub struct StartIdentities {
-    pub number_of_identities: u8,
+    pub number_of_identities: u16,
     pub keys_per_identity: u8,
     pub starting_balances: u64, // starting balance in duffs
     pub extra_keys: KeyMaps,
+    pub hard_coded: Vec<(Identity, StateTransition)>,
 }
 
 /// Identities to register on the first block of the strategy
@@ -243,7 +244,7 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Strategy {
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -273,7 +274,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
             .map(|(serialized_contract, maybe_updates)| {
                 let contract = CreatedDataContract::versioned_deserialize(
                     serialized_contract.as_slice(),
-                    validate,
+                    full_validation,
                     platform_version,
                 )?;
                 let maybe_updates = maybe_updates
@@ -283,7 +284,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
                             .map(|(key, serialized_contract_update)| {
                                 let update = CreatedDataContract::versioned_deserialize(
                                     serialized_contract_update.as_slice(),
-                                    validate,
+                                    full_validation,
                                     platform_version,
                                 )?;
                                 Ok((key, update))
@@ -304,7 +305,11 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
         let operations = operations
             .into_iter()
             .map(|operation| {
-                Operation::versioned_deserialize(operation.as_slice(), validate, platform_version)
+                Operation::versioned_deserialize(
+                    operation.as_slice(),
+                    full_validation,
+                    platform_version,
+                )
             })
             .collect::<Result<Vec<Operation>, ProtocolError>>()?;
 
@@ -390,6 +395,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
+        mempool_document_counter: BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
@@ -413,7 +419,7 @@ impl Strategy {
         ) {
             Ok(transitions) => transitions,
             Err(e) => {
-                error!("identity_state_transitions_for_block error: {}", e);
+                tracing::error!("identity_state_transitions_for_block error: {}", e);
                 return (vec![], finalize_block_operations, vec![]);
             }
         };
@@ -445,6 +451,7 @@ impl Strategy {
                     signer,
                     identity_nonce_counter,
                     contract_nonce_counter,
+                    mempool_document_counter,
                     rng,
                     platform_version,
                 );
@@ -537,6 +544,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
+        mempool_document_counter: BTreeMap<(Identifier, Identifier), u64>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -562,11 +570,31 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
+                        // Get the first 10 identities who are eligible to submit documents for this contract
+                        let first_10_eligible_identities: Vec<Identity> = current_identities
+                            .iter()
+                            .filter(|identity| {
+                                mempool_document_counter
+                                    .get(&(identity.id(), contract.id()))
+                                    .unwrap_or(&0)
+                                    < &24u64
+                            })
+                            .take(10)
+                            .cloned()
+                            .collect();
+
+                        if first_10_eligible_identities.len() == 0 {
+                            tracing::warn!(
+                                "No eligible identities to submit a document to contract {}",
+                                contract.id().to_string(Encoding::Base64)
+                            );
+                        }
+
                         // TO-DO: these documents should be created according to the data contract's validation rules
                         let documents = document_type
                             .random_documents_with_params(
                                 count as u32,
-                                current_identities,
+                                &first_10_eligible_identities,
                                 Some(block_info.time_ms),
                                 Some(block_info.height),
                                 Some(block_info.core_height),
@@ -609,6 +637,7 @@ impl Strategy {
                                         .into(),
                                         entropy: entropy.to_buffer(),
                                         data: document.properties_consumed(),
+                                        prefunded_voting_balance: Default::default(),
                                     }
                                     .into();
 
@@ -719,6 +748,7 @@ impl Strategy {
                                         .into(),
                                         entropy: entropy.to_buffer(),
                                         data: document.properties_consumed(),
+                                        prefunded_voting_balance: Default::default(),
                                     }
                                     .into();
 
@@ -1202,15 +1232,17 @@ impl Strategy {
                         ) {
                             Ok(contract_factory) => contract_factory,
                             Err(e) => {
-                                error!("Failed to get DataContractFactory while creating random contract: {e}");
+                                tracing::error!("Failed to get DataContractFactory while creating random contract: {e}");
                                 continue;
                             }
                         };
 
                         // Create `count` ContractCreate transitions and push to operations vec
                         for _ in 0..count {
-                            // Get the contract owner_id from loaded_identity and loaded_identity nonce
-                            let identity = &current_identities[0];
+                            // Get the contract owner_id from a random current_identity and identity nonce
+                            let identity = current_identities
+                                .choose(rng)
+                                .expect("Expected to get an identity for ContractCreate");
                             let identity_nonce =
                                 identity_nonce_counter.entry(identity.id()).or_default();
                             *identity_nonce += 1;
@@ -1242,7 +1274,7 @@ impl Strategy {
                                                 ))
                                             }
                                             Err(e) => {
-                                                error!(
+                                                tracing::error!(
                                                     "Error generating random document type: {:?}",
                                                     e
                                                 );
@@ -1261,7 +1293,7 @@ impl Strategy {
                             ) {
                                 Ok(contract) => contract,
                                 Err(e) => {
-                                    error!("Failed to create random data contract: {e}");
+                                    tracing::error!("Failed to create random data contract: {e}");
                                     continue;
                                 }
                             };
@@ -1271,7 +1303,9 @@ impl Strategy {
                             {
                                 Ok(transition) => transition,
                                 Err(e) => {
-                                    error!("Failed to create ContractCreate transition: {e}");
+                                    tracing::error!(
+                                        "Failed to create ContractCreate transition: {e}"
+                                    );
                                     continue;
                                 }
                             };
@@ -1293,7 +1327,7 @@ impl Strategy {
                                     fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>,
                                 >,
                             ) {
-                                error!("Error signing state transition: {:?}", e);
+                                tracing::error!("Error signing state transition: {:?}", e);
                             }
 
                             operations.push(state_transition);
@@ -1327,7 +1361,13 @@ impl Strategy {
                                         );
                                         contract_ref.increment_version();
 
-                                        let identity = &current_identities[0];
+                                        let identity = current_identities
+                                            .iter()
+                                            .find(|identity| {
+                                                identity.id() == contract_ref.owner_id()
+                                            })
+                                            .or_else(|| current_identities.choose(rng)).expect("Expected to get an identity for DataContractUpdate");
+
                                         let identity_contract_nonce = contract_nonce_counter
                                             .entry((identity.id(), contract_ref.id()))
                                             .or_default();
@@ -1336,7 +1376,7 @@ impl Strategy {
                                         // Prepare the DataContractUpdateTransition with the updated contract_ref
                                         match DataContractUpdateTransition::try_from_platform_versioned((DataContract::V0(contract_ref.clone()), *identity_contract_nonce), platform_version) {
                                             Ok(data_contract_update_transition) => {
-                                                let identity_public_key = current_identities[0]
+                                                let identity_public_key = identity
                                                     .get_first_public_key_matching(
                                                         Purpose::AUTHENTICATION,
                                                         HashSet::from([SecurityLevel::CRITICAL]),
@@ -1356,15 +1396,18 @@ impl Strategy {
 
                                                 operations.push(state_transition);
                                             },
-                                            Err(e) => error!("Error converting data contract to update transition: {:?}", e),
+                                            Err(e) => tracing::error!("Error converting data contract to update transition: {:?}", e),
                                         }
                                     }
                                     Err(e) => {
-                                        error!("Error generating random document type: {:?}", e)
+                                        tracing::error!(
+                                            "Error generating random document type: {:?}",
+                                            e
+                                        )
                                     }
                                 }
                             } else {
-                                // Handle the case where the contract is not found in known_contracts
+                                tracing::error!("Contract not found in known_contracts");
                             }
                         }
                     }
@@ -1849,6 +1892,7 @@ mod tests {
                 keys_per_identity: 3,
                 starting_balances: 100_000_000,
                 extra_keys: BTreeMap::new(),
+                hard_coded: vec![],
             },
             identity_inserts: Default::default(),
             identity_contract_nonce_gaps: None,

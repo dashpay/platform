@@ -18,15 +18,15 @@ use dpp::identity::Purpose::TRANSFER;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
-use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::{
-    AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys,
-};
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use drive::grovedb::Transaction;
+use drive::util::batch::DriveOperation;
+use drive::util::batch::DriveOperation::IdentityOperation;
+use drive::util::batch::IdentityOperationType::{
+    AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys,
+};
 
 impl<C> Platform<C>
 where
@@ -78,7 +78,7 @@ where
         )?;
 
         let key_request = IdentityKeysRequest {
-            identity_id: old_operator_identifier,
+            identity_id: old_operator_identifier.to_buffer(),
             request_type: KeyRequestType::AllKeys,
             limit: None,
             offset: None,
@@ -143,7 +143,7 @@ where
 
             if !old_operator_identity_key_ids_to_disable.is_empty() {
                 drive_operations.push(IdentityOperation(DisableIdentityKeys {
-                    identity_id: new_operator_identifier,
+                    identity_id: new_operator_identifier.to_buffer(),
                     keys_ids: old_operator_identity_key_ids_to_disable,
                 }));
             }
@@ -204,7 +204,7 @@ where
             }
 
             drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
-                identity_id: new_operator_identifier,
+                identity_id: new_operator_identifier.to_buffer(),
                 unique_keys_to_add,
                 non_unique_keys_to_add,
             }));
@@ -230,7 +230,7 @@ where
 
             if !old_operator_identity_key_ids_to_disable.is_empty() {
                 drive_operations.push(IdentityOperation(DisableIdentityKeys {
-                    identity_id: old_operator_identifier,
+                    identity_id: old_operator_identifier.to_buffer(),
                     keys_ids: old_operator_identity_key_ids_to_disable,
                 }));
             }

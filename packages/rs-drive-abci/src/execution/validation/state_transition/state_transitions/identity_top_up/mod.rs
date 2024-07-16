@@ -20,6 +20,7 @@ use crate::execution::validation::state_transition::identity_top_up::transform_i
 use crate::execution::validation::state_transition::processor::v0::StateTransitionBasicStructureValidationV0;
 
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 /// A trait to transform into a top up action
 pub trait StateTransitionIdentityTopUpTransitionActionTransformer {
@@ -100,6 +101,7 @@ impl StateTransitionBasicStructureValidationV0 for IdentityTopUpTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::{Network, PrivateKey};
@@ -121,14 +123,18 @@ mod tests {
     #[test]
     fn test_identity_top_up_validation() {
         let platform_version = PlatformVersion::latest();
-        let mut platform = TestPlatformBuilder::new()
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
             .build_with_mock_rpc()
             .set_initial_state_structure();
-
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.load();
 
@@ -220,7 +226,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1146640);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1219900); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
         platform
             .drive
@@ -239,6 +245,6 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 149993048360); // about 0.5 Dash starting balance + 1 Dash asset lock top up
+        assert_eq!(identity_balance, 149992975100); // about 0.5 Dash starting balance + 1 Dash asset lock top up // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
     }
 }

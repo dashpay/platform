@@ -100,7 +100,7 @@ pub trait PlatformDeserializableWithPotentialValidationFromVersionedStructure {
     /// DataContractV1 (if system version is 1)
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -119,7 +119,7 @@ pub trait PlatformDeserializableWithBytesLenFromVersionedStructure {
     /// DataContractV1 (if system version is 1)
     fn versioned_deserialize_with_bytes_len(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, usize), ProtocolError>
     where

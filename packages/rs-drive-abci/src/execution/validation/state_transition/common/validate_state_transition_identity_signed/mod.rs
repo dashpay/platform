@@ -15,6 +15,7 @@ pub trait ValidateStateTransitionIdentitySignature {
     fn validate_state_transition_identity_signed(
         &self,
         drive: &Drive,
+        request_balance: bool,
         request_revision: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
@@ -26,6 +27,7 @@ impl ValidateStateTransitionIdentitySignature for StateTransition {
     fn validate_state_transition_identity_signed(
         &self,
         drive: &Drive,
+        request_balance: bool,
         request_revision: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
@@ -40,6 +42,7 @@ impl ValidateStateTransitionIdentitySignature for StateTransition {
         {
             0 => self.validate_state_transition_identity_signed_v0(
                 drive,
+                request_balance,
                 request_revision,
                 transaction,
                 execution_context,

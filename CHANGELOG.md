@@ -1,3 +1,118 @@
+## [1.0.0-dev.16](https://github.com/dashpay/platform/compare/v1.0.0-dev.15...v1.0.0-dev.16) (2024-06-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** verify instant lock signatures with Drive (#1875)
+* **dapi:** replace `getMnListDiff` with a streaming endpoint (#1859)
+* **dapi:** disable unnecessary for v1 endpoints (#1857)
+* **sdk:** dapi-grpc generated files overwritten on conflicting features (#1854)
+
+### Features
+
+* **dapi:** introduce `getBestBlockHeight` endpoint ([#1863](https://github.com/dashpay/platform/issues/1863))
+* **dpp:** random documents based on JSON schema ([#1710](https://github.com/dashpay/platform/issues/1710))
+* make data contract factory and json schema validator public
+
+
+### Bug Fixes
+
+* **dashmate:** background SSL renewal stuck on error ([#1897](https://github.com/dashpay/platform/issues/1897))
+* **dashmate:** failed to read docker data on update ([#1903](https://github.com/dashpay/platform/issues/1903))
+* **sdk:** dapi-grpc generated files overwritten on conflicting features ([#1854](https://github.com/dashpay/platform/issues/1854))
+* **sdk:** invalid error returned when identity create fails ([#1856](https://github.com/dashpay/platform/issues/1856))
+* security vulnerabilities in NPM deps ([#1860](https://github.com/dashpay/platform/issues/1860))
+* validator field didn't need to be public for JsonSchemaValidator
+
+
+### Performance Improvements
+
+* **dapi:** cache `getBestBlockHash` endpoint ([#1867](https://github.com/dashpay/platform/issues/1867))
+* **dapi:** cache `getBlockchainStatus` endpoint ([#1866](https://github.com/dashpay/platform/issues/1866))
+* **dapi:** get many transactions at once ([#1858](https://github.com/dashpay/platform/issues/1858))
+* **dapi:** replace `getMnListDiff` with a streaming endpoint ([#1859](https://github.com/dashpay/platform/issues/1859))
+* **dapi:** use cached core height in streaming endpoints ([#1865](https://github.com/dashpay/platform/issues/1865))
+* **drive:** verify instant lock signatures with Drive ([#1875](https://github.com/dashpay/platform/issues/1875))
+
+
+### Miscellaneous Chores
+
+* **dapi:** disable unnecessary for v1 endpoints ([#1857](https://github.com/dashpay/platform/issues/1857))
+* mute NPM audit warnings ([#1879](https://github.com/dashpay/platform/issues/1879))
+* update Karma to recent version ([#1901](https://github.com/dashpay/platform/issues/1901))
+* update websocket client ([#1895](https://github.com/dashpay/platform/issues/1895))
+
+
+### Code Refactoring
+
+* **dpp:** change String and ByteArray DocumentPropertyType sizes to structs ([#1874](https://github.com/dashpay/platform/issues/1874))
+* **drive:** encapsulate chain lock validation quorum logic ([#1868](https://github.com/dashpay/platform/issues/1868))
+
+## [1.0.0-dev.15](https://github.com/dashpay/platform/compare/v1.0.0-dev.14...v1.0.0-dev.15) (2024-05-22)
+
+
+### Miscellaneous Chores
+
+* **drive:** state transition observability ([#1846](https://github.com/dashpay/platform/issues/1846))
+
+## [1.0.0-dev.14](https://github.com/dashpay/platform/compare/v1.0.0-dev.13...v1.0.0-dev.14) (2024-05-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* Data Contract Create and Update transitions validation logic is changed so previously created block chain data might not be valid anymore (#1835)
+
+### Features
+
+* **dashmate:** check for DKG before stopping node ([#1683](https://github.com/dashpay/platform/issues/1683))
+
+
+### Bug Fixes
+
+* data contract transition validation issues ([#1835](https://github.com/dashpay/platform/issues/1835))
+
+
+### Code Refactoring
+
+* rename `DataContractConfig.validate_config_update` ([#1843](https://github.com/dashpay/platform/issues/1843))
+* rename `validate` to `full_validation` ([#1845](https://github.com/dashpay/platform/issues/1845))
+
+## [1.0.0-dev.13](https://github.com/dashpay/platform/compare/v1.0.0-dev.12...v1.0.0-dev.13) (2024-05-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** don't return Arc in SdkBuilder (#1838)
+* **platform:** document creation/update/deletion does not refetch contract (#1840)
+
+### Features
+
+* **dashmate:** handle docker pull error on images update ([#1685](https://github.com/dashpay/platform/issues/1685))
+* make document tranfers public
+* make start identities number u16
+* make purchase document public
+* make sdk document purchases public ([#1832](https://github.com/dashpay/platform/issues/1832))
+* make sdk files public
+* put index serialization behind feature
+* serialize for indexes and change error messages to strings
+* use all current identities for strategy test state transitions ([#1820](https://github.com/dashpay/platform/issues/1820))
+
+
+### Bug Fixes
+
+* **platform:** npm audit security fix ([#1836](https://github.com/dashpay/platform/issues/1836))
+
+
+### Code Refactoring
+
+* **platform:** document creation/update/deletion does not refetch contract ([#1840](https://github.com/dashpay/platform/issues/1840))
+* **sdk:** don't return Arc in SdkBuilder ([#1838](https://github.com/dashpay/platform/issues/1838))
+
+
+### Miscellaneous Chores
+
+* observability and security for HTTP gateway ([#1825](https://github.com/dashpay/platform/issues/1825))
+
 ## [1.0.0-dev.12](https://github.com/dashpay/platform/compare/v1.0.0-dev.11...v1.0.0-dev.12) (2024-04-29)
 
 

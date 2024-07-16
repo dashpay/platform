@@ -139,7 +139,7 @@ mod tests {
     use dpp::identity::{Identity, KeyID, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization::PlatformDeserializable;
-    use drive::common::test_utils::identities::create_test_identity_with_rng;
+    use drive::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
     use itertools::Itertools;

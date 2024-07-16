@@ -112,7 +112,8 @@ where
         &self,
         request: proto::RequestCheckTx,
     ) -> Result<proto::ResponseCheckTx, proto::ResponseException> {
-        handler::check_tx(self.platform, request).map_err(error_into_exception)
+        handler::check_tx(self.platform, &self.platform.core_rpc, request)
+            .map_err(error_into_exception)
     }
 
     fn extend_vote(

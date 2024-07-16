@@ -14,8 +14,8 @@ pub struct ExtendedEpochInfoV0 {
     pub first_block_height: u64,
     /// First core block height
     pub first_core_block_height: u32,
-    /// Fee multiplier
-    pub fee_multiplier: f64,
+    /// Fee multiplier that you would divide by 1000 to get float value
+    pub fee_multiplier_permille: u64,
     /// Protocol version
     pub protocol_version: u32,
 }
@@ -34,8 +34,8 @@ pub trait ExtendedEpochInfoV0Getters {
     /// Returns the first core block height.
     fn first_core_block_height(&self) -> u32;
 
-    /// Returns the fee multiplier.
-    fn fee_multiplier(&self) -> f64;
+    /// Returns 1000 times the fee multiplier. so 1000 would be 1.
+    fn fee_multiplier_permille(&self) -> u64;
 
     /// Protocol version
     fn protocol_version(&self) -> ProtocolVersion;

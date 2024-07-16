@@ -1,8 +1,8 @@
-use crate::drive::grove_operations::DirectQueryType::StatefulDirectQuery;
 use crate::drive::{unique_key_hashes_tree_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::DirectQueryType::StatefulDirectQuery;
 
 use dpp::version::PlatformVersion;
 use grovedb::Element::Item;

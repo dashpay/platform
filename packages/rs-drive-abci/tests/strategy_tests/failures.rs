@@ -7,7 +7,10 @@ mod tests {
     use crate::strategy::{FailureStrategy, NetworkStrategy};
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
-    use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
+    use drive_abci::config::{
+        ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
+        ValidatorSetConfig,
+    };
 
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock};
@@ -75,23 +78,28 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         outcome
             .abci_app
@@ -150,16 +158,16 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -183,13 +191,20 @@ mod tests {
                     signature: [2; 96].into(),
                 })
             });
-        run_chain_for_strategy(&mut platform, 1, strategy.clone(), config.clone(), 15);
+        run_chain_for_strategy(
+            &mut platform,
+            1,
+            strategy.clone(),
+            config.clone(),
+            15,
+            &mut None,
+        );
 
         //platform block didn't complete, so it should get another init chain
 
         strategy.failure_testing = None;
 
-        run_chain_for_strategy(&mut platform, 15, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 15, strategy, config, 15, &mut None);
     }
 
     // #[test]
@@ -198,13 +213,12 @@ mod tests {
     //     // We use the dpns contract and we insert two documents both with the same "name"
     //     // This is a common scenario we should see quite often
     //     let config = PlatformConfig {
-    //         validator_set_quorum_size: 100,
-    //         validator_set_quorum_type: "llmq_100_67".to_string(),
-    //         chain_lock_quorum_type: "llmq_100_67".to_string(),
+    //         validator_set_quorum_quorum_size: 100,
+    //         validator_set_quorum_type: QuorumType::Llmq100_67,
+    //         chain_lock_quorum_type: QuorumType::Llmq100_67,
     //         execution: ExecutionConfig {
     //             //we disable document triggers because we are using dpns and dpns needs a preorder
     //             use_document_triggers: false,
-    //             validator_set_rotation_block_count: 25,
     //             ..Default::default()
     //         },
     //         block_spacing_ms: 3000,

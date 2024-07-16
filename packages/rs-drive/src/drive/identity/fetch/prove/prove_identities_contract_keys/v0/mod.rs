@@ -1,6 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::identity::Purpose;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
@@ -25,12 +25,6 @@ impl Drive {
             &purposes,
             Some((identity_ids.len() * purposes.len()) as u16),
         );
-        self.grove_get_proved_path_query(
-            &query,
-            false,
-            transaction,
-            &mut drive_operations,
-            drive_version,
-        )
+        self.grove_get_proved_path_query(&query, transaction, &mut drive_operations, drive_version)
     }
 }

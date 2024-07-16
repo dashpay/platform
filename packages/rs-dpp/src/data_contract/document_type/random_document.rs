@@ -1,12 +1,14 @@
+use bincode::{Decode, Encode};
+
+use platform_value::{Bytes32, Identifier};
+use rand::prelude::StdRng;
+
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::document::Document;
 use crate::identity::Identity;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_value::{Bytes32, Identifier};
-use rand::prelude::StdRng;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode)]
 pub enum DocumentFieldFillType {
@@ -307,7 +309,7 @@ impl CreateRandomDocument for DocumentType {
                 document_field_fill_size,
                 rng,
                 platform_version,
-            ), // Add more cases as necessary for other variants
+            ),
         }
     }
 }

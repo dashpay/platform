@@ -13,9 +13,9 @@ use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::withdrawals_contract;
 use drive::dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
-use drive::drive::batch::DriveOperation;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use drive::query::TransactionArg;
+use drive::util::batch::DriveOperation;
 
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use crate::rpc::core::CoreHeight;
@@ -25,7 +25,8 @@ use crate::{
     rpc::core::CoreRPCLike,
 };
 use dpp::errors::ProtocolError;
-use drive::drive::config::DEFAULT_QUERY_LIMIT;
+
+use drive::config::DEFAULT_QUERY_LIMIT;
 
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
 
@@ -108,6 +109,7 @@ where
             block_info,
             transaction,
             platform_version,
+            None,
         )?;
 
         Ok(UnsignedWithdrawalTxs::from_vec(

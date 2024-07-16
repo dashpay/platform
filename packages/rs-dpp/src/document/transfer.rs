@@ -2,11 +2,12 @@ use crate::consensus::basic::data_contract::UnknownTransferableTypeError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
+use derive_more::Display;
 
 /// We made this enum because in the future we might have a case where documents are sometimes
 /// transferable
 
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default, Display)]
 #[repr(u8)]
 pub enum Transferable {
     #[default]

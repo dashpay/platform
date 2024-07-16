@@ -1,5 +1,3 @@
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::drive::identity::contract_info::keys::IdentityDataContractKeyApplyInfo;
 use crate::drive::identity::contract_info::ContractInfoStructure::ContractInfoKeysKey;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
@@ -8,12 +6,14 @@ use crate::drive::identity::{
     identity_contract_info_group_path_vec, identity_contract_info_root_path_vec,
     identity_key_location_within_identity_vec, identity_path_vec,
 };
-use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 use crate::drive::Drive;
 use crate::error::contract::DataContractError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+use crate::util::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
@@ -104,6 +104,7 @@ impl Drive {
         // we insert the contract root tree if it doesn't exist already
         self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
             PathKeyInfo::<0>::PathKey((identity_path, vec![IdentityContractInfo as u8])),
+            false,
             None,
             apply_type,
             transaction,
@@ -171,6 +172,7 @@ impl Drive {
                         identity_contract_info_root_path_vec(&identity_id),
                         root_id.to_vec(),
                     )),
+                    false,
                     None,
                     apply_type,
                     transaction,
@@ -184,6 +186,7 @@ impl Drive {
                         identity_contract_info_group_path_vec(&identity_id, &root_id),
                         vec![ContractInfoKeysKey as u8],
                     )),
+                    false,
                     None,
                     apply_type,
                     transaction,
@@ -211,6 +214,7 @@ impl Drive {
                         identity_contract_info_group_keys_path_vec(&identity_id, &root_id),
                         vec![purpose as u8],
                     )),
+                    false,
                     None,
                     apply_type,
                     transaction,
@@ -350,6 +354,7 @@ impl Drive {
                         identity_contract_info_root_path_vec(&identity_id),
                         contract_id_bytes_with_document_type_name.to_vec(),
                     )),
+                    false,
                     None,
                     apply_type,
                     transaction,
@@ -365,6 +370,7 @@ impl Drive {
                         ),
                         vec![ContractInfoKeysKey as u8],
                     )),
+                    false,
                     None,
                     apply_type,
                     transaction,
@@ -394,6 +400,7 @@ impl Drive {
                             ),
                             vec![purpose as u8],
                         )),
+                        false,
                         None,
                         apply_type,
                         transaction,

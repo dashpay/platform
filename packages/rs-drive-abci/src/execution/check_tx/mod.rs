@@ -1,9 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform_types::platform::Platform;
+use crate::platform_types::platform::{Platform, PlatformRef};
 
 use crate::abci::AbciError;
-use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::FeeResult;
@@ -14,12 +13,10 @@ mod v0;
 
 // @append_only
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug)]
 pub enum CheckTxLevel {
-    #[default]
-    Unknown,
-    FirstTimeCheck,
-    Recheck,
+    FirstTimeCheck = 0,
+    Recheck = 1,
 }
 
 impl TryFrom<u8> for CheckTxLevel {
@@ -53,7 +50,7 @@ impl TryFrom<i32> for CheckTxLevel {
 }
 
 /// The result of a check tx
-#[derive(Default, Clone)]
+#[derive(Clone, Debug)]
 pub struct CheckTxResult {
     /// The level used when checking the transaction
     pub level: CheckTxLevel,
@@ -67,6 +64,10 @@ pub struct CheckTxResult {
     /// Priority to return to tenderdash. State Transitions with higher priority take precedence
     /// over state transitions with lower priority
     pub priority: u32,
+    /// State transition type name. Using for logging
+    pub state_transition_name: Option<String>,
+    /// State transition ID. Using for logging
+    pub state_transition_hash: Option<[u8; 32]>,
 }
 
 impl<C> Platform<C>
@@ -91,11 +92,11 @@ where
         &self,
         raw_tx: &[u8],
         check_tx_level: CheckTxLevel,
-        platform_state: &PlatformState,
+        platform_ref: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
         match platform_version.drive_abci.methods.engine.check_tx {
-            0 => self.check_tx_v0(raw_tx, check_tx_level, platform_state, platform_version),
+            0 => self.check_tx_v0(raw_tx, check_tx_level, platform_ref, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "check_tx".to_string(),
                 known_versions: vec![0],

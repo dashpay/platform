@@ -12,7 +12,7 @@ impl DataContractCborConversionMethodsV0 for DataContract {
     fn from_cbor_with_id(
         cbor_bytes: impl AsRef<[u8]>,
         contract_id: Option<Identifier>,
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version
@@ -23,7 +23,7 @@ impl DataContractCborConversionMethodsV0 for DataContract {
             0 => Ok(DataContractV0::from_cbor_with_id(
                 cbor_bytes,
                 contract_id,
-                validate,
+                full_validation,
                 platform_version,
             )?
             .into()),
@@ -37,7 +37,7 @@ impl DataContractCborConversionMethodsV0 for DataContract {
 
     fn from_cbor(
         cbor_bytes: impl AsRef<[u8]>,
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version
@@ -45,7 +45,9 @@ impl DataContractCborConversionMethodsV0 for DataContract {
             .contract_versions
             .contract_structure_version
         {
-            0 => Ok(DataContractV0::from_cbor(cbor_bytes, validate, platform_version)?.into()),
+            0 => Ok(
+                DataContractV0::from_cbor(cbor_bytes, full_validation, platform_version)?.into(),
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::from_cbor".to_string(),
                 known_versions: vec![0],

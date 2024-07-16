@@ -45,7 +45,7 @@ impl<'de> Deserialize<'de> for DataContractV0 {
 impl DataContractV0 {
     pub(in crate::data_contract) fn try_from_platform_versioned(
         value: DataContractInSerializationFormat,
-        validate: bool,
+        full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -59,7 +59,7 @@ impl DataContractV0 {
                     0 => {
                         let data_contract = DataContractV0::try_from_platform_versioned_v0(
                             serialization_format_v0,
-                            validate,
+                            full_validation,
                             validation_operations,
                             platform_version,
                         )?;
@@ -78,7 +78,7 @@ impl DataContractV0 {
 
     pub(in crate::data_contract) fn try_from_platform_versioned_v0(
         data_contract_data: DataContractInSerializationFormatV0,
-        validate: bool,
+        full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -98,7 +98,7 @@ impl DataContractV0 {
             config.documents_keep_history_contract_default(),
             config.documents_mutable_contract_default(),
             config.documents_can_be_deleted_contract_default(),
-            validate,
+            full_validation,
             validation_operations,
             platform_version,
         )?;

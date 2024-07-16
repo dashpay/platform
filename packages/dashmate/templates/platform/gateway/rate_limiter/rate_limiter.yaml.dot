@@ -1,0 +1,23 @@
+domain: edge_proxy_per_ip
+descriptors:
+  - key: remote_address
+    rate_limit:
+      unit: {{= it.platform.gateway.rateLimiter.unit }}
+      requests_per_unit: {{= it.platform.gateway.rateLimiter.requestsPerUnit }}
+
+  # Blacklisted IPs
+  {{~ it.platform.gateway.rateLimiter.blacklist :ip }}
+  - key: remote_address
+    value: {{= ip }}
+    rate_limit:
+      unit: second
+      requests_per_unit: 0
+  {{~}}
+
+  # Whitelisted IPs
+  {{~ it.platform.gateway.rateLimiter.whitelist :ip }}
+  - key: remote_address
+    value: {{= ip }}
+    rate_limit:
+      unlimited: true
+  {{~}}

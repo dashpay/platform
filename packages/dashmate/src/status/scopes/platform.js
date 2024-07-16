@@ -18,8 +18,8 @@ export default function getPlatformScopeFactory(
   async function getMNSync(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
-      user: config.get('core.rpc.user'),
-      pass: config.get('core.rpc.password'),
+      user: 'dashmate',
+      pass: config.get('core.rpc.users.dashmate.password'),
       host: await getConnectionHost(config, 'core', 'core.rpc.host'),
     });
 
@@ -77,7 +77,7 @@ export default function getPlatformScopeFactory(
     // Collecting platform data fails if Tenderdash is waiting for core to sync
     if (info.serviceStatus === ServiceStatusEnum.up) {
       const portStatusResult = await Promise.allSettled([
-        providers.mnowatch.checkPortStatus(config.get('platform.dapi.envoy.http.port')),
+        providers.mnowatch.checkPortStatus(config.get('platform.gateway.listeners.dapiAndDrive.port')),
         providers.mnowatch.checkPortStatus(config.get('platform.drive.tenderdash.p2p.port')),
       ]);
       const [httpPortState, p2pPortState] = portStatusResult.map((result) => (result.status === 'fulfilled' ? result.value : null));
@@ -185,7 +185,7 @@ export default function getPlatformScopeFactory(
    * @returns {Promise<Object>}
    */
   async function getPlatformScope(config) {
-    const httpPort = config.get('platform.dapi.envoy.http.port');
+    const httpPort = config.get('platform.gateway.listeners.dapiAndDrive.port');
     const httpService = config.get('externalIp') ? `${config.get('externalIp')}:${httpPort}` : null;
     const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
     const p2pService = config.get('externalIp') ? `${config.get('externalIp')}:${p2pPort}` : null;

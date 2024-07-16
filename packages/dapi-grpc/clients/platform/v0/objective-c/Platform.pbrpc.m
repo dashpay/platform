@@ -450,6 +450,191 @@
              responseClass:[GetEpochsInfoResponse class]];
 }
 
+#pragma mark getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse)
+
+/**
+ * What votes are currently happening for a specific contested index
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getContestedResourcesWithRequest:(GetContestedResourcesRequest *)request handler:(void(^)(GetContestedResourcesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContestedResourcesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * What votes are currently happening for a specific contested index
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetContestedResourcesWithRequest:(GetContestedResourcesRequest *)request handler:(void(^)(GetContestedResourcesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContestedResources"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContestedResourcesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * What votes are currently happening for a specific contested index
+ */
+- (GRPCUnaryProtoCall *)getContestedResourcesWithMessage:(GetContestedResourcesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContestedResources"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContestedResourcesResponse class]];
+}
+
+#pragma mark getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse)
+
+/**
+ * What's the state of a contested resource vote? (ie who is winning?)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getContestedResourceVoteStateWithRequest:(GetContestedResourceVoteStateRequest *)request handler:(void(^)(GetContestedResourceVoteStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContestedResourceVoteStateWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * What's the state of a contested resource vote? (ie who is winning?)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetContestedResourceVoteStateWithRequest:(GetContestedResourceVoteStateRequest *)request handler:(void(^)(GetContestedResourceVoteStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContestedResourceVoteState"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContestedResourceVoteStateResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * What's the state of a contested resource vote? (ie who is winning?)
+ */
+- (GRPCUnaryProtoCall *)getContestedResourceVoteStateWithMessage:(GetContestedResourceVoteStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContestedResourceVoteState"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContestedResourceVoteStateResponse class]];
+}
+
+#pragma mark getContestedResourceVotersForIdentity(GetContestedResourceVotersForIdentityRequest) returns (GetContestedResourceVotersForIdentityResponse)
+
+/**
+ * Who voted for a contested resource to go to a specific identity?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getContestedResourceVotersForIdentityWithRequest:(GetContestedResourceVotersForIdentityRequest *)request handler:(void(^)(GetContestedResourceVotersForIdentityResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContestedResourceVotersForIdentityWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * Who voted for a contested resource to go to a specific identity?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetContestedResourceVotersForIdentityWithRequest:(GetContestedResourceVotersForIdentityRequest *)request handler:(void(^)(GetContestedResourceVotersForIdentityResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContestedResourceVotersForIdentity"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContestedResourceVotersForIdentityResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * Who voted for a contested resource to go to a specific identity?
+ */
+- (GRPCUnaryProtoCall *)getContestedResourceVotersForIdentityWithMessage:(GetContestedResourceVotersForIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContestedResourceVotersForIdentity"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContestedResourceVotersForIdentityResponse class]];
+}
+
+#pragma mark getContestedResourceIdentityVotes(GetContestedResourceIdentityVotesRequest) returns (GetContestedResourceIdentityVotesResponse)
+
+/**
+ * How did an identity vote?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getContestedResourceIdentityVotesWithRequest:(GetContestedResourceIdentityVotesRequest *)request handler:(void(^)(GetContestedResourceIdentityVotesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetContestedResourceIdentityVotesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * How did an identity vote?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetContestedResourceIdentityVotesWithRequest:(GetContestedResourceIdentityVotesRequest *)request handler:(void(^)(GetContestedResourceIdentityVotesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getContestedResourceIdentityVotes"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetContestedResourceIdentityVotesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * How did an identity vote?
+ */
+- (GRPCUnaryProtoCall *)getContestedResourceIdentityVotesWithMessage:(GetContestedResourceIdentityVotesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getContestedResourceIdentityVotes"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetContestedResourceIdentityVotesResponse class]];
+}
+
+#pragma mark getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse)
+
+/**
+ * What vote polls will end soon?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getVotePollsByEndDateWithRequest:(GetVotePollsByEndDateRequest *)request handler:(void(^)(GetVotePollsByEndDateResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetVotePollsByEndDateWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * What vote polls will end soon?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetVotePollsByEndDateWithRequest:(GetVotePollsByEndDateRequest *)request handler:(void(^)(GetVotePollsByEndDateResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getVotePollsByEndDate"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetVotePollsByEndDateResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+/**
+ * What vote polls will end soon?
+ */
+- (GRPCUnaryProtoCall *)getVotePollsByEndDateWithMessage:(GetVotePollsByEndDateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getVotePollsByEndDate"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetVotePollsByEndDateResponse class]];
+}
+
+#pragma mark getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse)
+
+- (void)getPrefundedSpecializedBalanceWithRequest:(GetPrefundedSpecializedBalanceRequest *)request handler:(void(^)(GetPrefundedSpecializedBalanceResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetPrefundedSpecializedBalanceWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetPrefundedSpecializedBalanceWithRequest:(GetPrefundedSpecializedBalanceRequest *)request handler:(void(^)(GetPrefundedSpecializedBalanceResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getPrefundedSpecializedBalance"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetPrefundedSpecializedBalanceResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getPrefundedSpecializedBalanceWithMessage:(GetPrefundedSpecializedBalanceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getPrefundedSpecializedBalance"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetPrefundedSpecializedBalanceResponse class]];
+}
+
 #pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
 
 - (void)getPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler{

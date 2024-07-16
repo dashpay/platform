@@ -4,8 +4,8 @@
 //!
 
 use crate::block::epoch::{Epoch, EpochIndex};
-use crate::fee::default_costs::EpochCosts;
 use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+use crate::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
 use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
 use crate::fee::epoch::{BytesPerEpoch, CreditsPerEpoch};
 use crate::fee::Credits;
@@ -38,6 +38,7 @@ impl FeeRefunds {
         storage_removal: I,
         current_epoch_index: EpochIndex,
         epochs_per_era: u16,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<Self, ProtocolError>
     where
         I: IntoIterator<Item = ([u8; 32], C)>,
@@ -53,10 +54,10 @@ impl FeeRefunds {
                     .map(|(encoded_epoch_index, bytes)| {
                         let epoch_index : u16 = encoded_epoch_index.try_into().map_err(|_| ProtocolError::Overflow("can't fit u64 epoch index from StorageRemovalPerEpochByIdentifier to u16 EpochIndex"))?;
 
-                        // TODO We should use multipliers
+                        // TODO Add in multipliers once they have been made
 
                         let credits: Credits = (bytes as Credits)
-                            .checked_mul(Epoch::new(current_epoch_index)?.cost_for_known_cost_item(StorageDiskUsageCreditPerByte))
+                            .checked_mul(Epoch::new(current_epoch_index)?.cost_for_known_cost_item(previous_fee_versions, StorageDiskUsageCreditPerByte))
                             .ok_or(ProtocolError::Overflow("storage written bytes cost overflow"))?;
 
                         let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
@@ -180,6 +181,11 @@ impl IntoIterator for FeeRefunds {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use once_cell::sync::Lazy;
+    use platform_version::version::PlatformVersion;
+
+    static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
 
     mod from_storage_removal {
         use super::*;
@@ -194,8 +200,13 @@ mod tests {
             let storage_removal =
                 BytesPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
 
-            let fee_refunds = FeeRefunds::from_storage_removal(storage_removal, 3, 20)
-                .expect("should create fee refunds");
+            let fee_refunds = FeeRefunds::from_storage_removal(
+                storage_removal,
+                3,
+                20,
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+            )
+            .expect("should create fee refunds");
 
             let credits_per_epoch = fee_refunds.get(&identity_id).expect("should exists");
 

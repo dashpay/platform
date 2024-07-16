@@ -16,9 +16,9 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
-use drive::drive::batch::DriveOperation;
+use drive::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionAccessorsV0;
+use drive::util::batch::DriveOperation;
 
 /// An execution event
 #[derive(Clone)]
@@ -35,6 +35,13 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         execution_operations: Vec<ValidationOperation>,
         /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
         user_fee_increase: UserFeeIncrease,
+    },
+    /// A drive event that has a fixed cost that will be taken out in the operations
+    PaidFixedCost {
+        /// the operations that should be performed
+        operations: Vec<DriveOperation<'a>>,
+        /// fees to add
+        fees_to_add_to_pool: Credits,
     },
     /// A drive event that is paid from an asset lock
     PaidFromAssetLock {
@@ -157,7 +164,7 @@ impl<'a> ExecutionEvent<'a> {
             }
             StateTransitionAction::DocumentsBatchAction(document_batch_action) => {
                 let user_fee_increase = action.user_fee_increase();
-                let removed_balance = document_batch_action.all_purchases_amount();
+                let removed_balance = document_batch_action.all_used_balances()?;
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
@@ -173,6 +180,18 @@ impl<'a> ExecutionEvent<'a> {
                         "partial identity should be present for other state transitions",
                     )))
                 }
+            }
+            StateTransitionAction::MasternodeVoteAction(_) => {
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+
+                Ok(ExecutionEvent::PaidFixedCost {
+                    operations,
+                    fees_to_add_to_pool: platform_version
+                        .fee_version
+                        .vote_resolution_fund_fees
+                        .contested_document_single_vote_cost,
+                })
             }
             _ => {
                 let user_fee_increase = action.user_fee_increase();

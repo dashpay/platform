@@ -3,7 +3,7 @@ use crate::drive::Drive;
 use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequest;
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::error::Error;
-use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -60,11 +60,11 @@ impl Drive {
         } = request;
 
         let validation_results = document_type
-            .indices()
-            .iter()
+            .indexes()
+            .values()
             .filter_map(|index| {
                 if !index.unique {
-                    // if a index is not unique there is no issue
+                    // if an index is not unique there is no issue
                     None
                 } else {
                     let where_queries = index
@@ -169,7 +169,7 @@ impl Drive {
                         // there are empty fields, which means that the index is no longer unique
                         None
                     } else {
-                        let query = DriveQuery {
+                        let query = DriveDocumentQuery {
                             contract,
                             document_type,
                             internal_clauses: InternalClauses {

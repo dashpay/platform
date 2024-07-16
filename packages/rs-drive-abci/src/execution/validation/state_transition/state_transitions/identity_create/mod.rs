@@ -23,6 +23,7 @@ use dpp::version::PlatformVersion;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_create::advanced_structure::v0::IdentityCreateStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -193,6 +194,7 @@ impl StateTransitionStateValidationForIdentityCreateTransitionV0 for IdentityCre
 
 #[cfg(test)]
 mod tests {
+    use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::{Network, PrivateKey};
@@ -215,14 +217,18 @@ mod tests {
     #[test]
     fn test_identity_create_validation() {
         let platform_version = PlatformVersion::latest();
-        let mut platform = TestPlatformBuilder::new()
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
             .build_with_mock_rpc()
             .set_initial_state_structure();
-
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.load();
 
@@ -301,7 +307,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2566730);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2658800); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
         platform
             .drive
@@ -316,20 +322,24 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99916163270);
+        assert_eq!(identity_balance, 99916071200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
     }
 
     #[test]
     fn test_identity_create_asset_lock_reuse_after_issue() {
         let platform_version = PlatformVersion::latest();
-        let mut platform = TestPlatformBuilder::new()
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
             .build_with_mock_rpc()
             .set_initial_state_structure();
-
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.load();
 
@@ -453,7 +463,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 10013800); // 10000000 penalty + 13800 processing
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 10013000); // 10000000 penalty + 13800 processing
 
         platform
             .drive
@@ -515,7 +525,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3170170);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3263600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
         platform
             .drive
@@ -530,20 +540,24 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99911297030); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, 99911204400); // The identity balance is smaller than if there hadn't been any issue // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
     }
 
     #[test]
     fn test_identity_create_asset_lock_reuse_after_max_issues() {
         let platform_version = PlatformVersion::latest();
-        let mut platform = TestPlatformBuilder::new()
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
             .build_with_mock_rpc()
             .set_initial_state_structure();
-
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.load();
 
@@ -678,7 +692,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 10013800); // 10000000 penalty + 13800 processing
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 10013000); // 10000000 penalty + 13800 processing
 
             platform
                 .drive
@@ -756,14 +770,18 @@ mod tests {
     #[test]
     fn test_identity_create_asset_lock_use_all_funds() {
         let platform_version = PlatformVersion::latest();
-        let mut platform = TestPlatformBuilder::new()
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
             .build_with_mock_rpc()
             .set_initial_state_structure();
-
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.load();
 
@@ -899,7 +917,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 10013800); // 10000000 penalty + 13800 processing
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 10013000); // 10000000 penalty + 13800 processing
 
             platform
                 .drive
@@ -977,14 +995,18 @@ mod tests {
     #[test]
     fn test_identity_create_asset_lock_replay_attack() {
         let platform_version = PlatformVersion::latest();
-        let mut platform = TestPlatformBuilder::new()
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
             .build_with_mock_rpc()
             .set_initial_state_structure();
-
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.load();
 
@@ -1108,7 +1130,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 10013800); // 10000000 penalty + 13800 processing
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 10013000); // 10000000 penalty + 13800 processing
 
         platform
             .drive
@@ -1193,7 +1215,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3170170);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3263600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
 
         platform
             .drive
@@ -1208,6 +1230,6 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99911297030); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, 99911204400); // The identity balance is smaller than if there hadn't been any issue // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
     }
 }

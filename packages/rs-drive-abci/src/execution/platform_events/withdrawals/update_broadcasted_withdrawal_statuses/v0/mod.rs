@@ -5,15 +5,16 @@ use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::version::PlatformVersion;
 use itertools::Itertools;
 use std::collections::HashSet;
 
-use drive::drive::batch::DriveOperation;
-use drive::drive::config::DEFAULT_QUERY_LIMIT;
+use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use drive::grovedb::Transaction;
+use drive::util::batch::DriveOperation;
 
 use crate::{
     error::{execution::ExecutionError, Error},
@@ -155,6 +156,7 @@ where
             block_info,
             transaction.into(),
             platform_version,
+            None,
         )?;
 
         Ok(())
@@ -181,8 +183,8 @@ mod tests {
         prelude::Identifier,
         system_data_contracts::{load_system_data_contract, SystemDataContract},
     };
-    use drive::tests::helpers::setup::setup_document;
-    use drive::tests::helpers::setup::setup_system_data_contract;
+    use drive::util::test_helpers::setup::setup_document;
+    use drive::util::test_helpers::setup::setup_system_data_contract;
 
     #[test]
     fn test_statuses_are_updated() {

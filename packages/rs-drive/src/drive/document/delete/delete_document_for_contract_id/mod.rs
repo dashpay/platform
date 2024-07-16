@@ -2,16 +2,16 @@ mod v0;
 
 use grovedb::TransactionArg;
 
-use dpp::block::block_info::BlockInfo;
-
 use crate::drive::Drive;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 
 use crate::error::drive::DriveError;
 
 use crate::error::Error;
 
 use dpp::fee::fee_result::FeeResult;
-
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 
 impl Drive {
@@ -33,13 +33,14 @@ impl Drive {
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     pub fn delete_document_for_contract_id(
         &self,
-        document_id: [u8; 32],
-        contract_id: [u8; 32],
+        document_id: Identifier,
+        contract_id: Identifier,
         document_type_name: &str,
         block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -56,6 +57,7 @@ impl Drive {
                 apply,
                 transaction,
                 platform_version,
+                previous_fee_versions,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_document_for_contract_id".to_string(),

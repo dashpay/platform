@@ -15,6 +15,7 @@ mod test {
     };
     use crate::tests::fixtures::identity_v0_fixture;
     use crate::tests::utils::generate_random_identifier_struct;
+    use assert_matches::assert_matches;
     use platform_value::BinaryData;
     use serde_json::Value as JsonValue;
 
@@ -40,11 +41,8 @@ mod test {
                 into_validating_json: false,
             })
             .expect("conversion to json shouldn't fail");
-        assert!(matches!(result[IDENTITY_ID], JsonValue::String(_)));
-        assert!(matches!(result[SIGNATURE], JsonValue::String(_)));
-        assert!(matches!(
-            result[ADD_PUBLIC_KEYS][0]["data"],
-            JsonValue::String(_)
-        ));
+        assert_matches!(result[IDENTITY_ID], JsonValue::String(_));
+        assert_matches!(result[SIGNATURE], JsonValue::String(_));
+        assert_matches!(result[ADD_PUBLIC_KEYS][0]["data"], JsonValue::String(_));
     }
 }

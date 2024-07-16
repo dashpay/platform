@@ -1,7 +1,7 @@
-use crate::drive::object_size_info::DocumentAndContractInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::object_size_info::DocumentAndContractInfo;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;
@@ -55,7 +55,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "Drive::add_estimation_costs_for_add_document_to_primary_storage_v0"
+                method: "Drive::add_estimation_costs_for_add_document_to_primary_storage"
                     .to_string(),
                 known_versions: vec![0],
                 received: version,

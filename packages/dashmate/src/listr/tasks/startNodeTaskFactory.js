@@ -45,16 +45,22 @@ export default function startNodeTaskFactory(
 
     // Check Drive log files are created
     if (config.get('platform.enable')) {
+      // Ensure log files for Drive are created
       const loggers = config.get('platform.drive.abci.logs');
+      Object.values(loggers)
+        .filter((logger) => logger.destination !== 'stdout' && logger.destination !== 'stderr')
+        .forEach((logger) => {
+          ensureFileMountExists(logger.destination, 0o666);
+        });
 
-      for (const logger of Object.values(loggers)) {
-        if (['stdout', 'stderr'].includes(logger.destination)) {
-          continue;
-        }
+      // Ensure access log files for Gateway are created
+      config.get('platform.gateway.log.accessLogs')
+        .filter((log) => log.type === 'file')
+        .forEach((log) => {
+          ensureFileMountExists(log.path, 0o666);
+        });
 
-        ensureFileMountExists(logger.destination, 0o666);
-      }
-
+      // Ensure tenderdash log file is created
       const tenderdashLogFilePath = config.get('platform.drive.tenderdash.log.path');
       if (tenderdashLogFilePath !== null) {
         ensureFileMountExists(tenderdashLogFilePath, 0o666);
@@ -113,8 +119,8 @@ export default function startNodeTaskFactory(
         task: async () => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
-            user: config.get('core.rpc.user'),
-            pass: config.get('core.rpc.password'),
+            user: 'dashmate',
+            pass: config.get('core.rpc.users.dashmate.password'),
             host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 

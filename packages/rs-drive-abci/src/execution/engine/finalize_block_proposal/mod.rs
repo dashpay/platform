@@ -18,7 +18,7 @@ where
     ///
     /// This function first retrieves the block execution context and decomposes the request. It then checks
     /// if the received block matches the expected block information (height, round, hash, etc.). If everything
-    /// matches, the function verifies the commit signature (if enabled) and the vote extensions. If all checks
+    /// matches, the function verifies the commit signature (if enabled) and the votes extensions. If all checks
     /// pass, the block is committed to the state.
     ///
     /// # Arguments

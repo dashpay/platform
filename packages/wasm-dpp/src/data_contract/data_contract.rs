@@ -435,13 +435,18 @@ impl DataContractWasm {
 
     pub(crate) fn try_from_serialization_format(
         value: DataContractInSerializationFormat,
-        validate: bool,
+        full_validation: bool,
     ) -> Result<Self, JsValue> {
         let platform_version = PlatformVersion::first();
 
-        DataContract::try_from_platform_versioned(value, validate, &mut vec![], platform_version)
-            .with_js_error()
-            .map(Into::into)
+        DataContract::try_from_platform_versioned(
+            value,
+            full_validation,
+            &mut vec![],
+            platform_version,
+        )
+        .with_js_error()
+        .map(Into::into)
     }
 }
 

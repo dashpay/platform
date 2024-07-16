@@ -36,7 +36,11 @@ impl Drive {
             .epochs
             .get_epoch_storage_credits_for_distribution
         {
-            0 => self.get_epoch_storage_credits_for_distribution_v0(epoch_tree, transaction),
+            0 => self.get_epoch_storage_credits_for_distribution_v0(
+                epoch_tree,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_epoch_storage_credits_for_distribution".to_string(),
                 known_versions: vec![0],

@@ -46,7 +46,7 @@ where
     ///
     /// This function first retrieves the block execution context and decomposes the request. It then checks
     /// if the received block matches the expected block information (height, round, hash, etc.). If everything
-    /// matches, the function verifies the commit signature (if enabled) and the vote extensions. If all checks
+    /// matches, the function verifies the commit signature (if enabled) and the votes extensions. If all checks
     /// pass, the block is committed to the state.
     ///
     /// # Arguments
@@ -136,8 +136,8 @@ where
             return Ok(validation_result.into());
         }
 
-        // Verify vote extensions
-        // We don't need to verify vote extension signatures once again after tenderdash
+        // Verify votes extensions
+        // We don't need to verify votes extension signatures once again after tenderdash
         // here, because we will do it bellow broadcasting withdrawal transactions.
         // The sendrawtransaction RPC method returns an error if quorum signature is invalid
         let expected_withdrawal_transactions =
@@ -154,18 +154,23 @@ where
             return Ok(validation_result.into());
         }
 
+        // Verify commit
+
         // In production this will always be true
-        if self
+        #[cfg(not(feature = "testing-config"))]
+        let verify_commit_signature = true;
+
+        #[cfg(feature = "testing-config")]
+        let verify_commit_signature = self
             .config
             .testing_configs
-            .block_commit_signature_verification
-        {
-            // Verify commit
+            .block_commit_signature_verification;
 
+        if verify_commit_signature {
             let quorum_public_key = last_committed_state
                 .current_validator_set()?
                 .threshold_public_key();
-            let quorum_type = self.config.validator_set_quorum_type();
+            let quorum_type = self.config.validator_set.quorum_type;
             // TODO: We already had commit in the function above, why do we need to create it again with clone?
             let commit = Commit::new_from_cleaned(
                 commit_info.clone(),
@@ -213,7 +218,7 @@ where
                     let signature_bytes: [u8; 96] =
                         vote_extension.signature.try_into().map_err(|e| {
                             AbciError::BadRequestDataSize(format!(
-                                "invalid vote extension signature size: {}",
+                                "invalid votes extension signature size: {}",
                                 hex::encode(e)
                             ))
                         })?;
@@ -236,6 +241,7 @@ where
             app_hash: block_header.app_hash,
             quorum_hash: current_quorum_hash,
             block_id_hash,
+            proposer_pro_tx_hash: block_header.proposer_pro_tx_hash,
             signature: commit_info.block_signature,
             round,
         }

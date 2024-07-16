@@ -7,6 +7,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 
 use dpp::prelude::ConsensusValidationResult;
@@ -41,6 +42,7 @@ where
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         match event {
             ExecutionEvent::PaidFromAssetLock {
@@ -51,7 +53,7 @@ where
                 user_fee_increase,
             } => {
                 let previous_balance = identity.balance.ok_or(Error::Execution(
-                    ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
+                    ExecutionError::CorruptedCodeExecution("partial identity info with no balance in paid from asset lock execution event"),
                 ))?;
                 let previous_balance_with_top_up = previous_balance + added_balance;
                 let mut estimated_fee_result = self
@@ -62,6 +64,7 @@ where
                         block_info,
                         transaction,
                         platform_version,
+                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
 
@@ -101,7 +104,9 @@ where
                 user_fee_increase,
             } => {
                 let balance = identity.balance.ok_or(Error::Execution(
-                    ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
+                    ExecutionError::CorruptedCodeExecution(
+                        "partial identity info with no balance in paid execution event",
+                    ),
                 ))?;
                 let balance_after_principal_operation =
                     balance.saturating_sub(removed_balance.unwrap_or_default());
@@ -113,6 +118,7 @@ where
                         block_info,
                         transaction,
                         platform_version,
+                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
 
@@ -144,7 +150,8 @@ where
                     ))
                 }
             }
-            ExecutionEvent::Free { .. }
+            ExecutionEvent::PaidFixedCost { .. }
+            | ExecutionEvent::Free { .. }
             | ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. } => Ok(
                 ConsensusValidationResult::new_with_data(FeeResult::default()),
             ),

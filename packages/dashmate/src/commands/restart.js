@@ -10,6 +10,8 @@ export default class RestartCommand extends ConfigBaseCommand {
   static flags = {
     ...ConfigBaseCommand.flags,
     platform: Flags.boolean({ char: 'p', description: 'restart only platform', default: false }),
+    safe: Flags.boolean({ char: 's', description: 'wait for DKG before stop', default: false }),
+    force: Flags.boolean({ char: 'f', description: 'ignore DKG (masternode might be banned)', default: false }),
   };
 
   /**
@@ -25,6 +27,8 @@ export default class RestartCommand extends ConfigBaseCommand {
     {
       verbose: isVerbose,
       platform: platformOnly,
+      safe: isSafe,
+      force: isForce,
     },
     dockerCompose,
     restartNodeTask,
@@ -51,6 +55,8 @@ export default class RestartCommand extends ConfigBaseCommand {
     try {
       await tasks.run({
         isVerbose,
+        isSafe,
+        isForce,
         platformOnly: platformOnly === true,
       });
     } catch (e) {

@@ -1,11 +1,11 @@
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::DriveKeyInfo::KeyRef;
+use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
@@ -16,6 +16,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
@@ -53,6 +54,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         if !apply {
             return self.insert_contract(
@@ -132,6 +134,7 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
+            previous_fee_versions,
         )
     }
 
@@ -315,6 +318,7 @@ impl Drive {
                     if !index_cache.contains(index_bytes) {
                         self.batch_insert_empty_tree_if_not_exists(
                             PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
+                            false,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
                             apply_type,
                             transaction,

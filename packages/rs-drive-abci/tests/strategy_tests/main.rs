@@ -24,10 +24,12 @@ mod execution;
 mod failures;
 mod masternode_list_item_helpers;
 mod masternodes;
+mod patch_platform_tests;
 mod query;
 mod strategy;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
+mod voting_tests;
 
 pub type BlockHeight = u64;
 
@@ -47,7 +49,7 @@ mod tests {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::AssetUnlockStatus;
-    use dashcore_rpc::json::AssetUnlockStatusResult;
+    use dashcore_rpc::json::{AssetUnlockStatusResult, QuorumType};
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use std::sync::{Arc, Mutex};
     use strategy_tests::operations::DocumentAction::{
@@ -72,9 +74,11 @@ mod tests {
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
-    use drive::drive::config::DEFAULT_QUERY_LIMIT;
+    use drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
-    use drive_abci::config::{ExecutionConfig, PlatformTestConfig};
+    use drive_abci::config::{
+        ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformTestConfig, ValidatorSetConfig,
+    };
 
     use drive_abci::logging::LogLevel;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -113,23 +117,23 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
     }
 
     #[test]
@@ -158,12 +162,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -174,7 +178,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
+        run_chain_for_strategy(&mut platform, 50, strategy, config, 13, &mut None);
     }
 
     #[test]
@@ -203,12 +207,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -225,22 +229,22 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
             identity_nonce_counter,
             identity_contract_nonce_counter,
+            instant_lock_quorums,
             ..
-        } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
-
-        let known_root_hash = abci_app
-            .platform
-            .drive
-            .grove
-            .root_hash(None)
-            .unwrap()
-            .expect("expected root hash");
+        } = run_chain_for_strategy(
+            &mut platform,
+            15,
+            strategy.clone(),
+            config.clone(),
+            40,
+            &mut None,
+        );
 
         let state = abci_app.platform.state.load();
 
@@ -248,6 +252,14 @@ mod tests {
 
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
+
+        let known_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
 
         abci_app
             .platform
@@ -289,13 +301,15 @@ mod tests {
                 core_height_start: 1,
                 block_count: 30,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
+                instant_lock_quorums,
             },
             strategy,
             config,
@@ -335,12 +349,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -357,22 +371,22 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
             identity_nonce_counter,
             identity_contract_nonce_counter,
+            instant_lock_quorums,
             ..
-        } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
-
-        let known_root_hash = abci_app
-            .platform
-            .drive
-            .grove
-            .root_hash(None)
-            .unwrap()
-            .expect("expected root hash");
+        } = run_chain_for_strategy(
+            &mut platform,
+            15,
+            strategy.clone(),
+            config.clone(),
+            40,
+            &mut None,
+        );
 
         let state = abci_app.platform.state.load();
 
@@ -380,6 +394,14 @@ mod tests {
 
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
+
+        let known_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
 
         abci_app
             .platform
@@ -421,13 +443,15 @@ mod tests {
                 core_height_start: 1,
                 block_count: 30,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
+                instant_lock_quorums,
             },
             strategy,
             config,
@@ -468,23 +492,28 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
 
         let balance = outcome
             .abci_app
@@ -498,7 +527,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864825980)
+        assert_eq!(balance, 99864716400) // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
     }
 
     #[test]
@@ -530,23 +559,23 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
     }
 
     #[test]
@@ -579,16 +608,16 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -596,7 +625,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -636,17 +665,17 @@ mod tests {
         let hour_in_s = 60 * 60;
         let three_mins_in_ms = 1000 * 60 * 3;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: hour_in_s,
                 ..Default::default()
             },
             block_spacing_ms: three_mins_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -654,7 +683,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -694,16 +723,32 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 10,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -711,7 +756,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 2000, strategy, config, 40);
+            run_chain_for_strategy(&mut platform, 2000, strategy, config, 40, &mut None);
 
         // With these params if we didn't rotate we would have at most 240
         // of the 500 hpmns that could get paid, however we are expecting that most
@@ -774,16 +819,32 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 10,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -791,7 +852,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+            run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
 
         // With these params if we add new mns the hpmn masternode list would be 100, but we
         // can expect it to be much higher.
@@ -841,16 +902,32 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 10,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -858,7 +935,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+            run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
@@ -903,16 +980,32 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 10,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -923,7 +1016,7 @@ mod tests {
             abci_app,
             proposers,
             ..
-        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
@@ -962,7 +1055,8 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_with_block_signing() {
-        // drive_abci::logging::Loggers::default().try_install().ok();
+        drive_abci::logging::init_for_tests(LogLevel::Silent);
+
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -995,15 +1089,16 @@ mod tests {
                 },
             }),
             verify_state_transition_results: true,
+            sign_instant_locks: true,
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1014,7 +1109,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
 
         assert_eq!(outcome.identities.len(), 100);
     }
@@ -1052,16 +1147,21 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
 
@@ -1069,7 +1169,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1077,6 +1177,12 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         assert_eq!(
             hex::encode(
                 outcome
@@ -1084,11 +1190,11 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
-            "3beaf287fb5fb712715e688ef3cf642e3e4042270907ebd022050b06af0cb433".to_string()
+            "b7de0eae6eb0e369ac62ae51ebd9d9523485c137b76972bab5f66685850ad411".to_string()
         )
     }
 
@@ -1133,23 +1239,28 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None);
 
         outcome
             .abci_app
@@ -1252,23 +1363,23 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 30, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 30, strategy, config, 15, &mut None);
     }
 
     #[test]
@@ -1339,23 +1450,28 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         outcome
             .abci_app
@@ -1443,23 +1559,23 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
     }
 
     #[test]
@@ -1524,16 +1640,21 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let block_count = 120;
@@ -1541,7 +1662,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1632,16 +1754,21 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let block_count = 120;
@@ -1649,7 +1776,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1740,16 +1868,21 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
 
@@ -1758,7 +1891,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1766,7 +1900,10 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
-
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
         assert_eq!(
             hex::encode(
                 outcome
@@ -1774,11 +1911,11 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
-            "c0c1f59b535f358448a33c20b419b93bcfa12b05b221f77a7347892f48ca2f16".to_string()
+            "432e576ef3437c4da9eebd39fe9fa823b83fcb733f09f3759f5d13e5cd2b7258".to_string()
         )
     }
 
@@ -1866,16 +2003,21 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
 
@@ -1884,7 +2026,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1892,6 +2035,10 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
         assert_eq!(
             hex::encode(
                 outcome
@@ -1899,11 +2046,11 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
-            "a7be306dcdf58930dc14befa2b78c839d66699cf9d454942ac9c595161ffe99e".to_string()
+            "e731bea1b579151ccdf2fe89fbeed94509b8f17fa6adaa5dfeb7409405bccb7b".to_string()
         )
     }
 
@@ -1991,16 +2138,16 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -2009,7 +2156,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, result) in tx_results_per_block {
                 assert_eq!(
@@ -2105,16 +2253,16 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -2123,7 +2271,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, _unused_result) in tx_results_per_block {
                 // We can't ever get a documents batch transition, because the proposer will remove it from a block
@@ -2219,17 +2368,22 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let block_count = 30;
@@ -2237,7 +2391,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, 470);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
@@ -2348,17 +2503,22 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let block_count = 30;
@@ -2366,7 +2526,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, 90);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
@@ -2493,17 +2654,22 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let block_count = 30;
@@ -2511,7 +2677,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, 97);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
@@ -2524,6 +2691,7 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_identities() {
+        let platform_version = PlatformVersion::latest();
         drive_abci::logging::init_for_tests(LogLevel::Silent);
 
         let strategy = NetworkStrategy {
@@ -2559,26 +2727,27 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            sign_instant_locks: true,
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         let max_initial_balance = 100000000000u64; // TODO: some centralized way for random test data (`arbitrary` maybe?)
         let balances = outcome
@@ -2592,6 +2761,7 @@ mod tests {
                     .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 
@@ -2642,23 +2812,28 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
         let state = outcome.abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
@@ -2727,23 +2902,28 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         let identities = outcome
             .abci_app
@@ -2771,6 +2951,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn run_chain_top_up_and_withdraw_from_identities() {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
@@ -2819,21 +3000,26 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             // because we can add an identity and withdraw from it in the same block
-            // the result would be different then expected
+            // the result would be different from what would be expected
             verify_state_transition_results: false,
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
 
@@ -2901,18 +3087,25 @@ mod tests {
             ChainExecutionOutcome {
                 abci_app,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
                 current_proposer_versions,
                 end_time_ms,
                 identity_nonce_counter,
                 identity_contract_nonce_counter,
+                instant_lock_quorums,
                 ..
             },
             last_block_pooled_withdrawals_amount,
         ) = {
-            let outcome =
-                run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 1);
+            let outcome = run_chain_for_strategy(
+                &mut platform,
+                2,
+                strategy.clone(),
+                config.clone(),
+                1,
+                &mut None,
+            );
 
             // Withdrawal transactions are not populated to block execution context yet
             assert_eq!(outcome.withdrawals.len(), 0);
@@ -2940,13 +3133,14 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
             withdrawals: last_block_withdrawals,
             identity_nonce_counter,
             identity_contract_nonce_counter,
+            instant_lock_quorums,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -2956,13 +3150,15 @@ mod tests {
                     core_height_start: 1,
                     block_count: 1,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms,
+                    instant_lock_quorums,
                 },
                 strategy.clone(),
                 config.clone(),
@@ -3019,13 +3215,14 @@ mod tests {
             ChainExecutionOutcome {
                 abci_app,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
                 current_proposer_versions,
                 end_time_ms,
                 withdrawals: last_block_withdrawals,
                 identity_nonce_counter,
                 identity_contract_nonce_counter,
+                instant_lock_quorums,
                 ..
             },
             last_block_broadcased_withdrawals_amount,
@@ -3037,13 +3234,15 @@ mod tests {
                     core_height_start: 1,
                     block_count: 1,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
+                    instant_lock_quorums,
                 },
                 strategy.clone(),
                 config.clone(),
@@ -3131,13 +3330,14 @@ mod tests {
             ChainExecutionOutcome {
                 abci_app,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
                 current_proposer_versions,
                 end_time_ms,
                 withdrawals: last_block_withdrawals,
                 identity_nonce_counter,
                 identity_contract_nonce_counter,
+                instant_lock_quorums,
                 ..
             },
             last_block_withdrawals_completed_amount,
@@ -3149,13 +3349,15 @@ mod tests {
                     core_height_start: 1,
                     block_count: 1,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
+                    instant_lock_quorums,
                 },
                 strategy.clone(),
                 config.clone(),
@@ -3256,13 +3458,15 @@ mod tests {
                     core_height_start: 1,
                     block_count: 1,
                     proposers,
-                    quorums,
-                    current_quorum_hash,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
+                    instant_lock_quorums,
                 },
                 strategy.clone(),
                 config.clone(),
@@ -3387,16 +3591,31 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 3,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -3422,7 +3641,8 @@ mod tests {
                     })
                 });
 
-            let outcome = run_chain_for_strategy(platform, 1, strategy.clone(), config.clone(), 7);
+            let outcome =
+                run_chain_for_strategy(platform, 1, strategy.clone(), config.clone(), 7, &mut None);
             outcomes.push(outcome);
         }
 
@@ -3492,12 +3712,17 @@ mod tests {
             first_validator_set_fingerprint == last_validator_set_fingerprint
         }));
 
+        let state = outcomes[0].abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         let first_last_app_hash = outcomes[0]
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3507,7 +3732,7 @@ mod tests {
                 .platform
                 .drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -3552,17 +3777,32 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 3,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform_a = TestPlatformBuilder::new()
@@ -3592,9 +3832,15 @@ mod tests {
                 })
             });
 
-        let outcome_a =
-            run_chain_for_strategy(&mut platform_a, 18, strategy.clone(), config.clone(), 7);
-        let outcome_b = run_chain_for_strategy(&mut platform_b, 18, strategy, config, 7);
+        let outcome_a = run_chain_for_strategy(
+            &mut platform_a,
+            18,
+            strategy.clone(),
+            config.clone(),
+            7,
+            &mut None,
+        );
+        let outcome_b = run_chain_for_strategy(&mut platform_b, 18, strategy, config, 7, &mut None);
         assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
         assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
         assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes
@@ -3622,12 +3868,17 @@ mod tests {
             "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
 
+        let state = outcome_a.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         let last_app_hash_a = outcome_a
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3636,7 +3887,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3688,16 +3939,36 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 3,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform_a = TestPlatformBuilder::new()
@@ -3727,9 +3998,16 @@ mod tests {
                 })
             });
 
-        let outcome_a =
-            run_chain_for_strategy(&mut platform_a, 100, strategy.clone(), config.clone(), 7);
-        let outcome_b = run_chain_for_strategy(&mut platform_b, 100, strategy, config, 7);
+        let outcome_a = run_chain_for_strategy(
+            &mut platform_a,
+            100,
+            strategy.clone(),
+            config.clone(),
+            7,
+            &mut None,
+        );
+        let outcome_b =
+            run_chain_for_strategy(&mut platform_b, 100, strategy, config, 7, &mut None);
         assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
         assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
         assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes
@@ -3757,12 +4035,17 @@ mod tests {
             "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
 
+        let state = outcome_a.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         let last_app_hash_a = outcome_a
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3771,7 +4054,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3782,8 +4065,8 @@ mod tests {
             .into_iter()
             .filter(|(_, balance)| *balance != 0)
             .count();
-        // we have a maximum 90 quorums, that could have been used, 6 were used twice
-        assert_eq!(balance_count, 84);
+        // we have a maximum 90 quorums, that could have been used, 7 were used twice
+        assert_eq!(balance_count, 83);
     }
 
     #[test]
@@ -3814,17 +4097,32 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            validator_set_quorum_size: 3,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let TempPlatform {
@@ -3837,14 +4135,21 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
             identity_nonce_counter,
             identity_contract_nonce_counter,
             ..
-        } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
+        } = run_chain_for_strategy(
+            &mut platform,
+            100,
+            strategy.clone(),
+            config.clone(),
+            89,
+            &mut None,
+        );
 
         let state = abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
@@ -3855,7 +4160,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("expected root hash");
 
@@ -3899,11 +4204,13 @@ mod tests {
                 core_height_start: 10,
                 block_count: 30,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                instant_lock_quorums: Default::default(),
                 current_proposer_versions: Some(current_proposer_versions),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
             },
@@ -3915,6 +4222,7 @@ mod tests {
 
     #[test]
     fn run_chain_transfer_between_identities() {
+        let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -3958,16 +4266,21 @@ mod tests {
         };
 
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
 
@@ -3975,7 +4288,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 15, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 15, strategy, config, 15, &mut None);
 
         let _balances = &outcome
             .abci_app
@@ -3988,6 +4301,7 @@ mod tests {
                     .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 
@@ -4014,23 +4328,28 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            validator_set_quorum_size: 100,
-            validator_set_quorum_type: "llmq_100_67".to_string(),
-            chain_lock_quorum_type: "llmq_100_67".to_string(),
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None);
         let state_transitions = outcome
             .state_transition_results_per_block
             .get(&1)

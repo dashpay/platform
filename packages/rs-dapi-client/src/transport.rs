@@ -6,9 +6,9 @@ use crate::connection_pool::ConnectionPool;
 pub use crate::request_settings::AppliedRequestSettings;
 use crate::{CanRetry, RequestSettings};
 use dapi_grpc::mock::Mockable;
+use dapi_grpc::tonic::transport::Uri;
 pub use futures::future::BoxFuture;
 pub use grpc::{CoreGrpcClient, PlatformGrpcClient};
-use http::Uri;
 use std::any;
 use std::fmt::Debug;
 
@@ -48,7 +48,7 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
 /// Generic way to create a transport client from provided [Uri].
 pub trait TransportClient: Send + Sized {
     /// Error type for the specific client.
-    type Error: CanRetry + Send + Debug;
+    type Error: CanRetry + Send + Debug + Mockable;
 
     /// Build client using node's url.
     fn with_uri(uri: Uri, pool: &ConnectionPool) -> Self;

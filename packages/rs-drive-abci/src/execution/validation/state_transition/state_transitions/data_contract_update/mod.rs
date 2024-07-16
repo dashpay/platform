@@ -18,6 +18,7 @@ use crate::execution::validation::state_transition::data_contract_update::state:
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
 impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
@@ -52,13 +53,15 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
+    use crate::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig, ValidatorSetConfig};
     use crate::platform_types::platform::PlatformRef;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
-    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
@@ -76,11 +79,12 @@ mod tests {
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
 
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::PlatformVersion;
-    use drive::drive::flags::StorageFlags;
+    use drive::util::storage_flags::StorageFlags;
     use simple_signer::signer::SimpleSigner;
 
     struct TestData<T> {
@@ -171,14 +175,17 @@ mod tests {
             .data_contract_owned();
 
         let config = PlatformConfig {
-            validator_set_quorum_size: 10,
+            validator_set: ValidatorSetConfig {
+                quorum_size: 10,
+                ..Default::default()
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let platform = TestPlatformBuilder::new()
@@ -202,7 +209,6 @@ mod tests {
 
         use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
         use dpp::block::block_info::BlockInfo;
-        use dpp::block::epoch::Epoch;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
@@ -289,7 +295,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
-                    &Epoch::new(0).unwrap(),
+                    &BlockInfo::default(),
                     &mut execution_context,
                     None,
                 )
@@ -383,7 +389,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
-                    &Epoch::new(0).unwrap(),
+                    &BlockInfo::default(),
                     &mut execution_context,
                     None,
                 )
@@ -462,7 +468,7 @@ mod tests {
         }
 
         #[test]
-        fn should_fail_if_trying_to_update_config() {
+        fn should_return_invalid_result_if_trying_to_update_config() {
             let TestData {
                 mut data_contract,
                 platform,
@@ -541,7 +547,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
-                    &Epoch::new(0).unwrap(),
+                    &BlockInfo::default(),
                     &mut execution_context,
                     None,
                 )
@@ -573,9 +579,8 @@ mod tests {
 
         let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase-creation-restricted-to-owner.json";
 
-        let platform_version = platform
-            .state
-            .load()
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
             .current_platform_version()
             .expect("expected to get current platform version");
 
@@ -650,9 +655,15 @@ mod tests {
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result else {
-            panic!("expected a paid consensus error");
-        };
-        assert_eq!(consensus_error.to_string(), "Data Contract updated schema is not backward compatible with one defined in Data Contract with id 86LHvdC1Tqx5P97LQUSibGFqf2vnKFpB6VkqQ7oso86e. Field: '/creationRestrictionMode', Operation: 'remove'");
+        assert!(matches!(
+            result,
+            StateTransitionExecutionResult::PaidConsensusError(
+                ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(error)
+                ), _
+            ) if error.data_contract_id() == &contract.id()
+                && error.document_type_name() == "card"
+                && error.additional_message() == "document type can not change creation restriction mode: changing from Owner Only to No Restrictions"
+        ));
     }
 }

@@ -94,6 +94,20 @@ class CorePromiseClient {
   }
 
   /**
+   * @param {!GetBestBlockHeightRequest} getBestBlockHeightRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetBestBlockHeightResponse>}
+   */
+  getBestBlockHeight(getBestBlockHeightRequest, metadata = {}) {
+    return promisify(
+      this.client.getBestBlockHeight.bind(this.client),
+    )(
+      getBestBlockHeightRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {!BroadcastTransactionRequest} broadcastTransactionRequest
    * @param {?Object<string, string>} metadata
    * @return {Promise<!BroadcastTransactionResponse>}
@@ -166,6 +180,22 @@ class CorePromiseClient {
     )
 
     rewireStream(stream);
+    return stream;
+  }
+
+  /**
+   * @param {MasternodeListRequest} masternodeListRequest The request proto
+   * @param {?Object<string, string>} metadata User defined call metadata
+   * @return {!grpc.web.ClientReadableStream<!MasternodeListResponse>|undefined}
+   */
+  subscribeToMasternodeList(masternodeListRequest, metadata = {}) {
+    const stream = this.client.subscribeToMasternodeList(
+      masternodeListRequest,
+      metadata
+    )
+
+    rewireStream(stream);
+
     return stream;
   }
 }
