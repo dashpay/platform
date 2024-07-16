@@ -1,4 +1,3 @@
----
 name: "Start local network"
 description: "Setup and start dashmate local network"
 inputs:
@@ -93,6 +92,16 @@ runs:
         sed -i -E "s/dashpay\/(drive|dapi):[^\"]+/${{ inputs.image_org }}\/\1:${SHA_TAG}/g" /home/ubuntu/.dashmate/config.json
 
         cat /home/ubuntu/.dashmate/config.json
+
+    - name: Print Docker containers before network start
+      run: |
+        echo "Printing Docker containers before network start..."
+        docker ps -a
+
+    - name: Print Docker networks before network start
+      run: |
+        echo "Printing Docker networks before network start..."
+        docker network ls
 
     - name: Start local network
       shell: bash
