@@ -124,7 +124,7 @@ export default function getBaseConfigFactory(homeDir) {
             tenderdash: {
               password: 'rpcpassword',
               whitelist: [
-                'quoruminfo', 'quorumverify', 'quorumplatformsign', 'masternodestatus', 'masternodelist',
+                'quoruminfo', 'quorumverify', 'quorumsign', 'masternodestatus', 'masternodelist',
                 'ping', 'getnetworkinfo',
               ],
               lowPriority: false,
