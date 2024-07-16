@@ -1,6 +1,6 @@
-use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 
-use crate::drive::grove_operations::{BatchDeleteUpTreeApplyType, IsSubTree, IsSumSubTree};
+use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, IsSubTree, IsSumSubTree};
 
 use crate::drive::Drive;
 use crate::error::fee::FeeError;

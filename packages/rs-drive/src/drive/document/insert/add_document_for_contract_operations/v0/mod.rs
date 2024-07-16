@@ -1,10 +1,10 @@
 use crate::drive::document::paths::contract_documents_primary_key_path;
-use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;

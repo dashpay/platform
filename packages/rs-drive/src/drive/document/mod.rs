@@ -5,13 +5,16 @@
 //!
 
 #[cfg(feature = "server")]
-use crate::drive::flags::StorageFlags;
 use crate::drive::votes::paths::CONTESTED_DOCUMENT_STORAGE_TREE_KEY;
+#[cfg(feature = "server")]
+use crate::util::storage_flags::StorageFlags;
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "server")]
 use dpp::document::Document;
+#[cfg(feature = "server")]
 use dpp::document::DocumentV0Getters;
 #[cfg(feature = "server")]
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
@@ -141,13 +144,13 @@ fn unique_event_id() -> [u8; 32] {
 pub(crate) mod tests {
     use std::option::Option::None;
 
-    use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
+    use crate::util::storage_flags::StorageFlags;
     use dpp::block::block_info::BlockInfo;
     use dpp::prelude::DataContract;
     use dpp::tests::json_document::json_document_to_contract;
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
     /// Setup Dashpay

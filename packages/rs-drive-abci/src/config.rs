@@ -30,13 +30,12 @@ use bincode::{Decode, Encode};
 use dashcore_rpc::json::QuorumType;
 use std::path::PathBuf;
 
-use dpp::util::deserializer::ProtocolVersion;
-use drive::drive::config::DriveConfig;
-use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-
 use crate::logging::LogConfigs;
 use crate::{abci::config::AbciConfig, error::Error};
+use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::INITIAL_PROTOCOL_VERSION;
+use drive::config::DriveConfig;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// Configuration for Dash Core RPC client used in consensus logic
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]

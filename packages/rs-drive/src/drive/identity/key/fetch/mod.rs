@@ -1,9 +1,3 @@
-// Grouping std imports
-use std::{
-    collections::{BTreeMap, HashSet},
-    ops::RangeFull,
-};
-
 // Conditional imports for the features "server" or "verify"
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
@@ -24,6 +18,7 @@ use {
     },
     grovedb::{PathQuery, SizedQuery},
     integer_encoding::VarInt,
+    std::{collections::BTreeMap, ops::RangeFull},
 };
 
 // Conditional imports for the feature "server"
@@ -43,6 +38,7 @@ use {
         Element,
         Element::Item,
     },
+    std::collections::HashSet,
 };
 
 // Modules conditionally compiled for the feature "server"
@@ -999,7 +995,7 @@ impl IdentityKeysRequest {
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive;
+    use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;

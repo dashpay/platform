@@ -3,7 +3,7 @@ use crate::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0:
 use crate::drive::votes::resolved::votes::ResolvedVote;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;

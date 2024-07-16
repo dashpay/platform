@@ -1,4 +1,3 @@
-use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::votes::paths::vote_contested_resource_identity_votes_tree_path_for_identity;
 use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::drive::votes::storage_form::contested_document_resource_storage_form::ContestedDocumentResourceVoteStorageForm;
@@ -6,8 +5,9 @@ use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
+use crate::util::grove_operations::DirectQueryType;
 use dpp::identifier::Identifier;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::TransactionArg;

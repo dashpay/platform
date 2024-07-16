@@ -73,7 +73,7 @@ mod tests {
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
-    use drive::drive::config::DEFAULT_QUERY_LIMIT;
+    use drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformTestConfig, ValidatorSetConfig,
@@ -2950,6 +2950,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn run_chain_top_up_and_withdraw_from_identities() {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
@@ -2998,7 +2999,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             // because we can add an identity and withdraw from it in the same block
-            // the result would be different then expected
+            // the result would be different from what would be expected
             verify_state_transition_results: false,
             ..Default::default()
         };

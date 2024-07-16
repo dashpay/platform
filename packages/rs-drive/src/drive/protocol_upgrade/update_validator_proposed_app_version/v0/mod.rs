@@ -1,13 +1,13 @@
-use crate::drive::grove_operations::BatchInsertApplyType;
-use crate::drive::object_size_info::PathKeyElementInfo;
+use crate::util::grove_operations::BatchInsertApplyType;
+use crate::util::object_size_info::PathKeyElementInfo;
 
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::protocol_upgrade::{desired_version_for_validators_path, versions_counter_path};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::drive_versions::DriveVersion;

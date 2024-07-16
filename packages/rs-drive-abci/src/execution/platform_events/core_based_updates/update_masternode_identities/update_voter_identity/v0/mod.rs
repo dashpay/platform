@@ -14,13 +14,13 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
-use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::{
-    AddNewIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
-};
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDVec, KeyRequestType};
 use drive::grovedb::Transaction;
+use drive::util::batch::DriveOperation;
+use drive::util::batch::DriveOperation::IdentityOperation;
+use drive::util::batch::IdentityOperationType::{
+    AddNewIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
+};
 
 impl<C> Platform<C>
 where

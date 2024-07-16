@@ -7,6 +7,8 @@ pub mod identity;
 
 /// system
 pub mod system;
+// TODO: Must crate only but we need to remove of use it first
+pub mod action_convert_to_operations;
 
 use crate::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;

@@ -49,13 +49,26 @@ runs:
         esac
 
     # TODO: Move to AMI and build every day
+    - name: Check if protoc is installed
+      id: check-protoc
+      shell: bash
+      run: |
+        if command -v protoc >/dev/null 2>&1; then
+          echo "protoc is already installed."
+          echo "protoc_installed=true" >> $GITHUB_OUTPUT
+        else
+          echo "protoc is not installed."
+          echo "protoc_installed=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Install protoc
+      if: steps.check-protoc.outputs.protoc_installed == 'false'
       id: deps-protoc
       shell: bash
       run: |
         curl -Lo /tmp/protoc.zip \
           "https://github.com/protocolbuffers/protobuf/releases/download/v25.2/protoc-25.2-linux-${{ steps.protoc_arch.outputs.arch }}.zip"
-        unzip /tmp/protoc.zip -d ${HOME}/.local
+        unzip -o /tmp/protoc.zip -d ${HOME}/.local
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
 
