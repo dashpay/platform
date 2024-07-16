@@ -56,10 +56,6 @@ runs:
         # collect drive logs for bench suite
         yarn dashmate config set --config=local platform.drive.abci.logs.stdout.level "trace"
 
-        # TODO: Remove debug output
-        docker ps
-        docker ps -a
-
         ./scripts/setup_local_network.sh
         ./scripts/configure_test_suite.sh
         ./scripts/configure_dotenv.sh
@@ -97,6 +93,11 @@ runs:
         sed -i -E "s/dashpay\/(drive|dapi):[^\"]+/${{ inputs.image_org }}\/\1:${SHA_TAG}/g" /home/ubuntu/.dashmate/config.json
 
         cat /home/ubuntu/.dashmate/config.json
+
+    # TODO: Remove debug info
+    - name: Show containers
+      run: docker ps -a
+      shell: bash
 
     - name: Start local network
       shell: bash
