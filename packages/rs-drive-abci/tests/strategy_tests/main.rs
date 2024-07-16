@@ -24,6 +24,7 @@ mod execution;
 mod failures;
 mod masternode_list_item_helpers;
 mod masternodes;
+mod patch_platform_tests;
 mod query;
 mod strategy;
 mod upgrade_fork_tests;

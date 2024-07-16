@@ -65,7 +65,8 @@ where
         epoch_info: EpochInfo,
         transaction: &Transaction,
         last_committed_platform_state: &PlatformState,
-        platform_version: &PlatformVersion,
+        mut block_platform_state: PlatformState,
+        platform_version: &'static PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
         tracing::trace!(
@@ -101,9 +102,6 @@ where
         );
         let last_block_core_height = last_committed_platform_state
             .last_committed_known_core_height_or(self.config.abci.genesis_core_height);
-
-        // Create a bock state from previous committed state
-        let mut block_platform_state = last_committed_platform_state.clone();
 
         // Init block execution context
         let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(
@@ -388,7 +386,7 @@ where
                 app_hash: root_hash,
                 state_transitions_result,
                 validator_set_update,
-                protocol_version: platform_version.protocol_version,
+                platform_version,
                 block_execution_context,
             },
         ))

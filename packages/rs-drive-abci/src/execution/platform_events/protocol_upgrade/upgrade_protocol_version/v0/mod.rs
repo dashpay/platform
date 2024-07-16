@@ -52,9 +52,6 @@ impl<C> Platform<C> {
                     previous_block_protocol_version,
                     current_block_protocol_version,
                 );
-
-                block_platform_state
-                    .set_current_protocol_version_in_consensus(current_block_protocol_version);
             };
 
             // Determine a new protocol version for the next epoch if enough proposers voted
