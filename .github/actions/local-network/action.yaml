@@ -56,6 +56,10 @@ runs:
         # collect drive logs for bench suite
         yarn dashmate config set --config=local platform.drive.abci.logs.stdout.level "trace"
 
+        # TODO: Remove debug output
+        docker ps
+        docker ps -a
+
         ./scripts/setup_local_network.sh
         ./scripts/configure_test_suite.sh
         ./scripts/configure_dotenv.sh
