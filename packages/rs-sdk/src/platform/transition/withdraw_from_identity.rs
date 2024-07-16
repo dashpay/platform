@@ -51,6 +51,7 @@ impl WithdrawFromIdentity for Identity {
         let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             self,
+            None,
             CoreScript::new(address.script_pubkey()),
             amount,
             Pooling::Never,
