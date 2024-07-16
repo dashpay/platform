@@ -110,6 +110,7 @@ default = ["mocks", "console"]
 mocks = ["mockall", "drive/fixtures-and-mocks"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
+grovedbg = ["drive/grovedbg"]
 
 [[bin]]
 name = "drive-abci"

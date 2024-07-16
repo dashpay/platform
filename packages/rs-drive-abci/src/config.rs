@@ -229,6 +229,7 @@ pub struct PlatformConfig {
     /// Enable tokio console (console feature must be enabled)
     pub tokio_console_enabled: bool,
 
+    // TODO: Use from_str_to_socket_address
     /// Tokio console address to connect to
     #[serde(default = "PlatformConfig::default_tokio_console_address")]
     pub tokio_console_address: String,
@@ -655,6 +656,7 @@ impl PlatformConfig {
             tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
             initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
+            // TODO: This is dangerous. The default value must be 127.0.0.1
             grpc_bind_address: "0.0.0.0:26670".to_string(),
         }
     }
