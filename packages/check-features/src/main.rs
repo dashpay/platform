@@ -6,7 +6,7 @@ fn main() {
     let crates = [
         ("rs-sdk", vec![]),
         ("rs-drive-abci", vec![]),
-        ("rs-dpp", vec!["documents-faker"]),
+        ("rs-dpp", vec![]),
         ("rs-drive", vec![]),
         ("rs-drive-proof-verifier", vec![]),
     ];

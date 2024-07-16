@@ -23,12 +23,12 @@ use std::fmt::{Debug, Formatter};
 #[cfg(feature = "server")]
 use std::option::Option::None;
 
-#[cfg(feature = "server")]
+#[cfg(test)]
 use drive::util::test_helpers::setup::setup_drive;
 
 #[cfg(feature = "server")]
 use drive::config::DriveConfig;
-#[cfg(feature = "server")]
+#[cfg(test)]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
 #[cfg(feature = "server")]
 use drive::drive::Drive;
@@ -154,7 +154,7 @@ impl Person {
     }
 }
 
-#[cfg(feature = "server")]
+#[cfg(test)]
 /// Sets up the `family-contract-with-history` contract to test queries on.
 pub fn setup(
     count: usize,
