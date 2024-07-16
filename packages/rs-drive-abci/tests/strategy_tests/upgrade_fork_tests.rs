@@ -6,7 +6,7 @@ mod tests {
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::version::PlatformVersion;
-    use drive::drive::config::DriveConfig;
+    use drive::config::DriveConfig;
     use std::collections::BTreeMap;
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
@@ -31,7 +31,7 @@ mod tests {
     #[test]
     fn run_chain_version_upgrade() {
         // Define the desired stack size
-        let stack_size = 4 * 1024 * 1024; //Lets set the stack size to be higher than the default 2MB
+        let stack_size = 4 * 1024 * 1024; //Let's set the stack size to be higher than the default 2MB
 
         let builder = std::thread::Builder::new()
             .stack_size(stack_size)
@@ -73,7 +73,6 @@ mod tests {
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-                        validator_set_rotation_block_count: 125,
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
@@ -82,7 +81,7 @@ mod tests {
                         ..Default::default()
                     },
                     block_spacing_ms: twenty_minutes_in_ms,
-                    testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+                    testing_configs: PlatformTestConfig::default_minimal_verifications(),
 
                     ..Default::default()
                 };
@@ -145,7 +144,7 @@ mod tests {
                             counter.get(&1).unwrap(),
                             counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
                         ),
-                        (Some(&17), Some(&414))
+                        (Some(&11), Some(&435))
                     );
                     //most nodes were hit (63 were not)
                 }
@@ -213,7 +212,7 @@ mod tests {
                     assert_eq!(state.current_protocol_version_in_consensus(), 1);
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&154));
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&179));
                 }
 
                 // we locked in
@@ -269,7 +268,7 @@ mod tests {
                     );
                     assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
                     assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
-                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&123));
+                    assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&147));
                 }
             })
             .expect("Failed to create thread with custom stack size");
@@ -281,7 +280,7 @@ mod tests {
     #[test]
     fn run_chain_quick_version_upgrade() {
         // Define the desired stack size
-        let stack_size = 4 * 1024 * 1024; //Lets set the stack size to be higher than the default 2MB
+        let stack_size = 4 * 1024 * 1024; //Let's set the stack size to be higher than the default 2MB
 
         let builder = std::thread::Builder::new()
             .stack_size(stack_size)
@@ -326,12 +325,11 @@ mod tests {
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-                        validator_set_rotation_block_count: 30,
                         epoch_time_length_s: one_hour_in_s,
                         ..Default::default()
                     },
                     block_spacing_ms: thirty_seconds_in_ms,
-                    testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+                    testing_configs: PlatformTestConfig::default_minimal_verifications(),
 
                     ..Default::default()
                 };
@@ -579,6 +577,7 @@ mod tests {
             block_spacing_ms: epoch_time_length_s * 1000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -702,7 +701,7 @@ mod tests {
     #[test]
     fn run_chain_version_upgrade_slow_upgrade() {
         // Define the desired stack size
-        let stack_size = 4 * 1024 * 1024; //Lets set the stack size to be higher than the default 2MB
+        let stack_size = 4 * 1024 * 1024; //Let's set the stack size to be higher than the default 2MB
 
         let builder = std::thread::Builder::new()
             .stack_size(stack_size)
@@ -746,7 +745,6 @@ mod tests {
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-                        validator_set_rotation_block_count: 80,
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
@@ -756,7 +754,7 @@ mod tests {
                     },
                     block_spacing_ms: hour_in_ms,
 
-                    testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+                    testing_configs: PlatformTestConfig::default_minimal_verifications(),
                     ..Default::default()
                 };
                 let mut platform = TestPlatformBuilder::new()
@@ -813,7 +811,7 @@ mod tests {
                             counter.get(&1).unwrap(),
                             counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
                         ),
-                        (Some(&35), Some(&64))
+                        (Some(&39), Some(&78))
                     );
                 }
 
@@ -844,7 +842,7 @@ mod tests {
                     ChainExecutionParameters {
                         block_start,
                         core_height_start: 1,
-                        block_count: 2500,
+                        block_count: 1400,
                         proposers,
                         validator_quorums: quorums,
                         current_validator_quorum_hash: current_quorum_hash,
@@ -864,24 +862,20 @@ mod tests {
                 {
                     let counter = &platform.drive.cache.protocol_versions_counter.read();
                     assert_eq!(
-                        state
-                            .last_committed_block_info()
-                            .as_ref()
-                            .unwrap()
-                            .basic_info()
-                            .epoch
-                            .index,
-                        11
-                    );
-                    assert_eq!(state.current_protocol_version_in_consensus(), 1);
-                    assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
-                    // the counter is for the current voting during that window
-                    assert_eq!(
                         (
+                            state
+                                .last_committed_block_info()
+                                .as_ref()
+                                .unwrap()
+                                .basic_info()
+                                .epoch
+                                .index,
+                            state.current_protocol_version_in_consensus(),
+                            state.next_epoch_protocol_version(),
                             counter.get(&1).unwrap(),
                             counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
                         ),
-                        (Some(&8), Some(&79))
+                        (8, 1, TEST_PROTOCOL_VERSION_2, Some(&19), Some(&98))
                     );
                 }
 
@@ -918,8 +912,8 @@ mod tests {
 
                 let state = platform.state.load();
 
-                {
-                    assert_eq!(
+                assert_eq!(
+                    (
                         state
                             .last_committed_block_info()
                             .as_ref()
@@ -927,14 +921,11 @@ mod tests {
                             .basic_info()
                             .epoch
                             .index,
-                        12
-                    );
-                    assert_eq!(
                         state.current_protocol_version_in_consensus(),
-                        TEST_PROTOCOL_VERSION_2
-                    );
-                    assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
-                }
+                        state.next_epoch_protocol_version()
+                    ),
+                    (9, TEST_PROTOCOL_VERSION_2, TEST_PROTOCOL_VERSION_2)
+                );
             })
             .expect("Failed to create thread with custom stack size");
 
@@ -945,7 +936,7 @@ mod tests {
     #[test]
     fn run_chain_version_upgrade_slow_upgrade_quick_reversion_after_lock_in() {
         // Define the desired stack size
-        let stack_size = 4 * 1024 * 1024; //Lets set the stack size to be higher than the default 2MB
+        let stack_size = 4 * 1024 * 1024; //Let's set the stack size to be higher than the default 2MB
 
         let builder = std::thread::Builder::new()
             .stack_size(stack_size)
@@ -989,7 +980,6 @@ mod tests {
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-                        validator_set_rotation_block_count: 50,
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
@@ -999,7 +989,7 @@ mod tests {
                     },
                     block_spacing_ms: hour_in_ms,
 
-                    testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+                    testing_configs: PlatformTestConfig::default_minimal_verifications(),
                     ..Default::default()
                 };
                 let mut platform = TestPlatformBuilder::new()
@@ -1114,7 +1104,7 @@ mod tests {
                             counter.get(&1).unwrap(),
                             counter.get(&TEST_PROTOCOL_VERSION_2).unwrap()
                         ),
-                        (Some(&18), Some(&112))
+                        (Some(&16), Some(&117))
                     );
                     //not all nodes have upgraded
                 }
@@ -1203,7 +1193,7 @@ mod tests {
                         ),
                         (Some(&172), Some(&24))
                     );
-                    //a lot nodes reverted to previous version, however this won't impact things
+                    //a lot of nodes reverted to previous version, however this won't impact things
                     assert_eq!(
                         state
                             .last_committed_block_info()
@@ -1283,7 +1273,7 @@ mod tests {
     #[test]
     fn run_chain_version_upgrade_multiple_versions() {
         // Define the desired stack size
-        let stack_size = 4 * 1024 * 1024; //Lets set the stack size to be higher than the default 2MB
+        let stack_size = 4 * 1024 * 1024; //Let's set the stack size to be higher than the default 2MB
 
         let builder = std::thread::Builder::new()
             .stack_size(stack_size)
@@ -1331,7 +1321,6 @@ mod tests {
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-                        validator_set_rotation_block_count: 30,
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
@@ -1341,7 +1330,7 @@ mod tests {
                     },
                     block_spacing_ms: hour_in_ms,
 
-                    testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+                    testing_configs: PlatformTestConfig::default_minimal_verifications(),
                     ..Default::default()
                 };
                 let mut platform = TestPlatformBuilder::new()
@@ -1369,7 +1358,7 @@ mod tests {
                     ..
                 } = run_chain_for_strategy(
                     &mut platform,
-                    1400,
+                    1200,
                     strategy,
                     config.clone(),
                     15,
@@ -1381,30 +1370,34 @@ mod tests {
                     let counter = &platform.drive.cache.protocol_versions_counter.read();
 
                     assert_eq!(
-                        state
-                            .last_committed_block_info()
-                            .as_ref()
-                            .unwrap()
-                            .basic_info()
-                            .epoch
-                            .index,
-                        3
-                    );
-                    assert_eq!(state.current_protocol_version_in_consensus(), 1);
-                    assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
-                    assert_eq!(
                         (
+                            state
+                                .last_committed_block_info()
+                                .as_ref()
+                                .unwrap()
+                                .basic_info()
+                                .epoch
+                                .index,
+                            state.current_protocol_version_in_consensus(),
+                            state.next_epoch_protocol_version(),
                             counter.get(&1).unwrap(),
                             counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(),
                             counter.get(&TEST_PROTOCOL_VERSION_3).unwrap()
                         ),
-                        (Some(&2), Some(&68), Some(&3))
+                        (
+                            2,
+                            1,
+                            TEST_PROTOCOL_VERSION_2,
+                            Some(&10),
+                            Some(&153),
+                            Some(&8)
+                        )
                     ); //some nodes reverted to previous version
 
                     let epochs = platform
                         .drive
                         .get_epochs_infos(
-                            2,
+                            1,
                             1,
                             true,
                             None,
@@ -1464,7 +1457,7 @@ mod tests {
                     ChainExecutionParameters {
                         block_start,
                         core_height_start: 1,
-                        block_count: 1100,
+                        block_count: 800,
                         proposers,
                         validator_quorums: quorums,
                         current_validator_quorum_hash: current_quorum_hash,
@@ -1484,33 +1477,34 @@ mod tests {
                 {
                     let counter = &platform.drive.cache.protocol_versions_counter.read();
                     assert_eq!(
-                        state
-                            .last_committed_block_info()
-                            .as_ref()
-                            .unwrap()
-                            .basic_info()
-                            .epoch
-                            .index,
-                        5
-                    );
-                    assert_eq!(
-                        state.current_protocol_version_in_consensus(),
-                        TEST_PROTOCOL_VERSION_2
-                    );
-                    assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_3);
-                    assert_eq!(
                         (
+                            state
+                                .last_committed_block_info()
+                                .as_ref()
+                                .unwrap()
+                                .basic_info()
+                                .epoch
+                                .index,
+                            state.current_protocol_version_in_consensus(),
+                            state.next_epoch_protocol_version(),
                             counter.get(&1).unwrap(),
                             counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(),
                             counter.get(&TEST_PROTOCOL_VERSION_3).unwrap()
                         ),
-                        (None, Some(&3), Some(&143))
+                        (
+                            4,
+                            TEST_PROTOCOL_VERSION_2,
+                            TEST_PROTOCOL_VERSION_3,
+                            None,
+                            Some(&3),
+                            Some(&149)
+                        )
                     );
 
                     let epochs = platform
                         .drive
                         .get_epochs_infos(
-                            4,
+                            3,
                             1,
                             true,
                             None,

@@ -1,14 +1,14 @@
-use crate::common::encode::{decode_u64, encode_u64};
 use crate::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 use crate::drive::Drive;
 #[cfg(feature = "server")]
 use crate::error::drive::DriveError;
 use crate::error::Error;
 #[cfg(feature = "server")]
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
+use crate::util::common::encode::{decode_u64, encode_u64};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "server")]
@@ -16,6 +16,7 @@ use dpp::fee::Credits;
 use dpp::prelude::{TimestampIncluded, TimestampMillis};
 #[cfg(feature = "server")]
 use dpp::serialization::PlatformDeserializable;
+#[cfg(feature = "server")]
 use dpp::voting::vote_polls::VotePoll;
 #[cfg(feature = "server")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
@@ -205,6 +206,7 @@ impl VotePollsByEndDateDriveQuery {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -249,6 +251,7 @@ impl VotePollsByEndDateDriveQuery {
                 &block_info.epoch,
                 drive.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {

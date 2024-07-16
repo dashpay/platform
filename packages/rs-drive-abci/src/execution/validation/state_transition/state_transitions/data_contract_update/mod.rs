@@ -82,7 +82,7 @@ mod tests {
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::PlatformVersion;
-    use drive::drive::flags::StorageFlags;
+    use drive::util::storage_flags::StorageFlags;
     use simple_signer::signer::SimpleSigner;
 
     struct TestData<T> {
@@ -179,11 +179,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let platform = TestPlatformBuilder::new()

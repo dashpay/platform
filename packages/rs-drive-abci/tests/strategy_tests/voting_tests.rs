@@ -25,7 +25,7 @@ mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-    use drive::drive::object_size_info::DataContractOwnedResolvedInfo;
+    use drive::util::object_size_info::DataContractOwnedResolvedInfo;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use strategy_tests::frequency::Frequency;
@@ -41,6 +41,7 @@ mod tests {
         let config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -49,7 +50,6 @@ mod tests {
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
-                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -343,6 +343,7 @@ mod tests {
         let config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -351,7 +352,6 @@ mod tests {
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
-                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -700,6 +700,7 @@ mod tests {
         let config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -708,7 +709,6 @@ mod tests {
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
-                validator_set_rotation_block_count: 25,
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1068,6 +1068,7 @@ mod tests {
         let config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1076,7 +1077,7 @@ mod tests {
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1280,7 +1281,7 @@ mod tests {
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,

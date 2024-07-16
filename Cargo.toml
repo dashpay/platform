@@ -28,7 +28,6 @@ members = [
     "packages/simple-signer",
     "packages/rs-json-schema-compatibility-validator",
     "packages/check-features",
-    "packages/rs-random-document",
 ]
 
 [patch.crates-io]

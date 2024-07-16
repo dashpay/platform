@@ -30,13 +30,12 @@ use bincode::{Decode, Encode};
 use dashcore_rpc::json::QuorumType;
 use std::path::PathBuf;
 
-use dpp::util::deserializer::ProtocolVersion;
-use drive::drive::config::DriveConfig;
-use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-
 use crate::logging::LogConfigs;
 use crate::{abci::config::AbciConfig, error::Error};
+use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::INITIAL_PROTOCOL_VERSION;
+use drive::config::DriveConfig;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// Configuration for Dash Core RPC client used in consensus logic
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -122,14 +121,6 @@ pub struct ExecutionConfig {
     /// Should we verify sum trees? Useful to set as `false` for tests
     #[serde(default = "ExecutionConfig::default_verify_sum_trees")]
     pub verify_sum_trees: bool,
-
-    // TODO: Move to ValidatorSetConfig
-    /// How often should quorums change?
-    #[serde(
-        default = "ExecutionConfig::default_validator_set_rotation_block_count",
-        deserialize_with = "from_str_or_number"
-    )]
-    pub validator_set_rotation_block_count: u32,
 
     /// How long in seconds should an epoch last
     /// It might last a lot longer if the chain is halted
@@ -567,10 +558,6 @@ impl ExecutionConfig {
         true
     }
 
-    fn default_validator_set_rotation_block_count() -> u32 {
-        15
-    }
-
     fn default_epoch_time_length_s() -> u64 {
         788400
     }
@@ -618,8 +605,6 @@ impl Default for ExecutionConfig {
         Self {
             use_document_triggers: ExecutionConfig::default_use_document_triggers(),
             verify_sum_trees: ExecutionConfig::default_verify_sum_trees(),
-            validator_set_rotation_block_count:
-                ExecutionConfig::default_validator_set_rotation_block_count(),
             epoch_time_length_s: ExecutionConfig::default_epoch_time_length_s(),
         }
     }
@@ -763,6 +748,8 @@ impl PlatformConfig {
 pub struct PlatformTestConfig {
     /// Block signing
     pub block_signing: bool,
+    /// Storing of platform state
+    pub store_platform_state: bool,
     /// Block signature verification
     pub block_commit_signature_verification: bool,
     /// Disable instant lock signature verification
@@ -772,11 +759,12 @@ pub struct PlatformTestConfig {
 #[cfg(feature = "testing-config")]
 impl PlatformTestConfig {
     /// Much faster config for tests
-    pub fn default_with_no_block_signing() -> Self {
+    pub fn default_minimal_verifications() -> Self {
         Self {
             block_signing: false,
+            store_platform_state: false,
             block_commit_signature_verification: false,
-            disable_instant_lock_signature_verification: false,
+            disable_instant_lock_signature_verification: true,
         }
     }
 }
@@ -786,6 +774,7 @@ impl Default for PlatformTestConfig {
     fn default() -> Self {
         Self {
             block_signing: true,
+            store_platform_state: true,
             block_commit_signature_verification: true,
             disable_instant_lock_signature_verification: false,
         }

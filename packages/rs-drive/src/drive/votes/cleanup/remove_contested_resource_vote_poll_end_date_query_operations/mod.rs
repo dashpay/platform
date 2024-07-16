@@ -7,7 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::version::PlatformVersion;

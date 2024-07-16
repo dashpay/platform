@@ -355,7 +355,7 @@ where
         let root_hash = self
             .drive
             .grove
-            .root_hash(Some(transaction))
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
 
@@ -364,6 +364,7 @@ where
             .set_app_hash(Some(root_hash));
 
         let validator_set_update = self.validator_set_update(
+            block_proposal.proposer_pro_tx_hash,
             last_committed_platform_state,
             &mut block_execution_context,
             platform_version,
@@ -373,8 +374,11 @@ where
             tracing::trace!(
                 method = "run_block_proposal_v0",
                 app_hash = hex::encode(root_hash),
-                platform_state_fingerprint =
-                    hex::encode(block_execution_context.block_platform_state().fingerprint()),
+                platform_state_fingerprint = hex::encode(
+                    block_execution_context
+                        .block_platform_state()
+                        .fingerprint()?
+                ),
                 "Block proposal executed successfully",
             );
         }

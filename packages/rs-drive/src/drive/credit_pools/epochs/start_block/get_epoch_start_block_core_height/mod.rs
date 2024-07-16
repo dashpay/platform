@@ -35,7 +35,9 @@ impl Drive {
             .epochs
             .get_epoch_start_block_core_height
         {
-            0 => self.get_epoch_start_block_core_height_v0(epoch_tree, transaction),
+            0 => {
+                self.get_epoch_start_block_core_height_v0(epoch_tree, transaction, platform_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_epoch_start_block_core_height".to_string(),
                 known_versions: vec![0],

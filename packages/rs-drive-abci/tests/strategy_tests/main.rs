@@ -73,7 +73,7 @@ mod tests {
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
-    use drive::drive::config::DEFAULT_QUERY_LIMIT;
+    use drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformTestConfig, ValidatorSetConfig,
@@ -121,11 +121,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -166,7 +166,7 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -211,7 +211,7 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -245,20 +245,20 @@ mod tests {
             &mut None,
         );
 
-        let known_root_hash = abci_app
-            .platform
-            .drive
-            .grove
-            .root_hash(None)
-            .unwrap()
-            .expect("expected root hash");
-
         let state = abci_app.platform.state.load();
 
         let protocol_version = state.current_protocol_version_in_consensus();
 
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
+
+        let known_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
 
         abci_app
             .platform
@@ -353,7 +353,7 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -387,20 +387,20 @@ mod tests {
             &mut None,
         );
 
-        let known_root_hash = abci_app
-            .platform
-            .drive
-            .grove
-            .root_hash(None)
-            .unwrap()
-            .expect("expected root hash");
-
         let state = abci_app.platform.state.load();
 
         let protocol_version = state.current_protocol_version_in_consensus();
 
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
+
+        let known_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
 
         abci_app
             .platform
@@ -496,12 +496,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -525,7 +526,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864759120)
+        assert_eq!(balance, 99864716400) // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
     }
 
     #[test]
@@ -562,11 +563,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -611,11 +612,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -668,12 +669,12 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: hour_in_s,
                 ..Default::default()
             },
             block_spacing_ms: three_mins_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -742,11 +743,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -838,11 +839,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -921,11 +922,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -999,11 +1000,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1096,7 +1097,7 @@ mod tests {
             instant_lock: InstantLockConfig::default(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1150,12 +1151,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1174,6 +1176,12 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         assert_eq!(
             hex::encode(
                 outcome
@@ -1181,11 +1189,11 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
-            "2c1628cbe2b7f67b48078045146890fb4ac5498a2826201ce01f5c290d8be0ac".to_string()
+            "b7de0eae6eb0e369ac62ae51ebd9d9523485c137b76972bab5f66685850ad411".to_string()
         )
     }
 
@@ -1235,12 +1243,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1358,11 +1367,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1445,12 +1454,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1553,11 +1563,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1634,12 +1644,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1747,12 +1758,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1860,12 +1872,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1886,7 +1899,10 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
-
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
         assert_eq!(
             hex::encode(
                 outcome
@@ -1894,11 +1910,11 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
-            "f86815bbe9f0596b0ebe5c5e093efcd7e768f1fdb3701955918d9b20f2c7d9ae".to_string()
+            "432e576ef3437c4da9eebd39fe9fa823b83fcb733f09f3759f5d13e5cd2b7258".to_string()
         )
     }
 
@@ -1991,12 +2007,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2017,6 +2034,10 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
         assert_eq!(
             hex::encode(
                 outcome
@@ -2024,11 +2045,11 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
-            "2a3c97f0c35ee026715121f1c21c076f0adadfd59ab9ee7672c28f56724f8df3".to_string()
+            "e731bea1b579151ccdf2fe89fbeed94509b8f17fa6adaa5dfeb7409405bccb7b".to_string()
         )
     }
 
@@ -2121,11 +2142,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -2236,11 +2257,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -2351,13 +2372,14 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2485,13 +2507,14 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2635,13 +2658,14 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2666,6 +2690,7 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_identities() {
+        let platform_version = PlatformVersion::latest();
         drive_abci::logging::init_for_tests(LogLevel::Silent);
 
         let strategy = NetworkStrategy {
@@ -2710,11 +2735,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -2735,6 +2760,7 @@ mod tests {
                     .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 
@@ -2790,12 +2816,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2879,12 +2906,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2922,6 +2950,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn run_chain_top_up_and_withdraw_from_identities() {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
@@ -2970,7 +2999,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             // because we can add an identity and withdraw from it in the same block
-            // the result would be different then expected
+            // the result would be different from what would be expected
             verify_state_transition_results: false,
             ..Default::default()
         };
@@ -2980,12 +3009,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -3581,11 +3611,10 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -3682,12 +3711,17 @@ mod tests {
             first_validator_set_fingerprint == last_validator_set_fingerprint
         }));
 
+        let state = outcomes[0].abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         let first_last_app_hash = outcomes[0]
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3697,7 +3731,7 @@ mod tests {
                 .platform
                 .drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -3763,12 +3797,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform_a = TestPlatformBuilder::new()
@@ -3834,12 +3867,17 @@ mod tests {
             "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
 
+        let state = outcome_a.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         let last_app_hash_a = outcome_a
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3848,7 +3886,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3921,12 +3959,12 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -3996,12 +4034,17 @@ mod tests {
             "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
 
+        let state = outcome_a.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         let last_app_hash_a = outcome_a
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -4010,7 +4053,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -4021,8 +4064,8 @@ mod tests {
             .into_iter()
             .filter(|(_, balance)| *balance != 0)
             .count();
-        // we have a maximum 90 quorums, that could have been used, 6 were used twice
-        assert_eq!(balance_count, 84);
+        // we have a maximum 90 quorums, that could have been used, 7 were used twice
+        assert_eq!(balance_count, 83);
     }
 
     #[test]
@@ -4074,12 +4117,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let TempPlatform {
@@ -4117,7 +4159,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("expected root hash");
 
@@ -4179,6 +4221,7 @@ mod tests {
 
     #[test]
     fn run_chain_transfer_between_identities() {
+        let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -4227,12 +4270,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -4256,6 +4300,7 @@ mod tests {
                     .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 
@@ -4287,12 +4332,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },

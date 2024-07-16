@@ -1,10 +1,10 @@
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
-use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
 use crate::drive::{identity_tree_path, Drive};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKey;
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -51,6 +51,7 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
+            None,
         )?;
         Ok(fees)
     }
@@ -271,7 +272,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+    use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::identity::Identity;
 
     use dpp::block::block_info::BlockInfo;

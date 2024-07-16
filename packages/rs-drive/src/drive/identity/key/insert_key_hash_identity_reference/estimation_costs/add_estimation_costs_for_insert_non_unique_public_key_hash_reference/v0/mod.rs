@@ -1,11 +1,10 @@
-use crate::drive::defaults::{
-    DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U8, ESTIMATED_NON_UNIQUE_KEY_DUPLICATES,
-};
+use crate::drive::constants::ESTIMATED_NON_UNIQUE_KEY_DUPLICATES;
 
 use crate::drive::{
     non_unique_key_hashes_sub_tree_path_vec, non_unique_key_hashes_tree_path_vec, Drive,
 };
 
+use crate::util::type_constants::{DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U8};
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;

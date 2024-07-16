@@ -1,78 +1,56 @@
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::GroveDb;
+use std::fmt;
 
 #[cfg(any(feature = "server", feature = "verify"))]
-use crate::drive::config::DriveConfig;
+use crate::config::DriveConfig;
 
 #[cfg(feature = "server")]
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod balances;
-/// Batch module
-#[cfg(feature = "server")]
-pub mod batch;
-/// Drive Cache
-#[cfg(feature = "server")]
-pub mod cache;
 #[cfg(any(feature = "server", feature = "verify"))]
-pub mod config;
+pub mod constants;
 ///DataContract module
 #[cfg(any(feature = "server", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod contract;
 /// Fee pools module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod credit_pools;
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod defaults;
 /// Document module
 #[cfg(any(feature = "server", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod document;
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod flags;
 
-/// Low level GroveDB operations
-#[cfg(feature = "server")]
-pub mod grove_operations;
 /// Identity module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod identity;
 #[cfg(feature = "server")]
 pub mod initialization;
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod object_size_info;
 
 /// Protocol upgrade module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod protocol_upgrade;
-#[cfg(feature = "server")]
-mod shared_estimation_costs;
 #[cfg(feature = "server")]
 mod system;
 
 #[cfg(feature = "server")]
 mod asset_lock;
 #[cfg(feature = "server")]
-pub(crate) mod fee;
-#[cfg(feature = "server")]
-mod open;
-#[cfg(feature = "server")]
-mod operations;
-#[cfg(feature = "server")]
 mod platform_state;
-mod prefunded_specialized_balances;
-#[cfg(feature = "server")]
-mod prove;
-/// Contains a set of useful grovedb proof verification functions
-#[cfg(feature = "verify")]
-pub mod verify;
+pub(crate) mod prefunded_specialized_balances;
 
 /// Vote module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod votes;
 
 #[cfg(feature = "server")]
-use crate::drive::cache::DriveCache;
+mod shared;
+
+#[cfg(feature = "server")]
+use crate::cache::DriveCache;
+use crate::error::drive::DriveError;
+use crate::error::Error;
 
 /// Drive struct
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -133,6 +111,30 @@ pub enum RootTree {
     Votes = 112,
 }
 
+#[cfg(any(feature = "server", feature = "verify"))]
+impl fmt::Display for RootTree {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let variant_name = match self {
+            RootTree::DataContractDocuments => "DataContractAndDocumentsRoot",
+            RootTree::Identities => "Identities",
+            RootTree::UniquePublicKeyHashesToIdentities => "UniquePublicKeyHashesToIdentities",
+            RootTree::NonUniquePublicKeyKeyHashesToIdentities => {
+                "NonUniquePublicKeyKeyHashesToIdentities"
+            }
+            RootTree::Pools => "Pools",
+            RootTree::PreFundedSpecializedBalances => "PreFundedSpecializedBalances",
+            RootTree::SpentAssetLockTransactions => "SpentAssetLockTransactions",
+            RootTree::Misc => "Misc",
+            RootTree::WithdrawalTransactions => "WithdrawalTransactions",
+            RootTree::Balances => "Balances",
+            RootTree::TokenBalances => "TokenBalances",
+            RootTree::Versions => "Versions",
+            RootTree::Votes => "Votes",
+        };
+        write!(f, "{}", variant_name)
+    }
+}
+
 /// Storage cost
 #[cfg(feature = "server")]
 pub const STORAGE_COST: i32 = 50;
@@ -148,6 +150,32 @@ impl From<RootTree> for u8 {
 impl From<RootTree> for [u8; 1] {
     fn from(root_tree: RootTree) -> Self {
         [root_tree as u8]
+    }
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl TryFrom<u8> for RootTree {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            64 => Ok(RootTree::DataContractDocuments),
+            32 => Ok(RootTree::Identities),
+            24 => Ok(RootTree::UniquePublicKeyHashesToIdentities),
+            8 => Ok(RootTree::NonUniquePublicKeyKeyHashesToIdentities),
+            48 => Ok(RootTree::Pools),
+            40 => Ok(RootTree::PreFundedSpecializedBalances),
+            72 => Ok(RootTree::SpentAssetLockTransactions),
+            104 => Ok(RootTree::Misc),
+            80 => Ok(RootTree::WithdrawalTransactions),
+            96 => Ok(RootTree::Balances),
+            16 => Ok(RootTree::TokenBalances),
+            120 => Ok(RootTree::Versions),
+            112 => Ok(RootTree::Votes),
+            _ => Err(Error::Drive(DriveError::NotSupported(
+                "unknown root tree item",
+            ))),
+        }
     }
 }
 

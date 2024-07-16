@@ -24,6 +24,7 @@ use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
@@ -103,11 +104,8 @@ impl PlatformDeserializableFromVersionedStructure for PlatformState {
 
 impl PlatformState {
     /// Get the state fingerprint
-    pub fn fingerprint(&self) -> [u8; 32] {
-        hash_double(
-            self.serialize_to_bytes()
-                .expect("expected to serialize state"),
-        )
+    pub fn fingerprint(&self) -> Result<[u8; 32], Error> {
+        Ok(hash_double(self.serialize_to_bytes()?))
     }
     /// Get the current platform version
     pub fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
@@ -207,6 +205,12 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
 }
 
 impl PlatformStateV0Methods for PlatformState {
+    fn last_committed_block_height(&self) -> u64 {
+        match self {
+            PlatformState::V0(v0) => v0.last_committed_block_height(),
+        }
+    }
+
     fn last_committed_known_block_height_or(&self, default: u64) -> u64 {
         match self {
             PlatformState::V0(v0) => v0.last_committed_known_block_height_or(default),
@@ -237,6 +241,12 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn last_committed_block_proposer_pro_tx_hash(&self) -> [u8; 32] {
+        match self {
+            PlatformState::V0(v0) => v0.last_committed_block_proposer_pro_tx_hash(),
+        }
+    }
+
     fn last_committed_block_signature(&self) -> [u8; 96] {
         match self {
             PlatformState::V0(v0) => v0.last_committed_block_signature(),
@@ -246,12 +256,6 @@ impl PlatformStateV0Methods for PlatformState {
     fn last_committed_block_app_hash(&self) -> Option<[u8; 32]> {
         match self {
             PlatformState::V0(v0) => v0.last_committed_block_app_hash(),
-        }
-    }
-
-    fn last_committed_block_height(&self) -> u64 {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_block_height(),
         }
     }
 
@@ -324,6 +328,12 @@ impl PlatformStateV0Methods for PlatformState {
     fn chain_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
         match self {
             PlatformState::V0(v0) => &v0.chain_lock_validating_quorums,
+        }
+    }
+
+    fn instant_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
+        match self {
+            PlatformState::V0(v0) => v0.instant_lock_validating_quorums(),
         }
     }
 
@@ -459,6 +469,12 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
+        match self {
+            PlatformState::V0(v0) => v0.instant_lock_validating_quorums_mut(),
+        }
+    }
+
     fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {
         match self {
             PlatformState::V0(v0) => v0.full_masternode_list_mut(),
@@ -499,15 +515,15 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn instant_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
+    fn previous_fee_versions(&self) -> &CachedEpochIndexFeeVersions {
         match self {
-            PlatformState::V0(v0) => v0.instant_lock_validating_quorums(),
+            PlatformState::V0(v0) => v0.previous_fee_versions(),
         }
     }
 
-    fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
+    fn previous_fee_versions_mut(&mut self) -> &mut CachedEpochIndexFeeVersions {
         match self {
-            PlatformState::V0(v0) => v0.instant_lock_validating_quorums_mut(),
+            PlatformState::V0(v0) => v0.previous_fee_versions_mut(),
         }
     }
 }

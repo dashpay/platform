@@ -7,7 +7,7 @@ use crate::execution::types::proposer_payouts::v0::ProposersPayouts;
 use crate::platform_types::platform::Platform;
 
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
+use drive::util::batch::DriveOperation;
 
 use drive::grovedb::Transaction;
 

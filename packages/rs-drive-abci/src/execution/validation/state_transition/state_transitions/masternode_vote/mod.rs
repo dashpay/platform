@@ -104,7 +104,7 @@ mod tests {
     use dpp::voting::vote_polls::VotePoll;
     use dpp::voting::votes::resource_vote::ResourceVote;
     use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
-    use drive::drive::object_size_info::DataContractResolvedInfo;
+    use drive::util::object_size_info::DataContractResolvedInfo;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
     use dpp::identifier::Identifier;
     use dpp::prelude::DataContract;
@@ -4087,9 +4087,15 @@ mod tests {
                             core_height: 42,
                             epoch: Default::default(),
                         },
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -4268,9 +4274,15 @@ mod tests {
                             core_height: 42,
                             epoch: Default::default(),
                         },
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -4412,9 +4424,15 @@ mod tests {
                             core_height: 42,
                             epoch: Default::default(),
                         },
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -4447,9 +4465,15 @@ mod tests {
                             core_height: 45,
                             epoch: Default::default(),
                         },
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -4656,9 +4680,15 @@ mod tests {
                             core_height: 42,
                             epoch: Default::default(),
                         },
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -4691,9 +4721,15 @@ mod tests {
                             core_height: 45,
                             epoch: Default::default(),
                         },
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -4802,9 +4838,15 @@ mod tests {
                             core_height: 42,
                             epoch: Default::default(),
                         },
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -4837,9 +4879,15 @@ mod tests {
                             core_height: 45,
                             epoch: Default::default(),
                         },
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -4944,9 +4992,15 @@ mod tests {
                             core_height: 42,
                             epoch: Default::default(),
                         },
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -4979,9 +5033,15 @@ mod tests {
                             core_height: 45,
                             epoch: Default::default(),
                         },
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -5103,9 +5163,15 @@ mod tests {
                             core_height: 42,
                             epoch: Default::default(),
                         },
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -5739,9 +5805,15 @@ mod tests {
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
                         basic_info: block_info,
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -5946,9 +6018,15 @@ mod tests {
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
                         basic_info: block_info,
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -6153,9 +6231,15 @@ mod tests {
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
                         basic_info: block_info,
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -6355,9 +6439,15 @@ mod tests {
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
                         basic_info: block_info,
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -6548,9 +6638,15 @@ mod tests {
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
                         basic_info: block_info,
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -6755,9 +6851,15 @@ mod tests {
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
                         basic_info: block_info,
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -6958,9 +7060,15 @@ mod tests {
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
                         basic_info: block_info,
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -7141,9 +7249,15 @@ mod tests {
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
                         basic_info: block_info,
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }
@@ -7607,9 +7721,15 @@ mod tests {
                 platform_state.set_last_committed_block_info(Some(
                     ExtendedBlockInfoV0 {
                         basic_info: block_info,
-                        app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
                         quorum_hash: [0u8; 32],
                         block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
                         signature: [0u8; 96],
                         round: 0,
                     }

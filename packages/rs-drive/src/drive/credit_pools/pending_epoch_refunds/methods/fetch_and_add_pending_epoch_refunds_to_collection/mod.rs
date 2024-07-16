@@ -34,6 +34,7 @@ impl Drive {
             0 => self.fetch_and_add_pending_epoch_refunds_to_collection_v0(
                 refunds_per_epoch,
                 transaction,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_and_add_pending_epoch_refunds_to_collection".to_string(),

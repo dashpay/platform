@@ -1,11 +1,13 @@
-use crate::common::encode::encode_u64;
 use crate::drive::document::paths::contract_document_type_path_vec;
+use crate::util::common::encode::encode_u64;
 
 use crate::drive::votes;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::Query;
 use grovedb::{PathQuery, SizedQuery};
+use platform_version::version::PlatformVersion;
+use platform_version::TryFromPlatformVersioned;
 
 /// The expected contested status of a document
 /// Drives stores the document in either the not contested location (most of the time)
@@ -57,7 +59,10 @@ pub struct SingleDocumentDriveQuery {
 
 impl SingleDocumentDriveQuery {
     /// Operations to construct a path query.
-    pub fn construct_path_query(&self) -> Result<PathQuery, Error> {
+    pub fn construct_path_query(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
         match self.contested_status {
             SingleDocumentDriveQueryContestedStatus::NotContested => {
                 Ok(self.construct_non_contested_path_query(true))
@@ -65,7 +70,11 @@ impl SingleDocumentDriveQuery {
             SingleDocumentDriveQueryContestedStatus::MaybeContested => {
                 let non_contested = self.construct_non_contested_path_query(true);
                 let contested = self.construct_contested_path_query(true);
-                PathQuery::merge(vec![&non_contested, &contested]).map_err(Error::GroveDB)
+                PathQuery::merge(
+                    vec![&non_contested, &contested],
+                    &platform_version.drive.grove_version,
+                )
+                .map_err(Error::GroveDB)
             }
             SingleDocumentDriveQueryContestedStatus::Contested => {
                 Ok(self.construct_contested_path_query(true))
@@ -118,9 +127,12 @@ impl SingleDocumentDriveQuery {
     }
 }
 
-impl TryFrom<SingleDocumentDriveQuery> for PathQuery {
+impl TryFromPlatformVersioned<SingleDocumentDriveQuery> for PathQuery {
     type Error = Error;
-    fn try_from(value: SingleDocumentDriveQuery) -> Result<Self, Self::Error> {
-        value.construct_path_query()
+    fn try_from_platform_versioned(
+        value: SingleDocumentDriveQuery,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        value.construct_path_query(platform_version)
     }
 }

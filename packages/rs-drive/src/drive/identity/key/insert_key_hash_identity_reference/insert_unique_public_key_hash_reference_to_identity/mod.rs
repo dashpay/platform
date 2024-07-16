@@ -5,7 +5,7 @@ use crate::error::drive::DriveError;
 
 use crate::error::Error;
 
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;

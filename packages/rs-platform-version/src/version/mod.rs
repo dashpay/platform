@@ -12,3 +12,4 @@ pub mod mocks;
 pub mod v1;
 
 pub const LATEST_VERSION: u32 = PROTOCOL_VERSION_1;
+pub const INITIAL_PROTOCOL_VERSION: u32 = 1;

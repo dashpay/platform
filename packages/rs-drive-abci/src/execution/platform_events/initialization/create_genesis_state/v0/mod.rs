@@ -17,14 +17,14 @@ use dpp::identity::IdentityV0;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::SystemDataContract;
-use drive::drive::batch::{
+use drive::util::batch::{
     DataContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
 
-use drive::drive::object_size_info::{
+use drive::query::TransactionArg;
+use drive::util::object_size_info::{
     DataContractInfo, DocumentInfo, DocumentTypeInfo, OwnedDocumentInfo,
 };
-use drive::query::TransactionArg;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
@@ -165,6 +165,7 @@ impl<C> Platform<C> {
             &block_info,
             transaction,
             platform_version,
+            None, // No previous_fee_versions needed for genesis state creation
         )?;
 
         Ok(())
@@ -267,10 +268,12 @@ mod tests {
     mod create_genesis_state {
         use crate::config::PlatformConfig;
         use crate::test::helpers::setup::TestPlatformBuilder;
-        use drive::drive::config::DriveConfig;
+        use drive::config::DriveConfig;
+        use platform_version::version::PlatformVersion;
 
         #[test]
         pub fn should_create_genesis_state_deterministically() {
+            let platform_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .with_config(PlatformConfig {
                     drive: DriveConfig {
@@ -285,7 +288,7 @@ mod tests {
             let root_hash = platform
                 .drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should obtain root hash");
 

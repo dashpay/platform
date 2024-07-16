@@ -50,11 +50,11 @@ mod tests {
     use rand::random;
 
     use crate::drive::document::tests::setup_dashpay;
-    use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
-    use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::PlatformVersion;
 
@@ -104,6 +104,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -125,6 +126,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                None,
             )
             .expect_err(
                 "expected not to be able to insert document with already existing unique index",

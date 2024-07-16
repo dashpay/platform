@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Genesis Time.
 //!
 //! This module defines functions relevant to the chain's genesis time.
@@ -82,14 +53,14 @@ impl Drive {
 mod tests {
     use super::*;
 
-    use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+    use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
 
     mod get_genesis_time {
         use super::*;
-        use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+        use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
-        use crate::drive::batch::GroveDbOpBatch;
-        use crate::fee_pools::epochs::operations_factory::EpochOperations;
+        use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+        use crate::util::batch::GroveDbOpBatch;
 
         #[test]
         fn should_return_none_if_cache_is_empty_and_start_time_is_not_persisted() {
@@ -138,7 +109,7 @@ mod tests {
                 .add_init_empty_operations(&mut batch)
                 .expect("should add init operations");
 
-            epoch.add_init_current_operations(0.0, 1, 1, genesis_time_ms, &mut batch);
+            epoch.add_init_current_operations(0, 1, 1, genesis_time_ms, &mut batch);
 
             drive
                 .apply_batch_grovedb_operations(

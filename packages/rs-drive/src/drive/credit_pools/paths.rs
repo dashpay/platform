@@ -1,6 +1,6 @@
+use crate::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
 use crate::drive::RootTree;
 use crate::error::Error;
-use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
 use dpp::block::epoch::{EpochIndex, EPOCH_KEY_OFFSET};
 use dpp::ProtocolError;
 

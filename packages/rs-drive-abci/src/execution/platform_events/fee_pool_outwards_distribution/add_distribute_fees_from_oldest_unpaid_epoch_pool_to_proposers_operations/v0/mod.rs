@@ -3,12 +3,13 @@ use crate::execution::types::proposer_payouts;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use drive::drive::batch::{DriveOperation, GroveDbOpBatch, SystemOperationType};
-use drive::fee_pools::epochs::operations_factory::EpochOperations;
-use drive::fee_pools::update_unpaid_epoch_index_operation;
+use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
+use drive::drive::credit_pools::operations::update_unpaid_epoch_index_operation;
+use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use drive::util::batch::{DriveOperation, GroveDbOpBatch, SystemOperationType};
 
 use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Getters;
+
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {
@@ -92,7 +93,7 @@ mod tests {
     use super::*;
     use dpp::block::block_info::BlockInfo;
 
-    use drive::common::test_utils::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
+    use drive::util::test_helpers::test_utils::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
 
     use crate::test::helpers::setup::TestPlatformBuilder;
 
@@ -146,7 +147,16 @@ mod tests {
 
         let mut batch = GroveDbOpBatch::new();
 
-        unpaid_epoch.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
+        unpaid_epoch.add_init_current_operations(
+            platform_version
+                .fee_version
+                .uses_version_fee_multiplier_permille
+                .expect("expected a fee multiplier"),
+            1,
+            1,
+            1,
+            &mut batch,
+        );
 
         batch.push(
             unpaid_epoch
@@ -161,7 +171,10 @@ mod tests {
         );
 
         current_epoch.add_init_current_operations(
-            1.0,
+            platform_version
+                .fee_version
+                .uses_version_fee_multiplier_permille
+                .expect("expected a fee multiplier"),
             proposers_count as u64 + 1,
             3,
             2,
@@ -203,6 +216,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("should apply batch");
 

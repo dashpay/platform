@@ -1,7 +1,6 @@
 use crate::fee::Credits;
 
 pub const BASE_ST_PROCESSING_FEE: Credits = 10000; // 84000
-pub const DEFAULT_SYSTEM_FEE_MULTIPLIER: Credits = 2;
 pub const DEFAULT_USER_TIP: Credits = 0;
 pub const STORAGE_CREDIT_PER_BYTE: Credits = 5000;
 pub const PROCESSING_CREDIT_PER_BYTE: Credits = 12;
