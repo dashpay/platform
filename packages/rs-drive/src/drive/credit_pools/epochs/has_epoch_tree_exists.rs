@@ -28,7 +28,6 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::drive::credit_pools::epochs::*;
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 

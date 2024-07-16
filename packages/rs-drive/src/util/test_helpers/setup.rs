@@ -3,7 +3,7 @@
 //! Defines helper functions pertinent to setting up Drive.
 //!
 
-#[cfg(test)]
+#[cfg(feature = "full")]
 use crate::config::DriveConfig;
 use crate::drive::Drive;
 use dpp::block::block_info::BlockInfo;
@@ -16,7 +16,7 @@ use dpp::document::Document;
 
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
-#[cfg(test)]
+#[cfg(feature = "full")]
 use tempfile::TempDir;
 
 /// Struct with options regarding setting up fee pools.
@@ -34,7 +34,7 @@ impl Default for SetupFeePoolsOptions {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "full")]
 /// Sets up Drive using a temporary directory and the optionally given Drive configuration settings.
 pub fn setup_drive(drive_config: Option<DriveConfig>) -> Drive {
     let tmp_dir = TempDir::new().unwrap();
@@ -44,7 +44,7 @@ pub fn setup_drive(drive_config: Option<DriveConfig>) -> Drive {
     drive
 }
 
-#[cfg(test)]
+#[cfg(feature = "full")]
 /// Sets up Drive using a temporary directory and the default initial state structure.
 pub fn setup_drive_with_initial_state_structure() -> Drive {
     let drive = setup_drive(Some(DriveConfig {
