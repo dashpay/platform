@@ -752,7 +752,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
                 identity_credit_withdrawal_state_transition:
                     DriveAbciStateTransitionValidationVersion {
-                        basic_structure: None,
+                        basic_structure: Some(0),
                         advanced_structure: None,
                         identity_signatures: None,
                         advanced_minimum_balance_pre_check: Some(0),
