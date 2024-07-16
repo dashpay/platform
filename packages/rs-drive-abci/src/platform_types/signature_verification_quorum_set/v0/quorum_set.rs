@@ -14,7 +14,7 @@ pub(super) struct PreviousPastQuorumsV0 {
     pub(super) quorums: Quorums<VerificationQuorum>,
 
     /// The core height at which these quorums were last active
-    pub(super) active_core_height: u32,
+    pub(super) last_active_core_height: u32,
 
     /// The core height when the quorums were changed
     pub(super) updated_at_core_height: u32,
@@ -80,6 +80,7 @@ pub trait SignatureVerificationQuorumSetV0Methods {
 }
 
 /// Iterator over selected quorum sets and specific quorums based on request_id and quorum configuration
+#[derive(Clone)]
 pub struct SelectedQuorumSetIterator<'q> {
     /// Quorum configuration
     config: &'q QuorumConfig,
@@ -101,6 +102,7 @@ impl<'q> Iterator for SelectedQuorumSetIterator<'q> {
 }
 
 /// Quorums with configuration
+#[derive(Debug)]
 pub struct QuorumsWithConfig<'q> {
     /// Quorums
     pub quorums: &'q Quorums<VerificationQuorum>,
@@ -191,14 +193,16 @@ impl SignatureVerificationQuorumSetV0Methods for SignatureVerificationQuorumSetV
         last_active_core_height: u32,
         updated_at_core_height: u32,
     ) {
+        let previous_change_height = self
+            .previous
+            .as_ref()
+            .map(|previous| previous.updated_at_core_height);
+
         self.previous = Some(PreviousPastQuorumsV0 {
             quorums: previous_quorums,
-            active_core_height: last_active_core_height,
+            last_active_core_height,
             updated_at_core_height,
-            previous_change_height: self
-                .previous
-                .as_ref()
-                .map(|previous| previous.updated_at_core_height),
+            previous_change_height,
         });
     }
 
@@ -211,7 +215,7 @@ impl SignatureVerificationQuorumSetV0Methods for SignatureVerificationQuorumSetV
         let mut should_be_verifiable = false;
 
         if let Some(previous) = &self.previous {
-            let previous_quorum_height = previous.active_core_height;
+            let previous_quorum_height = previous.last_active_core_height;
             let change_quorum_height = previous.updated_at_core_height;
             let previous_quorums_change_height = previous.previous_change_height;
 
