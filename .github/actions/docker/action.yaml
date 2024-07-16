@@ -37,6 +37,12 @@ inputs:
   region:
     description: S3 bucket region
     required: true
+  aws_access_key_id:
+    description: AWS access key ID
+    required: true
+  aws_secret_access_key:
+    description: AWS secret access key
+    required: true
 outputs:
   digest:
     value: ${{ steps.docker_build.outputs.digest }}
@@ -102,6 +108,8 @@ runs:
           SCCACHE_BUCKET=${{ inputs.bucket }}
           SCCACHE_REGION=${{ inputs.region }}
           SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache
+          AWS_ACCESS_KEY_ID=${{ inputs.aws_access_key_id }}
+          AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true
