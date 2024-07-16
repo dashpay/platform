@@ -1,3 +1,4 @@
+---
 name: "Start local network"
 description: "Setup and start dashmate local network"
 inputs:
@@ -41,11 +42,12 @@ runs:
         key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
 
     - name: Restore dashmate volumes
-      run: ./scripts/dashmate/volumes/restore.sh
       shell: bash
+      run: ./scripts/dashmate/volumes/restore.sh
       if: steps.local-network-data.outputs.cache-hit == 'true'
 
     - name: Setup local network
+      shell: bash
       run: |
         set -ex
 
@@ -58,12 +60,11 @@ runs:
         ./scripts/setup_local_network.sh
         ./scripts/configure_test_suite.sh
         ./scripts/configure_dotenv.sh
-      shell: bash
       if: steps.local-network-data.outputs.cache-hit != 'true'
 
     - name: Dump dashmate volumes
-      run: ./scripts/dashmate/volumes/dump.sh
       shell: bash
+      run: ./scripts/dashmate/volumes/dump.sh
       if: steps.local-network-data.outputs.cache-hit != 'true'
 
     - name: Save local network data
@@ -94,11 +95,13 @@ runs:
         cat /home/ubuntu/.dashmate/config.json
 
     - name: Print Docker containers before network start
+      shell: bash
       run: |
         echo "Printing Docker containers before network start..."
         docker ps -a
 
     - name: Print Docker networks before network start
+      shell: bash
       run: |
         echo "Printing Docker networks before network start..."
         docker network ls
@@ -108,3 +111,4 @@ runs:
       run: yarn start
       env:
         DEBUG: 1
+
