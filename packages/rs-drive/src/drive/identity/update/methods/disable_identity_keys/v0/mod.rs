@@ -58,13 +58,13 @@ impl Drive {
             &mut drive_operations,
             &platform_version.drive,
         )?;
-
         let fees = Drive::calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
+            None, // TODO: Does disable mean delete? Check if previous_fee_versions are required in this case
         )?;
 
         Ok(fees)

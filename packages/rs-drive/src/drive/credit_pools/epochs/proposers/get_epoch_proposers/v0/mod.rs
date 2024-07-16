@@ -6,6 +6,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Returns a list of the Epoch's block proposers
@@ -14,6 +15,7 @@ impl Drive {
         epoch_tree: &Epoch,
         limit: Option<u16>,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<(Vec<u8>, u64)>, Error> {
         let path_as_vec = epoch_tree.get_proposers_path_vec();
 
@@ -31,6 +33,7 @@ impl Drive {
                 true,
                 QueryKeyElementPairResultType,
                 transaction,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?

@@ -9,6 +9,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::operations::delete::DeleteUpTreeOptions;
 use grovedb::{GroveDb, TransactionArg};
 use grovedb_storage::rocksdb_storage::RocksDbStorage;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes a "delete up tree while empty" operation to `drive_operations`.
@@ -21,6 +22,7 @@ impl Drive {
         transaction: TransactionArg,
         check_existing_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         //these are the operations in the current operations (eg, delete/add)
         let mut current_batch_operations =
@@ -43,6 +45,7 @@ impl Drive {
                 stop_path_height,
                 true,
                 estimated_layer_info,
+                &drive_version.grove_version,
             ),
             BatchDeleteUpTreeApplyType::StatefulBatchDelete {
                 is_known_to_be_subtree_with_sum,
@@ -61,6 +64,7 @@ impl Drive {
                     is_known_to_be_subtree_with_sum,
                     current_batch_operations.operations,
                     transaction,
+                    &drive_version.grove_version,
                 )
             }
         };

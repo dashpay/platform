@@ -213,6 +213,7 @@ mod tests {
                 true,
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("should update contract");
 
@@ -276,7 +277,7 @@ mod tests {
         assert_eq!(
             result.0,
             Some(FeeResult {
-                processing_fee: 4060,
+                processing_fee: 4400, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
                 ..Default::default()
             })
         );

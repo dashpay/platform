@@ -1,11 +1,11 @@
 use crate::drive::credit_pools::paths::pools_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
+use crate::error::Error;
 use dpp::balances::credits::Creditable;
 use dpp::fee::Credits;
 use grovedb::{Element, TransactionArg};
-
-use crate::error::Error;
+use platform_version::version::PlatformVersion;
 
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
 
@@ -14,10 +14,16 @@ impl Drive {
     pub(super) fn get_storage_fees_from_distribution_pool_v0(
         &self,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Credits, Error> {
         match self
             .grove
-            .get(&pools_path(), KEY_STORAGE_FEE_POOL.as_slice(), transaction)
+            .get(
+                &pools_path(),
+                KEY_STORAGE_FEE_POOL.as_slice(),
+                transaction,
+                &platform_version.drive.grove_version,
+            )
             .unwrap()
         {
             Ok(Element::SumItem(credits, _)) => Ok(credits.to_unsigned()),

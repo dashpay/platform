@@ -33,7 +33,7 @@ use drive::drive::Drive;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
-use drive::query::DriveQuery;
+use drive::query::DriveDocumentQuery;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
@@ -73,7 +73,9 @@ use dpp::voting::votes::Vote;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::config::PlatformConfig;
-use drive_abci::platform_types::signature_verification_quorum_set::{QuorumConfig, Quorums, SigningQuorum};
+use drive_abci::platform_types::signature_verification_quorum_set::{
+    QuorumConfig, Quorums, SigningQuorum,
+};
 use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 
 use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
@@ -786,7 +788,7 @@ impl NetworkStrategy {
                         contract,
                     }) => {
                         let any_item_query =
-                            DriveQuery::any_item_query(contract, document_type.as_ref());
+                            DriveDocumentQuery::any_item_query(contract, document_type.as_ref());
                         let mut items = platform
                             .drive
                             .query_documents(
@@ -880,7 +882,7 @@ impl NetworkStrategy {
                         contract,
                     }) => {
                         let any_item_query =
-                            DriveQuery::any_item_query(contract, document_type.as_ref());
+                            DriveDocumentQuery::any_item_query(contract, document_type.as_ref());
                         let mut items = platform
                             .drive
                             .query_documents(
@@ -982,7 +984,7 @@ impl NetworkStrategy {
                         contract,
                     }) => {
                         let any_item_query =
-                            DriveQuery::any_item_query(contract, document_type.as_ref());
+                            DriveDocumentQuery::any_item_query(contract, document_type.as_ref());
                         let mut items = platform
                             .drive
                             .query_documents(

@@ -2,12 +2,12 @@ use crate::drive::verify::RootHash;
 
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::query::DriveQuery;
+use crate::query::DriveDocumentQuery;
 
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 
-impl<'a> DriveQuery<'a> {
+impl<'a> DriveDocumentQuery<'a> {
     /// Verifies the given proof and returns the root hash of the GroveDB tree and a vector
     /// of serialized documents if the verification is successful.
     ///
@@ -40,9 +40,9 @@ impl<'a> DriveQuery<'a> {
             self.construct_path_query(None, platform_version)
         }?;
         let (root_hash, proved_key_values) = if self.start_at.is_some() {
-            GroveDb::verify_subset_query(proof, &path_query)?
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
-            GroveDb::verify_query(proof, &path_query)?
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
 
         let documents = proved_key_values

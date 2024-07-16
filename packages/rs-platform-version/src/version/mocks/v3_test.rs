@@ -63,21 +63,23 @@ use crate::version::drive_versions::{
     DriveIdentityWithdrawalTransactionQueueMethodVersions, DriveInitializationMethodVersions,
     DriveMethodVersions, DriveOperationsMethodVersion, DrivePlatformStateMethodVersions,
     DrivePlatformSystemMethodVersions, DrivePrefundedSpecializedMethodVersions,
-    DriveProtocolUpgradeVersions, DriveProveMethodVersions, DriveStateTransitionMethodVersions,
-    DriveStateTransitionOperationMethodVersions, DriveStructureVersion,
-    DriveSystemEstimationCostsMethodVersions, DriveVerifyContractMethodVersions,
-    DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
-    DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
-    DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions,
-    DriveVerifyVoteMethodVersions, DriveVersion, DriveVoteCleanupMethodVersions,
-    DriveVoteContestedResourceInsertMethodVersions, DriveVoteFetchMethodVersions,
-    DriveVoteInsertMethodVersions, DriveVoteMethodVersions, DriveVoteSetupMethodVersions,
-    DriveVoteStorageFormMethodVersions,
+    DriveProtocolUpgradeVersions, DriveProveMethodVersions,
+    DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions,
+    DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
+    DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
+    DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
+    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
+    DriveVerifySingleDocumentMethodVersions, DriveVerifyStateTransitionMethodVersions,
+    DriveVerifySystemMethodVersions, DriveVerifyVoteMethodVersions, DriveVersion,
+    DriveVoteCleanupMethodVersions, DriveVoteContestedResourceInsertMethodVersions,
+    DriveVoteFetchMethodVersions, DriveVoteInsertMethodVersions, DriveVoteMethodVersions,
+    DriveVoteSetupMethodVersions, DriveVoteStorageFormMethodVersions,
 };
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
+use grovedb_version::version::v1::GROVE_V1;
 
 pub const TEST_PROTOCOL_VERSION_3: u32 = (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 3;
 
@@ -118,6 +120,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             credit_pools: DriveCreditPoolMethodVersions {
                 epochs: DriveCreditPoolEpochsMethodVersions {
                     get_epochs_infos: 0,
+                    get_epochs_protocol_versions: 0,
                     prove_epochs_infos: 0,
                     get_epoch_fee_multiplier: 0,
                     get_epoch_processing_credits_for_distribution: 0,
@@ -174,6 +177,27 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                         finalization_tasks: 0,
                     },
                 },
+                convert_to_high_level_operations:
+                    DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions {
+                        data_contract_create_transition: 0,
+                        data_contract_update_transition: 0,
+                        document_create_transition: 0,
+                        document_delete_transition: 0,
+                        document_purchase_transition: 0,
+                        document_replace_transition: 0,
+                        document_transfer_transition: 0,
+                        document_update_price_transition: 0,
+                        documents_batch_transition: 0,
+                        identity_create_transition: 0,
+                        identity_credit_transfer_transition: 0,
+                        identity_credit_withdrawal_transition: 0,
+                        identity_top_up_transition: 0,
+                        identity_update_transition: 0,
+                        masternode_vote_transition: 0,
+                        bump_identity_data_contract_nonce: 0,
+                        bump_identity_nonce: 0,
+                        partially_use_asset_lock: 0,
+                    },
             },
             document: DriveDocumentMethodVersions {
                 query: DriveDocumentQueryMethodVersions { query_documents: 0 },
@@ -541,6 +565,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 batch_insert: 0,
                 batch_insert_if_not_exists: 0,
                 batch_insert_if_changed_value: 0,
+                batch_replace: 0,
                 batch_delete: 0,
                 batch_remove_raw: 0,
                 batch_delete_up_tree_while_empty: 0,
@@ -555,6 +580,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 grove_batch_operations_costs: 0,
             },
         },
+        grove_version: GROVE_V1,
     },
     abci_structure: AbciStructureVersion {
         extended_block_info: FeatureVersionBounds {

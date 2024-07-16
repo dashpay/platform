@@ -2,7 +2,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contracts::SystemDataContract;
 use dpp::identifier::Identifier;
 use dpp::system_data_contracts::load_system_data_contract;
-use drive::query::DriveQuery;
+use drive::query::DriveDocumentQuery;
 use drive::tests::helpers::setup::setup_drive_with_initial_state_structure;
 use platform_version::version::PlatformVersion;
 
@@ -30,7 +30,7 @@ mod contact_request {
             )
             .expect("should apply contract");
 
-        let query = DriveQuery::from_sql_expr(
+        let query = DriveDocumentQuery::from_sql_expr(
             &format!(
                 "SELECT * FROM contactRequest WHERE toUserId == '{}'",
                 Identifier::random()
@@ -66,7 +66,7 @@ mod contact_request {
             )
             .expect("should apply contract");
 
-        let query = DriveQuery::from_sql_expr(
+        let query = DriveDocumentQuery::from_sql_expr(
             &format!(
                 "SELECT * FROM contactRequest WHERE toUserId == '{}' AND $createdAt > 100 ORDER BY $createdAt asc",
                 Identifier::random()
@@ -102,7 +102,7 @@ mod contact_request {
             )
             .expect("should apply contract");
 
-        let query = DriveQuery::from_sql_expr(
+        let query = DriveDocumentQuery::from_sql_expr(
             &format!(
                 "SELECT * FROM contactRequest WHERE $ownerId == '{}'",
                 Identifier::random()
@@ -138,7 +138,7 @@ mod contact_request {
             )
             .expect("should apply contract");
 
-        let query = DriveQuery::from_sql_expr(
+        let query = DriveDocumentQuery::from_sql_expr(
             &format!(
                 "SELECT * FROM contactRequest WHERE $ownerId == '{}' AND $createdAt > 100 ORDER BY $createdAt asc",
                 Identifier::random()
@@ -174,7 +174,7 @@ mod contact_request {
             )
             .expect("should apply contract");
 
-        let query = DriveQuery::from_sql_expr(
+        let query = DriveDocumentQuery::from_sql_expr(
             &format!(
                 "SELECT * FROM contactRequest WHERE $ownerId == '{}' AND toUserId == '{}'",
                 Identifier::random(),

@@ -36,7 +36,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, BTreeMap<Vec<u8>, Option<Element>>), Error> {
         match platform_version.drive.methods.verify.system.verify_elements {
-            0 => Drive::verify_elements_v0(proof, path, keys),
+            0 => Drive::verify_elements_v0(proof, path, keys, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_elements".to_string(),
                 known_versions: vec![0],

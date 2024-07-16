@@ -24,6 +24,7 @@ use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
@@ -103,11 +104,8 @@ impl PlatformDeserializableFromVersionedStructure for PlatformState {
 
 impl PlatformState {
     /// Get the state fingerprint
-    pub fn fingerprint(&self) -> [u8; 32] {
-        hash_double(
-            self.serialize_to_bytes()
-                .expect("expected to serialize state"),
-        )
+    pub fn fingerprint(&self) -> Result<[u8; 32], Error> {
+        Ok(hash_double(self.serialize_to_bytes()?))
     }
     /// Get the current platform version
     pub fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
@@ -514,6 +512,18 @@ impl PlatformStateV0Methods for PlatformState {
             (PlatformState::V0(v0), PlatformState::V0(v0_previous)) => {
                 v0.hpmn_masternode_list_changes(v0_previous)
             }
+        }
+    }
+
+    fn previous_fee_versions(&self) -> &CachedEpochIndexFeeVersions {
+        match self {
+            PlatformState::V0(v0) => v0.previous_fee_versions(),
+        }
+    }
+
+    fn previous_fee_versions_mut(&mut self) -> &mut CachedEpochIndexFeeVersions {
+        match self {
+            PlatformState::V0(v0) => v0.previous_fee_versions_mut(),
         }
     }
 }

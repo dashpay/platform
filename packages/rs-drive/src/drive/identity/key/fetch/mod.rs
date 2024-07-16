@@ -31,11 +31,7 @@ use {
 use {
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
     dpp::{
-        block::epoch::Epoch,
-        fee::{
-            default_costs::{EpochCosts, KnownCostItem::FetchSingleIdentityKeyProcessingCost},
-            Credits,
-        },
+        fee::Credits,
         identity::{IdentityPublicKey, SecurityLevel},
         serialization::PlatformDeserializable,
         version::PlatformVersion,
@@ -653,18 +649,25 @@ pub struct IdentityKeysRequest {
 impl IdentityKeysRequest {
     #[cfg(feature = "server")]
     /// Gets the processing cost of an identity keys request
-    pub fn processing_cost(&self, epoch: &Epoch) -> Result<Credits, Error> {
+    pub fn processing_cost(&self, platform_version: &PlatformVersion) -> Result<Credits, Error> {
         match &self.request_type {
             AllKeys => Err(Error::Fee(FeeError::OperationNotAllowed(
                 "You can not get costs for requesting all keys",
             ))),
             SpecificKeys(keys) => Ok(keys.len() as u64
-                * epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost)),
+                * platform_version
+                    .fee_version
+                    .processing
+                    .fetch_single_identity_key_processing_cost),
             SearchKey(_search) => todo!(),
             ContractBoundKey(_, _, key_kind) | ContractDocumentTypeBoundKey(_, _, _, key_kind) => {
                 match key_kind {
                     CurrentKeyOfKindRequest => {
-                        Ok(epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost))
+                        // not accessible
+                        Ok(platform_version
+                            .fee_version
+                            .processing
+                            .fetch_single_identity_key_processing_cost)
                     }
                     AllKeysOfKindRequest => Err(Error::Fee(FeeError::OperationNotAllowed(
                         "You can not get costs for an all keys of kind request",

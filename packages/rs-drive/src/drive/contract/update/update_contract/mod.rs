@@ -8,6 +8,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
@@ -46,6 +47,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         match platform_version
             .drive
@@ -54,9 +56,14 @@ impl Drive {
             .update
             .update_contract
         {
-            0 => {
-                self.update_contract_v0(contract, block_info, apply, transaction, platform_version)
-            }
+            0 => self.update_contract_v0(
+                contract,
+                block_info,
+                apply,
+                transaction,
+                platform_version,
+                previous_fee_versions,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract".to_string(),
                 known_versions: vec![0],

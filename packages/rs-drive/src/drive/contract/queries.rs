@@ -9,6 +9,7 @@ use crate::error::Error;
 use crate::error::Error::GroveDB;
 use crate::query::{Query, QueryItem};
 use grovedb::{PathQuery, SizedQuery};
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Creates a path query for a specified contract.
@@ -120,6 +121,7 @@ impl Drive {
     pub fn fetch_contracts_query(
         non_historical_contract_ids: &[[u8; 32]],
         historical_contract_ids: &[[u8; 32]],
+        platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         if non_historical_contract_ids.is_empty() {
             return Ok(Self::fetch_historical_contracts_query(
@@ -137,7 +139,11 @@ impl Drive {
         let mut historical_contracts_query =
             Self::fetch_historical_contracts_query(historical_contract_ids);
         historical_contracts_query.query.limit = None;
-        PathQuery::merge(vec![&contracts_query, &historical_contracts_query]).map_err(GroveDB)
+        PathQuery::merge(
+            vec![&contracts_query, &historical_contracts_query],
+            &platform_version.drive.grove_version,
+        )
+        .map_err(GroveDB)
     }
 
     /// Creates a merged path query for multiple historical contracts.

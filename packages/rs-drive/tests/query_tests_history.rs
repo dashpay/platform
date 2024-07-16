@@ -31,18 +31,10 @@
 //!
 
 #[cfg(feature = "server")]
-use std::borrow::Cow;
-#[cfg(feature = "server")]
-use std::collections::{BTreeMap, HashMap};
-#[cfg(feature = "server")]
-use std::fmt::{Debug, Formatter};
-#[cfg(feature = "server")]
-use std::option::Option::None;
-
-#[cfg(feature = "server")]
 use dpp::document::Document;
 #[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
+use once_cell::sync::Lazy;
 #[cfg(feature = "server")]
 use rand::seq::SliceRandom;
 #[cfg(feature = "server")]
@@ -51,6 +43,14 @@ use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "server")]
 use serde_json::json;
+#[cfg(feature = "server")]
+use std::borrow::Cow;
+#[cfg(feature = "server")]
+use std::collections::{BTreeMap, HashMap};
+#[cfg(feature = "server")]
+use std::fmt::{Debug, Formatter};
+#[cfg(feature = "server")]
+use std::option::Option::None;
 
 #[cfg(feature = "server")]
 use drive::common;
@@ -73,7 +73,7 @@ use drive::drive::Drive;
 #[cfg(feature = "server")]
 use drive::error::{query::QuerySyntaxError, Error};
 #[cfg(feature = "server")]
-use drive::query::DriveQuery;
+use drive::query::DriveDocumentQuery;
 
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
@@ -83,6 +83,7 @@ use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
 };
 use dpp::document::DocumentV0Getters;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -191,6 +192,9 @@ pub fn setup(
 
     let platform_version = PlatformVersion::latest();
 
+    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+
     let drive = setup_drive(Some(drive_config));
 
     let db_transaction = drive.grove.start_transaction();
@@ -254,6 +258,7 @@ pub fn setup(
                     true,
                     Some(&db_transaction),
                     platform_version,
+                    Some(&epoch_change_fee_version_test),
                 )
                 .expect("expected to add document");
         }
@@ -281,11 +286,14 @@ fn test_query_historical() {
 
     let platform_version = PlatformVersion::latest();
 
+    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+
     let db_transaction = drive.grove.start_transaction();
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
     assert_eq!(
@@ -324,7 +332,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -573,7 +581,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -623,7 +631,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -669,7 +677,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -749,7 +757,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -803,7 +811,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -851,7 +859,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -893,7 +901,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -968,7 +976,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -1022,7 +1030,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -1131,6 +1139,7 @@ fn test_query_historical() {
             true,
             Some(&db_transaction),
             platform_version,
+            Some(&epoch_change_fee_version_test),
         )
         .expect("document should be inserted");
 
@@ -1176,6 +1185,7 @@ fn test_query_historical() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -1649,7 +1659,7 @@ fn test_query_historical() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
     assert_eq!(

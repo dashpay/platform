@@ -56,7 +56,7 @@ impl<C> Platform<C> {
                 .into_iter()
                 .map(|element| {
                     element
-                        .serialize()
+                        .serialize(&platform_version.drive.grove_version)
                         .map_err(|e| Error::Drive(drive::error::Error::GroveDB(e)))
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?;
@@ -113,8 +113,11 @@ mod tests {
 
         assert_eq!(elements.elements.len(), 1);
 
-        let element = Element::deserialize(elements.elements.remove(0).as_slice())
-            .expect("expected to deserialize element");
+        let element = Element::deserialize(
+            elements.elements.remove(0).as_slice(),
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to deserialize element");
 
         let Element::Item(value, _) = element else {
             panic!("expected item")

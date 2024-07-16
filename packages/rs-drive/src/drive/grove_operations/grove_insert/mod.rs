@@ -36,7 +36,15 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version.grove_methods.basic.grove_insert {
-            0 => self.grove_insert_v0(path, key, element, transaction, options, drive_operations),
+            0 => self.grove_insert_v0(
+                path,
+                key,
+                element,
+                transaction,
+                options,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_insert".to_string(),
                 known_versions: vec![0],

@@ -16,7 +16,7 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
+use drive::drive::batch::action_convert_to_operations::DriveHighLevelOperationConverter;
 use drive::drive::batch::DriveOperation;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionAccessorsV0;
 

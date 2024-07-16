@@ -28,6 +28,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<ExtendedEpochInfo>, Error> {
+        // TODO: We should avoid magic numbers. For now we are good since count refers to the number of epochs to fetch and 16383 is large enough.
         if count > 16383 {
             return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
                 "get_epochs_infos_v0 count too high {}",
@@ -196,14 +197,14 @@ impl Drive {
                 let fee_multiplier_bytes: [u8; 8] =
                     match encoded_multiplier.as_slice().try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "fee multiplier must be 8 bytes for a f64".to_string(),
+                            "fee multiplier must be 8 bytes for a u64".to_string(),
                         ))
                     }) {
                         Ok(value) => value,
                         Err(e) => return Some(Err(e)),
                     };
 
-                let fee_multiplier = f64::from_be_bytes(fee_multiplier_bytes);
+                let fee_multiplier = u64::from_be_bytes(fee_multiplier_bytes);
 
                 let protocol_version_element = inner_map.get(&KEY_PROTOCOL_VERSION.to_vec())?;
 
@@ -231,7 +232,7 @@ impl Drive {
                     first_block_time,
                     first_block_height,
                     first_core_block_height,
-                    fee_multiplier,
+                    fee_multiplier_permille: fee_multiplier,
                     protocol_version,
                 }
                 .into()))

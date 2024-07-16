@@ -46,7 +46,12 @@ impl Drive {
             .identity
             .verify_identity_nonce
         {
-            0 => Self::verify_identity_nonce_v0(proof, identity_id, verify_subset_of_proof),
+            0 => Self::verify_identity_nonce_v0(
+                proof,
+                identity_id,
+                verify_subset_of_proof,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_identity_nonce".to_string(),
                 known_versions: vec![0],

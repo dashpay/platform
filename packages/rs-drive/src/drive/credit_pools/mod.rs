@@ -79,6 +79,7 @@ use crate::drive::fee::get_overflow_error;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use paths::*;
+use platform_version::version::PlatformVersion;
 
 #[cfg(feature = "server")]
 impl Drive {
@@ -89,6 +90,7 @@ impl Drive {
         batch: &mut GroveDbOpBatch,
         credits_per_epochs: SignedCreditsPerEpoch,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         if credits_per_epochs.is_empty() {
             return Ok(());
@@ -129,6 +131,7 @@ impl Drive {
                 true,
                 QueryResultType::QueryElementResultType,
                 transaction,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;
@@ -209,6 +212,7 @@ mod tests {
 
         #[test]
         fn should_do_nothing_if_credits_per_epoch_are_empty() {
+            let platform_version = PlatformVersion::latest();
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
@@ -221,6 +225,7 @@ mod tests {
                     &mut batch,
                     credits_per_epoch,
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("should update epoch storage pools");
 
@@ -267,6 +272,7 @@ mod tests {
                     &mut batch,
                     credits_to_epochs,
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("should update epoch storage pools");
 
@@ -335,6 +341,7 @@ mod tests {
                     &mut batch,
                     credits_to_epochs,
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("should update epoch storage pools");
 

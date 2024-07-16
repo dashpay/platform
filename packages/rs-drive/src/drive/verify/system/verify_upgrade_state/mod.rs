@@ -39,7 +39,7 @@ impl Drive {
             .system
             .verify_upgrade_state
         {
-            0 => Drive::verify_upgrade_state_v0(proof),
+            0 => Drive::verify_upgrade_state_v0(proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_upgrade_state".to_string(),
                 known_versions: vec![0],
