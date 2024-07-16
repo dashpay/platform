@@ -1,8 +1,8 @@
+use crate::drive::credit_pools::epochs::epoch_key_constants::KEY_START_TIME;
+use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee_pools::epochs::epoch_key_constants::KEY_START_TIME;
-use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
 use grovedb::{Element, TransactionArg};
 use platform_version::version::PlatformVersion;
@@ -46,7 +46,7 @@ impl Drive {
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 
     use super::*;
 

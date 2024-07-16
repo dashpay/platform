@@ -4,7 +4,7 @@ use dpp::block::block_info::BlockInfo;
 
 use dpp::data_contract::DataContract;
 
-use drive::drive::flags::StorageFlags;
+use drive::util::storage_flags::StorageFlags;
 
 use drive::grovedb::TransactionArg;
 

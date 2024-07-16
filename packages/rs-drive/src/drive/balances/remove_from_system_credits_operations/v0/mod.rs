@@ -1,11 +1,11 @@
 use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
-use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::system::{misc_path, misc_path_vec};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::GroveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::grove_operations::DirectQueryType;
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
@@ -50,7 +50,7 @@ impl Drive {
         let new_total = total_credits_in_platform
             .checked_sub(amount)
             .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
-                "trying to remove an amount that would underflow credits",
+                "trying to remove an amount that would underflow total system credits",
             )))?;
         let path_holding_total_credits_vec = misc_path_vec();
         let replace_op = GroveDbOp::replace_op(

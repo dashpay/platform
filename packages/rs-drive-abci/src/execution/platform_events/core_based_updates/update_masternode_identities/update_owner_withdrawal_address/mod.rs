@@ -8,7 +8,7 @@ use dashcore_rpc::json::DMNStateDiff;
 use dpp::block::block_info::BlockInfo;
 
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
+use drive::util::batch::DriveOperation;
 
 use drive::grovedb::Transaction;
 

@@ -9,7 +9,7 @@ mod tests {
 
     use dpp::prelude::*;
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::identity::accessors::IdentityGettersV0;
 
     mod add_new_keys_to_identity {

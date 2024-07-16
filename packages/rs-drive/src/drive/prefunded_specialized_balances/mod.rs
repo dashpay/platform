@@ -13,12 +13,12 @@ mod fetch;
 #[cfg(feature = "server")]
 mod prove;
 
-#[cfg(feature = "server")]
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-#[cfg(feature = "server")]
-use crate::drive::batch::GroveDbOpBatch;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::{Drive, RootTree};
+#[cfg(feature = "server")]
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+#[cfg(feature = "server")]
+use crate::util::batch::GroveDbOpBatch;
 
 pub const PREFUNDED_BALANCES_FOR_VOTING: u8 = 128;
 

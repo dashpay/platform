@@ -58,7 +58,9 @@ use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
     StateTransitionMaxSizeExceededError,
 };
-use crate::consensus::basic::{IncompatibleProtocolVersionError, UnsupportedProtocolVersionError};
+use crate::consensus::basic::{
+    IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
+};
 use crate::consensus::ConsensusError;
 
 use crate::consensus::basic::overflow_error::OverflowError;
@@ -382,6 +384,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     OverflowError(OverflowError),
+
+    #[error(transparent)]
+    UnsupportedFeatureError(UnsupportedFeatureError),
 }
 
 impl From<BasicError> for ConsensusError {

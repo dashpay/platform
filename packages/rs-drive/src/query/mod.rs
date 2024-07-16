@@ -42,7 +42,7 @@ use {
 };
 
 #[cfg(feature = "verify")]
-use crate::drive::verify::RootHash;
+use crate::verify::RootHash;
 
 #[cfg(feature = "server")]
 pub use grovedb::{
@@ -52,16 +52,16 @@ pub use grovedb::{
 
 #[cfg(feature = "server")]
 use {
-    crate::{
-        drive::{grove_operations::QueryType::StatefulQuery, Drive},
-        error::Error::GroveDB,
-        fee::op::LowLevelDriveOperation,
-    },
+    crate::{drive::Drive, error::Error::GroveDB, fees::op::LowLevelDriveOperation},
     dpp::block::block_info::BlockInfo,
 };
 
 // Crate-local unconditional imports
-use crate::{common::encode::encode_u64, drive::config::DriveConfig};
+use crate::config::DriveConfig;
+// Crate-local unconditional imports
+use crate::util::common::encode::encode_u64;
+#[cfg(feature = "server")]
+use crate::util::grove_operations::QueryType::StatefulQuery;
 
 // Module declarations that are conditional on either "server" or "verify" features
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -1924,16 +1924,16 @@ mod tests {
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use crate::query::DriveDocumentQuery;
+    use crate::util::storage_flags::StorageFlags;
 
     use dpp::data_contract::DataContract;
 
     use serde_json::Value::Null;
 
-    use crate::drive::config::DriveConfig;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::config::DriveConfig;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::tests::fixtures::get_data_contract_fixture;

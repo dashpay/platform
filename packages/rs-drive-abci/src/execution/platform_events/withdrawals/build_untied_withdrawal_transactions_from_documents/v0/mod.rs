@@ -109,7 +109,7 @@ mod tests {
     use dpp::{
         data_contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture,
     };
-    use drive::tests::helpers::setup::setup_document;
+    use drive::util::test_helpers::setup::setup_document;
 
     mod build_withdrawal_transactions_from_documents {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -120,7 +120,7 @@ mod tests {
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
         use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
-        use drive::tests::helpers::setup::setup_system_data_contract;
+        use drive::util::test_helpers::setup::setup_system_data_contract;
         use itertools::Itertools;
 
         use crate::test::helpers::setup::TestPlatformBuilder;

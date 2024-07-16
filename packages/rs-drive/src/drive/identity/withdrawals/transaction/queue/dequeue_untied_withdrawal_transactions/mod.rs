@@ -1,10 +1,10 @@
 mod v0;
 
-use crate::drive::batch::DriveOperation;
 use crate::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::batch::DriveOperation;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 

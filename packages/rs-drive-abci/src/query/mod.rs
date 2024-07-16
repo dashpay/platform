@@ -28,8 +28,8 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::DataContract;
 
-    use drive::drive::batch::DataContractOperationType;
-    use drive::drive::batch::DriveOperation::DataContractOperation;
+    use drive::util::batch::DataContractOperationType;
+    use drive::util::batch::DriveOperation::DataContractOperation;
     use platform_version::version::PlatformVersion;
     use std::borrow::Cow;
     use std::sync::Arc;

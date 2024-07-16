@@ -1,6 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use crate::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;

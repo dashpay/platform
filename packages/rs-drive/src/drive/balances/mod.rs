@@ -59,7 +59,7 @@ pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
 mod tests {
     use crate::drive::Drive;
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
     #[test]

@@ -3,7 +3,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use crate::drive::fee::get_overflow_error;
+use crate::fees::get_overflow_error;
 
 use dpp::balances::credits::Creditable;
 use dpp::fee::epoch::CreditsPerEpoch;
@@ -79,7 +79,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::fee::epoch::CreditsPerEpoch;
 

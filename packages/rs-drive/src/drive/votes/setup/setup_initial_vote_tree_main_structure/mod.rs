@@ -5,7 +5,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use crate::drive::batch::GroveDbOpBatch;
+use crate::util::batch::GroveDbOpBatch;
 use dpp::version::PlatformVersion;
 
 impl Drive {

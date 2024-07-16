@@ -41,16 +41,16 @@ mod tests {
     use serde::{Deserialize, Serialize};
     use serde_json::json;
 
-    use crate::drive::config::DriveConfig;
-    use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
-    use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::config::DriveConfig;
     use crate::drive::Drive;
+    use crate::util::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
 
-    use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
     use crate::query::DriveDocumentQuery;
-    use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+    use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
+    use crate::util::test_helpers::setup_contract;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;

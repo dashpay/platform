@@ -10,7 +10,7 @@ mod tests {
 
     use dpp::version::PlatformVersion;
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 
     #[test]
     fn test_next_withdrawal_transaction_index() {

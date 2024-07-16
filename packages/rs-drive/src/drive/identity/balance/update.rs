@@ -3,10 +3,10 @@ mod tests {
 
     use dpp::prelude::*;
 
-    use crate::common::test_utils::identities::create_test_identity;
     use crate::error::drive::DriveError;
     use crate::error::Error;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::test_utils::identities::create_test_identity;
     use dpp::block::epoch::Epoch;
     use dpp::identity::accessors::IdentityGettersV0;
 
@@ -16,7 +16,7 @@ mod tests {
         use dpp::identity::accessors::IdentityGettersV0;
         use dpp::version::PlatformVersion;
 
-        use crate::fee::op::LowLevelDriveOperation;
+        use crate::fees::op::LowLevelDriveOperation;
 
         use super::*;
 
@@ -467,7 +467,7 @@ mod tests {
     mod apply_balance_change_from_fee_to_identity_operations {
         use super::*;
         use crate::error::identity::IdentityError;
-        use crate::fee::op::LowLevelDriveOperation;
+        use crate::fees::op::LowLevelDriveOperation;
         use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use dpp::fee::fee_result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};

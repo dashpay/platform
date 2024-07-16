@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::drive::flags::StorageFlags;
+use crate::util::storage_flags::StorageFlags;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
