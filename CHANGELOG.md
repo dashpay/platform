@@ -1,3 +1,10 @@
+## [1.0.0-beta.2](https://github.com/dashpay/platform/compare/v1.0.0-beta.1...v1.0.0-beta.2) (2024-07-16)
+
+
+### Continuous Integration
+
+* fix docker build for release ([#1965](https://github.com/dashpay/platform/issues/1965))
+
 ## [1.0.0-beta.1](https://github.com/dashpay/platform/compare/v1.0.0-dev.16...v1.0.0-beta.1) (2024-07-16)
 
 
