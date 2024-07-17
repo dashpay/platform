@@ -158,13 +158,13 @@ impl DocumentTypeV0 {
                     max_length,
                 })
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
-                DocumentPropertyType::Integer
+                DocumentPropertyType::I64
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
                     + field_weights.float_weight
             {
-                DocumentPropertyType::Number
+                DocumentPropertyType::F64
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
@@ -280,7 +280,8 @@ impl DocumentTypeV0 {
                     }
                     serde_json::Value::Object(schema)
                 },
-                DocumentPropertyType::Integer => {
+                DocumentPropertyType::U128 | DocumentPropertyType::U64 | DocumentPropertyType::U32 | DocumentPropertyType::U16 | DocumentPropertyType::U8 |
+                    DocumentPropertyType::I128 | DocumentPropertyType::I64 | DocumentPropertyType::I32 | DocumentPropertyType::I16 | DocumentPropertyType::I8   => {
                     let mut schema = serde_json::Map::new();
                     schema.insert("type".to_string(), serde_json::Value::String("integer".to_owned()));
                     // Add min and max if specified in parameters
@@ -290,7 +291,7 @@ impl DocumentTypeV0 {
                     schema.insert("maximum".to_string(), serde_json::Value::Number(serde_json::Number::from(integer_max)));
                     serde_json::Value::Object(schema)
                 },
-                DocumentPropertyType::Number => {
+                DocumentPropertyType::F64 => {
                     let mut schema = serde_json::Map::new();
                     schema.insert("type".to_string(), serde_json::Value::String("number".to_owned()));
                     // Add min and max if specified in parameters
@@ -481,13 +482,13 @@ impl DocumentTypeV0 {
                     max_length,
                 })
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
-                DocumentPropertyType::Integer
+                DocumentPropertyType::I64
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
                     + field_weights.float_weight
             {
-                DocumentPropertyType::Number
+                DocumentPropertyType::F64
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight

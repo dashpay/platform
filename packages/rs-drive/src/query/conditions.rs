@@ -1077,7 +1077,7 @@ impl<'a> WhereClause {
                 let property_type = match field_name.as_str() {
                     "$id" | "$ownerId" => Cow::Owned(DocumentPropertyType::Identifier),
                     "$createdAt" | "$updatedAt" => Cow::Owned(DocumentPropertyType::Date),
-                    "$revision" => Cow::Owned(DocumentPropertyType::Integer),
+                    "$revision" => Cow::Owned(DocumentPropertyType::U64),
                     property_name => {
                         let Some(property) = document_type.properties().get(property_name) else {
                             return Err(Error::Query(QuerySyntaxError::InvalidInClause(
@@ -1212,7 +1212,7 @@ impl<'a> WhereClause {
                     let property_type = match field_name.as_str() {
                         "$id" | "$ownerId" => Cow::Owned(DocumentPropertyType::Identifier),
                         "$createdAt" | "$updatedAt" => Cow::Owned(DocumentPropertyType::Date),
-                        "$revision" => Cow::Owned(DocumentPropertyType::Integer),
+                        "$revision" => Cow::Owned(DocumentPropertyType::U64),
                         property_name => {
                             let Some(property) = document_type.properties().get(property_name)
                             else {
