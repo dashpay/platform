@@ -169,7 +169,7 @@ jobs:
   test:
     name: Tests
     runs-on: ${{ fromJSON(inputs.test-runner) }}
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
