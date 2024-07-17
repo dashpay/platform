@@ -98,8 +98,6 @@ impl Cli {
     ) -> Result<(), String> {
         match self.command {
             Commands::Start => {
-                verify_grovedb(&config.db_path, false)?;
-
                 let core_rpc = DefaultCoreRPC::open(
                     config.core.consensus_rpc.url().as_str(),
                     config.core.consensus_rpc.username.clone(),
