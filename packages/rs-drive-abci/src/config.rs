@@ -656,8 +656,7 @@ impl PlatformConfig {
             tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
             initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
-            // TODO: This is dangerous. The default value must be 127.0.0.1
-            grpc_bind_address: "0.0.0.0:26670".to_string(),
+            grpc_bind_address: "127.0.0.1:26670".to_string(),
         }
     }
 
@@ -695,7 +694,7 @@ impl PlatformConfig {
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
-            grpc_bind_address: "0.0.0.0:26670".to_string(),
+            grpc_bind_address: "127.0.0.1:26670".to_string(),
             tokio_console_enabled: false,
             tokio_console_address: PlatformConfig::default_tokio_console_address(),
             tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
@@ -736,7 +735,7 @@ impl PlatformConfig {
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
-            grpc_bind_address: "0.0.0.0:26670".to_string(),
+            grpc_bind_address: "127.0.0.1:26670".to_string(),
             tokio_console_enabled: false,
             tokio_console_address: PlatformConfig::default_tokio_console_address(),
             tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
