@@ -61,7 +61,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 14202000,
-                    processing_fee: 2448600, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                    processing_fee: 1097520,
                     ..Default::default()
                 }
             );
@@ -121,7 +121,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 347382000,
-                    processing_fee: 9429400, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                    processing_fee: 6818480,
                     ..Default::default()
                 }
             );
@@ -182,7 +182,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 17145000,
-                    processing_fee: 12051600, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                    processing_fee: 5483620,
                     ..Default::default()
                 }
             );
@@ -255,7 +255,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 513000,
-                    processing_fee: 1459600, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                    processing_fee: 499220,
                     ..Default::default()
                 }
             );
@@ -320,7 +320,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 486000,
-                    processing_fee: 5451000, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                    processing_fee: 2429120,
                     ..Default::default()
                 }
             );
@@ -426,7 +426,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 652400, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                    processing_fee: 238820,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -488,7 +488,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 4232200, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                    processing_fee: 1813560,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }

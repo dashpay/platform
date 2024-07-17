@@ -226,7 +226,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1219900); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 540580);
 
         platform
             .drive
@@ -245,6 +245,6 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 149992975100); // about 0.5 Dash starting balance + 1 Dash asset lock top up // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+        assert_eq!(identity_balance, 149993654420); // about 0.5 Dash starting balance + 1 Dash asset lock top up
     }
 }

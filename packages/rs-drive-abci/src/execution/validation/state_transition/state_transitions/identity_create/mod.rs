@@ -307,7 +307,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2658800); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1823240);
 
         platform
             .drive
@@ -322,7 +322,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99916071200); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+        assert_eq!(identity_balance, 99916906760);
     }
 
     #[test]
@@ -463,7 +463,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 10013000); // 10000000 penalty + 13800 processing
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 10080700); // 10000000 penalty + 80700 processing
 
         platform
             .drive
@@ -525,7 +525,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3263600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2098900);
 
         platform
             .drive
@@ -540,7 +540,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99911204400); // The identity balance is smaller than if there hadn't been any issue // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+        assert_eq!(identity_balance, 99912301400); // The identity balance is smaller than if there hadn't been any issue
     }
 
     #[test]
@@ -692,7 +692,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 10013000); // 10000000 penalty + 13800 processing
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 10080700); // 10000000 penalty + 80700 processing
 
             platform
                 .drive
@@ -917,7 +917,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 10013000); // 10000000 penalty + 13800 processing
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 10080700); // 10000000 penalty + 13800 processing
 
             platform
                 .drive
@@ -1130,7 +1130,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 10013000); // 10000000 penalty + 13800 processing
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 10080700); // 10000000 penalty + 80700 processing
 
         platform
             .drive
@@ -1215,7 +1215,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3263600); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2098900);
 
         platform
             .drive
@@ -1230,6 +1230,6 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99911204400); // The identity balance is smaller than if there hadn't been any issue // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+        assert_eq!(identity_balance, 99912301400); // The identity balance is smaller than if there hadn't been any issue
     }
 }
