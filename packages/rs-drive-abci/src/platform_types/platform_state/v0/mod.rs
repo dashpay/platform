@@ -292,17 +292,13 @@ pub struct MasternodeListChanges {
 }
 
 pub(super) trait PlatformStateV0PrivateMethods {
-    /// Patched platform version. Used to fix urgent bugs as not part of normal upgrade process.
-    /// The patched version returns from the public current_platform_version getter in case if present.
-    fn patched_platform_version(&self) -> Option<&'static PlatformVersion>;
-
     /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
     /// The patched version returns from the public current_platform_version getter in case if present.
     fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>);
 }
 
 /// Platform state methods introduced in version 0 of Platform State Struct
-pub trait PlatformStateV0Methods: PlatformStateV0PrivateMethods {
+pub trait PlatformStateV0Methods {
     /// The last block height or 0 for genesis
     fn last_committed_block_height(&self) -> u64;
     /// The height of the platform, only committed blocks increase height
@@ -333,14 +329,14 @@ pub trait PlatformStateV0Methods: PlatformStateV0PrivateMethods {
     fn last_committed_block_info(&self) -> &Option<ExtendedBlockInfo>;
     /// Returns the current protocol version that is in consensus.
     fn current_protocol_version_in_consensus(&self) -> ProtocolVersion;
+    /// Patched platform version. Used to fix urgent bugs as not part of normal upgrade process.
+    /// The patched version returns from the public current_platform_version getter in case if present.
+    fn patched_platform_version(&self) -> Option<&'static PlatformVersion>;
     /// Get the current platform version or patched if present
     fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
-        self.patched_platform_version()
-            .map(|version| Ok(version))
-            .unwrap_or_else(|| {
-                PlatformVersion::get(self.current_protocol_version_in_consensus())
-                    .map_err(Error::from)
-            })
+        self.patched_platform_version().map(Ok).unwrap_or_else(|| {
+            PlatformVersion::get(self.current_protocol_version_in_consensus()).map_err(Error::from)
+        })
     }
     /// Returns the upcoming protocol version for the next epoch.
     fn next_epoch_protocol_version(&self) -> ProtocolVersion;
@@ -460,12 +456,6 @@ pub trait PlatformStateV0Methods: PlatformStateV0PrivateMethods {
 }
 
 impl PlatformStateV0PrivateMethods for PlatformStateV0 {
-    /// Patched platform version. Used to fix urgent bugs as not part of normal upgrade process.
-    /// The patched version returns from the public current_platform_version getter in case if present.
-    fn patched_platform_version(&self) -> Option<&'static PlatformVersion> {
-        self.patched_platform_version
-    }
-
     /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
     /// The patched version returns from the public current_platform_version getter in case if present.
     fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>) {
@@ -593,6 +583,12 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     /// Get the current protocol version in consensus
     fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
         self.current_protocol_version_in_consensus
+    }
+
+    /// Patched platform version. Used to fix urgent bugs as not part of normal upgrade process.
+    /// The patched version returns from the public current_platform_version getter in case if present.
+    fn patched_platform_version(&self) -> Option<&'static PlatformVersion> {
+        self.patched_platform_version
     }
 
     /// Returns the upcoming protocol version for the next epoch.
