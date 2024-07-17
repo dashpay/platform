@@ -685,8 +685,8 @@ fn insert_values_nested(
     let is_required = known_required.contains(&property_key);
 
     let field_type = match type_value {
-        "integer" => DocumentPropertyType::Integer,
-        "number" => DocumentPropertyType::Number,
+        "integer" => DocumentPropertyType::I64,
+        "number" => DocumentPropertyType::F64,
         "string" => DocumentPropertyType::String(StringPropertySizes {
             min_length: inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
             max_length: inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
