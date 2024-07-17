@@ -120,8 +120,7 @@ impl StateTransitionStateValidationV0 for IdentityCreditWithdrawalTransition {
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::execution::validation::state_transition::tests::{
-        fast_forward_to_block, setup_identity,
-        setup_identity_with_withdrawal_key_and_system_credits,
+        fast_forward_to_block, setup_identity_with_withdrawal_key_and_system_credits,
     };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::test::helpers::setup::TestPlatformBuilder;

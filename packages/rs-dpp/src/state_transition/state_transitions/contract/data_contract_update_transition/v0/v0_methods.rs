@@ -32,8 +32,8 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransitionV0 {
             signature_public_key_id: key_id,
             signature: Default::default(),
         });
-        //todo remove close
-        let mut state_transition: StateTransition = transition.clone().into();
+
+        let mut state_transition: StateTransition = transition.into();
         let value = state_transition.signable_bytes()?;
         let public_key =
             identity

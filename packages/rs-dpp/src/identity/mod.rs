@@ -29,7 +29,6 @@ pub mod methods;
 #[cfg(feature = "random-identities")]
 pub mod random;
 pub mod v0;
-pub mod versions;
 
 pub use fields::*;
 

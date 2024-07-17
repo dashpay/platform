@@ -1,4 +1,3 @@
-use crate::drive::constants::CONTRACT_MAX_SERIALIZED_SIZE;
 use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
 
 use crate::drive::Drive;
@@ -103,7 +102,11 @@ impl Drive {
                 in_tree_using_sums: false,
                 // we can ignore flags as this is just an approximation
                 // and it's doubtful that contracts will always be inserted at max size
-                query_target: QueryTargetValue(CONTRACT_MAX_SERIALIZED_SIZE as u32),
+                query_target: QueryTargetValue(
+                    platform_version
+                        .system_limits
+                        .estimated_contract_max_serialized_size as u32,
+                ),
             }
         };
 

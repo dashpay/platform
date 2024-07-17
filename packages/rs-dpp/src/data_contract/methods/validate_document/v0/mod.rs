@@ -2,7 +2,9 @@ use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 
-use crate::consensus::basic::document::{InvalidDocumentTypeError, MissingDocumentTypeError};
+use crate::consensus::basic::document::{
+    DocumentFieldMaxSizeExceededError, InvalidDocumentTypeError, MissingDocumentTypeError,
+};
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
@@ -47,6 +49,24 @@ impl DataContract {
         let validator = match document_type {
             DocumentTypeRef::V0(v0) => v0.json_schema_validator.deref(),
         };
+
+        if let Some((key, size)) =
+            value.has_data_larger_than(platform_version.system_limits.max_field_value_size)
+        {
+            let field = match key {
+                Some(Value::Text(field)) => field,
+                _ => "".to_string(),
+            };
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                ConsensusError::BasicError(BasicError::DocumentFieldMaxSizeExceededError(
+                    DocumentFieldMaxSizeExceededError::new(
+                        field,
+                        size as u64,
+                        platform_version.system_limits.max_field_value_size as u64,
+                    ),
+                )),
+            ));
+        }
 
         let json_value = match value.try_into_validating_json() {
             Ok(json_value) => json_value,

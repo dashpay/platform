@@ -28,14 +28,6 @@ pub const MAX_INDEX_SIZE: usize = 255;
 /// Storage flags size
 pub const STORAGE_FLAGS_SIZE: u32 = 2;
 
-//todo move some of these to versioning
-
-/// Serialized contract max size
-pub const CONTRACT_MAX_SERIALIZED_SIZE: u16 = 16384;
-// TODO: Insert correct value here
-/// Max element size
-pub const MAX_ELEMENT_SIZE: u32 = 5000;
-
 /// Default required bytes to hold a user balance
 /// TODO We probably don't need it anymore since we always pay for 9 bytes
 pub const AVERAGE_BALANCE_SIZE: u32 = 6;

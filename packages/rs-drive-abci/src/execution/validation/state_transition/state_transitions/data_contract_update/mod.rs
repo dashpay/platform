@@ -573,8 +573,6 @@ mod tests {
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
-        let platform_state = platform.state.load();
-
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
         let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase-creation-restricted-to-owner.json";

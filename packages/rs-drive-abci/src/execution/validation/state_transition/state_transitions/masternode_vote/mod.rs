@@ -7,7 +7,6 @@ mod transform_into_action;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::validation::ConsensusValidationResult;
-use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;

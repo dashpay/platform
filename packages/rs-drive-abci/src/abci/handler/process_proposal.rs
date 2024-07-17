@@ -10,7 +10,6 @@ use crate::execution::types::block_state_info::v0::{
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
-use dpp::version::PlatformVersion;
 use dpp::version::TryIntoPlatformVersioned;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
