@@ -19,13 +19,13 @@ on:
         required: true
 env:
   DIGEST_NAME: digests-${{ inputs.image_org }}-${{ inputs.image_name }}-${{ github.sha }}
-  DIGEST_DIR_PATH: ./digests
+  DIGEST_DIR_PATH: /tmp/digests
 
 jobs:
   build-image:
     name: Build ${{ matrix.platform }} image
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       matrix:
         include:
@@ -64,6 +64,7 @@ jobs:
 
       - name: Export digest
         run: |
+          rm -rf ${{ env.DIGEST_DIR_PATH }}
           mkdir -p ${{ env.DIGEST_DIR_PATH }}
           digest="${{ steps.docker_build.outputs.digest }}"
           touch "${{ env.DIGEST_DIR_PATH }}/${digest#sha256:}"
