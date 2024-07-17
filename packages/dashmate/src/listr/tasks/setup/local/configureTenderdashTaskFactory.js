@@ -12,7 +12,7 @@ export default function configureTenderdashTaskFactory() {
   function configureTenderdashTask(configGroup) {
     return new Listr([
       {
-        task: async (ctx) => {
+        task: async () => {
           const platformConfigs = configGroup.filter((config) => config.get('platform.enable'));
 
           const subTasks = [];
