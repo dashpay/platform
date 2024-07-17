@@ -313,7 +313,7 @@ mod tests {
                         &EPOCH_CHANGE_FEE_VERSION_TEST,
                         StorageDiskUsageCreditPerByte,
                     ),
-                processing_fee: 2356200, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                processing_fee: 1695100,
                 ..Default::default()
             }
         );
@@ -378,7 +378,7 @@ mod tests {
                         &EPOCH_CHANGE_FEE_VERSION_TEST,
                         StorageDiskUsageCreditPerByte,
                     ),
-                processing_fee: 1500200, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                processing_fee: 900400,
                 ..Default::default()
             }
         );
@@ -446,7 +446,7 @@ mod tests {
                 StorageDiskUsageCreditPerByte,
             );
         assert_eq!(1305, added_bytes);
-        assert_eq!(144859600, processing_fee); // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+        assert_eq!(73253660, processing_fee);
     }
 
     #[test]
@@ -676,7 +676,7 @@ mod tests {
                         &EPOCH_CHANGE_FEE_VERSION_TEST,
                         StorageDiskUsageCreditPerByte,
                     ),
-                processing_fee: 2095400, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                processing_fee: 1227900,
                 ..Default::default()
             }
         );

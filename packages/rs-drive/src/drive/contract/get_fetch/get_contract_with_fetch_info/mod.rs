@@ -277,7 +277,7 @@ mod tests {
         assert_eq!(
             result.0,
             Some(FeeResult {
-                processing_fee: 4400, // TODO: Readjust this test when FeeHashingVersion blake3_base, sha256_ripe_md160_base, blake3_per_block values are finalised
+                processing_fee: 2800,
                 ..Default::default()
             })
         );
