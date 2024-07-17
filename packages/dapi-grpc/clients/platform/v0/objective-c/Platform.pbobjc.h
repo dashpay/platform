@@ -163,7 +163,10 @@ typedef GPB_ENUM(SecurityLevelMap_KeyKindRequestType) {
    * of the field.
    **/
   SecurityLevelMap_KeyKindRequestType_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  /** Request the current key of a particular kind */
   SecurityLevelMap_KeyKindRequestType_CurrentKeyOfKindRequest = 0,
+
+  /** Request all keys of a particular kind */
   SecurityLevelMap_KeyKindRequestType_AllKeysOfKindRequest = 1,
 };
 
@@ -206,9 +209,16 @@ typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type) {
    * of the field.
    **/
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  /** Request for the full identity */
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_FullIdentity = 0,
+
+  /** Request for the identity's balance */
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Balance = 1,
+
+  /** Request for the identity's keys */
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Keys = 2,
+
+  /** Request for the identity's revision */
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Revision = 3,
 };
 
@@ -312,18 +322,27 @@ typedef GPB_ENUM(Proof_FieldNumber) {
   Proof_FieldNumber_QuorumType = 6,
 };
 
+/**
+ * Proof message includes cryptographic proofs for validating responses
+ **/
 GPB_FINAL @interface Proof : GPBMessage
 
+/** GroveDB proof for the data */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *grovedbProof;
 
+/** Hash of the quorum validating the data */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *quorumHash;
 
+/** Signature proving data authenticity */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *signature;
 
+/** Consensus round number */
 @property(nonatomic, readwrite) uint32_t round;
 
+/** Hash of the block ID */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *blockIdHash;
 
+/** Type of the quorum */
 @property(nonatomic, readwrite) uint32_t quorumType;
 
 @end
@@ -339,18 +358,27 @@ typedef GPB_ENUM(ResponseMetadata_FieldNumber) {
   ResponseMetadata_FieldNumber_ChainId = 6,
 };
 
+/**
+ * ResponseMetadata provides metadata about the blockchain state at the time of response
+ **/
 GPB_FINAL @interface ResponseMetadata : GPBMessage
 
+/** Current blockchain height */
 @property(nonatomic, readwrite) uint64_t height;
 
+/** Latest known core height in consensus */
 @property(nonatomic, readwrite) uint32_t coreChainLockedHeight;
 
+/** Current epoch number */
 @property(nonatomic, readwrite) uint32_t epoch;
 
+/** Timestamp in milliseconds */
 @property(nonatomic, readwrite) uint64_t timeMs;
 
+/** Protocol version */
 @property(nonatomic, readwrite) uint32_t protocolVersion;
 
+/** Identifier of the blockchain */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *chainId;
 
 @end
@@ -424,8 +452,10 @@ typedef GPB_ENUM(GetIdentityRequest_GetIdentityRequestV0_FieldNumber) {
 
 GPB_FINAL @interface GetIdentityRequest_GetIdentityRequestV0 : GPBMessage
 
+/** The ID of the identity being requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -544,8 +574,10 @@ typedef GPB_ENUM(GetIdentityBalanceRequest_GetIdentityBalanceRequestV0_FieldNumb
 
 GPB_FINAL @interface GetIdentityBalanceRequest_GetIdentityBalanceRequestV0 : GPBMessage
 
+/** ID of the identity whose balance is requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -583,8 +615,10 @@ typedef GPB_ENUM(GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevis
 
 GPB_FINAL @interface GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevisionRequestV0 : GPBMessage
 
+/** ID of the identity for balance and revision */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -631,10 +665,13 @@ GPB_FINAL @interface GetIdentityResponse_GetIdentityResponseV0 : GPBMessage
 
 @property(nonatomic, readonly) GetIdentityResponse_GetIdentityResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The requested identity data */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
 
+/** Proof of the identity data, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -802,10 +839,13 @@ GPB_FINAL @interface GetIdentityBalanceResponse_GetIdentityBalanceResponseV0 : G
 
 @property(nonatomic, readonly) GetIdentityBalanceResponse_GetIdentityBalanceResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The balance of the requested identity */
 @property(nonatomic, readwrite) uint64_t balance;
 
+/** Proof of the balance, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -859,10 +899,13 @@ GPB_FINAL @interface GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAnd
 
 @property(nonatomic, readonly) GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The balance and revision data */
 @property(nonatomic, readwrite, strong, null_resettable) GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0_BalanceAndRevision *balanceAndRevision;
 
+/** Proof of the data, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -883,8 +926,10 @@ typedef GPB_ENUM(GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevi
 
 GPB_FINAL @interface GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0_BalanceAndRevision : GPBMessage
 
+/** Balance of the identity */
 @property(nonatomic, readwrite) uint64_t balance;
 
+/** Revision number of the identity */
 @property(nonatomic, readwrite) uint64_t revision;
 
 @end
@@ -908,10 +953,13 @@ GPB_FINAL @interface KeyRequestType : GPBMessage
 
 @property(nonatomic, readonly) KeyRequestType_Request_OneOfCase requestOneOfCase;
 
+/** Request for all keys */
 @property(nonatomic, readwrite, strong, null_resettable) AllKeys *allKeys;
 
+/** Request for specific keys by their IDs */
 @property(nonatomic, readwrite, strong, null_resettable) SpecificKeys *specificKeys;
 
+/** Request for keys based on a search criteria */
 @property(nonatomic, readwrite, strong, null_resettable) SearchKey *searchKey;
 
 @end
@@ -923,6 +971,9 @@ void KeyRequestType_ClearRequestOneOfCase(KeyRequestType *message);
 
 #pragma mark - AllKeys
 
+/**
+ * AllKeys is an empty message used to signify a request for all keys
+ **/
 GPB_FINAL @interface AllKeys : GPBMessage
 
 @end
@@ -933,8 +984,12 @@ typedef GPB_ENUM(SpecificKeys_FieldNumber) {
   SpecificKeys_FieldNumber_KeyIdsArray = 1,
 };
 
+/**
+ * SpecificKeys is used to request specific keys by their IDs
+ **/
 GPB_FINAL @interface SpecificKeys : GPBMessage
 
+/** List of key IDs */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Array *keyIdsArray;
 /** The number of items in @c keyIdsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger keyIdsArray_Count;
@@ -947,8 +1002,12 @@ typedef GPB_ENUM(SearchKey_FieldNumber) {
   SearchKey_FieldNumber_PurposeMap = 1,
 };
 
+/**
+ * SearchKey represents a request to search for keys based on specific criteria
+ **/
 GPB_FINAL @interface SearchKey : GPBMessage
 
+/** Map of purposes to their security level maps */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32ObjectDictionary<SecurityLevelMap*> *purposeMap;
 /** The number of items in @c purposeMap without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger purposeMap_Count;
@@ -961,8 +1020,12 @@ typedef GPB_ENUM(SecurityLevelMap_FieldNumber) {
   SecurityLevelMap_FieldNumber_SecurityLevelMap = 1,
 };
 
+/**
+ * SecurityLevelMap maps security levels to a request type for key retrieval
+ **/
 GPB_FINAL @interface SecurityLevelMap : GPBMessage
 
+/** Maps security levels to key request types */
 // |securityLevelMap| values are |SecurityLevelMap_KeyKindRequestType|
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32EnumDictionary *securityLevelMap;
 /** The number of items in @c securityLevelMap without causing the array to be created. */
@@ -1006,20 +1069,25 @@ typedef GPB_ENUM(GetIdentityKeysRequest_GetIdentityKeysRequestV0_FieldNumber) {
 
 GPB_FINAL @interface GetIdentityKeysRequest_GetIdentityKeysRequestV0 : GPBMessage
 
+/** ID of the identity for key retrieval */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
 
+/** Type of key request: all, specific, or search */
 @property(nonatomic, readwrite, strong, null_resettable) KeyRequestType *requestType;
 /** Test to see if @c requestType has been set. */
 @property(nonatomic, readwrite) BOOL hasRequestType;
 
+/** Limit on the number of keys to be returned */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *limit;
 /** Test to see if @c limit has been set. */
 @property(nonatomic, readwrite) BOOL hasLimit;
 
+/** Offset for pagination through the keys */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *offset;
 /** Test to see if @c offset has been set. */
 @property(nonatomic, readwrite) BOOL hasOffset;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -1066,10 +1134,13 @@ GPB_FINAL @interface GetIdentityKeysResponse_GetIdentityKeysResponseV0 : GPBMess
 
 @property(nonatomic, readonly) GetIdentityKeysResponse_GetIdentityKeysResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual key data */
 @property(nonatomic, readwrite, strong, null_resettable) GetIdentityKeysResponse_GetIdentityKeysResponseV0_Keys *keys;
 
+/** Proof of the keys data, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -1302,14 +1373,17 @@ typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_FieldNumber) {
 
 GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0 : GPBMessage
 
+/** List of identity requests */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_IdentityRequest*> *identitiesArray;
 /** The number of items in @c identitiesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger identitiesArray_Count;
 
+/** List of contract requests */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_ContractRequest*> *contractsArray;
 /** The number of items in @c contractsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger contractsArray_Count;
 
+/** List of document requests */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_DocumentRequest*> *documentsArray;
 /** The number of items in @c documentsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger documentsArray_Count;
@@ -1330,14 +1404,21 @@ typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber
   GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber_DocumentContestedStatus = 5,
 };
 
+/**
+ * DocumentRequest specifies a request for a document proof
+ **/
 GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_DocumentRequest : GPBMessage
 
+/** ID of the contract the document belongs to */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
 
+/** Type of document being requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
 
+/** Indicates if the document type keeps a history of changes */
 @property(nonatomic, readwrite) BOOL documentTypeKeepsHistory;
 
+/** ID of the specific document being requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
 
 @property(nonatomic, readwrite) GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus documentContestedStatus;
@@ -1363,10 +1444,15 @@ typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_IdentityRequest_FieldNumber
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_FieldNumber_RequestType = 2,
 };
 
+/**
+ * IdentityRequest specifies a request for an identity proof
+ **/
 GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_IdentityRequest : GPBMessage
 
+/** ID of the identity for which the proof is requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
 
+/** Type of identity request */
 @property(nonatomic, readwrite) GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type requestType;
 
 @end
@@ -1389,6 +1475,9 @@ typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_ContractRequest_FieldNumber
   GetProofsRequest_GetProofsRequestV0_ContractRequest_FieldNumber_ContractId = 1,
 };
 
+/**
+ * ContractRequest specifies a request for a data contract proof.
+ **/
 GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_ContractRequest : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
@@ -1485,8 +1574,10 @@ GPB_FINAL @interface GetProofsResponse_GetProofsResponseV0 : GPBMessage
 
 @property(nonatomic, readonly) GetProofsResponse_GetProofsResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** Cryptographic proof for the requested data */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -1531,8 +1622,10 @@ typedef GPB_ENUM(GetDataContractRequest_GetDataContractRequestV0_FieldNumber) {
 
 GPB_FINAL @interface GetDataContractRequest_GetDataContractRequestV0 : GPBMessage
 
+/** The ID of the data contract being requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -1579,10 +1672,13 @@ GPB_FINAL @interface GetDataContractResponse_GetDataContractResponseV0 : GPBMess
 
 @property(nonatomic, readonly) GetDataContractResponse_GetDataContractResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual data contract in binary form */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *dataContract;
 
+/** Cryptographic proof of the data contract, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -1627,10 +1723,12 @@ typedef GPB_ENUM(GetDataContractsRequest_GetDataContractsRequestV0_FieldNumber) 
 
 GPB_FINAL @interface GetDataContractsRequest_GetDataContractsRequestV0 : GPBMessage
 
+/** A list of unique IDs for the data contracts being requested */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *idsArray;
 /** The number of items in @c idsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger idsArray_Count;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -1668,8 +1766,10 @@ typedef GPB_ENUM(GetDataContractsResponse_DataContractEntry_FieldNumber) {
 
 GPB_FINAL @interface GetDataContractsResponse_DataContractEntry : GPBMessage
 
+/** The unique identifier of the data contract */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identifier;
 
+/** The actual data contract content */
 @property(nonatomic, readwrite, strong, null_resettable) GPBBytesValue *dataContract;
 /** Test to see if @c dataContract has been set. */
 @property(nonatomic, readwrite) BOOL hasDataContract;
@@ -1682,8 +1782,12 @@ typedef GPB_ENUM(GetDataContractsResponse_DataContracts_FieldNumber) {
   GetDataContractsResponse_DataContracts_FieldNumber_DataContractEntriesArray = 1,
 };
 
+/**
+ * DataContracts is a collection of data contract entries.
+ **/
 GPB_FINAL @interface GetDataContractsResponse_DataContracts : GPBMessage
 
+/** A list of data contract entries */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDataContractsResponse_DataContractEntry*> *dataContractEntriesArray;
 /** The number of items in @c dataContractEntriesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger dataContractEntriesArray_Count;
@@ -1708,10 +1812,13 @@ GPB_FINAL @interface GetDataContractsResponse_GetDataContractsResponseV0 : GPBMe
 
 @property(nonatomic, readonly) GetDataContractsResponse_GetDataContractsResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual data contracts requested */
 @property(nonatomic, readwrite, strong, null_resettable) GetDataContractsResponse_DataContracts *dataContracts;
 
+/** Cryptographic proof for the data contracts, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -1759,18 +1866,23 @@ typedef GPB_ENUM(GetDataContractHistoryRequest_GetDataContractHistoryRequestV0_F
 
 GPB_FINAL @interface GetDataContractHistoryRequest_GetDataContractHistoryRequestV0 : GPBMessage
 
+/** The unique ID of the data contract */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
+/** The maximum number of history entries to return */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *limit;
 /** Test to see if @c limit has been set. */
 @property(nonatomic, readwrite) BOOL hasLimit;
 
+/** The offset for pagination through the contract history */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *offset;
 /** Test to see if @c offset has been set. */
 @property(nonatomic, readwrite) BOOL hasOffset;
 
+/** Only return results starting at this time in milliseconds */
 @property(nonatomic, readwrite) uint64_t startAtMs;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -1817,10 +1929,13 @@ GPB_FINAL @interface GetDataContractHistoryResponse_GetDataContractHistoryRespon
 
 @property(nonatomic, readonly) GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual history of the data contract */
 @property(nonatomic, readwrite, strong, null_resettable) GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistory *dataContractHistory;
 
+/** Cryptographic proof of the data contract history, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -1839,10 +1954,15 @@ typedef GPB_ENUM(GetDataContractHistoryResponse_GetDataContractHistoryResponseV0
   GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistoryEntry_FieldNumber_Value = 2,
 };
 
+/**
+ * Represents a single entry in the data contract's history
+ **/
 GPB_FINAL @interface GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistoryEntry : GPBMessage
 
+/** The date of the history entry */
 @property(nonatomic, readwrite) uint64_t date;
 
+/** The value of the data contract at this point in history */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *value;
 
 @end
@@ -1853,8 +1973,12 @@ typedef GPB_ENUM(GetDataContractHistoryResponse_GetDataContractHistoryResponseV0
   GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistory_FieldNumber_DataContractEntriesArray = 1,
 };
 
+/**
+ * Collection of data contract history entries
+ **/
 GPB_FINAL @interface GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistory : GPBMessage
 
+/** List of history entries */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistoryEntry*> *dataContractEntriesArray;
 /** The number of items in @c dataContractEntriesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger dataContractEntriesArray_Count;
@@ -1906,22 +2030,31 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV0_Start_OneOfCase) {
 
 GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV0 : GPBMessage
 
+/** The ID of the data contract containing the documents */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
 
+/** The type of document being requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
 
+/** Conditions to be met by the requested documents */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *where;
 
+/** Ordering criteria for the documents */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *orderBy;
 
+/** Maximum number of documents to return */
 @property(nonatomic, readwrite) uint32_t limit;
 
+/** Specifies the starting point for the document retrieval */
 @property(nonatomic, readonly) GetDocumentsRequest_GetDocumentsRequestV0_Start_OneOfCase startOneOfCase;
 
+/** Start retrieval after this document */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *startAfter;
 
+/** Start retrieval at this document */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *startAt;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -1973,10 +2106,13 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV0 : GPBMessage
 
 @property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual documents requested */
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV0_Documents *documents;
 
+/** Cryptographic proof of the documents, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -1994,8 +2130,12 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV0_Documents_FieldNumb
   GetDocumentsResponse_GetDocumentsResponseV0_Documents_FieldNumber_DocumentsArray = 1,
 };
 
+/**
+ * Represents a collection of documents
+ **/
 GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV0_Documents : GPBMessage
 
+/** The actual documents in binary form */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *documentsArray;
 /** The number of items in @c documentsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger documentsArray_Count;
@@ -2035,8 +2175,10 @@ typedef GPB_ENUM(GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashReq
 
 GPB_FINAL @interface GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashRequestV0 : GPBMessage
 
+/** The public key hash of the identity being requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *publicKeyHash;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -2083,10 +2225,13 @@ GPB_FINAL @interface GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHa
 
 @property(nonatomic, readonly) GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual identity data corresponding to the requested public key hash */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
 
+/** Cryptographic proof for the identity data, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -2131,8 +2276,10 @@ typedef GPB_ENUM(WaitForStateTransitionResultRequest_WaitForStateTransitionResul
 
 GPB_FINAL @interface WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0 : GPBMessage
 
+/** The hash of the state transition to wait for */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *stateTransitionHash;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -2179,10 +2326,13 @@ GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransition
 
 @property(nonatomic, readonly) WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** Any error that occurred during the state transition broadcast */
 @property(nonatomic, readwrite, strong, null_resettable) StateTransitionBroadcastError *error;
 
+/** Cryptographic proof for the state transition, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -2227,8 +2377,10 @@ typedef GPB_ENUM(GetConsensusParamsRequest_GetConsensusParamsRequestV0_FieldNumb
 
 GPB_FINAL @interface GetConsensusParamsRequest_GetConsensusParamsRequestV0 : GPBMessage
 
+/** The blockchain height at which to get the consensus parameters */
 @property(nonatomic, readwrite) int32_t height;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -2267,10 +2419,13 @@ typedef GPB_ENUM(GetConsensusParamsResponse_ConsensusParamsBlock_FieldNumber) {
 
 GPB_FINAL @interface GetConsensusParamsResponse_ConsensusParamsBlock : GPBMessage
 
+/** The maximum size of a block in bytes */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *maxBytes;
 
+/** The maximum gas allowed in a block */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *maxGas;
 
+/** The minimum time increment between consecutive blocks, in milliseconds */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *timeIotaMs;
 
 @end
@@ -2285,10 +2440,13 @@ typedef GPB_ENUM(GetConsensusParamsResponse_ConsensusParamsEvidence_FieldNumber)
 
 GPB_FINAL @interface GetConsensusParamsResponse_ConsensusParamsEvidence : GPBMessage
 
+/** The maximum age of evidence, in number of blocks */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *maxAgeNumBlocks;
 
+/** The maximum age of evidence, as a duration */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *maxAgeDuration;
 
+/** The maximum size of evidence in bytes */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *maxBytes;
 
 @end
@@ -2302,10 +2460,12 @@ typedef GPB_ENUM(GetConsensusParamsResponse_GetConsensusParamsResponseV0_FieldNu
 
 GPB_FINAL @interface GetConsensusParamsResponse_GetConsensusParamsResponseV0 : GPBMessage
 
+/** Consensus parameters related to block creation and validation */
 @property(nonatomic, readwrite, strong, null_resettable) GetConsensusParamsResponse_ConsensusParamsBlock *block;
 /** Test to see if @c block has been set. */
 @property(nonatomic, readwrite) BOOL hasBlock;
 
+/** Consensus parameters related to evidence */
 @property(nonatomic, readwrite, strong, null_resettable) GetConsensusParamsResponse_ConsensusParamsEvidence *evidence;
 /** Test to see if @c evidence has been set. */
 @property(nonatomic, readwrite) BOOL hasEvidence;
@@ -2344,6 +2504,7 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgrade
 
 GPB_FINAL @interface GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0 : GPBMessage
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -2390,10 +2551,13 @@ GPB_FINAL @interface GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUp
 
 @property(nonatomic, readonly) GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual protocol version information */
 @property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions *versions;
 
+/** Cryptographic proof of the protocol version information, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -2411,8 +2575,12 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgrad
   GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions_FieldNumber_VersionsArray = 1,
 };
 
+/**
+ * Versions holds a collection of version entries
+ **/
 GPB_FINAL @interface GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions : GPBMessage
 
+/** List of protocol version entries */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry*> *versionsArray;
 /** The number of items in @c versionsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger versionsArray_Count;
@@ -2426,10 +2594,15 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgrad
   GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry_FieldNumber_VoteCount = 2,
 };
 
+/**
+ * VersionEntry represents a single entry of a protocol version
+ **/
 GPB_FINAL @interface GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry : GPBMessage
 
+/** The protocol version number */
 @property(nonatomic, readwrite) uint32_t versionNumber;
 
+/** The vote count for this protocol version */
 @property(nonatomic, readwrite) uint32_t voteCount;
 
 @end
@@ -2468,10 +2641,13 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUp
 
 GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0 : GPBMessage
 
+/** The starting masternode provider transaction hash to filter the votes by */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *startProTxHash;
 
+/** The number of vote entries to retrieve */
 @property(nonatomic, readwrite) uint32_t count;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -2518,10 +2694,13 @@ GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVers
 
 @property(nonatomic, readonly) GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual version signal information */
 @property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals *versions;
 
+/** Cryptographic proof of the version signal information, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -2539,8 +2718,12 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionU
   GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals_FieldNumber_VersionSignalsArray = 1,
 };
 
+/**
+ * VersionSignals holds a collection of version signal entries
+ **/
 GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals : GPBMessage
 
+/** List of version signal entries */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal*> *versionSignalsArray;
 /** The number of items in @c versionSignalsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger versionSignalsArray_Count;
@@ -2554,10 +2737,15 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionU
   GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber_Version = 2,
 };
 
+/**
+ * VersionSignal represents a single voting signal for a protocol version
+ **/
 GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal : GPBMessage
 
+/** The masternode provider transaction hash associated with the vote */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *proTxHash;
 
+/** The protocol version number that is being voted on */
 @property(nonatomic, readwrite) uint32_t version;
 
 @end
@@ -2597,14 +2785,18 @@ typedef GPB_ENUM(GetEpochsInfoRequest_GetEpochsInfoRequestV0_FieldNumber) {
 
 GPB_FINAL @interface GetEpochsInfoRequest_GetEpochsInfoRequestV0 : GPBMessage
 
+/** The starting epoch for the request */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *startEpoch;
 /** Test to see if @c startEpoch has been set. */
 @property(nonatomic, readwrite) BOOL hasStartEpoch;
 
+/** The number of epochs to retrieve information for */
 @property(nonatomic, readwrite) uint32_t count;
 
+/** Flag indicating if the epochs should be listed in ascending order */
 @property(nonatomic, readwrite) BOOL ascending;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -2651,10 +2843,13 @@ GPB_FINAL @interface GetEpochsInfoResponse_GetEpochsInfoResponseV0 : GPBMessage
 
 @property(nonatomic, readonly) GetEpochsInfoResponse_GetEpochsInfoResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual information about the requested epochs */
 @property(nonatomic, readwrite, strong, null_resettable) GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos *epochs;
 
+/** Cryptographic proof of the epoch information, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -2672,8 +2867,12 @@ typedef GPB_ENUM(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos_FieldN
   GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos_FieldNumber_EpochInfosArray = 1,
 };
 
+/**
+ * EpochInfos holds a collection of epoch information entries
+ **/
 GPB_FINAL @interface GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos : GPBMessage
 
+/** List of information for each requested epoch */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo*> *epochInfosArray;
 /** The number of items in @c epochInfosArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger epochInfosArray_Count;
@@ -2691,16 +2890,24 @@ typedef GPB_ENUM(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNu
   GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNumber_ProtocolVersion = 6,
 };
 
+/**
+ * EpochInfo represents information about a single epoch
+ **/
 GPB_FINAL @interface GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo : GPBMessage
 
+/** The number of the epoch */
 @property(nonatomic, readwrite) uint32_t number;
 
+/** The height of the first block in this epoch */
 @property(nonatomic, readwrite) uint64_t firstBlockHeight;
 
+/** The height of the first Core block in this epoch */
 @property(nonatomic, readwrite) uint32_t firstCoreBlockHeight;
 
+/** The start time of the epoch */
 @property(nonatomic, readwrite) uint64_t startTime;
 
+/** The fee multiplier applicable in this epoch */
 @property(nonatomic, readwrite) double feeMultiplier;
 
 @property(nonatomic, readwrite) uint32_t protocolVersion;

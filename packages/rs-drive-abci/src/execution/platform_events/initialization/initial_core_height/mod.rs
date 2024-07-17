@@ -13,17 +13,17 @@ where
     /// Determine initial core height.
     ///
     /// Use core height received from Tenderdash (from genesis.json) by default,
-    /// otherwise we go with height of v20 fork.
+    /// otherwise we go with height of mn_rr fork.
     ///
-    /// Core height is verified to ensure that it is both at or after v20 fork, and
+    /// Core height is verified to ensure that it is both at or after mn_rr fork, and
     /// before or at last chain lock.
     ///
     /// ## Error handling
     ///
     /// This function will fail if:
     ///
-    /// * v20 fork is not yet active
-    /// * `requested` core height is before v20 fork
+    /// * mn_rr fork is not yet active
+    /// * `requested` core height is before mn_rr fork
     /// * `requested` core height is after current best chain lock
     ///
     pub(in crate::execution) fn initial_core_height(

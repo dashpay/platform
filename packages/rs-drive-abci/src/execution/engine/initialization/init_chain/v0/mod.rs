@@ -31,7 +31,7 @@ where
                 request,
             )?;
 
-        // We get core height early, as this also verifies v20 fork
+        // We get core height early, as this also verifies mn_rr fork
         let core_height =
             self.initial_core_height(request.initial_core_height, platform_version)?;
 

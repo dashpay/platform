@@ -28,10 +28,6 @@ export default function configureTenderdashTaskFactory() {
               platformConfigs.forEach((config, index) => {
                 config.set('platform.drive.tenderdash.genesis.genesis_time', genesisTime);
                 config.set('platform.drive.tenderdash.genesis.chain_id', chainId);
-                config.set(
-                  'platform.drive.tenderdash.genesis.initial_core_chain_locked_height',
-                  ctx.initialCoreChainLockedHeight,
-                );
 
                 const p2pPeers = platformConfigs
                   .filter((_, i) => i !== index)
