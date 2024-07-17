@@ -17,17 +17,15 @@ mod tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::identity::Identity;
-    use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
 
     #[test]
     fn test_fetch_all_keys_on_identity() {
         let drive = setup_drive(None);
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
+        let drive_version = &platform_version.drive;
 
         let transaction = drive.grove.start_transaction();
-
-        let platform_version = PlatformVersion::first();
 
         drive
             .create_initial_state_structure(Some(&transaction), platform_version)

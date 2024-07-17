@@ -274,6 +274,12 @@ mod tests {
         use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
         use super::*;
         use assert_matches::assert_matches;
+        use rand::distributions::Standard;
+        use dpp::consensus::basic::document::DocumentFieldMaxSizeExceededError;
+        use dpp::consensus::ConsensusError;
+        use dpp::consensus::basic::BasicError;
+        use dpp::fee::fee_result::refunds::FeeRefunds;
+        use dpp::fee::fee_result::FeeResult;
         use dpp::data_contract::accessors::v0::DataContractV0Setters;
         use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
         use dpp::document::Document;
@@ -285,8 +291,10 @@ mod tests {
         use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
         use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
         use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
+        use drive::util::test_helpers::setup_contract;
         use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_name_contest, create_dpns_name_contest_give_key_info, fast_forward_to_block, perform_votes_multi};
         use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::PaidConsensusError;
 
         #[test]
         fn test_document_creation() {
@@ -325,12 +333,6 @@ mod tests {
 
             document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
-            let mut altered_document = document.clone();
-
-            altered_document.increment_revision().unwrap();
-            altered_document.set("displayName", "Samuel".into());
-            altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
-
             let documents_batch_create_transition =
                 DocumentsBatchTransition::new_document_creation_transition_from_document(
                     document,
@@ -367,6 +369,118 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+
+        #[test]
+        fn test_document_creation_with_very_big_field() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(433);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let dashpay_contract_no_max_length = setup_contract(
+                &platform.drive,
+                "tests/supporting_files/contract/dashpay/dashpay-contract-no-max-length.json",
+                None,
+                None,
+            );
+
+            let dashpay_contract = dashpay_contract_no_max_length.clone();
+
+            let profile = dashpay_contract
+                .document_type_for_name("profile")
+                .expect("expected a profile document type");
+
+            assert!(profile.documents_mutable());
+
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut document = profile
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            let max_field_size = platform_version.system_limits.max_field_value_size;
+            let avatar_size = max_field_size + 1000;
+
+            document.set(
+                "avatar",
+                Value::Bytes(
+                    rng.sample_iter(Standard)
+                        .take(avatar_size as usize)
+                        .collect(),
+                ),
+            );
+
+            let documents_batch_create_transition =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document,
+                    profile,
+                    entropy.0,
+                    &key,
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected to process state transition");
+            assert_eq!(
+                processing_result.execution_results().first().unwrap(),
+                &PaidConsensusError(
+                    ConsensusError::BasicError(BasicError::DocumentFieldMaxSizeExceededError(
+                        DocumentFieldMaxSizeExceededError::new(
+                            "avatar".to_string(),
+                            avatar_size as u64,
+                            max_field_size as u64
+                        )
+                    )),
+                    FeeResult {
+                        storage_fee: 11556000,
+                        processing_fee: 1253700,
+                        fee_refunds: FeeRefunds::default(),
+                        removed_bytes_from_system: 0
+                    }
+                )
             );
 
             platform
@@ -1068,8 +1182,6 @@ mod tests {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
-
-            let platform_state = platform.state.load();
 
             let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 

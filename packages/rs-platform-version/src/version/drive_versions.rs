@@ -9,12 +9,6 @@ pub struct DriveVersion {
     pub grove_version: GroveVersion,
 }
 
-impl DriveVersion {
-    pub fn latest() -> DriveVersion {
-        DriveVersion::default()
-    }
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct DriveMethodVersions {
     pub initialization: DriveInitializationMethodVersions,

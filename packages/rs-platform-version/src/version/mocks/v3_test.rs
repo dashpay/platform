@@ -76,20 +76,16 @@ use crate::version::drive_versions::{
     DriveVoteSetupMethodVersions, DriveVoteStorageFormMethodVersions,
 };
 use crate::version::fee::v1::FEE_VERSION1;
+use crate::version::limits::SystemLimits;
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
-use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
+use crate::version::PlatformArchitectureVersion;
 use grovedb_version::version::v1::GROVE_V1;
 
 pub const TEST_PROTOCOL_VERSION_3: u32 = (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 3;
 
 pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
     protocol_version: TEST_PROTOCOL_VERSION_3,
-    identity: FeatureVersionBounds {
-        min_version: 0,
-        max_version: 0,
-        default_current_version: 0,
-    },
     proofs: FeatureVersionBounds {
         min_version: 0,
         max_version: 0,
@@ -581,13 +577,6 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             },
         },
         grove_version: GROVE_V1,
-    },
-    abci_structure: AbciStructureVersion {
-        extended_block_info: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
     },
     platform_architecture: PlatformArchitectureVersion {
         data_contract_factory_structure_version: 0,
@@ -1120,8 +1109,6 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             },
         },
         state_transitions: StateTransitionVersions {
-            max_state_transition_size: 20000,
-            max_transitions_in_documents_batch: 1,
             documents: DocumentTransitionVersions {
                 documents_batch_transition: DocumentsBatchTransitionVersions {
                     validation: DocumentsBatchTransitionValidationVersions {
@@ -1242,4 +1229,10 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
         feature_flags: 1,
     },
     fee_version: FEE_VERSION1,
+    system_limits: SystemLimits {
+        estimated_contract_max_serialized_size: 16384,
+        max_field_value_size: 5000,
+        max_state_transition_size: 20000,
+        max_transitions_in_documents_batch: 1,
+    },
 };

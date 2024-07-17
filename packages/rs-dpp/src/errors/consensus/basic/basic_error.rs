@@ -24,13 +24,13 @@ use crate::consensus::basic::decode::{
 };
 use crate::consensus::basic::document::{
     DataContractNotPresentError, DocumentCreationNotAllowedError,
-    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
-    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
-    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
-    MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
+    DocumentFieldMaxSizeExceededError, DocumentTransitionsAreAbsentError,
+    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
+    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
+    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
+    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
@@ -363,6 +363,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     MissingStateTransitionTypeError(MissingStateTransitionTypeError),
+
+    #[error(transparent)]
+    DocumentFieldMaxSizeExceededError(DocumentFieldMaxSizeExceededError),
 
     #[error(transparent)]
     StateTransitionMaxSizeExceededError(StateTransitionMaxSizeExceededError),

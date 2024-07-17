@@ -76,19 +76,15 @@ use crate::version::drive_versions::{
     DriveVoteSetupMethodVersions, DriveVoteStorageFormMethodVersions,
 };
 use crate::version::fee::v1::FEE_VERSION1;
+use crate::version::limits::SystemLimits;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
-use crate::version::{AbciStructureVersion, PlatformArchitectureVersion, ProtocolVersion};
+use crate::version::{PlatformArchitectureVersion, ProtocolVersion};
 use grovedb_version::version::v1::GROVE_V1;
 
 pub const PROTOCOL_VERSION_1: ProtocolVersion = 1;
 
 pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
     protocol_version: 1,
-    identity: FeatureVersionBounds {
-        min_version: 0,
-        max_version: 0,
-        default_current_version: 0,
-    },
     proofs: FeatureVersionBounds {
         min_version: 0,
         max_version: 0,
@@ -580,13 +576,6 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
         },
         grove_version: GROVE_V1,
-    },
-    abci_structure: AbciStructureVersion {
-        extended_block_info: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
     },
     platform_architecture: PlatformArchitectureVersion {
         data_contract_factory_structure_version: 0,
@@ -1119,8 +1108,6 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
         },
         state_transitions: StateTransitionVersions {
-            max_state_transition_size: 20000,
-            max_transitions_in_documents_batch: 1,
             documents: DocumentTransitionVersions {
                 documents_batch_transition: DocumentsBatchTransitionVersions {
                     validation: DocumentsBatchTransitionValidationVersions {
@@ -1241,4 +1228,10 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
         feature_flags: 1,
     },
     fee_version: FEE_VERSION1,
+    system_limits: SystemLimits {
+        estimated_contract_max_serialized_size: 16384,
+        max_field_value_size: 5120,       //5 KiB
+        max_state_transition_size: 20480, //20 KiB
+        max_transitions_in_documents_batch: 1,
+    },
 };

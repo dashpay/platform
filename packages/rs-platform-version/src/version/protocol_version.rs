@@ -14,13 +14,9 @@ use crate::version::v1::PLATFORM_V1;
 #[cfg(feature = "mock-versions")]
 use std::sync::OnceLock;
 
+use crate::version::limits::SystemLimits;
 use crate::version::ProtocolVersion;
 pub use versioned_feature_core::*;
-
-#[derive(Clone, Debug, Default)]
-pub struct AbciStructureVersion {
-    pub extended_block_info: FeatureVersionBounds,
-}
 
 #[derive(Clone, Debug, Default)]
 pub struct PlatformArchitectureVersion {
@@ -31,15 +27,14 @@ pub struct PlatformArchitectureVersion {
 #[derive(Clone, Debug)]
 pub struct PlatformVersion {
     pub protocol_version: ProtocolVersion,
-    pub identity: FeatureVersionBounds,
     pub proofs: FeatureVersionBounds,
     pub dpp: DPPVersion,
     pub drive: DriveVersion,
     pub drive_abci: DriveAbciVersion,
     pub fee_version: FeeVersion,
-    pub abci_structure: AbciStructureVersion,
     pub platform_architecture: PlatformArchitectureVersion,
     pub system_data_contracts: SystemDataContractVersions,
+    pub system_limits: SystemLimits,
 }
 
 pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[PLATFORM_V1];
