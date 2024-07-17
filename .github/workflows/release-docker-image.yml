@@ -64,6 +64,7 @@ jobs:
 
       - name: Export digest
         run: |
+          rm -rf ${{ env.DIGEST_DIR_PATH }}
           mkdir -p ${{ env.DIGEST_DIR_PATH }}
           digest="${{ steps.docker_build.outputs.digest }}"
           touch "${{ env.DIGEST_DIR_PATH }}/${digest#sha256:}"
