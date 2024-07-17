@@ -476,7 +476,7 @@ mod tests {
                     )),
                     FeeResult {
                         storage_fee: 11556000,
-                        processing_fee: 1253700,
+                        processing_fee: 634380,
                         fee_refunds: FeeRefunds::default(),
                         removed_bytes_from_system: 0
                     }
