@@ -268,7 +268,6 @@ export default function configureCoreTaskFactory(
                   'SPORK_9_SUPERBLOCKS_ENABLED',
                   'SPORK_17_QUORUM_DKG_ENABLED',
                   'SPORK_19_CHAINLOCKS_ENABLED',
-                  'SPORK_24_TEST_EHF',
                 ];
 
                 await Promise.all(
@@ -349,18 +348,6 @@ export default function configureCoreTaskFactory(
               task: () => enableCoreQuorumsTask(),
             },
             {
-              title: 'Setting initial core chain locked height',
-              task: async (_, task) => {
-                const rpcClient = ctx.seedCoreService.getRpcClient();
-                const { result: initialCoreChainLockedHeight } = await rpcClient.getBlockCount();
-
-                ctx.initialCoreChainLockedHeight = initialCoreChainLockedHeight;
-
-                // eslint-disable-next-line no-param-reassign
-                task.output = `Initial chain locked core height is set to: ${ctx.initialCoreChainLockedHeight}`;
-              },
-            },
-            {
               title: 'Activating V20 fork',
               task: () => new Observable(async (observer) => {
                 let isV20Activated = false;
@@ -400,6 +387,74 @@ export default function configureCoreTaskFactory(
 
                 return this;
               }),
+            },
+            {
+              title: 'Wait for nodes to have the same height',
+              task: () => waitForNodesToHaveTheSameHeight(
+                ctx.rpcClients,
+                WAIT_FOR_NODES_TIMEOUT,
+              ),
+            },
+            {
+              title: 'Enable EHF spork',
+              task: async () => new Observable(async (observer) => {
+                const seedRpcClient = ctx.seedCoreService.getRpcClient();
+                const {
+                  result: initialCoreChainLockedHeight,
+                } = await seedRpcClient.getBlockCount();
+
+                await activateCoreSpork(
+                  seedRpcClient,
+                  'SPORK_24_TEST_EHF',
+                  initialCoreChainLockedHeight,
+                );
+
+                let isEhfActivated = false;
+                let blockchainInfo;
+
+                let blocksGenerated = 0;
+
+                const blocksToGenerateInOneStep = 48;
+
+                do {
+                  ({
+                    result: blockchainInfo,
+                  } = await ctx.seedCoreService.getRpcClient().getBlockchainInfo());
+
+                  isEhfActivated = blockchainInfo.softforks && blockchainInfo.softforks.mn_rr
+                    && blockchainInfo.softforks.mn_rr.active;
+                  if (isEhfActivated) {
+                    break;
+                  }
+
+                  await ctx.bumpMockTime(blocksToGenerateInOneStep);
+
+                  await generateBlocks(
+                    ctx.seedCoreService,
+                    blocksToGenerateInOneStep,
+                    NETWORK_LOCAL,
+                    // eslint-disable-next-line no-loop-func
+                    (blocks) => {
+                      blocksGenerated += blocks;
+
+                      observer.next(`${blocksGenerated} blocks generated`);
+                    },
+                  );
+                } while (!isEhfActivated);
+
+                observer.next(`EHF has been activated at height ${blockchainInfo.softforks.mn_rr.height}`);
+
+                observer.complete();
+
+                return this;
+              }),
+            },
+            {
+              title: 'Wait for nodes to have the same height',
+              task: () => waitForNodesToHaveTheSameHeight(
+                ctx.rpcClients,
+                WAIT_FOR_NODES_TIMEOUT,
+              ),
             },
             {
               title: 'Stopping nodes',
