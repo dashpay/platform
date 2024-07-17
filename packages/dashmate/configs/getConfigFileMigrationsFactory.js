@@ -673,6 +673,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.abci.grovedbVisualizer = base.get('platform.drive.abci.grovedbVisualizer');
 
             // Update Core image
             options.core.docker.image = getDefaultConfigByNameOrGroup(name, options.group)

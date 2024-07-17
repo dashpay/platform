@@ -83,7 +83,7 @@ where
                 }
                 // Errors that can happen if we created invalid tx or Core isn't responding
                 Err(e) => {
-                    tracing::error!(
+                    tracing::warn!(
                         tx_id = transaction.txid().to_string(),
                         index,
                         "Failed to broadcast asset unlock transaction {}: {}",
@@ -113,6 +113,12 @@ fn store_transaction_failures(
     if failures.is_empty() {
         return Ok(());
     }
+
+    tracing::trace!(
+        "Store {} Asset Unlock transaction submission failures in {}",
+        failures.len(),
+        dir_path.display()
+    );
 
     // Ensure the directory exists
     fs::create_dir_all(dir_path).map_err(|e| {

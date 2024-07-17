@@ -84,6 +84,35 @@ pub struct DriveConfig {
         )
     )]
     pub data_contracts_block_cache_size: u64,
+
+    /// GroveDB visualizer address
+    #[cfg(feature = "grovedbg")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default = "default_grovedb_visualizer_address",
+            deserialize_with = "from_str_to_socket_address"
+        )
+    )]
+    pub grovedb_visualizer_address: std::net::SocketAddr,
+
+    /// Enable GroveDB visualizer
+    #[cfg(feature = "grovedbg")]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, deserialize_with = "from_str_to_bool")
+    )]
+    pub grovedb_visualizer_enabled: bool,
+}
+
+// TODO: some weird envy behavior requries this to exist
+#[cfg(all(feature = "serde", feature = "grovedbg"))]
+fn from_str_to_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    s.parse().map_err(serde::de::Error::custom)
 }
 
 #[cfg(feature = "serde")]
@@ -97,6 +126,15 @@ where
 
     let s = String::deserialize(deserializer)?;
     s.parse::<T>().map_err(Error::custom)
+}
+
+#[cfg(all(feature = "serde", feature = "grovedbg"))]
+fn from_str_to_socket_address<'de, D>(deserializer: D) -> Result<std::net::SocketAddr, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    s.parse().map_err(serde::de::Error::custom)
 }
 
 // Define default functions for serde
@@ -124,6 +162,10 @@ fn default_data_contracts_cache_size() -> u64 {
     DEFAULT_DATA_CONTRACTS_CACHE_SIZE
 }
 
+fn default_grovedb_visualizer_address() -> std::net::SocketAddr {
+    "127.0.0.1:8083".parse().unwrap()
+}
+
 impl Default for DriveConfig {
     fn default() -> Self {
         DriveConfig {
@@ -136,6 +178,10 @@ impl Default for DriveConfig {
             default_genesis_time: None,
             data_contracts_global_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,
             data_contracts_block_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,
+            #[cfg(feature = "grovedbg")]
+            grovedb_visualizer_address: default_grovedb_visualizer_address(),
+            #[cfg(feature = "grovedbg")]
+            grovedb_visualizer_enabled: false,
         }
     }
 }

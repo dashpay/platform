@@ -19,7 +19,10 @@ use platform_value::Identifier;
     PlatformSerialize,
     PlatformDeserialize,
 )]
-#[error("missing position is not present for updated document type")]
+#[error(
+    "position field is not present for document type \"{}\"",
+    document_type_name
+)]
 #[platform_serialize(unversioned)]
 pub struct MissingPositionsInDocumentTypePropertiesError {
     /*

@@ -7,7 +7,7 @@ mod tests {
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::version::PlatformVersion;
     use drive::config::DriveConfig;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashMap};
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::strategy::{
@@ -18,13 +18,15 @@ mod tests {
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
     };
+    use drive_abci::logging::LogLevel;
     use drive_abci::mimic::MimicExecuteBlockOptions;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
-    use platform_version::version::mocks::v2_test::{TEST_PLATFORM_V2, TEST_PROTOCOL_VERSION_2};
-    use platform_version::version::mocks::v3_test::{TEST_PLATFORM_V3, TEST_PROTOCOL_VERSION_3};
-    use platform_version::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
-    use platform_version::version::v1::PLATFORM_V1;
+    use platform_version::version;
+    use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
+    use platform_version::version::mocks::v3_test::TEST_PROTOCOL_VERSION_3;
+    use platform_version::version::patches::PatchFn;
+    use platform_version::version::v1::PROTOCOL_VERSION_1;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
@@ -523,27 +525,31 @@ mod tests {
 
     #[test]
     fn run_chain_on_epoch_change_with_new_version_and_removing_votes() {
-        // Add a new version to upgrade to new protocol version only with one votes
-        const TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE: u32 =
-            (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 4;
+        fn patch_upgrade_percentage(mut platform_version: PlatformVersion) -> PlatformVersion {
+            platform_version
+                .drive_abci
+                .methods
+                .protocol_upgrade
+                .protocol_version_upgrade_percentage_needed = 1;
 
-        let mut test_platform_v4 = PLATFORM_V1.clone();
-        test_platform_v4
-            .drive_abci
-            .methods
-            .protocol_upgrade
-            .protocol_version_upgrade_percentage_needed = 1;
+            platform_version
+        }
 
-        PlatformVersion::replace_test_versions(vec![
-            TEST_PLATFORM_V2,
-            TEST_PLATFORM_V3,
-            test_platform_v4,
-        ]);
+        let mut patches = version::patches::PATCHES.write().unwrap();
+
+        *patches = HashMap::from_iter(vec![{
+            (
+                1,
+                BTreeMap::from_iter(vec![(1, patch_upgrade_percentage as PatchFn)]),
+            )
+        }]);
+
+        drop(patches);
 
         let strategy = NetworkStrategy {
             total_hpmns: 50,
             upgrading_info: Some(UpgradingInfo {
-                current_protocol_version: TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE,
+                current_protocol_version: PROTOCOL_VERSION_1,
                 proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                 upgrade_three_quarters_life: 0.0,
             }),
@@ -573,7 +579,7 @@ mod tests {
                 epoch_time_length_s,
                 ..Default::default()
             },
-            initial_protocol_version: TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE,
+            initial_protocol_version: PROTOCOL_VERSION_1,
             block_spacing_ms: epoch_time_length_s * 1000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
@@ -612,22 +618,14 @@ mod tests {
         assert_eq!(state.last_committed_block_epoch().index, 0);
         assert_eq!(
             state.current_protocol_version_in_consensus(),
-            TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE
+            PROTOCOL_VERSION_1
         );
-        assert_eq!(
-            state.next_epoch_protocol_version(),
-            TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE
-        );
+        assert_eq!(state.next_epoch_protocol_version(), PROTOCOL_VERSION_1);
         assert_eq!(state.last_committed_core_height(), 2);
         assert_eq!(counter.get(&1).unwrap(), None);
         assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&1));
         assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_3).unwrap(), None);
-        assert_eq!(
-            counter
-                .get(&TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE)
-                .unwrap(),
-            None
-        );
+        assert_eq!(counter.get(&PROTOCOL_VERSION_1).unwrap(), None);
 
         drop(counter);
 
@@ -689,13 +687,16 @@ mod tests {
         assert_eq!(state.last_committed_block_epoch().index, 1);
         assert_eq!(
             state.current_protocol_version_in_consensus(),
-            TEST_PROTOCOL_VERSION_4_WITH_1_HPMN_UPGRADE
+            PROTOCOL_VERSION_1
         );
         assert_eq!(state.next_epoch_protocol_version(), TEST_PROTOCOL_VERSION_2);
         assert_eq!(counter.get(&1).unwrap(), None);
         assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), None);
         assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_3).unwrap(), Some(&1));
         assert_eq!(state.last_committed_core_height(), 3);
+
+        let mut patches = version::patches::PATCHES.write().unwrap();
+        patches.clear();
     }
 
     #[test]
@@ -935,6 +936,8 @@ mod tests {
 
     #[test]
     fn run_chain_version_upgrade_slow_upgrade_quick_reversion_after_lock_in() {
+        drive_abci::logging::init_for_tests(LogLevel::Silent);
+
         // Define the desired stack size
         let stack_size = 4 * 1024 * 1024; //Let's set the stack size to be higher than the default 2MB
 

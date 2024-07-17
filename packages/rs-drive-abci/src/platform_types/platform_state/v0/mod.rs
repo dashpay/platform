@@ -43,6 +43,10 @@ pub struct PlatformStateV0 {
     pub current_validator_set_quorum_hash: QuorumHash,
     /// next quorum
     pub next_validator_set_quorum_hash: Option<QuorumHash>,
+    /// This is a modified current platform version based on
+    /// `current_protocol_version_in_consensus` with some function versions
+    /// changed to fix an urgent bug that is not a part of normal upgrade process
+    pub patched_platform_version: Option<&'static PlatformVersion>,
     /// current validator set quorums
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members
@@ -156,7 +160,7 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
     type Error = Error;
 
     fn try_from(value: PlatformStateV0) -> Result<Self, Self::Error> {
-        let platform_version = PlatformVersion::get(value.current_protocol_version_in_consensus)?;
+        let platform_version = value.current_platform_version()?;
         Ok(PlatformStateForSavingV0 {
             genesis_block_info: value.genesis_block_info,
             last_committed_block_info: value.last_committed_block_info,
@@ -214,6 +218,7 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
             next_validator_set_quorum_hash: value
                 .next_validator_set_quorum_hash
                 .map(|bytes| QuorumHash::from_byte_array(bytes.to_buffer())),
+            patched_platform_version: None,
             validator_sets: value
                 .validator_sets
                 .into_iter()
@@ -251,6 +256,7 @@ impl PlatformStateV0 {
             next_epoch_protocol_version,
             current_validator_set_quorum_hash: QuorumHash::all_zeros(),
             next_validator_set_quorum_hash: None,
+            patched_platform_version: None,
             validator_sets: Default::default(),
             chain_lock_validating_quorums: SignatureVerificationQuorumSet::new(
                 &config.chain_lock,
@@ -285,8 +291,18 @@ pub struct MasternodeListChanges {
     pub new_banned_masternodes: Vec<ProTxHash>,
 }
 
+pub(super) trait PlatformStateV0PrivateMethods {
+    /// Patched platform version. Used to fix urgent bugs as not part of normal upgrade process.
+    /// The patched version returns from the public current_platform_version getter in case if present.
+    fn patched_platform_version(&self) -> Option<&'static PlatformVersion>;
+
+    /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
+    /// The patched version returns from the public current_platform_version getter in case if present.
+    fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>);
+}
+
 /// Platform state methods introduced in version 0 of Platform State Struct
-pub trait PlatformStateV0Methods {
+pub trait PlatformStateV0Methods: PlatformStateV0PrivateMethods {
     /// The last block height or 0 for genesis
     fn last_committed_block_height(&self) -> u64;
     /// The height of the platform, only committed blocks increase height
@@ -317,7 +333,15 @@ pub trait PlatformStateV0Methods {
     fn last_committed_block_info(&self) -> &Option<ExtendedBlockInfo>;
     /// Returns the current protocol version that is in consensus.
     fn current_protocol_version_in_consensus(&self) -> ProtocolVersion;
-
+    /// Get the current platform version or patched if present
+    fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
+        self.patched_platform_version()
+            .map(|version| Ok(version))
+            .unwrap_or_else(|| {
+                PlatformVersion::get(self.current_protocol_version_in_consensus())
+                    .map_err(Error::from)
+            })
+    }
     /// Returns the upcoming protocol version for the next epoch.
     fn next_epoch_protocol_version(&self) -> ProtocolVersion;
 
@@ -433,6 +457,20 @@ pub trait PlatformStateV0Methods {
     fn hpmn_masternode_list_changes(&self, previous: &Self) -> MasternodeListChanges
     where
         Self: Sized;
+}
+
+impl PlatformStateV0PrivateMethods for PlatformStateV0 {
+    /// Patched platform version. Used to fix urgent bugs as not part of normal upgrade process.
+    /// The patched version returns from the public current_platform_version getter in case if present.
+    fn patched_platform_version(&self) -> Option<&'static PlatformVersion> {
+        self.patched_platform_version
+    }
+
+    /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
+    /// The patched version returns from the public current_platform_version getter in case if present.
+    fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>) {
+        self.patched_platform_version = version;
+    }
 }
 
 impl PlatformStateV0Methods for PlatformStateV0 {

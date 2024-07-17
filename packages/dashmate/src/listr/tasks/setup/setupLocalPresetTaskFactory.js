@@ -232,6 +232,7 @@ export default function setupLocalPresetTaskFactory(
                   config.set('platform.drive.tenderdash.node.id', id);
                   config.set('platform.drive.tenderdash.node.key', key);
 
+                  config.set('platform.drive.abci.grovedbVisualizer.port', config.get('platform.drive.abci.grovedbVisualizer.port') + (i * 100));
                   config.set('platform.drive.abci.tokioConsole.port', config.get('platform.drive.abci.tokioConsole.port') + (i * 100));
                   config.set('platform.drive.abci.metrics.port', config.get('platform.drive.abci.metrics.port') + (i * 100));
                   config.set('platform.gateway.admin.port', config.get('platform.gateway.admin.port') + (i * 100));

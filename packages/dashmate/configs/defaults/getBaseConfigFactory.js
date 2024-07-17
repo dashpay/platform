@@ -124,7 +124,7 @@ export default function getBaseConfigFactory(homeDir) {
             tenderdash: {
               password: 'rpcpassword',
               whitelist: [
-                'quoruminfo', 'quorumverify', 'quorumplatformsign', 'masternodestatus', 'masternodelist',
+                'quoruminfo', 'quorumverify', 'quorumsign', 'masternodestatus', 'masternodelist',
                 'ping', 'getnetworkinfo',
               ],
               lowPriority: false,
@@ -310,6 +310,11 @@ export default function getBaseConfigFactory(homeDir) {
               enabled: false,
               host: '127.0.0.1',
               port: 29090,
+            },
+            grovedbVisualizer: {
+              enabled: false,
+              host: '127.0.0.1',
+              port: 8083,
             },
             epochTime: 788400,
           },

@@ -175,6 +175,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
     mod add_epoch_pool_to_proposers_payout_operations {
         use super::*;

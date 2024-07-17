@@ -50,7 +50,7 @@ impl Drive {
         let new_total = total_credits_in_platform
             .checked_sub(amount)
             .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
-                "trying to remove an amount that would underflow credits",
+                "trying to remove an amount that would underflow total system credits",
             )))?;
         let path_holding_total_credits_vec = misc_path_vec();
         let replace_op = GroveDbOp::replace_op(
