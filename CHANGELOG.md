@@ -1,3 +1,28 @@
+## [1.0.0-beta.3](https://github.com/dashpay/platform/compare/v1.0.0-beta.2...v1.0.0-beta.3) (2024-07-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** updated fees (#1971)
+* **platform:** max field size and some clean up of versioning (#1970)
+
+### Features
+
+* **dpp:** decomposed integer types for document type properties ([#1968](https://github.com/dashpay/platform/issues/1968))
+* **platform:** max field size and some clean up of versioning ([#1970](https://github.com/dashpay/platform/issues/1970))
+
+
+### Continuous Integration
+
+* fix release docker images ([#1969](https://github.com/dashpay/platform/issues/1969))
+
+
+### Miscellaneous Chores
+
+* activate platform on EHF fork ([#1972](https://github.com/dashpay/platform/issues/1972))
+* add comments to the platform.proto file ([#1641](https://github.com/dashpay/platform/issues/1641))
+* **platform:** updated fees ([#1971](https://github.com/dashpay/platform/issues/1971))
+
 ## [1.0.0-beta.2](https://github.com/dashpay/platform/compare/v1.0.0-beta.1...v1.0.0-beta.2) (2024-07-16)
 
 
