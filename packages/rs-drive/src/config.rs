@@ -10,7 +10,7 @@ pub const DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED: bool = false;
 /// Boolean if GroveDB has_raw in enabled by default
 pub const DEFAULT_GROVE_HAS_RAW_ENABLED: bool = true;
 /// Boolean if verification of GroveDB should be run on startup
-pub const DEFAULT_VERIFY_GROVE_ON_STARTUP: bool = true;
+pub const DEFAULT_VERIFY_GROVE_ON_STARTUP: bool = false;
 /// The default default query limit
 pub const DEFAULT_QUERY_LIMIT: u16 = 100;
 /// The default max query limit
