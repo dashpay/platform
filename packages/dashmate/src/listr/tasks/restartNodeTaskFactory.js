@@ -7,7 +7,7 @@ import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
  * @param {buildServicesTask} buildServicesTask
  * @return {restartNodeTask}
  */
-export default function restartNodeTaskFactory(startNodeTask, stopNodeTask, buildServicesTask) {
+export default function restartNodeTaskFactory({ startNodeTask, stopNodeTask, buildServicesTask }) {
   /**
    * Restart node
    * @typedef {restartNodeTask}

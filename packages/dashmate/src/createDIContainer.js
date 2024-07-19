@@ -119,7 +119,7 @@ import verifySystemRequirementsTaskFactory
  */
 export default async function createDIContainer(options = {}) {
   const container = createAwilixContainer({
-    injectionMode: InjectionMode.CLASSIC,
+    injectionMode: InjectionMode.PROXY,
   });
 
   /**
@@ -136,12 +136,12 @@ export default async function createDIContainer(options = {}) {
     getLocalConfig: asFunction(getLocalConfigFactory).singleton(),
     getTestnetConfig: asFunction(getTestnetConfigFactory).singleton(),
     getMainnetConfig: asFunction(getMainnetConfigFactory).singleton(),
-    defaultConfigs: asFunction((
+    defaultConfigs: asFunction(({
       getBaseConfig,
       getLocalConfig,
       getTestnetConfig,
       getMainnetConfig,
-    ) => new DefaultConfigs([
+    }) => new DefaultConfigs([
       getBaseConfig,
       getLocalConfig,
       getTestnetConfig,
@@ -285,8 +285,10 @@ export default async function createDIContainer(options = {}) {
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
     registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
-    obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
-    obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
+    obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory)
+      .singleton(),
+    obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory)
+      .singleton(),
     saveCertificateTask: asFunction(saveCertificateTaskFactory),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
     getCoreScope: asFunction(getCoreScopeFactory).singleton(),

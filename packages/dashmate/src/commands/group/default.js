@@ -20,17 +20,15 @@ Shows default group name or sets another group as default
 
   /**
    * @param {Object} args
-   * @param {Object} flags
    * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    {
+  async runWithDependencies({
+    args: {
       group: groupName,
     },
-    flags,
     configFile,
-  ) {
+  }) {
     if (groupName === null) {
       // eslint-disable-next-line no-console
       console.log(configFile.getDefaultGroupName());

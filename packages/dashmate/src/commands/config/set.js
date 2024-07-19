@@ -26,18 +26,16 @@ Sets a configuration option in the default config
 
   /**
    * @param args
-   * @param flags
    * @param {Config} config
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    {
+  async runWithDependencies({
+    args: {
       option: optionPath,
       value: optionValue,
     },
-    flags,
     config,
-  ) {
+  }) {
     // check for existence
     config.get(optionPath);
 

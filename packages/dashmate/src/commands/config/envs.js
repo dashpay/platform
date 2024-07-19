@@ -19,20 +19,18 @@ Export configuration options as Docker Compose envs
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
    * @param {generateEnvs} generateEnvs
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       'output-file': outputFile,
     },
     config,
     generateEnvs,
-  ) {
+  }) {
     const envs = generateEnvs(config);
 
     let envOutput = '';

@@ -23,23 +23,21 @@ export default class ReindexCommand extends ConfigBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
    * @param {reindexNodeTask} reindexNodeTask
    *
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       verbose: isVerbose,
       force: isForce,
       detach: isDetached,
     },
     config,
     reindexNodeTask,
-  ) {
+  }) {
     const tasks = new Listr(
       [
         {

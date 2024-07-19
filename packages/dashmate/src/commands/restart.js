@@ -15,25 +15,21 @@ export default class RestartCommand extends ConfigBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
-   * @param {DockerCompose} dockerCompose
    * @param {restartNodeTask} restartNodeTask
    * @param {Config} config
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       verbose: isVerbose,
       platform: platformOnly,
       safe: isSafe,
       force: isForce,
     },
-    dockerCompose,
     restartNodeTask,
     config,
-  ) {
+  }) {
     const tasks = new Listr(
       [
         {

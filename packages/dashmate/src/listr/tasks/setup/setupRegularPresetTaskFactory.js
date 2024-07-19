@@ -18,28 +18,22 @@ import generateRandomString from '../../../util/generateRandomString.js';
 
 /**
  * @param {ConfigFile} configFile
- * @param {generateBlsKeys} generateBlsKeys
- * @param {registerMasternodeTask} registerMasternodeTask
- * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
  * @param {registerMasternodeGuideTask} registerMasternodeGuideTask
  * @param {configureNodeTask} configureNodeTask
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
  * @param {DefaultConfigs} defaultConfigs
- * @param {verifySystemRequirementsTask} verifySystemRequirementsTask
  * @param {importCoreDataTask} importCoreDataTask
+ * @param {verifySystemRequirementsTask} verifySystemRequirementsTask
  */
-export default function setupRegularPresetTaskFactory(
+export default function setupRegularPresetTaskFactory({
   configFile,
-  generateBlsKeys,
-  registerMasternodeTask,
-  obtainZeroSSLCertificateTask,
   registerMasternodeGuideTask,
   configureNodeTask,
   configureSSLCertificateTask,
   defaultConfigs,
   importCoreDataTask,
   verifySystemRequirementsTask,
-) {
+}) {
   /**
    * @typedef {setupRegularPresetTask}
    * @return {Listr}

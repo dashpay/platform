@@ -18,7 +18,7 @@ export default class HostStatusCommand extends ConfigBaseCommand {
   /**
    * @return {Promise<void>}
    */
-  async runWithDependencies(args, flags, getHostScope) {
+  async runWithDependencies({ flags, getHostScope }) {
     const plain = {
       Hostname: 'n/a',
       Uptime: 'n/a',

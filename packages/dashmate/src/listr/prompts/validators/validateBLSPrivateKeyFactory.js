@@ -4,7 +4,7 @@ import validateHex from './validateHex.js';
  * @returns {validateBLSPrivateKey}
  */
 
-export default function validateBLSPrivateKeyFactory(blsSignatures) {
+export default function validateBLSPrivateKeyFactory({ blsSignatures }) {
   /**
    * @typedef validateBLSPrivateKey
    * @param {string} value

@@ -12,7 +12,6 @@ import {
  *
  * @param {startCore} startCore
  * @param {createNewAddress} createNewAddress
- * @param {generateToAddress} generateToAddress
  * @param {generateBlocks} generateBlocks
  * @param {waitForCoreSync} waitForCoreSync
  * @param {importPrivateKey} importPrivateKey
@@ -23,10 +22,9 @@ import {
  * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
  * @return {registerMasternodeTask}
  */
-export default function registerMasternodeTaskFactory(
+export default function registerMasternodeTaskFactory({
   startCore,
   createNewAddress,
-  generateToAddress,
   generateBlocks,
   waitForCoreSync,
   importPrivateKey,
@@ -35,7 +33,7 @@ export default function registerMasternodeTaskFactory(
   waitForConfirmations,
   registerMasternode,
   waitForBalanceToConfirm,
-) {
+}) {
   /**
    * @typedef {registerMasternodeTask}
    * @param {Config} config

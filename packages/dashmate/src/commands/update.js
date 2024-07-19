@@ -19,20 +19,17 @@ export default class UpdateCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {string} format
-   * @param {docker} docker
    * @param {Config} config
    * @param updateNode
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       format,
     },
-    docker,
     config,
     updateNode,
-  ) {
+  }) {
     const updateInfo = await updateNode(config);
 
     const colors = {

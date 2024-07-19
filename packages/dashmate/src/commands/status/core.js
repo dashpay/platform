@@ -18,22 +18,16 @@ export default class CoreStatusCommand extends ConfigBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
-   * @param {DockerCompose} dockerCompose
-   * @param {createRpcClient} createRpcClient
    * @param {Config} config
    * @param {getCoreScope} getCoreScope
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
+  async runWithDependencies({
     flags,
-    dockerCompose,
-    createRpcClient,
     config,
     getCoreScope,
-  ) {
+  }) {
     const plain = {
       'Network': 'n/a',
       'Version': 'n/a',

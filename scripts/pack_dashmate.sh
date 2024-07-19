@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -ex
 
 cmd_usage="Usage: pack_dashmate.sh COMMAND
 
@@ -29,15 +29,31 @@ FULL_PATH=$(realpath "$0")
 DIR_PATH=$(dirname "$FULL_PATH")
 ROOT_PATH=$(dirname "$DIR_PATH")
 
+export NODE_ENV=production
+
 cd $ROOT_PATH/packages/dashmate || exit 1
+
+# Build and copy artifacts to package
+yarn build
+
+# Isolate dashmate package from workspace
 yarn pack --install-if-needed
 tar zxvf package.tgz -C .
+
 cd $ROOT_PATH/packages/dashmate/package || exit 1
+
+# Install dependencies
 cp $ROOT_PATH/yarn.lock ./yarn.lock
 mkdir .yarn
 echo "nodeLinker: node-modules"  > .yarnrc.yml
+# Remove already bundled dependencies
+node "$DIR_PATH"/patch_dashmate_package_json.js
 yarn install --no-immutable
+
+# Create oclif manifest
 yarn oclif manifest
+
+# Pack dashmate into package
 yarn oclif pack $COMMAND $FLAGS
 cd ..  || exit 1
 rm package.tgz

@@ -24,15 +24,13 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
    * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       verbose: isVerbose,
       'no-retry': noRetry,
       'expiration-days': expirationDays,
@@ -40,7 +38,7 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
     },
     config,
     obtainZeroSSLCertificateTask,
-  ) {
+  }) {
     const tasks = new Listr(
       [
         {

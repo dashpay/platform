@@ -36,15 +36,15 @@ Gets a configuration option from the specified config
    * @param {Config} config
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    {
+  async runWithDependencies({
+    args: {
       option: optionPath,
     },
-    {
+    flags: {
       format,
     },
     config,
-  ) {
+  }) {
     const value = config.get(optionPath);
 
     let output = value;

@@ -6,7 +6,7 @@ const { STATUSES: WITHDRAWAL_STATUSES } = require('dash/build/SDK/Client/Platfor
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
-// TODO: temporary disabled due to flakiness. These tests aren't important for now, since we are
+// TODO:  temporarily disabled due to flakiness. This tests aren't important for now, since we are
 //  going to release v1.0.0 with withdrawals disabled.
 describe.skip('Withdrawals', function withdrawalsTest() {
   this.bail(true);

@@ -40,15 +40,14 @@ export default class SetupCommand extends BaseCommand {
    * @param {ConfigFile} configFile
    * @param {setupLocalPresetTask} setupLocalPresetTask
    * @param {setupRegularPresetTask} setupRegularPresetTask
-   * @param {DockerCompose} dockerCompose
    * @param {DefaultConfigs} defaultConfigs
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    {
+  async runWithDependencies({
+    args: {
       preset,
     },
-    {
+    flags: {
       'node-count': nodeCount,
       'debug-logs': debugLogs,
       'miner-interval': minerInterval,
@@ -57,9 +56,8 @@ export default class SetupCommand extends BaseCommand {
     configFile,
     setupLocalPresetTask,
     setupRegularPresetTask,
-    dockerCompose,
     defaultConfigs,
-  ) {
+  }) {
     if (nodeCount !== null && (nodeCount < 3)) {
       throw new Error('node-count flag should be not less than 3');
     }

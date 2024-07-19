@@ -9,16 +9,12 @@ export default class GroupListCommand extends GroupBaseCommand {
   };
 
   /**
-   * @param {Object} args
-   * @param {Object} flags
    * @param {Config[]} configGroup
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    flags,
+  async runWithDependencies({
     configGroup,
-  ) {
+  }) {
     const rows = configGroup.map((config) => [config.getName(), config.get('description')]);
 
     const output = table(rows);

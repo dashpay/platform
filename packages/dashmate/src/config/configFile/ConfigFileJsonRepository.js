@@ -13,7 +13,7 @@ export default class ConfigFileJsonRepository {
    * @param {migrateConfigFile} migrateConfigFile
    * @param {HomeDir} homeDir
    */
-  constructor(migrateConfigFile, homeDir) {
+  constructor({ migrateConfigFile, homeDir }) {
     this.migrateConfigFile = migrateConfigFile;
     this.ajv = new Ajv();
     this.configFilePath = homeDir.joinPath('config.json');

@@ -10,7 +10,7 @@ const { merge: lodashMerge } = lodash;
  * @param {getBaseConfig} getBaseConfig
  * @returns {getLocalConfig}
  */
-export default function getLocalConfigFactory(getBaseConfig) {
+export default function getLocalConfigFactory({ getBaseConfig }) {
   /**
    * @typedef {function} getLocalConfig
    * @returns {Config}

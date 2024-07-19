@@ -5,7 +5,7 @@ import wait from '../util/wait.js';
  * @returns {waitForCoreData}
  */
 
-export default function waitForCoreDataFactory(rpcClient) {
+export default function waitForCoreDataFactory({ rpcClient }) {
   /**
    * @typedef {function} waitForCoreData
    * @param {number} originalValue

@@ -10,7 +10,8 @@
     "test": "yarn run test:unit && yarn run test:e2e",
     "test:unit": "mocha --recursive test/unit",
     "test:e2e": "mocha --recursive test/e2e",
-    "helper": "node scripts/helper.js"
+    "helper": "node scripts/helper.js",
+    "build": "rm -rf dist && ./scripts/build.js"
   },
   "repository": {
     "type": "git",
@@ -64,9 +65,9 @@
     "@dashevo/feature-flags-contract": "workspace:*",
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
+    "@dashevo/wasm-dpp": "workspace:*",
     "@dashevo/withdrawals-contract": "workspace:*",
-    "@oclif/core": "^3.10.8",
-    "@oclif/plugin-help": "^6.0.5",
+    "@oclif/core": "^4.0.7",
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
     "awilix": "^4.2.6",
@@ -105,13 +106,16 @@
     "chai": "^4.3.10",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
+    "ejs": "^3.1.6",
+    "esbuild": "^0.21.5",
+    "esbuild-plugin-fileloc": "^0.0.6",
     "eslint": "^8.53.0",
     "eslint-config-airbnb-base": "^15.0.0",
     "eslint-plugin-import": "^2.29.0",
     "globby": "^11",
     "mocha": "^10.2.0",
     "mocha-sinon": "^2.1.2",
-    "oclif": "^4.0.3",
+    "oclif": "^4.13.11",
     "sinon": "^17.0.1",
     "sinon-chai": "^3.7.0"
   },
@@ -122,7 +126,7 @@
     "bin",
     "configs",
     "docker",
-    "src",
+    "dist",
     "templates",
     "docker-compose.*",
     "oclif.manifest.json",
@@ -132,15 +136,16 @@
     "additionalHelpFlags": [
       "-h"
     ],
-    "commands": "./src/commands",
+    "commands": {
+      "strategy": "explicit",
+      "target": "./dist/index.js",
+      "identifier": "COMMANDS"
+    },
     "bin": "dashmate",
     "macos": {
       "identifier": "org.dash.dashmate",
       "sign": "'Developer ID Installer: The Dash Foundation, Inc.'"
     },
-    "plugins": [
-      "@oclif/plugin-help"
-    ],
     "topics": {
       "config": {
         "description": "Manage configs"

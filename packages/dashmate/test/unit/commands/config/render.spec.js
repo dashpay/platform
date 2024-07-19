@@ -8,7 +8,7 @@ describe('Config render command', () => {
   let mockWriteServiceConfigs;
 
   beforeEach(async function it() {
-    const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
+    const getBaseConfig = getBaseConfigFactory({ homeDir: HomeDir.createTemp() });
 
     mockWriteServiceConfigs = this.sinon.stub();
     mockRenderServiceTemplates = this.sinon.stub();
@@ -19,13 +19,11 @@ describe('Config render command', () => {
   it('should call render and write', async () => {
     const command = new ConfigRenderCommand();
 
-    await command.runWithDependencies(
-      {},
-      {},
+    await command.runWithDependencies({
       config,
-      mockRenderServiceTemplates,
-      mockWriteServiceConfigs,
-    );
+      renderServiceTemplates: mockRenderServiceTemplates,
+      writeServiceConfigs: mockWriteServiceConfigs,
+    });
 
     expect(mockRenderServiceTemplates).to.have.been.calledOnceWithExactly(config);
     expect(mockWriteServiceConfigs).to.have.been.calledOnceWith(config.getName());

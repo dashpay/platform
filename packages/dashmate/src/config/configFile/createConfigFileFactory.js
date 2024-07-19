@@ -9,7 +9,7 @@ import { PACKAGE_ROOT_DIR } from '../../constants.js';
  * @param {HomeDir} homeDir
  * @return {createConfigFile}
  */
-export default function createConfigFileFactory(defaultConfigs, homeDir) {
+export default function createConfigFileFactory({ defaultConfigs, homeDir }) {
   /**
    * @typedef {function} createConfigFile
    * @returns {ConfigFile}

@@ -5,7 +5,7 @@ import lodash from 'lodash';
  * @param {docker} docker
  * @return {updateNode}
  */
-export default function updateNodeFactory(getServiceList, docker) {
+export default function updateNodeFactory({ getServiceList, docker }) {
   /**
    * Pulls all recent images by given config
    * @typedef {updateNode}

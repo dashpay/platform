@@ -19,20 +19,16 @@ export default class StatusCommand extends ConfigBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
-   * @param {dockerCompose} dockerCompose
    * @param {getOverviewScope} getOverviewScope
    * @param {Config} config
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
+  async runWithDependencies({
     flags,
-    dockerCompose,
     getOverviewScope,
     config,
-  ) {
+  }) {
     const plain = {
       Network: 'n/a',
       'Core Version': 'n/a',

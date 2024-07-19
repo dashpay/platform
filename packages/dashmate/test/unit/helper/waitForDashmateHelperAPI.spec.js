@@ -14,7 +14,7 @@ describe('waitForDashmateHelperAPI', () => {
   });
 
   beforeEach(async () => {
-    const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
+    const getBaseConfig = getBaseConfigFactory({ homeDir: HomeDir.createTemp() });
 
     config = getBaseConfig();
   });

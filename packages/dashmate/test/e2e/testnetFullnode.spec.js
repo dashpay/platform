@@ -127,7 +127,7 @@ describe('Testnet Fullnode', function main() {
         pass: config.get('core.rpc.users.dashmate.password'),
       });
 
-      waitForCoreData = waitForCoreDataFactory(coreRpcClient);
+      waitForCoreData = waitForCoreDataFactory({ rpcClient: coreRpcClient });
 
       lastBlockHeight = await waitForCoreData(0, (currentValue) => currentValue > 0);
     });

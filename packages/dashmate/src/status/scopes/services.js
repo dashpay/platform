@@ -5,7 +5,7 @@ import { DockerStatusEnum } from '../enums/dockerStatus.js';
  * @param getServiceList
  * @returns {getServicesScopeFactory}
  */
-export default function getServicesScopeFactory(dockerCompose, getServiceList) {
+export default function getServicesScopeFactory({ dockerCompose, getServiceList }) {
   /**
    * Get platform status scope
    *

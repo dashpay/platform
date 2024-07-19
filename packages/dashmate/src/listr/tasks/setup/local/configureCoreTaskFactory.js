@@ -12,7 +12,6 @@ const { PrivateKey } = DashCoreLib;
  * @param {writeConfigTemplates} writeConfigTemplates
  * @param {startCore} startCore
  * @param {generateBlocks} generateBlocks
- * @param {waitForCoreSync} waitForCoreSync
  * @param {activateCoreSpork} activateCoreSpork
  * @param {generateToAddressTask} generateToAddressTask
  * @param {registerMasternodeTask} registerMasternodeTask
@@ -22,11 +21,10 @@ const { PrivateKey } = DashCoreLib;
  * @param {ConfigFile} configFile
  * @return {configureCoreTask}
  */
-export default function configureCoreTaskFactory(
+export default function configureCoreTaskFactory({
   writeConfigTemplates,
   startCore,
   generateBlocks,
-  waitForCoreSync,
   activateCoreSpork,
   generateToAddressTask,
   registerMasternodeTask,
@@ -34,7 +32,7 @@ export default function configureCoreTaskFactory(
   enableCoreQuorumsTask,
   waitForMasternodesSync,
   configFile,
-) {
+}) {
   const WAIT_FOR_NODES_TIMEOUT = 60 * 5 * 1000;
 
   /**

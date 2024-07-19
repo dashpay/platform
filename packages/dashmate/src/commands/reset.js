@@ -16,16 +16,14 @@ export default class ResetCommand extends ConfigBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
    * @param {resetNodeTask} resetNodeTask
    *
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       verbose: isVerbose,
       hard: isHardReset,
       force: isForce,
@@ -33,7 +31,7 @@ export default class ResetCommand extends ConfigBaseCommand {
     },
     config,
     resetNodeTask,
-  ) {
+  }) {
     const tasks = new Listr(
       [
         {

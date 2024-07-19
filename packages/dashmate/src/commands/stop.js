@@ -27,15 +27,13 @@ export default class StopCommand extends ConfigBaseCommand {
   };
 
   /**
-   * @param {Object} args
    * @param {Object} flags
    * @param {stopNodeTask} stopNodeTask
    * @param {Config} config
    * @return {Promise<void>}
    */
-  async runWithDependencies(
-    args,
-    {
+  async runWithDependencies({
+    flags: {
       force: isForce,
       safe: isSafe,
       verbose: isVerbose,
@@ -43,7 +41,7 @@ export default class StopCommand extends ConfigBaseCommand {
     },
     stopNodeTask,
     config,
-  ) {
+  }) {
     const tasks = new Listr(
       [
         {

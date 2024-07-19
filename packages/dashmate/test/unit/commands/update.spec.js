@@ -17,7 +17,7 @@ describe('Update command', () => {
   });
 
   beforeEach(async function it() {
-    const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
+    const getBaseConfig = getBaseConfigFactory({ homeDir: HomeDir.createTemp() });
 
     config = getBaseConfig();
 
@@ -35,9 +35,17 @@ describe('Update command', () => {
 
     const command = new UpdateCommand();
 
-    const updateNode = updateNodeFactory(mockGetServicesList, mockDocker);
+    const updateNode = updateNodeFactory({
+      getServiceList: mockGetServicesList,
+      docker: mockDocker,
+    });
 
-    await command.runWithDependencies({}, { format: 'json' }, mockDocker, config, updateNode);
+    await command.runWithDependencies({
+      flags: { format: 'json' },
+      docker: mockDocker,
+      config,
+      updateNode,
+    });
 
     expect(mockGetServicesList).to.have.been.calledOnceWithExactly(config);
     expect(mockDocker.pull).to.have.been.calledOnceWith(mockServicesList[0].image);
@@ -56,9 +64,17 @@ describe('Update command', () => {
           : cb(false, mockDockerStream))),
     };
 
-    let updateNode = updateNodeFactory(mockGetServicesList, mockDocker);
+    let updateNode = updateNodeFactory({
+      getServiceList: mockGetServicesList,
+      docker: mockDocker,
+    });
 
-    await command.runWithDependencies({}, { format: 'json' }, mockDocker, config, updateNode);
+    await command.runWithDependencies({
+      flags: { format: 'json' },
+      docker: mockDocker,
+      config,
+      updateNode,
+    });
 
     expect(mockGetServicesList).to.have.been.calledOnceWithExactly(config);
     expect(mockDocker.pull.firstCall.firstArg).to.equal(mockServicesList[0].image);
@@ -74,9 +90,17 @@ describe('Update command', () => {
     mockGetServicesList = this.sinon.stub().callsFake(() => mockServicesList);
     mockDocker = { pull: this.sinon.stub().callsFake((image, cb) => cb(false, mockDockerStream)) };
 
-    updateNode = updateNodeFactory(mockGetServicesList, mockDocker);
+    updateNode = updateNodeFactory({
+      getServiceList: mockGetServicesList,
+      docker: mockDocker,
+    });
 
-    await command.runWithDependencies({}, { format: 'json' }, mockDocker, config, updateNode);
+    await command.runWithDependencies({
+      flags: { format: 'json' },
+      docker: mockDocker,
+      config,
+      updateNode,
+    });
 
     expect(mockGetServicesList).to.have.been.calledOnceWithExactly(config);
     expect(mockDocker.pull.firstCall.firstArg).to.equal(mockServicesList[0].image);

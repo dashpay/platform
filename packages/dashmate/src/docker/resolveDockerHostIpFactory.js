@@ -7,7 +7,7 @@ import isWSL from '../util/isWSL.js';
  * @param {dockerPull} dockerPull
  * @return {resolveDockerHostIp}
  */
-export default function resolveDockerHostIpFactory(docker, dockerPull) {
+export default function resolveDockerHostIpFactory({ docker, dockerPull }) {
   /**
    * @typedef {resolveDockerHostIp}
    * @return {Promise<string>}

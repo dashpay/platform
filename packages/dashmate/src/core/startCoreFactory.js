@@ -3,20 +3,18 @@ import CoreService from './CoreService.js';
 /**
  * @param {createRpcClient} createRpcClient
  * @param {waitForCoreStart} waitForCoreStart
- * @param {waitForCoreSync} waitForCoreSync
  * @param {DockerCompose} dockerCompose
  * @param {getConnectionHost} getConnectionHost
  * @param {ensureFileMountExists} ensureFileMountExists
  * @return {startCore}
  */
-export default function startCoreFactory(
+export default function startCoreFactory({
   createRpcClient,
   waitForCoreStart,
-  waitForCoreSync,
   dockerCompose,
   getConnectionHost,
   ensureFileMountExists,
-) {
+}) {
   /**
    * @typedef startCore
    * @param {Config} config

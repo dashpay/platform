@@ -9,26 +9,22 @@ const { PrivateKey } = DashCoreLib;
  *
  * @param {DockerCompose} dockerCompose
  * @param {waitForCorePeersConnected} waitForCorePeersConnected
- * @param {waitForMasternodesSync} waitForMasternodesSync
  * @param {createRpcClient} createRpcClient
- * @param {Docker} docker
  * @param {startNodeTask} startNodeTask
  * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
  * @param {buildServicesTask} buildServicesTask
  * @param {getConnectionHost} getConnectionHost
  * @return {startGroupNodesTask}
  */
-export default function startGroupNodesTaskFactory(
+export default function startGroupNodesTaskFactory({
   dockerCompose,
   waitForCorePeersConnected,
-  waitForMasternodesSync,
   createRpcClient,
-  docker,
   startNodeTask,
   waitForNodeToBeReadyTask,
   buildServicesTask,
   getConnectionHost,
-) {
+}) {
   /**
    * @typedef {startGroupNodesTask}
    * @param {Config[]} configGroup

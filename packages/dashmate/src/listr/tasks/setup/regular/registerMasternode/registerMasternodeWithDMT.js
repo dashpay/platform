@@ -7,7 +7,7 @@ import createPlatformNodeKeyInput from '../../../../prompts/createPlatformNodeKe
  * @param {createIpAndPortsForm} createIpAndPortsForm
  * @return {registerMasternodeWithDMTFactory}
  */
-export default function registerMasternodeWithDMTFactory(createIpAndPortsForm) {
+export default function registerMasternodeWithDMTFactory({ createIpAndPortsForm }) {
   /**
    * Print prompts to collect masternode registration data with DMT
    *
@@ -28,7 +28,7 @@ export default function registerMasternodeWithDMTFactory(createIpAndPortsForm) {
    */
   async function registerMasternodeWithDMT(ctx, task) {
     const blsSignatures = await BlsSignatures();
-    const validateBLSPrivateKey = validateBLSPrivateKeyFactory(blsSignatures);
+    const validateBLSPrivateKey = validateBLSPrivateKeyFactory({ blsSignatures });
 
     const prompts = [
       {
