@@ -688,6 +688,19 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.0.0-beta.4': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            // Update Core image
+            options.core.docker.image = getDefaultConfigByNameOrGroup(name, options.group)
+              .get('core.docker.image');
+
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+            }
+          });
+        return configFile;
+      },
     };
   }
 
