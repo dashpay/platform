@@ -154,7 +154,7 @@ export default function getBaseConfigFactory(homeDir) {
           powTargetSpacing: 150,
           llmq: {
             chainLocks: 'llmq_devnet',
-            instantSend: 'llmq_devnet',
+            instantSend: 'llmq_devnet_dip0024',
             platform: 'llmq_devnet_platform',
             mnhf: 'llmq_devnet',
           },
