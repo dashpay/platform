@@ -1,3 +1,26 @@
+## [1.0.0-beta.4](https://github.com/dashpay/platform/compare/v1.0.0-beta.3...v1.0.0-beta.4) (2024-07-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** don't use `0.0.0.0` as default listen IP (#1976)
+
+### Bug Fixes
+
+* **dashmate:** configure devnet quorums ([#1979](https://github.com/dashpay/platform/issues/1979))
+* **drive:** drive and tenderdash are constantly restarting ([#1978](https://github.com/dashpay/platform/issues/1978))
+* expected service to be a string with ip address and port ([#1980](https://github.com/dashpay/platform/issues/1980))
+
+
+### Code Refactoring
+
+* **drive:** don't use private bound for public trait ([#1974](https://github.com/dashpay/platform/issues/1974))
+
+
+### Miscellaneous Chores
+
+* **drive:** don't use `0.0.0.0` as default listen IP ([#1976](https://github.com/dashpay/platform/issues/1976))
+
 ## [1.0.0-beta.3](https://github.com/dashpay/platform/compare/v1.0.0-beta.2...v1.0.0-beta.3) (2024-07-17)
 
 
