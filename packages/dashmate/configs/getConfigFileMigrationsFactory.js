@@ -695,6 +695,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.core.docker.image = getDefaultConfigByNameOrGroup(name, options.group)
               .get('core.docker.image');
 
+            options.core.devnet.llmq = base.get('core.devnet.llmq');
+
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
             }

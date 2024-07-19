@@ -8,8 +8,11 @@ import generateTenderdashNodeKey from '../../tenderdash/generateTenderdashNodeKe
  */
 export default function createPlatformNodeKeyInput(options = {}) {
   let { initial } = options;
+  let additionalMessage = '';
   if (initial === null || initial === undefined) {
     initial = generateTenderdashNodeKey();
+    additionalMessage = ' You can provide a key, or a new key will be\n  automatically generated'
+      + ' for you.';
   }
 
   return {
@@ -19,8 +22,7 @@ export default function createPlatformNodeKeyInput(options = {}) {
 
   This key is used to uniquely identify your Dash Platform node. The node key is
   derived from a standard Ed25519 cryptographic key pair, presented in a cached
-  format specific to Tenderdash. You can provide a key, or a new key will be
-  automatically generated for you.\n`,
+  format specific to Tenderdash.${additionalMessage}\n`,
     message: 'Enter Ed25519 node key',
     hint: 'Base64 encoded',
     initial,
