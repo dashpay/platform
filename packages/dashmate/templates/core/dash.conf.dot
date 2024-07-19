@@ -89,10 +89,10 @@ powtargetspacing={{=it.core.devnet.powTargetSpacing}}
 minimumdifficultyblocks={{=it.core.devnet.minimumDifficultyBlocks}}
 highsubsidyblocks=500
 highsubsidyfactor=10
-llmqchainlocks=llmq_devnet
-llmqinstantsend=llmq_devnet
-llmqinstantsenddip0024=llmq_devnet_dip0024
-llmqplatform=llmq_devnet_platform{{?}}
+llmqchainlocks={{=it.core.devnet.llmq.chainLocks}}
+llmqinstantsenddip0024={{=it.core.devnet.llmq.instantSend}}
+llmqplatform={{=it.core.devnet.llmq.platform}}
+llmqmnhf={{=it.core.devnet.llmq.mnhf}} {{?}}
 
 
 {{~it.core.p2p.seeds :seed}}

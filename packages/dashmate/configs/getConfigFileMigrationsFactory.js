@@ -688,6 +688,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.0.0-beta.4': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.devnet.llmq = base.get('core.devnet.llmq');
+          });
+        return configFile;
+      },
     };
   }
 

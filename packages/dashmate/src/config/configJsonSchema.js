@@ -127,6 +127,20 @@ export default {
       required: ['llmqType', 'dkgInterval', 'activeSigners', 'rotation'],
       additionalProperties: false,
     },
+    quorumName: {
+      type: 'string',
+      enum: [
+        'llmq_devnet',
+        'llmq_devnet_dip0024',
+        'llmq_devnet_platform',
+        'llmq_50_60',
+        'llmq_60_75',
+        'llmq_400_60',
+        'llmq_400_85',
+        'llmq_100_67',
+        'llmq_25_67',
+      ],
+    },
   },
   properties: {
     description: {
@@ -360,6 +374,25 @@ export default {
             powTargetSpacing: {
               type: 'integer',
               minimum: 1,
+            },
+            llmq: {
+              type: 'object',
+              properties: {
+                chainLocks: {
+                  $ref: '#/definitions/quorumName',
+                },
+                instantSend: {
+                  $ref: '#/definitions/quorumName',
+                },
+                platform: {
+                  $ref: '#/definitions/quorumName',
+                },
+                mnhf: {
+                  $ref: '#/definitions/quorumName',
+                },
+              },
+              required: ['chainLocks', 'instantSend', 'platform', 'mnhf'],
+              additionalProperties: false,
             },
           },
           additionalProperties: false,
