@@ -344,7 +344,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
               if (name !== base.getName()) {
                 options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-                options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+                options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 14000;
                 options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
               }
             }
@@ -360,7 +360,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (options.network === NETWORK_TESTNET && name !== base.getName()) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-              options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+              options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 1400;
               options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
             }
           });
@@ -372,7 +372,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([name, options]) => {
             if (options.network === NETWORK_TESTNET && name !== base.getName()) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-              options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+              options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 1400;
               options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
             }
           });
@@ -690,8 +690,16 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       },
       '1.0.0-beta.4': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([, options]) => {
+          .forEach(([name, options]) => {
+            // Update Core image
+            options.core.docker.image = getDefaultConfigByNameOrGroup(name, options.group)
+              .get('core.docker.image');
+
             options.core.devnet.llmq = base.get('core.devnet.llmq');
+
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+            }
           });
         return configFile;
       },
