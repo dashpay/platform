@@ -29,5 +29,5 @@ WORKDIR /app
 COPY . .
 
 # Build the Rust project
-RUN cargo build --release --locked
+# RUN cargo build --release --locked
 
