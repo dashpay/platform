@@ -23,10 +23,13 @@ lto = true
 panic = 'abort'
 codegen-units = 1
 incremental = false
+rustflags = [
+    "-C", "relocation-model=pic",
+    "-C", "strip=debuginfo"
+]
+
 
 [build]
 rustflags = [
-    "--cfg", "tokio_unstable",
-    "-C", "relocation-model=pic",
-    "-C", "strip=debuginfo"
+    "--cfg", "tokio_unstable"
 ]
