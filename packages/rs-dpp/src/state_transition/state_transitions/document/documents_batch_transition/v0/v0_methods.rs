@@ -30,12 +30,12 @@ use crate::state_transition::documents_batch_transition::{
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
-#[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
+use crate::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 
 impl DocumentsBatchTransitionAccessorsV0 for DocumentsBatchTransitionV0 {
@@ -301,8 +301,8 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
             .for_each(|transition| transition.set_identity_contract_nonce(identity_contract_nonce));
     }
 
-    fn all_purchases_amount(&self) -> Option<Credits> {
-        let (total, any_purchases) = self
+    fn all_purchases_amount(&self) -> Result<Option<Credits>, ProtocolError> {
+        let (total, any_purchases): (Option<Credits>, bool) = self
             .transitions
             .iter()
             .filter_map(|transition| {
@@ -310,12 +310,50 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
                     .as_transition_purchase()
                     .map(|purchase| purchase.price())
             })
-            .fold((0, false), |(acc, _), price| (acc + price, true));
+            .fold((None, false), |(acc, _), price| match acc {
+                Some(acc_val) => acc_val
+                    .checked_add(price)
+                    .map_or((None, true), |sum| (Some(sum), true)),
+                None => (Some(price), true),
+            });
 
-        if any_purchases {
-            Some(total) // Return the sum as Some(Credits) if there were any purchases
-        } else {
-            None // Return None if no purchases were found
+        match (total, any_purchases) {
+            (Some(total), _) => Ok(Some(total)),
+            (None, true) => Err(ProtocolError::Overflow("overflow in all purchases amount")), // Overflow occurred
+            _ => Ok(None), // No purchases were found
+        }
+    }
+
+    fn all_conflicting_index_collateral_voting_funds(
+        &self,
+    ) -> Result<Option<Credits>, ProtocolError> {
+        let (total, any_voting_funds): (Option<Credits>, bool) = self
+            .transitions
+            .iter()
+            .filter_map(|transition| {
+                transition
+                    .as_transition_create()
+                    .and_then(|document_create_transition| {
+                        // Safely sum up values to avoid overflow.
+                        document_create_transition
+                            .prefunded_voting_balance()
+                            .as_ref()
+                            .map(|(_, credits)| *credits)
+                    })
+            })
+            .fold((None, false), |(acc, _), price| match acc {
+                Some(acc_val) => acc_val
+                    .checked_add(price)
+                    .map_or((None, true), |sum| (Some(sum), true)),
+                None => (Some(price), true),
+            });
+
+        match (total, any_voting_funds) {
+            (Some(total), _) => Ok(Some(total)),
+            (None, true) => Err(ProtocolError::Overflow(
+                "overflow in all voting funds amount",
+            )), // Overflow occurred
+            _ => Ok(None),
         }
     }
 }

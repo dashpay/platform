@@ -22,7 +22,11 @@ impl Drive {
             .into_iter()
             .map(|(public_key_hash, maybe_identity_id)| {
                 if let Some(identity_id) = maybe_identity_id {
-                    Self::full_identity_with_public_key_hash_query(public_key_hash, identity_id)
+                    Self::full_identity_with_public_key_hash_query(
+                        public_key_hash,
+                        identity_id,
+                        &platform_version.drive.grove_version,
+                    )
                 } else {
                     Ok(Self::identity_id_by_unique_public_key_hash_query(
                         public_key_hash,
@@ -31,10 +35,13 @@ impl Drive {
             })
             .collect::<Result<Vec<PathQuery>, Error>>()?;
 
-        let path_query = PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
+        let path_query = PathQuery::merge(
+            path_queries.iter().collect(),
+            &platform_version.drive.grove_version,
+        )
+        .map_err(Error::GroveDB)?;
         self.grove_get_proved_path_query(
             &path_query,
-            true,
             transaction,
             &mut vec![],
             &platform_version.drive,
@@ -45,7 +52,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -89,7 +96,9 @@ mod tests {
                     .filter(|public_key| public_key.key_type().is_unique_key_type())
                     .map(move |public_key| {
                         (
-                            public_key.hash().expect("expected to be 20 bytes"),
+                            public_key
+                                .public_key_hash()
+                                .expect("expected to be 20 bytes"),
                             Some(identity.clone()),
                         )
                     })
@@ -105,7 +114,9 @@ mod tests {
                     .filter(|public_key| public_key.key_type().is_unique_key_type())
                     .map(move |public_key| {
                         (
-                            public_key.hash().expect("expected to be 20 bytes"),
+                            public_key
+                                .public_key_hash()
+                                .expect("expected to be 20 bytes"),
                             Some(identity.id().to_buffer()),
                         )
                     })

@@ -12,8 +12,8 @@ use dpp::identity::{Identity, PartialIdentity};
 use dpp::serialization::PlatformDeserializable;
 use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::verify::RootHash;
 use drive::drive::Drive;
+use drive::verify::RootHash;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::abci::AbciError;
 use drive_abci::rpc::core::MockCoreRPCLike;
@@ -221,7 +221,7 @@ impl QueryStrategy {
                         let key_num = rng.gen_range(0..unique_public_keys.len());
                         let public_key = unique_public_keys[key_num].1;
                         Some((
-                            public_key.hash().unwrap(),
+                            public_key.public_key_hash().unwrap(),
                             identity.clone().into_partial_identity_info_no_balance(),
                         ))
                     }
@@ -377,11 +377,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -389,13 +389,18 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
-        let all_have_balances = outcome
+        let nodes_with_no_balance = outcome
             .masternode_identity_balances
             .iter()
-            .all(|(_, balance)| *balance != 0);
-        assert!(all_have_balances, "all masternodes should have a balance");
+            .filter(|(_, balance)| *balance == &0)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            nodes_with_no_balance.len(),
+            0,
+            "all masternodes should have a balance"
+        );
 
         let request = GetEpochsInfoRequest {
             version: Some(Version::V0(GetEpochsInfoRequestV0 {
@@ -475,11 +480,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -487,7 +492,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -574,11 +579,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -586,7 +591,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances

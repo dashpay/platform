@@ -23,6 +23,7 @@ use dpp::version::PlatformVersion;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_create::advanced_structure::v0::IdentityCreateStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -306,7 +307,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2566730);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1823240);
 
         platform
             .drive
@@ -321,7 +322,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99916163270);
+        assert_eq!(identity_balance, 99916906760);
     }
 
     #[test]
@@ -462,7 +463,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 10013800); // 10000000 penalty + 13800 processing
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 10080700); // 10000000 penalty + 80700 processing
 
         platform
             .drive
@@ -524,7 +525,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3170170);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2098900);
 
         platform
             .drive
@@ -539,7 +540,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99911297030); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, 99912301400); // The identity balance is smaller than if there hadn't been any issue
     }
 
     #[test]
@@ -691,7 +692,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 10013800); // 10000000 penalty + 13800 processing
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 10080700); // 10000000 penalty + 80700 processing
 
             platform
                 .drive
@@ -916,7 +917,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 10013800); // 10000000 penalty + 13800 processing
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 10080700); // 10000000 penalty + 13800 processing
 
             platform
                 .drive
@@ -1129,7 +1130,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 10013800); // 10000000 penalty + 13800 processing
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 10080700); // 10000000 penalty + 80700 processing
 
         platform
             .drive
@@ -1214,7 +1215,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3170170);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2098900);
 
         platform
             .drive
@@ -1229,6 +1230,6 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99911297030); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, 99912301400); // The identity balance is smaller than if there hadn't been any issue
     }
 }

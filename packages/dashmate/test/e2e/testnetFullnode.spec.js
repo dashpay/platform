@@ -71,6 +71,7 @@ describe('Testnet Fullnode', function main() {
           chainFilePath: certificatePath,
           privateFilePath: privKeyPath,
         },
+        acceptUnmetSystemRequirements: true,
         isVerbose: true,
       });
 
@@ -122,8 +123,8 @@ describe('Testnet Fullnode', function main() {
       const coreRpcClient = createRpcClient({
         host: config.get('core.rpc.host'),
         port: config.get('core.rpc.port'),
-        user: config.get('core.rpc.user'),
-        pass: config.get('core.rpc.password'),
+        user: 'dashmate',
+        pass: config.get('core.rpc.users.dashmate.password'),
       });
 
       waitForCoreData = waitForCoreDataFactory(coreRpcClient);

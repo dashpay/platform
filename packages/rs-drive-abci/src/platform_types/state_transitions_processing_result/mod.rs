@@ -6,7 +6,7 @@ use dpp::fee::fee_result::FeeResult;
 
 /// State Transition Execution Result represents a result of the single state transition execution.
 /// There are four possible outcomes of the state transition execution described by this enum
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum StateTransitionExecutionResult {
     /// State Transition is invalid, but we have a proved identity associated with it,
     /// and we can deduct processing fees calculated until this validation error happened
@@ -90,5 +90,10 @@ impl StateTransitionsProcessingResult {
     /// Transform into the state transition execution results
     pub fn into_execution_results(self) -> Vec<StateTransitionExecutionResult> {
         self.execution_results
+    }
+
+    /// State Transition execution results
+    pub fn execution_results(&self) -> &Vec<StateTransitionExecutionResult> {
+        &self.execution_results
     }
 }

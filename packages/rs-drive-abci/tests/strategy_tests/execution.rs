@@ -38,6 +38,7 @@ use drive_abci::test::fixture::abci::static_init_chain_request;
 use platform_version::version::PlatformVersion;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::{Rng, SeedableRng};
+use simple_signer::signer::SimpleSigner;
 use std::collections::{BTreeMap, HashMap};
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
@@ -47,13 +48,14 @@ use tenderdash_abci::Application;
 
 pub const GENESIS_TIME_MS: u64 = 1681094380000;
 
-pub(crate) fn run_chain_for_strategy(
-    platform: &mut Platform<MockCoreRPCLike>,
+pub(crate) fn run_chain_for_strategy<'a>(
+    platform: &'a mut Platform<MockCoreRPCLike>,
     block_count: u64,
     strategy: NetworkStrategy,
-    mut config: PlatformConfig,
+    config: PlatformConfig,
     seed: u64,
-) -> ChainExecutionOutcome {
+    add_voting_keys_to_signer: &mut Option<SimpleSigner>,
+) -> ChainExecutionOutcome<'a> {
     // TODO: Do we want to sign instant locks or just disable verification?
 
     let validator_quorum_count = strategy.validator_quorum_count; // In most tests 24 quorums
@@ -119,6 +121,7 @@ pub(crate) fn run_chain_for_strategy(
             strategy.total_hpmns,
             generate_updates,
             &mut rng,
+            add_voting_keys_to_signer,
         );
 
         let mut all_masternodes = initial_masternodes.clone();
@@ -169,6 +172,7 @@ pub(crate) fn run_chain_for_strategy(
                         new_hpmns,
                         generate_updates,
                         &mut rng,
+                        add_voting_keys_to_signer,
                     );
 
                 if strategy.proposer_strategy.removed_masternodes.is_set() {
@@ -211,6 +215,7 @@ pub(crate) fn run_chain_for_strategy(
             strategy.total_hpmns,
             None,
             &mut rng,
+            add_voting_keys_to_signer,
         );
         (
             initial_masternodes,
@@ -873,6 +878,7 @@ pub(crate) fn start_chain_for_strategy(
             current_proposer_versions: None,
             current_identity_nonce_counter: Default::default(),
             current_identity_contract_nonce_counter: Default::default(),
+            current_votes: Default::default(),
             start_time_ms: GENESIS_TIME_MS,
             current_time_ms: GENESIS_TIME_MS,
         },
@@ -900,6 +906,7 @@ pub(crate) fn continue_chain_for_strategy(
         current_proposer_versions,
         mut current_identity_nonce_counter,
         mut current_identity_contract_nonce_counter,
+        mut current_votes,
         start_time_ms,
         mut current_time_ms,
         instant_lock_quorums,
@@ -968,8 +975,9 @@ pub(crate) fn continue_chain_for_strategy(
         }
 
         let proposer = current_quorum_with_test_info
-            .validator_set
-            .get(i as usize)
+            .validator_map
+            .values()
+            .nth(i as usize)
             .unwrap();
         let (state_transitions, finalize_block_operations) = strategy.state_transitions_for_block(
             platform,
@@ -977,6 +985,7 @@ pub(crate) fn continue_chain_for_strategy(
             &mut current_identities,
             &mut current_identity_nonce_counter,
             &mut current_identity_contract_nonce_counter,
+            &mut current_votes,
             &mut signer,
             &mut rng,
             &instant_lock_quorums,
@@ -1037,7 +1046,7 @@ pub(crate) fn continue_chain_for_strategy(
                         proposer.pro_tx_hash.into(),
                         current_quorum_with_test_info,
                         proposed_version,
-                        block_info.clone(),
+                        block_info,
                         round,
                         expected_validation_errors.as_slice(),
                         false,
@@ -1148,6 +1157,8 @@ pub(crate) fn continue_chain_for_strategy(
     let masternode_identity_balances = if strategy.dont_finalize_block() && i == 0 {
         BTreeMap::new()
     } else {
+        let platform_state = platform.state.load();
+        let platform_version = platform_state.current_platform_version().unwrap();
         platform
             .drive
             .fetch_identities_balances(
@@ -1156,6 +1167,7 @@ pub(crate) fn continue_chain_for_strategy(
                     .map(|proposer| proposer.pro_tx_hash().into())
                     .collect(),
                 None,
+                platform_version,
             )
             .expect("expected to get balances")
     };

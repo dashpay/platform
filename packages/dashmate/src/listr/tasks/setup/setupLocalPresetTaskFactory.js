@@ -14,6 +14,7 @@ import generateRandomString from '../../../util/generateRandomString.js';
  * @param {resolveDockerHostIp} resolveDockerHostIp
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
  * @param {HomeDir} homeDir
+ * @param {DockerCompose} dockerCompose
  */
 export default function setupLocalPresetTaskFactory(
   configFile,
@@ -23,6 +24,7 @@ export default function setupLocalPresetTaskFactory(
   resolveDockerHostIp,
   generateHDPrivateKeys,
   homeDir,
+  dockerCompose,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -30,6 +32,10 @@ export default function setupLocalPresetTaskFactory(
    */
   function setupLocalPresetTask() {
     return new Listr([
+      {
+        title: 'System requirements',
+        task: async () => dockerCompose.throwErrorIfNotInstalled(),
+      },
       {
         title: 'Set the number of nodes',
         enabled: (ctx) => ctx.nodeCount === undefined,
@@ -175,8 +181,12 @@ export default function setupLocalPresetTaskFactory(
                 config.set('group', 'local');
                 config.set('core.p2p.port', config.get('core.p2p.port') + (i * 100));
                 config.set('core.rpc.port', config.get('core.rpc.port') + (i * 100));
-                config.set('core.rpc.user', generateRandomString(8));
-                config.set('core.rpc.password', generateRandomString(12));
+
+                Object.values(config.get('core.rpc.users')).forEach((options) => {
+                  // eslint-disable-next-line no-param-reassign
+                  options.password = generateRandomString(12);
+                });
+
                 config.set('externalIp', hostDockerInternalIp);
 
                 const subnet = config.get('docker.network.subnet')
@@ -222,6 +232,7 @@ export default function setupLocalPresetTaskFactory(
                   config.set('platform.drive.tenderdash.node.id', id);
                   config.set('platform.drive.tenderdash.node.key', key);
 
+                  config.set('platform.drive.abci.grovedbVisualizer.port', config.get('platform.drive.abci.grovedbVisualizer.port') + (i * 100));
                   config.set('platform.drive.abci.tokioConsole.port', config.get('platform.drive.abci.tokioConsole.port') + (i * 100));
                   config.set('platform.drive.abci.metrics.port', config.get('platform.drive.abci.metrics.port') + (i * 100));
                   config.set('platform.gateway.admin.port', config.get('platform.gateway.admin.port') + (i * 100));

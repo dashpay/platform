@@ -1,14 +1,13 @@
 use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
-use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
 
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{DirectQueryType, QueryType};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::{DirectQueryType, QueryType};
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::string_encoding::Encoding;
@@ -61,12 +60,14 @@ impl Drive {
             &platform_version.drive,
         )?;
         cost_operations.push(CalculatedCostOperation(fetch_cost));
+
         let fees = Drive::calculate_fee(
             None,
             Some(cost_operations),
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
+            None,
         )?;
         Ok(fees)
     }
@@ -101,7 +102,11 @@ impl Drive {
                 in_tree_using_sums: false,
                 // we can ignore flags as this is just an approximation
                 // and it's doubtful that contracts will always be inserted at max size
-                query_target: QueryTargetValue(CONTRACT_MAX_SERIALIZED_SIZE as u32),
+                query_target: QueryTargetValue(
+                    platform_version
+                        .system_limits
+                        .estimated_contract_max_serialized_size as u32,
+                ),
             }
         };
 

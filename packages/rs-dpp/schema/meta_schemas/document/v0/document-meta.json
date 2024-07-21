@@ -109,13 +109,6 @@
         "properties": {
           "$ref": "#/$defs/documentProperties"
         },
-        "dependentSchemas": {
-          "type": "object",
-          "minProperties": 1,
-          "additionalProperties": {
-            "$ref": "#/$defs/documentSchema"
-          }
-        },
         "dependentRequired": {
           "type": "object",
           "minProperties": 1,
@@ -143,10 +136,6 @@
           "type": "boolean",
           "const": true
         },
-        "prefixItems": {
-          "$ref": "#/$defs/documentSchemaArray"
-        },
-        "items": true,
         "position": {
           "type": "integer",
           "minimum": 0
@@ -160,16 +149,6 @@
               "type": "string",
               "const": "array"
             }
-          },
-          "not": {
-            "properties": {
-              "items": {
-                "type": "array"
-              }
-            },
-            "required": [
-              "items"
-            ]
           }
         },
         "contentMediaType": {
@@ -199,52 +178,6 @@
             ]
           }
         },
-        "uniqueItems": {
-          "description": "prevent slow validation of large non-scalar arrays",
-          "if": {
-            "properties": {
-              "uniqueItems": {
-                "const": true
-              },
-              "items": {
-                "type": "object",
-                "properties": {
-                  "type": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "enum": [
-                          "object",
-                          "array"
-                        ]
-                      },
-                      {
-                        "type": "array",
-                        "contains": {
-                          "enum": [
-                            "object",
-                            "array"
-                          ]
-                        }
-                      }
-                    ]
-                  }
-                }
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "maxItems": {
-                "type": "number",
-                "maximum": 100000
-              }
-            },
-            "required": [
-              "maxItems"
-            ]
-          }
-        },
         "pattern": {
           "description": "prevent slow pattern matching of large strings",
           "properties": {
@@ -269,18 +202,6 @@
           },
           "required": [
             "maxLength"
-          ]
-        },
-        "prefixItems": {
-          "$comment": "array must not contain undefined item sub schemas",
-          "properties": {
-            "items": {
-              "type": "boolean",
-              "const": false
-            }
-          },
-          "required": [
-            "items"
           ]
         }
       },
@@ -331,55 +252,6 @@
             "required": [
               "byteArray"
             ]
-          }
-        },
-        {
-          "$comment": "array must contain items",
-          "if": {
-            "properties": {
-              "type": {
-                "const": "array"
-              }
-            },
-            "required": [
-              "type"
-            ],
-            "not": {
-              "properties": {
-                "byteArray": true
-              },
-              "required": [
-                "byteArray"
-              ]
-            }
-          },
-          "then": {
-            "properties": {
-              "items": true
-            },
-            "required": [
-              "items"
-            ]
-          }
-        },
-        {
-          "$comment": "array without prefixItems must contain items sub schema",
-          "if": {
-            "not": {
-              "properties": {
-                "prefixItems": true
-              },
-              "required": [
-                "prefixItems"
-              ]
-            }
-          },
-          "then": {
-            "properties": {
-              "items": {
-                "$ref": "#/$defs/documentSchema"
-              }
-            }
           }
         },
         {
@@ -460,6 +332,49 @@
           },
           "unique": {
             "type": "boolean"
+          },
+          "contested": {
+            "type": "object",
+            "properties": {
+              "fieldMatches": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "regexPattern": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "field",
+                    "regexPattern"
+                  ]
+                },
+                "minItems": 1
+              },
+              "resolution": {
+                "type": "integer",
+                "enum": [
+                  0
+                ],
+                "description": "Resolution. 0 - Masternode Vote"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": ["resolution"],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -474,12 +389,11 @@
     "signatureSecurityLevelRequirement": {
       "type": "integer",
       "enum": [
-        0,
         1,
         2,
         3
       ],
-      "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
+      "description": "Public key security level. 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
     },
     "documentsKeepHistory": {
       "type": "boolean",

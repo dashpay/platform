@@ -8,6 +8,8 @@ use dpp::identity::Identity;
 use dpp::prelude::UserFeeIncrease;
 
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use drive_proof_verifier::error::ContextProviderError;
+use drive_proof_verifier::DataContractProvider;
 
 use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
@@ -49,6 +51,7 @@ impl WithdrawFromIdentity for Identity {
         let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             self,
+            None,
             CoreScript::new(address.script_pubkey()),
             amount,
             Pooling::Never,
@@ -74,12 +77,17 @@ impl WithdrawFromIdentity for Identity {
         let block_info = block_info_from_metadata(response.metadata()?)?;
 
         let proof = response.proof_owned()?;
+        let context_provider =
+            sdk.context_provider()
+                .ok_or(Error::from(ContextProviderError::Config(
+                    "Context provider not initialized".to_string(),
+                )))?;
 
         let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
             &block_info,
             proof.grovedb_proof.as_slice(),
-            &|_| Ok(None),
+            &context_provider.as_contract_lookup_fn(),
             sdk.version(),
         )?;
 

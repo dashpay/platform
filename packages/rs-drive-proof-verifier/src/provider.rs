@@ -1,8 +1,9 @@
-use std::{ops::Deref, sync::Arc};
-
 use crate::error::ContextProviderError;
 use dpp::prelude::{DataContract, Identifier};
+use drive::{error::proof::ProofError, query::ContractLookupFn};
+#[cfg(feature = "mocks")]
 use hex::ToHex;
+use std::{io::ErrorKind, ops::Deref, sync::Arc};
 
 /// Interface between the Sdk and state of the application.
 ///
@@ -95,6 +96,27 @@ where
     }
 }
 
+/// A trait that provides a function that can be used to look up a [DataContract] by its [Identifier].
+///
+/// This trait is automatically implemented for any type that implements [ContextProvider].
+/// It is used internally by the Drive proof verification functions to look up data contracts.
+pub trait DataContractProvider: Send + Sync {
+    /// Returns [ContractLookupFn] function that can be used to look up a [DataContract] by its [Identifier].
+    fn as_contract_lookup_fn(&self) -> Box<ContractLookupFn>;
+}
+impl<C: ContextProvider + ?Sized> DataContractProvider for C {
+    /// Returns function that uses [ContextProvider] to provide a [DataContract] to Drive proof verification functions
+    fn as_contract_lookup_fn(&self) -> Box<ContractLookupFn> {
+        let f = |id: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
+            self.get_data_contract(id).map_err(|e| {
+                drive::error::Error::Proof(ProofError::ErrorRetrievingContract(e.to_string()))
+            })
+        };
+
+        Box::new(f)
+    }
+}
+
 /// Mock ContextProvider that can read quorum keys from files.
 ///
 /// Use [dash_sdk::SdkBuilder::with_dump_dir()] to generate quorum keys files.
@@ -168,18 +190,44 @@ impl ContextProvider for MockContextProvider {
             }
         };
 
-        let key: Vec<u8> = serde_json::from_reader(f).expect("cannot parse quorum key");
+        let data = std::io::read_to_string(f).expect("cannot read quorum key file");
+        let key: Vec<u8> = hex::decode(data).expect("cannot parse quorum key");
 
         Ok(key.try_into().expect("quorum key format mismatch"))
     }
 
     fn get_data_contract(
         &self,
-        _data_contract_id: &Identifier,
+        data_contract_id: &Identifier,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        todo!("not implemented yet");
+        let path = match &self.quorum_keys_dir {
+            Some(p) => p,
+            None => return Err(ContextProviderError::Config("dump dir not set".to_string())),
+        };
+
+        let file = path.join(format!(
+            "data_contract-{}.json",
+            data_contract_id.encode_hex::<String>()
+        ));
+
+        let f = match std::fs::File::open(&file) {
+            Ok(f) => f,
+            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(e) => {
+                return Err(ContextProviderError::DataContractFailure(format!(
+                    "cannot load data contract file {}: {}",
+                    file.to_string_lossy(),
+                    e
+                )))
+            }
+        };
+
+        let dc: DataContract = serde_json::from_reader(f).expect("cannot parse data contract");
+
+        Ok(Some(Arc::new(dc)))
     }
 }
+
 // the trait `std::convert::AsRef<(dyn drive_proof_verifier::ContextProvider + 'static)>`
 // is not implemented for `std::sync::Arc<mock::provider::GrpcContextProvider<'_>>`
 impl<'a, T: ContextProvider + 'a> AsRef<dyn ContextProvider + 'a> for Arc<T> {

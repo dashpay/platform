@@ -38,7 +38,7 @@ impl Drive {
             &[0],
             &|element| {
                 if let Some(element) = element {
-                    if element.is_tree() {
+                    if element.is_basic_tree() {
                         // this is a contract that keeps history
                         Self::fetch_contract_with_history_latest_query(contract_id, true)
                     } else {
@@ -50,7 +50,6 @@ impl Drive {
                     Self::fetch_contract_query(contract_id, true)
                 }
             },
-            false,
             transaction,
             &mut vec![],
             &platform_version.drive,

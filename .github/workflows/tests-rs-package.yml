@@ -33,21 +33,14 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
-          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
           components: clippy
-
-      - name: Setup Node.JS, required by json-schema-faker-rs
-        if: inputs.package == 'dpp'
-        uses: ./.github/actions/nodejs
-
-      - name: Setup Javy, required by json-schema-faker-rs
-        if: inputs.package == 'dpp'
-        uses: ./.github/actions/javy
 
       - uses: clechasseur/rs-clippy-check@v3
         with:
@@ -55,7 +48,7 @@ jobs:
         env:
           RUSTC_WRAPPER: sccache
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
 
   formatting:
@@ -89,8 +82,9 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
-          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Setup Rust
         uses: ./.github/actions/rust
@@ -106,7 +100,7 @@ jobs:
         env:
           RUSTC_WRAPPER: sccache
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
         with:
           args: ${{ steps.crate_info.outputs.cargo_manifest_dir }}
@@ -175,7 +169,7 @@ jobs:
   test:
     name: Tests
     runs-on: ${{ fromJSON(inputs.test-runner) }}
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -183,25 +177,19 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Setup Rust
         uses: ./.github/actions/rust
-
-      - name: Setup Node.JS, required by json-schema-faker-rs
-        if: inputs.package == 'dpp'
-        uses: ./.github/actions/nodejs
-
-      - name: Setup Javy, required by json-schema-faker-rs
-        if: inputs.package == 'dpp'
-        uses: ./.github/actions/javy
 
       - name: Run tests
         run: cargo test --package=${{ inputs.package }} --all-features --locked
         env:
           RUSTC_WRAPPER: sccache
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
 
   check_each_feature:
@@ -216,18 +204,12 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Setup Rust
         uses: ./.github/actions/rust
-
-      - name: Setup Node.JS, required by json-schema-faker-rs
-        if: inputs.package == 'dpp'
-        uses: ./.github/actions/nodejs
-
-      - name: Setup Javy, required by json-schema-faker-rs
-        if: inputs.package == 'dpp'
-        uses: ./.github/actions/javy
 
       - name: Get crate ${{ runner.arch }} info
         id: crate_info
@@ -239,7 +221,7 @@ jobs:
         env:
           RUSTC_WRAPPER: sccache
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
         run: |
           echo Verify all features disabled

@@ -6,7 +6,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
 

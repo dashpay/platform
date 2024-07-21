@@ -7,7 +7,6 @@ mod state;
 mod transformer;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::*;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
@@ -34,6 +33,7 @@ use crate::execution::validation::state_transition::processor::v0::{
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 impl ValidationMode {
     /// Returns a bool on whether we should validate that documents are valid against the state
@@ -190,7 +190,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -218,7 +218,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
                 self.validate_state_v0(
                     documents_batch_transition_action,
                     &platform.into(),
-                    epoch,
+                    block_info,
                     execution_context,
                     tx,
                     platform_version,
@@ -235,9 +235,10 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
-    use crate::rpc::core::MockCoreRPCLike;
-    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -251,86 +252,49 @@ mod tests {
     use dpp::fee::fee_result::BalanceChange;
     use dpp::fee::Credits;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
     use dpp::nft::TradeMode;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::{Bytes32, Value};
-    use dpp::prelude::Identifier;
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use dpp::tests::json_document::json_document_to_contract;
     use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
-    use drive::drive::flags::StorageFlags;
-    use drive::query::DriveQuery;
+    use drive::query::DriveDocumentQuery;
+    use drive::util::storage_flags::StorageFlags;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
-    use simple_signer::signer::SimpleSigner;
-    use std::collections::BTreeMap;
-
-    fn setup_identity(
-        platform: &mut TempPlatform<MockCoreRPCLike>,
-        seed: u64,
-        credits: Credits,
-    ) -> (Identity, SimpleSigner, IdentityPublicKey) {
-        let platform_version = PlatformVersion::latest();
-        let mut signer = SimpleSigner::default();
-
-        let mut rng = StdRng::seed_from_u64(seed);
-
-        let (master_key, master_private_key) =
-            IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
-                0,
-                &mut rng,
-                platform_version,
-            )
-            .expect("expected to get key pair");
-
-        signer.add_key(master_key.clone(), master_private_key.clone());
-
-        let (critical_public_key, private_key) =
-            IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
-                1,
-                &mut rng,
-                platform_version,
-            )
-            .expect("expected to get key pair");
-
-        signer.add_key(critical_public_key.clone(), private_key.clone());
-
-        let identity: Identity = IdentityV0 {
-            id: Identifier::random_with_rng(&mut rng),
-            public_keys: BTreeMap::from([
-                (0, master_key.clone()),
-                (1, critical_public_key.clone()),
-            ]),
-            balance: credits,
-            revision: 0,
-        }
-        .into();
-
-        // We just add this identity to the system first
-
-        platform
-            .drive
-            .add_new_identity(
-                identity.clone(),
-                false,
-                &BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-            )
-            .expect("expected to add a new identity");
-
-        (identity, signer, critical_public_key)
-    }
 
     mod creation_tests {
+        use rand::Rng;
+        use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse};
+        use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
+        use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
+        use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
         use super::*;
+        use assert_matches::assert_matches;
+        use rand::distributions::Standard;
+        use dpp::consensus::basic::document::DocumentFieldMaxSizeExceededError;
+        use dpp::consensus::ConsensusError;
+        use dpp::consensus::basic::BasicError;
+        use dpp::fee::fee_result::refunds::FeeRefunds;
+        use dpp::fee::fee_result::FeeResult;
         use dpp::data_contract::accessors::v0::DataContractV0Setters;
         use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+        use dpp::document::Document;
+        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+        use dpp::util::hash::hash_double;
+        use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+        use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
+        use drive::util::object_size_info::DataContractResolvedInfo;
+        use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
+        use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
+        use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
+        use drive::util::test_helpers::setup_contract;
+        use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_name_contest, create_dpns_name_contest_give_key_info, fast_forward_to_block, perform_votes_multi};
+        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+        use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::PaidConsensusError;
 
         #[test]
         fn test_document_creation() {
@@ -369,12 +333,6 @@ mod tests {
 
             document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
-            let mut altered_document = document.clone();
-
-            altered_document.increment_revision().unwrap();
-            altered_document.set("displayName", "Samuel".into());
-            altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
-
             let documents_batch_create_transition =
                 DocumentsBatchTransition::new_document_creation_transition_from_document(
                     document,
@@ -408,7 +366,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             platform
                 .drive
@@ -419,13 +380,808 @@ mod tests {
         }
 
         #[test]
+        fn test_document_creation_with_very_big_field() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(433);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let dashpay_contract_no_max_length = setup_contract(
+                &platform.drive,
+                "tests/supporting_files/contract/dashpay/dashpay-contract-no-max-length.json",
+                None,
+                None,
+            );
+
+            let dashpay_contract = dashpay_contract_no_max_length.clone();
+
+            let profile = dashpay_contract
+                .document_type_for_name("profile")
+                .expect("expected a profile document type");
+
+            assert!(profile.documents_mutable());
+
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut document = profile
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            let max_field_size = platform_version.system_limits.max_field_value_size;
+            let avatar_size = max_field_size + 1000;
+
+            document.set(
+                "avatar",
+                Value::Bytes(
+                    rng.sample_iter(Standard)
+                        .take(avatar_size as usize)
+                        .collect(),
+                ),
+            );
+
+            let documents_batch_create_transition =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document,
+                    profile,
+                    entropy.0,
+                    &key,
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected to process state transition");
+            assert_eq!(
+                processing_result.execution_results().first().unwrap(),
+                &PaidConsensusError(
+                    ConsensusError::BasicError(BasicError::DocumentFieldMaxSizeExceededError(
+                        DocumentFieldMaxSizeExceededError::new(
+                            "avatar".to_string(),
+                            avatar_size as u64,
+                            max_field_size as u64
+                        )
+                    )),
+                    FeeResult {
+                        storage_fee: 11556000,
+                        processing_fee: 634380,
+                        fee_refunds: FeeRefunds::default(),
+                        removed_bytes_from_system: 0
+                    }
+                )
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+
+        #[test]
+        fn test_document_creation_on_contested_unique_index() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(433);
+
+            let platform_state = platform.state.load();
+
+            let (identity_1, signer_1, key_1) =
+                setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+
+            let (identity_2, signer_2, key_2) =
+                setup_identity(&mut platform, 93, dash_to_credits!(0.5));
+
+            let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+            let dpns_contract = dpns.clone();
+
+            let preorder = dpns_contract
+                .document_type_for_name("preorder")
+                .expect("expected a profile document type");
+
+            assert!(!preorder.documents_mutable());
+            assert!(preorder.documents_can_be_deleted());
+            assert!(!preorder.documents_transferable().is_transferable());
+
+            let domain = dpns_contract
+                .document_type_for_name("domain")
+                .expect("expected a profile document type");
+
+            assert!(!domain.documents_mutable());
+            // Deletion is disabled with data trigger
+            assert!(domain.documents_can_be_deleted());
+            assert!(domain.documents_transferable().is_transferable());
+
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut preorder_document_1 = preorder
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity_1.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            let mut preorder_document_2 = preorder
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity_2.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            let mut document_1 = domain
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity_1.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            let mut document_2 = domain
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity_2.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            document_1.set("parentDomainName", "dash".into());
+            document_1.set("normalizedParentDomainName", "dash".into());
+            document_1.set("label", "quantum".into());
+            document_1.set("normalizedLabel", "quantum".into());
+            document_1.set("records.dashUniqueIdentityId", document_1.owner_id().into());
+            document_1.set("subdomainRules.allowSubdomains", false.into());
+
+            document_2.set("parentDomainName", "dash".into());
+            document_2.set("normalizedParentDomainName", "dash".into());
+            document_2.set("label", "quantum".into());
+            document_2.set("normalizedLabel", "quantum".into());
+            document_2.set("records.dashUniqueIdentityId", document_2.owner_id().into());
+            document_2.set("subdomainRules.allowSubdomains", false.into());
+
+            let salt_1: [u8; 32] = rng.gen();
+            let salt_2: [u8; 32] = rng.gen();
+
+            let mut salted_domain_buffer_1: Vec<u8> = vec![];
+            salted_domain_buffer_1.extend(salt_1);
+            salted_domain_buffer_1.extend("quantum.dash".as_bytes());
+
+            let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
+
+            let mut salted_domain_buffer_2: Vec<u8> = vec![];
+            salted_domain_buffer_2.extend(salt_2);
+            salted_domain_buffer_2.extend("quantum.dash".as_bytes());
+
+            let salted_domain_hash_2 = hash_double(salted_domain_buffer_2);
+
+            preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
+            preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
+
+            document_1.set("preorderSalt", salt_1.into());
+            document_2.set("preorderSalt", salt_2.into());
+
+            let documents_batch_create_preorder_transition_1 =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    preorder_document_1,
+                    preorder,
+                    entropy.0,
+                    &key_1,
+                    2,
+                    0,
+                    &signer_1,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_preorder_transition_1 =
+                documents_batch_create_preorder_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let documents_batch_create_preorder_transition_2 =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    preorder_document_2,
+                    preorder,
+                    entropy.0,
+                    &key_2,
+                    2,
+                    0,
+                    &signer_2,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_preorder_transition_2 =
+                documents_batch_create_preorder_transition_2
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let documents_batch_create_transition_1 =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document_1,
+                    domain,
+                    entropy.0,
+                    &key_1,
+                    3,
+                    0,
+                    &signer_1,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition_1 =
+                documents_batch_create_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let documents_batch_create_transition_2 =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document_2,
+                    domain,
+                    entropy.0,
+                    &key_2,
+                    3,
+                    0,
+                    &signer_2,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition_2 =
+                documents_batch_create_transition_2
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![
+                        documents_batch_create_serialized_preorder_transition_1.clone(),
+                        documents_batch_create_serialized_preorder_transition_2.clone(),
+                    ],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(processing_result.valid_count(), 2);
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![
+                        documents_batch_create_serialized_transition_1.clone(),
+                        documents_batch_create_serialized_transition_2.clone(),
+                    ],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(processing_result.valid_count(), 2);
+
+            // Now let's run a query for the vote totals
+
+            let config = bincode::config::standard()
+                .with_big_endian()
+                .with_no_limit();
+
+            let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                .expect("expected to encode the word dash");
+
+            let quantum_encoded =
+                bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+                    .expect("expected to encode the word quantum");
+
+            let index_name = "parentNameAndLabel".to_string();
+
+            let query_validation_result = platform
+                .query_contested_resource_vote_state(
+                    GetContestedResourceVoteStateRequest {
+                        version: Some(get_contested_resource_vote_state_request::Version::V0(
+                            GetContestedResourceVoteStateRequestV0 {
+                                contract_id: dpns_contract.id().to_vec(),
+                                document_type_name: domain.name().clone(),
+                                index_name: index_name.clone(),
+                                index_values: vec![dash_encoded.clone(), quantum_encoded.clone()],
+                                result_type: ResultType::DocumentsAndVoteTally as i32,
+                                allow_include_locked_and_abstaining_vote_tally: false,
+                                start_at_identifier_info: None,
+                                count: None,
+                                prove: false,
+                            },
+                        )),
+                    },
+                    &platform_state,
+                    platform_version,
+                )
+                .expect("expected to execute query")
+                .into_data()
+                .expect("expected query to be valid");
+
+            let get_contested_resource_vote_state_response::Version::V0(
+                GetContestedResourceVoteStateResponseV0 {
+                    metadata: _,
+                    result,
+                },
+            ) = query_validation_result.version.expect("expected a version");
+
+            let Some(
+                get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
+                    get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
+                        contenders,
+                        abstain_vote_tally,
+                        lock_vote_tally,
+                        finished_vote_info,
+                    },
+                ),
+            ) = result
+            else {
+                panic!("expected contenders")
+            };
+
+            assert_eq!(abstain_vote_tally, None);
+
+            assert_eq!(lock_vote_tally, None);
+
+            assert_eq!(finished_vote_info, None);
+
+            assert_eq!(contenders.len(), 2);
+
+            let first_contender = contenders.first().unwrap();
+
+            let second_contender = contenders.last().unwrap();
+
+            let first_contender_document = Document::from_bytes(
+                first_contender
+                    .document
+                    .as_ref()
+                    .expect("expected a document")
+                    .as_slice(),
+                domain,
+                platform_version,
+            )
+            .expect("expected to get document");
+
+            let second_contender_document = Document::from_bytes(
+                second_contender
+                    .document
+                    .as_ref()
+                    .expect("expected a document")
+                    .as_slice(),
+                domain,
+                platform_version,
+            )
+            .expect("expected to get document");
+
+            assert_ne!(first_contender_document, second_contender_document);
+
+            assert_eq!(first_contender.identifier, identity_1.id().to_vec());
+
+            assert_eq!(second_contender.identifier, identity_2.id().to_vec());
+
+            assert_eq!(first_contender.vote_count, Some(0));
+
+            assert_eq!(second_contender.vote_count, Some(0));
+
+            let GetContestedResourceVoteStateResponse { version } = platform
+                .query_contested_resource_vote_state(
+                    GetContestedResourceVoteStateRequest {
+                        version: Some(get_contested_resource_vote_state_request::Version::V0(
+                            GetContestedResourceVoteStateRequestV0 {
+                                contract_id: dpns_contract.id().to_vec(),
+                                document_type_name: domain.name().clone(),
+                                index_name: "parentNameAndLabel".to_string(),
+                                index_values: vec![dash_encoded, quantum_encoded],
+                                result_type: ResultType::DocumentsAndVoteTally as i32,
+                                allow_include_locked_and_abstaining_vote_tally: true,
+                                start_at_identifier_info: None,
+                                count: None,
+                                prove: true,
+                            },
+                        )),
+                    },
+                    &platform_state,
+                    platform_version,
+                )
+                .expect("expected to execute query")
+                .into_data()
+                .expect("expected query to be valid");
+
+            let get_contested_resource_vote_state_response::Version::V0(
+                GetContestedResourceVoteStateResponseV0 {
+                    metadata: _,
+                    result,
+                },
+            ) = version.expect("expected a version");
+
+            let Some(get_contested_resource_vote_state_response_v0::Result::Proof(proof)) = result
+            else {
+                panic!("expected contenders")
+            };
+
+            let resolved_contested_document_vote_poll_drive_query =
+                ResolvedContestedDocumentVotePollDriveQuery {
+                    vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+                        contract: DataContractResolvedInfo::BorrowedDataContract(&dpns_contract),
+                        document_type_name: domain.name().clone(),
+                        index_name: index_name.clone(),
+                        index_values: vec![
+                            Value::Text("dash".to_string()),
+                            Value::Text("quantum".to_string()),
+                        ],
+                    },
+                    result_type: DocumentsAndVoteTally,
+                    offset: None,
+                    limit: None,
+                    start_at: None,
+                    allow_include_locked_and_abstaining_vote_tally: true,
+                };
+
+            let (_root_hash, result) = resolved_contested_document_vote_poll_drive_query
+                .verify_vote_poll_vote_state_proof(proof.grovedb_proof.as_ref(), platform_version)
+                .expect("expected to verify proof");
+
+            let contenders = result.contenders;
+            assert_eq!(contenders.len(), 2);
+
+            let first_contender = contenders.first().unwrap();
+
+            let second_contender = contenders.last().unwrap();
+
+            let first_contender_document = Document::from_bytes(
+                first_contender
+                    .serialized_document()
+                    .as_ref()
+                    .expect("expected a document")
+                    .as_slice(),
+                domain,
+                platform_version,
+            )
+            .expect("expected to get document");
+
+            let second_contender_document = Document::from_bytes(
+                second_contender
+                    .serialized_document()
+                    .as_ref()
+                    .expect("expected a document")
+                    .as_slice(),
+                domain,
+                platform_version,
+            )
+            .expect("expected to get document");
+
+            assert_ne!(first_contender_document, second_contender_document);
+
+            assert_eq!(first_contender.identity_id(), identity_1.id());
+
+            assert_eq!(second_contender.identity_id(), identity_2.id());
+
+            assert_eq!(first_contender.vote_tally(), Some(0));
+
+            assert_eq!(second_contender.vote_tally(), Some(0));
+        }
+
+        #[test]
+        fn test_that_a_contested_document_can_not_be_added_to_after_a_week() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                7,
+                "quantum",
+                platform_version,
+            );
+
+            perform_votes_multi(
+                &mut platform,
+                dpns_contract.as_ref(),
+                vec![
+                    (TowardsIdentity(contender_1.id()), 50),
+                    (TowardsIdentity(contender_2.id()), 5),
+                    (ResourceVoteChoice::Abstain, 10),
+                    (ResourceVoteChoice::Lock, 3),
+                ],
+                "quantum",
+                10,
+                platform_version,
+            );
+
+            fast_forward_to_block(&platform, 500_000_000, 900, 0); //less than a week
+
+            let platform_state = platform.state.load();
+
+            let _contender_3 = add_contender_to_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                4,
+                "quantum",
+                None, // this should succeed, as we are under a week
+                platform_version,
+            );
+
+            fast_forward_to_block(&platform, 1_000_000_000, 900, 0); //more than a week, less than 2 weeks
+
+            let platform_state = platform.state.load();
+
+            // We expect this to fail
+
+            let _contender_4 = add_contender_to_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                9,
+                "quantum",
+                Some("Document Contest for vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] } is not joinable V0(ContestedDocumentVotePollStoredInfoV0 { finalized_events: [], vote_poll_status: Started(BlockInfo { time_ms: 3000, height: 0, core_height: 0, epoch: 0 }), locked_count: 0 }), it started 3000 and it is now 1000003000, and you can only join for 604800000"), // this should fail, as we are over a week
+                platform_version,
+            );
+        }
+
+        #[test]
+        fn test_that_a_contested_document_can_not_be_added_twice_by_the_same_identity() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let (
+                (
+                    _contender_1,
+                    contender_1_signer,
+                    contender_1_key,
+                    _preorder_document_1,
+                    (document_1, entropy),
+                ),
+                (_contender_2, _, _, _, _),
+                dpns_contract,
+            ) = create_dpns_name_contest_give_key_info(
+                &mut platform,
+                &platform_state,
+                7,
+                "quantum",
+                platform_version,
+            );
+
+            let domain = dpns_contract
+                .document_type_for_name("domain")
+                .expect("expected a profile document type");
+
+            let documents_batch_create_transition_1 =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document_1,
+                    domain,
+                    entropy.0,
+                    &contender_1_key,
+                    4,
+                    0,
+                    &contender_1_signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition_1 =
+                documents_batch_create_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition_1.clone()],
+                    &platform_state,
+                    &BlockInfo::default_with_time(
+                        &platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    ),
+                    &transaction,
+                    platform_version,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let result = processing_result.into_execution_results().remove(0);
+
+            let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result
+            else {
+                panic!("expected a paid consensus error");
+            };
+            assert_eq!(consensus_error.to_string(), "An Identity with the id BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW is already a contestant for the vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }");
+        }
+
+        #[test]
+        fn test_that_a_contested_document_can_not_be_added_if_we_are_locked() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let (contender_1, contender_2, dpns_contract) = create_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                7,
+                "quantum",
+                platform_version,
+            );
+
+            perform_votes_multi(
+                &mut platform,
+                dpns_contract.as_ref(),
+                vec![
+                    (TowardsIdentity(contender_1.id()), 3),
+                    (TowardsIdentity(contender_2.id()), 5),
+                    (ResourceVoteChoice::Abstain, 8),
+                    (ResourceVoteChoice::Lock, 10),
+                ],
+                "quantum",
+                10,
+                platform_version,
+            );
+
+            fast_forward_to_block(&platform, 200_000_000, 900, 0); //less than a week
+
+            let platform_state = platform.state.load();
+
+            let _contender_3 = add_contender_to_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                4,
+                "quantum",
+                None, // this should succeed, as we are under a week
+                platform_version,
+            );
+
+            fast_forward_to_block(&platform, 2_000_000_000, 900, 0); //more than two weeks
+
+            let platform_state = platform.state.load();
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            platform
+                .check_for_ended_vote_polls(
+                    &platform_state,
+                    &BlockInfo {
+                        time_ms: 2_000_000_000,
+                        height: 900,
+                        core_height: 42,
+                        epoch: Default::default(),
+                    },
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected to check for ended vote polls");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let platform_state = platform.state.load();
+
+            // We expect this to fail
+
+            let _contender_4 = add_contender_to_dpns_name_contest(
+                &mut platform,
+                &platform_state,
+                9,
+                "quantum",
+                Some("Document Contest for vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] } is currently already locked V0(ContestedDocumentVotePollStoredInfoV0 { finalized_events: [ContestedDocumentVotePollStoredInfoVoteEventV0 { resource_vote_choices: [FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW), voters: [2oGomAQc47V9h3mkpyHUPbF74gT2AmoYKg1oSb94Rbwm:1, 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R:1, Cdf8V4KGHHd395x5xPJPPrzTKwmp5MqbuszSE2iMzzeP:1] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(FiLk5pGtspYtF65PKsQq3YFr1DEiXPHTZeKjusT6DuqN), voters: [] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(Fv8S6kTbNrRqKC7PR7XcRUoPR59bxNhhggg5mRaNN6ow), voters: [4MK8GWEWX1PturUqjZJefdE4WGrUqz1UQZnbK17ENkeA:1, 5gRudU7b4n8LYkNvhZomv6FtMrP7gvaTvRrHKfaTS22K:1, AfzQBrdwzDuTVdXrMWqQyVvXRWqPMDVjA76hViuGLh6W:1, E75wdFZB22P1uW1wJBJGPgXZuZKLotK7YmbH5wUk5msH:1, G3ZfS2v39x6FuLGnnJ1RNQyy4zn4Wb64KiGAjqj39wUu:1] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: Abstain, voters: [5Ur8tDxJnatfUd9gcVFDde7ptHydujZzJLNTxa6aMYYy:1, 93Gsg14oT9K4FLYmC7N26uS4g5b7JcM1GwGEDeJCCBPJ:1, 96eX4PTjbXRuGHuMzwXdptWFtHcboXbtevk51Jd73pP7:1, AE9xm2mbemDeMxPUzyt35Agq1axRxggVfV4DRLAZp7Qt:1, FbLyu5d7JxEsvSsujj7Wopg57Wrvz9HH3UULCusKpBnF:1, GsubMWb3LH1skUJrcxTmZ7wus1habJcbpb8su8yBVqFY:1, H9UrL7aWaxDmXhqeGMJy7LrGdT2wWb45mc7kQYsoqwuf:1, Hv88mzPZVKq2fnjoUqK56vjzkcmqRHpWE1ME4z1MXDrw:1] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: Lock, voters: [F1oA8iAoyJ8dgCAi2GSPqcNhp9xEuAqhP47yXBDw5QR:1, 2YSjsJUp74MJpm12rdn8wyPR5MY3c322pV8E8siw989u:1, 3fQrmN4PWhthUFnCFTaJqbT2PPGf7MytAyik4eY1DP8V:1, 7r7gnAiZunVLjtSd5ky4yvPpnWTFYbJuQAapg8kDCeNK:1, 86TUE89xNkBDcmshXRD198xjAvMmKecvHbwo6i83AmqA:1, 97iYr4cirPdG176kqa5nvJWT9tsnqxHmENfRnZUgM6SC:1, 99nKfYZL4spsTe9p9pPNhc1JWv9yq4CbPPMPm87a5sgn:1, BYAqFxCVwMKrw5YAQMCFQGiAF2v3YhKRm2EdGfgkYN9G:1, CGKeK3AfdZUxXF3qH9zxp5MR7Z4WvDVqMrU5wjMKqT5C:1, HRPPEX4mdoZAMkg6NLJUgDzN4pSTpiDXEAGcR5JBdiXX:1] }], start_block: BlockInfo { time_ms: 3000, height: 0, core_height: 0, epoch: 0 }, finalization_block: BlockInfo { time_ms: 2000000000, height: 900, core_height: 42, epoch: 0 }, winner: Locked }], vote_poll_status: Locked, locked_count: 1 }), unlocking is possible by paying 400000000000 credits"), // this should fail, as it is locked
+                platform_version,
+            );
+        }
+
+        #[test]
         fn test_document_creation_on_restricted_document_type_that_only_allows_contract_owner_to_create(
         ) {
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
-
-            let platform_state = platform.state.load();
 
             let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
@@ -434,9 +1190,8 @@ mod tests {
 
             let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase-creation-restricted-to-owner.json";
 
-            let platform_version = platform
-                .state
-                .load()
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
                 .current_platform_version()
                 .expect("expected to get current platform version");
 
@@ -732,7 +1487,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 3810570);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 1449980);
         }
 
         #[test]
@@ -779,7 +1534,6 @@ mod tests {
             document.set("recipientKeyIndex", Value::U32(1));
             document.set("senderKeyIndex", Value::U32(1));
             document.set("accountReference", Value::U32(0));
-            document.set("coreHeightCreatedAt", Value::U32(5));
 
             let mut altered_document = document.clone();
 
@@ -873,7 +1627,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 102690);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 41880);
         }
 
         #[test]
@@ -957,7 +1711,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -967,7 +1721,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -1052,7 +1806,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1253950);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
 
             let query_sender_results = platform
                 .drive
@@ -1156,7 +1910,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1244470);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 624280);
         }
     }
 
@@ -1295,7 +2049,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 5588830);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 1717580);
         }
 
         #[test]
@@ -1306,9 +2060,8 @@ mod tests {
 
             let contract_path = "tests/supporting_files/contract/dashpay/dashpay-contract-contact-request-mutable-and-can-not-be-deleted.json";
 
-            let platform_version = platform
-                .state
-                .load()
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
                 .current_platform_version()
                 .expect("expected to get current platform version");
 
@@ -1363,7 +2116,6 @@ mod tests {
             document.set("recipientKeyIndex", Value::U32(1));
             document.set("senderKeyIndex", Value::U32(1));
             document.set("accountReference", Value::U32(0));
-            document.set("coreHeightCreatedAt", Value::U32(5));
 
             let mut altered_document = document.clone();
 
@@ -1458,7 +2210,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1253950);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
         }
 
         #[test]
@@ -1469,9 +2221,8 @@ mod tests {
 
             let contract_path = "tests/supporting_files/contract/dashpay/dashpay-contract-contact-request-not-mutable-and-can-be-deleted.json";
 
-            let platform_version = platform
-                .state
-                .load()
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
                 .current_platform_version()
                 .expect("expected to get current platform version");
 
@@ -1526,7 +2277,6 @@ mod tests {
             document.set("recipientKeyIndex", Value::U32(1));
             document.set("senderKeyIndex", Value::U32(1));
             document.set("accountReference", Value::U32(0));
-            document.set("coreHeightCreatedAt", Value::U32(5));
 
             let mut altered_document = document.clone();
 
@@ -1621,7 +2371,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 9951520);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 2762400);
         }
 
         #[test]
@@ -1670,7 +2420,6 @@ mod tests {
             document.set("recipientKeyIndex", Value::U32(1));
             document.set("senderKeyIndex", Value::U32(1));
             document.set("accountReference", Value::U32(0));
-            document.set("coreHeightCreatedAt", Value::U32(5));
 
             let mut altered_document = document.clone();
 
@@ -1765,7 +2514,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1507670);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 552580);
         }
 
         #[test]
@@ -1854,7 +2603,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1244470);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 624280);
         }
     }
 
@@ -1870,9 +2619,8 @@ mod tests {
 
             let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-all-transferable-no-owner-indexes.json";
 
-            let platform_version = platform
-                .state
-                .load()
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
                 .current_platform_version()
                 .expect("expected to get current platform version");
 
@@ -2014,7 +2762,7 @@ mod tests {
 
             assert_eq!(processing_result.aggregated_fees().storage_fee, 0); // There is no storage fee, as there are no indexes that will change
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 4926670);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 1985420);
         }
 
         #[test]
@@ -2100,7 +2848,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2110,7 +2858,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2205,7 +2953,7 @@ mod tests {
                 Some(14992395)
             );
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 8622720);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 3369260);
 
             let query_sender_results = platform
                 .drive
@@ -2304,7 +3052,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2314,7 +3062,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2397,7 +3145,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1253950);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
 
             let query_sender_results = platform
                 .drive
@@ -2454,7 +3202,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2464,7 +3212,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2547,7 +3295,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 25090);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 36200);
 
             let query_sender_results = platform
                 .drive
@@ -2649,7 +3397,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2659,7 +3407,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -2742,7 +3490,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 9549440);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 3730120);
 
             let query_sender_results = platform
                 .drive
@@ -2809,7 +3557,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1107610);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 571240);
         }
     }
 
@@ -2896,7 +3644,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3052,7 +3800,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3062,7 +3810,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3145,7 +3893,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 6075290);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 2473880);
 
             let query_sender_results = platform
                 .drive
@@ -3266,11 +4014,11 @@ mod tests {
                     .change(),
                 &BalanceChange::RemoveFromBalance {
                     required_removed_balance: 123579000,
-                    desired_removed_balance: 127933560,
+                    desired_removed_balance: 126435860,
                 }
             );
 
-            let original_creation_cost = 127933560;
+            let original_creation_cost = 126435860;
 
             platform
                 .drive
@@ -3294,7 +4042,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3304,7 +4052,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", purchaser.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -3397,7 +4145,7 @@ mod tests {
                 None
             );
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 6075290);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 2473880);
 
             let seller_balance = platform
                 .drive
@@ -3408,7 +4156,7 @@ mod tests {
             // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
             assert_eq!(
                 seller_balance,
-                dash_to_credits!(0.1) - 6075290 - 216000 - original_creation_cost
+                dash_to_credits!(0.1) - original_creation_cost - 2689880
             );
 
             let query_sender_results = platform
@@ -3503,7 +4251,7 @@ mod tests {
 
             assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 10134040);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 4080480);
 
             assert_eq!(
                 processing_result
@@ -3537,7 +4285,7 @@ mod tests {
             // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
             assert_eq!(
                 seller_balance,
-                dash_to_credits!(0.2) - 6075290 - 216000 - original_creation_cost + 22704503
+                dash_to_credits!(0.2) - original_creation_cost + 20014623
             );
 
             let buyers_balance = platform
@@ -3547,7 +4295,7 @@ mod tests {
                 .expect("expected that purchaser exists");
 
             // the buyer payed 0.1, but also storage and processing fees
-            assert_eq!(buyers_balance, dash_to_credits!(0.9) - 10134040 - 64611000);
+            assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68691480);
         }
 
         #[test]
@@ -4118,7 +4866,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -4128,7 +4876,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", purchaser.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -4320,7 +5068,7 @@ mod tests {
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -4330,7 +5078,7 @@ mod tests {
             let receiver_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", receiver.id());
 
-            let query_receiver_identity_documents = DriveQuery::from_sql_expr(
+            let query_receiver_identity_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),
@@ -4413,7 +5161,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 6075290);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 2473880);
 
             let query_sender_results = platform
                 .drive
@@ -4642,12 +5390,12 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 25090);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 36200);
 
             let sender_documents_sql_string =
                 format!("select * from card where $ownerId == '{}'", identity.id());
 
-            let query_sender_identity_documents = DriveQuery::from_sql_expr(
+            let query_sender_identity_documents = DriveDocumentQuery::from_sql_expr(
                 sender_documents_sql_string.as_str(),
                 &contract,
                 Some(&platform.config.drive),

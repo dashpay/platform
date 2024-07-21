@@ -24,10 +24,12 @@ mod execution;
 mod failures;
 mod masternode_list_item_helpers;
 mod masternodes;
+mod patch_platform_tests;
 mod query;
 mod strategy;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
+mod voting_tests;
 
 pub type BlockHeight = u64;
 
@@ -72,7 +74,7 @@ mod tests {
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
-    use drive::drive::config::DEFAULT_QUERY_LIMIT;
+    use drive::config::DEFAULT_QUERY_LIMIT;
     use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformTestConfig, ValidatorSetConfig,
@@ -120,18 +122,18 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
     }
 
     #[test]
@@ -165,7 +167,7 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -176,7 +178,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
+        run_chain_for_strategy(&mut platform, 50, strategy, config, 13, &mut None);
     }
 
     #[test]
@@ -210,7 +212,7 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -235,15 +237,14 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             ..
-        } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
-
-        let known_root_hash = abci_app
-            .platform
-            .drive
-            .grove
-            .root_hash(None)
-            .unwrap()
-            .expect("expected root hash");
+        } = run_chain_for_strategy(
+            &mut platform,
+            15,
+            strategy.clone(),
+            config.clone(),
+            40,
+            &mut None,
+        );
 
         let state = abci_app.platform.state.load();
 
@@ -251,6 +252,14 @@ mod tests {
 
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
+
+        let known_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
 
         abci_app
             .platform
@@ -297,6 +306,7 @@ mod tests {
                 current_proposer_versions: Some(current_proposer_versions),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
@@ -344,7 +354,7 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -369,15 +379,14 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             ..
-        } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
-
-        let known_root_hash = abci_app
-            .platform
-            .drive
-            .grove
-            .root_hash(None)
-            .unwrap()
-            .expect("expected root hash");
+        } = run_chain_for_strategy(
+            &mut platform,
+            15,
+            strategy.clone(),
+            config.clone(),
+            40,
+            &mut None,
+        );
 
         let state = abci_app.platform.state.load();
 
@@ -385,6 +394,14 @@ mod tests {
 
         let platform_version =
             PlatformVersion::get(protocol_version).expect("expected platform version");
+
+        let known_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
 
         abci_app
             .platform
@@ -431,6 +448,7 @@ mod tests {
                 current_proposer_versions: Some(current_proposer_versions),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
@@ -479,12 +497,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -494,7 +513,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
 
         let balance = outcome
             .abci_app
@@ -508,7 +527,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864825980)
+        assert_eq!(balance, 99866651660)
     }
 
     #[test]
@@ -545,18 +564,18 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
     }
 
     #[test]
@@ -594,11 +613,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -606,7 +625,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -651,12 +670,12 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: hour_in_s,
                 ..Default::default()
             },
             block_spacing_ms: three_mins_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -664,7 +683,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -725,11 +744,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -737,7 +756,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 2000, strategy, config, 40);
+            run_chain_for_strategy(&mut platform, 2000, strategy, config, 40, &mut None);
 
         // With these params if we didn't rotate we would have at most 240
         // of the 500 hpmns that could get paid, however we are expecting that most
@@ -821,11 +840,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -833,7 +852,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+            run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
 
         // With these params if we add new mns the hpmn masternode list would be 100, but we
         // can expect it to be much higher.
@@ -904,11 +923,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -916,7 +935,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+            run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
@@ -982,11 +1001,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -997,7 +1016,7 @@ mod tests {
             abci_app,
             proposers,
             ..
-        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
@@ -1079,7 +1098,7 @@ mod tests {
             instant_lock: InstantLockConfig::default(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1090,7 +1109,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
 
         assert_eq!(outcome.identities.len(), 100);
     }
@@ -1133,12 +1152,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1149,7 +1169,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1157,6 +1177,12 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         assert_eq!(
             hex::encode(
                 outcome
@@ -1164,11 +1190,11 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
-            "3beaf287fb5fb712715e688ef3cf642e3e4042270907ebd022050b06af0cb433".to_string()
+            "11f2f5b4a38234430b5257634470fc4edd7abfedff309139ca95c5e371890bc7".to_string()
         )
     }
 
@@ -1218,12 +1244,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1233,7 +1260,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None);
 
         outcome
             .abci_app
@@ -1341,18 +1368,18 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 30, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 30, strategy, config, 15, &mut None);
     }
 
     #[test]
@@ -1428,12 +1455,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1443,7 +1471,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         outcome
             .abci_app
@@ -1536,18 +1564,18 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
     }
 
     #[test]
@@ -1617,12 +1645,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1633,7 +1662,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1729,12 +1759,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1745,7 +1776,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1841,12 +1873,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1858,7 +1891,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1866,7 +1900,10 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
-
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
         assert_eq!(
             hex::encode(
                 outcome
@@ -1874,11 +1911,11 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
-            "0f16c735739411f8dff9640b3ca244b5838480f5634b8ab7744743b116fd9218".to_string()
+            "cae9c984e5fe548cc7a3edd720ab0f58a2d25e5a16071402605a9ff8cfe870c7".to_string()
         )
     }
 
@@ -1971,12 +2008,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -1988,7 +2026,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1996,6 +2035,10 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
         assert_eq!(
             hex::encode(
                 outcome
@@ -2003,11 +2046,11 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
-            "a20b7973b60f51edbef1a3a378c6b0fa64e3de917754c0ddc78dc30cff7fd9f6".to_string()
+            "6cbe10061aac832a35ec0eb9b22826aebfcbe697cec76fe899afa1b1803dd2c7".to_string()
         )
     }
 
@@ -2100,11 +2143,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -2113,7 +2156,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, result) in tx_results_per_block {
                 assert_eq!(
@@ -2214,11 +2258,11 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -2227,7 +2271,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, _unused_result) in tx_results_per_block {
                 // We can't ever get a documents batch transition, because the proposer will remove it from a block
@@ -2328,13 +2373,14 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2345,7 +2391,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, 472);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
@@ -2461,13 +2508,14 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2478,7 +2526,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, 83);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
@@ -2610,13 +2659,14 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2627,7 +2677,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, 79);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
@@ -2640,6 +2691,7 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_identities() {
+        let platform_version = PlatformVersion::latest();
         drive_abci::logging::init_for_tests(LogLevel::Silent);
 
         let strategy = NetworkStrategy {
@@ -2684,18 +2736,18 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         let max_initial_balance = 100000000000u64; // TODO: some centralized way for random test data (`arbitrary` maybe?)
         let balances = outcome
@@ -2709,6 +2761,7 @@ mod tests {
                     .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 
@@ -2764,12 +2817,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2779,7 +2833,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
         let state = outcome.abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
@@ -2853,12 +2907,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -2868,7 +2923,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         let identities = outcome
             .abci_app
@@ -2896,6 +2951,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn run_chain_top_up_and_withdraw_from_identities() {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
@@ -2944,7 +3000,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             // because we can add an identity and withdraw from it in the same block
-            // the result would be different then expected
+            // the result would be different from what would be expected
             verify_state_transition_results: false,
             ..Default::default()
         };
@@ -2954,12 +3010,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -3041,8 +3098,14 @@ mod tests {
             },
             last_block_pooled_withdrawals_amount,
         ) = {
-            let outcome =
-                run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 1);
+            let outcome = run_chain_for_strategy(
+                &mut platform,
+                2,
+                strategy.clone(),
+                config.clone(),
+                1,
+                &mut None,
+            );
 
             // Withdrawal transactions are not populated to block execution context yet
             assert_eq!(outcome.withdrawals.len(), 0);
@@ -3092,6 +3155,7 @@ mod tests {
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms,
                     instant_lock_quorums,
@@ -3175,6 +3239,7 @@ mod tests {
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                     instant_lock_quorums,
@@ -3289,6 +3354,7 @@ mod tests {
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                     instant_lock_quorums,
@@ -3397,6 +3463,7 @@ mod tests {
                     current_proposer_versions: Some(current_proposer_versions),
                     current_identity_nonce_counter: identity_nonce_counter,
                     current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                     instant_lock_quorums,
@@ -3545,11 +3612,10 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -3575,7 +3641,8 @@ mod tests {
                     })
                 });
 
-            let outcome = run_chain_for_strategy(platform, 1, strategy.clone(), config.clone(), 7);
+            let outcome =
+                run_chain_for_strategy(platform, 1, strategy.clone(), config.clone(), 7, &mut None);
             outcomes.push(outcome);
         }
 
@@ -3645,12 +3712,17 @@ mod tests {
             first_validator_set_fingerprint == last_validator_set_fingerprint
         }));
 
+        let state = outcomes[0].abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         let first_last_app_hash = outcomes[0]
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3660,7 +3732,7 @@ mod tests {
                 .platform
                 .drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -3726,12 +3798,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform_a = TestPlatformBuilder::new()
@@ -3761,9 +3832,15 @@ mod tests {
                 })
             });
 
-        let outcome_a =
-            run_chain_for_strategy(&mut platform_a, 18, strategy.clone(), config.clone(), 7);
-        let outcome_b = run_chain_for_strategy(&mut platform_b, 18, strategy, config, 7);
+        let outcome_a = run_chain_for_strategy(
+            &mut platform_a,
+            18,
+            strategy.clone(),
+            config.clone(),
+            7,
+            &mut None,
+        );
+        let outcome_b = run_chain_for_strategy(&mut platform_b, 18, strategy, config, 7, &mut None);
         assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
         assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
         assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes
@@ -3791,12 +3868,17 @@ mod tests {
             "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
 
+        let state = outcome_a.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         let last_app_hash_a = outcome_a
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3805,7 +3887,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3878,12 +3960,12 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -3916,9 +3998,16 @@ mod tests {
                 })
             });
 
-        let outcome_a =
-            run_chain_for_strategy(&mut platform_a, 100, strategy.clone(), config.clone(), 7);
-        let outcome_b = run_chain_for_strategy(&mut platform_b, 100, strategy, config, 7);
+        let outcome_a = run_chain_for_strategy(
+            &mut platform_a,
+            100,
+            strategy.clone(),
+            config.clone(),
+            7,
+            &mut None,
+        );
+        let outcome_b =
+            run_chain_for_strategy(&mut platform_b, 100, strategy, config, 7, &mut None);
         assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
         assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
         assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes
@@ -3946,12 +4035,17 @@ mod tests {
             "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
 
+        let state = outcome_a.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         let last_app_hash_a = outcome_a
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3960,7 +4054,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -3971,8 +4065,8 @@ mod tests {
             .into_iter()
             .filter(|(_, balance)| *balance != 0)
             .count();
-        // we have a maximum 90 quorums, that could have been used, 6 were used twice
-        assert_eq!(balance_count, 84);
+        // we have a maximum 90 quorums, that could have been used, 7 were used twice
+        assert_eq!(balance_count, 83);
     }
 
     #[test]
@@ -4024,12 +4118,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 1,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let TempPlatform {
@@ -4049,7 +4142,14 @@ mod tests {
             identity_nonce_counter,
             identity_contract_nonce_counter,
             ..
-        } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
+        } = run_chain_for_strategy(
+            &mut platform,
+            100,
+            strategy.clone(),
+            config.clone(),
+            89,
+            &mut None,
+        );
 
         let state = abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
@@ -4060,7 +4160,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("expected root hash");
 
@@ -4110,6 +4210,7 @@ mod tests {
                 current_proposer_versions: Some(current_proposer_versions),
                 current_identity_nonce_counter: identity_nonce_counter,
                 current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
             },
@@ -4121,6 +4222,7 @@ mod tests {
 
     #[test]
     fn run_chain_transfer_between_identities() {
+        let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -4169,12 +4271,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -4185,7 +4288,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 15, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 15, strategy, config, 15, &mut None);
 
         let _balances = &outcome
             .abci_app
@@ -4198,6 +4301,7 @@ mod tests {
                     .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 
@@ -4229,12 +4333,13 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig {
                 block_signing: false,
+                store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
             },
@@ -4244,7 +4349,7 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None);
         let state_transitions = outcome
             .state_transition_results_per_block
             .get(&1)

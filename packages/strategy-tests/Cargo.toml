@@ -1,6 +1,6 @@
 [package]
 name = "strategy-tests"
-version = "1.0.0-dev.15"
+version = "1.0.0-beta.4"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -37,6 +37,8 @@ dpp = { path = "../rs-dpp", features = [
 ] }
 simple-signer = { path = "../simple-signer" }
 platform-version = { path = "../rs-platform-version" }
+platform-serialization = { path = "../rs-platform-serialization" }
+platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 
 [dev-dependencies]
 platform-version = { path = "../rs-platform-version", features = [

@@ -1,14 +1,14 @@
 {
   "name": "@dashevo/bench-suite",
   "private": true,
-  "version": "1.0.0-dev.15",
+  "version": "1.0.0-beta.4",
   "description": "Dash Platform benchmark tool",
   "scripts": {
     "bench": "node ./bin/bench.js",
     "lint": ""
   },
   "dependencies": {
-    "@dashevo/dashcore-lib": "~0.21.1",
+    "@dashevo/dashcore-lib": "~0.21.3",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",

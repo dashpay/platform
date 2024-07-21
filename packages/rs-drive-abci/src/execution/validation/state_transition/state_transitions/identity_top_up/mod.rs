@@ -20,6 +20,7 @@ use crate::execution::validation::state_transition::identity_top_up::transform_i
 use crate::execution::validation::state_transition::processor::v0::StateTransitionBasicStructureValidationV0;
 
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 /// A trait to transform into a top up action
 pub trait StateTransitionIdentityTopUpTransitionActionTransformer {
@@ -225,7 +226,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1146640);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 540580);
 
         platform
             .drive
@@ -244,6 +245,6 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 149993048360); // about 0.5 Dash starting balance + 1 Dash asset lock top up
+        assert_eq!(identity_balance, 149993654420); // about 0.5 Dash starting balance + 1 Dash asset lock top up
     }
 }

@@ -209,12 +209,12 @@ pub fn mockable_derive(input: TokenStream) -> TokenStream {
         impl crate::mock::Mockable for #name {
             #[cfg(feature = "mocks")]
             fn mock_serialize(&self) -> Option<Vec<u8>> {
-                Some(serde_json::to_vec_pretty(self).expect("unable to serialize"))
+                Some(serde_json::to_vec_pretty(self).expect("unable to serialize mock data"))
             }
 
             #[cfg(feature = "mocks")]
             fn mock_deserialize(data: &[u8]) -> Option<Self> {
-                Some(serde_json::from_slice(data).expect("unable to deserialize"))
+                Some(serde_json::from_slice(data).expect("unable to deserialize mock data"))
             }
         }
     };

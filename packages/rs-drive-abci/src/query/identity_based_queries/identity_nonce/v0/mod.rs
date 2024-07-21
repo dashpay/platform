@@ -65,7 +65,7 @@ mod tests {
     use dpp::identity::identity_nonce::{
         IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_VALUE_FILTER_MAX_BYTES,
     };
-    use drive::common::test_utils::identities::create_test_identity_with_rng;
+    use drive::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
 

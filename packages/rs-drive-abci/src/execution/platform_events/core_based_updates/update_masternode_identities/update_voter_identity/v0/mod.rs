@@ -14,13 +14,13 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
-use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::{
-    AddNewIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
-};
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDVec, KeyRequestType};
 use drive::grovedb::Transaction;
+use drive::util::batch::DriveOperation;
+use drive::util::batch::DriveOperation::IdentityOperation;
+use drive::util::batch::IdentityOperationType::{
+    AddNewIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
+};
 
 impl<C> Platform<C>
 where
@@ -57,7 +57,7 @@ where
             Self::get_voter_identifier_from_masternode_list_item(old_masternode, platform_version)?;
 
         let key_request = IdentityKeysRequest {
-            identity_id: old_voter_identifier,
+            identity_id: old_voter_identifier.to_buffer(),
             request_type: KeyRequestType::AllKeys,
             limit: None,
             offset: None,
@@ -84,7 +84,7 @@ where
         );
 
         drive_operations.push(IdentityOperation(DisableIdentityKeys {
-            identity_id: old_voter_identifier,
+            identity_id: old_voter_identifier.to_buffer(),
             keys_ids: old_voter_identity_key_ids,
         }));
 
@@ -127,7 +127,7 @@ where
             );
 
             drive_operations.push(IdentityOperation(ReEnableIdentityKeys {
-                identity_id: old_voter_identifier,
+                identity_id: old_voter_identifier.into_buffer(),
                 keys_ids: new_voter_identity_key_ids,
             }));
         } else {

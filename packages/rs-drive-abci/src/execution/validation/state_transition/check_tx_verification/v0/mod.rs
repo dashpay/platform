@@ -16,7 +16,7 @@ use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
-use crate::execution::validation::state_transition::processor::v0::{StateTransitionBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0};
+use crate::execution::validation::state_transition::processor::v0::{StateTransitionIdentityBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0};
 use crate::execution::validation::state_transition::ValidationMode;
 
 pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPCLike>(
@@ -29,6 +29,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
+    #[allow(unreachable_patterns)]
     match check_tx_level {
         CheckTxLevel::FirstTimeCheck => {
             // Only identity top up and identity create do not have nonces validation

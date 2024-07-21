@@ -1,35 +1,19 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Query Tests History
 //!
 
+#[cfg(feature = "server")]
+use dpp::document::Document;
+#[cfg(feature = "server")]
+use dpp::util::cbor_serializer;
+use once_cell::sync::Lazy;
+#[cfg(feature = "server")]
+use rand::seq::SliceRandom;
+#[cfg(feature = "server")]
+use rand::{Rng, SeedableRng};
+#[cfg(feature = "server")]
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "server")]
+use serde_json::json;
 #[cfg(feature = "server")]
 use std::borrow::Cow;
 #[cfg(feature = "server")]
@@ -39,41 +23,25 @@ use std::fmt::{Debug, Formatter};
 #[cfg(feature = "server")]
 use std::option::Option::None;
 
-#[cfg(feature = "server")]
-use dpp::document::Document;
-#[cfg(feature = "server")]
-use dpp::util::cbor_serializer;
-#[cfg(feature = "server")]
-use rand::seq::SliceRandom;
-#[cfg(feature = "server")]
-use rand::{Rng, SeedableRng};
-#[cfg(feature = "server")]
-use serde::{Deserialize, Serialize};
-#[cfg(feature = "server")]
-use serde_json::json;
+#[cfg(test)]
+use drive::util::test_helpers::setup::setup_drive;
 
 #[cfg(feature = "server")]
-use drive::common;
-
-#[cfg(feature = "server")]
-use drive::tests::helpers::setup::setup_drive;
-
-#[cfg(feature = "server")]
-use drive::drive::batch::GroveDbOpBatch;
-#[cfg(feature = "server")]
-use drive::drive::config::DriveConfig;
-#[cfg(feature = "server")]
+use drive::config::DriveConfig;
+#[cfg(test)]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
-#[cfg(feature = "server")]
-use drive::drive::flags::StorageFlags;
-#[cfg(feature = "server")]
-use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 #[cfg(feature = "server")]
 use drive::drive::Drive;
 #[cfg(feature = "server")]
 use drive::error::{query::QuerySyntaxError, Error};
 #[cfg(feature = "server")]
-use drive::query::DriveQuery;
+use drive::query::DriveDocumentQuery;
+#[cfg(feature = "server")]
+use drive::util::batch::GroveDbOpBatch;
+#[cfg(feature = "server")]
+use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+#[cfg(feature = "server")]
+use drive::util::storage_flags::StorageFlags;
 
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
@@ -83,11 +51,13 @@ use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
 };
 use dpp::document::DocumentV0Getters;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "server")]
-use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
+use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+use drive::util::test_helpers;
 
 #[cfg(feature = "server")]
 #[derive(Serialize, Deserialize)]
@@ -126,13 +96,17 @@ impl Person {
         seed: u64,
         block_times: Vec<u64>,
     ) -> BTreeMap<u64, Vec<Self>> {
-        let first_names =
-            common::text_file_strings("tests/supporting_files/contract/family/first-names.txt");
-        let middle_names =
-            common::text_file_strings("tests/supporting_files/contract/family/middle-names.txt");
-        let last_names =
-            common::text_file_strings("tests/supporting_files/contract/family/last-names.txt");
-        let quotes = common::text_file_strings("tests/supporting_files/contract/family/quotes.txt");
+        let first_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/first-names.txt",
+        );
+        let middle_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/middle-names.txt",
+        );
+        let last_names = test_helpers::text_file_strings(
+            "tests/supporting_files/contract/family/last-names.txt",
+        );
+        let quotes =
+            test_helpers::text_file_strings("tests/supporting_files/contract/family/quotes.txt");
         let mut people: Vec<Person> = Vec::with_capacity(count);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
@@ -180,7 +154,7 @@ impl Person {
     }
 }
 
-#[cfg(feature = "server")]
+#[cfg(test)]
 /// Sets up the `family-contract-with-history` contract to test queries on.
 pub fn setup(
     count: usize,
@@ -190,6 +164,9 @@ pub fn setup(
     let drive_config = DriveConfig::default();
 
     let platform_version = PlatformVersion::latest();
+
+    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
 
     let drive = setup_drive(Some(drive_config));
 
@@ -205,7 +182,7 @@ pub fn setup(
         .expect("expected to create contracts tree successfully");
 
     // setup code
-    let contract = common::setup_contract(
+    let contract = test_helpers::setup_contract(
         &drive,
         "tests/supporting_files/contract/family/family-contract-with-history.json",
         None,
@@ -254,6 +231,7 @@ pub fn setup(
                     true,
                     Some(&db_transaction),
                     platform_version,
+                    Some(&epoch_change_fee_version_test),
                 )
                 .expect("expected to add document");
         }
@@ -281,18 +259,21 @@ fn test_query_historical() {
 
     let platform_version = PlatformVersion::latest();
 
+    let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+
     let db_transaction = drive.grove.start_transaction();
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            163, 151, 181, 112, 234, 184, 171, 83, 83, 105, 116, 97, 25, 160, 197, 58, 81, 214,
-            243, 144, 11, 91, 223, 83, 71, 99, 170, 203, 145, 244, 137, 134,
+            205, 118, 170, 4, 239, 225, 106, 241, 143, 230, 171, 5, 197, 170, 225, 149, 239, 45,
+            35, 136, 84, 164, 166, 81, 187, 142, 122, 51, 132, 168, 39, 71,
         ]
     );
 
@@ -324,7 +305,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -573,7 +554,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -623,7 +604,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -669,7 +650,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -749,7 +730,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -803,7 +784,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -851,7 +832,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -893,7 +874,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -968,7 +949,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -1022,7 +1003,7 @@ fn test_query_historical() {
     let person_document_type = contract
         .document_type_for_name("person")
         .expect("contract should have a person document type");
-    let query = DriveQuery::from_cbor(
+    let query = DriveDocumentQuery::from_cbor(
         where_cbor.as_slice(),
         &contract,
         person_document_type,
@@ -1131,6 +1112,7 @@ fn test_query_historical() {
             true,
             Some(&db_transaction),
             platform_version,
+            Some(&epoch_change_fee_version_test),
         )
         .expect("document should be inserted");
 
@@ -1176,6 +1158,7 @@ fn test_query_historical() {
             true,
             Some(&db_transaction),
             platform_version,
+            None,
         )
         .expect("document should be inserted");
 
@@ -1615,7 +1598,7 @@ fn test_query_historical() {
         matches!(result, Err(Error::Query(QuerySyntaxError::StartDocumentNotFound(message))) if message == "startAt document not found")
     );
 
-    // using non existing document in startAfter
+    // using non-existing document in startAfter
 
     let query_value = json!({
         "where": [
@@ -1649,14 +1632,14 @@ fn test_query_historical() {
 
     let root_hash = drive
         .grove
-        .root_hash(Some(&db_transaction))
+        .root_hash(Some(&db_transaction), &platform_version.drive.grove_version)
         .unwrap()
         .expect("there is always a root hash");
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            212, 52, 34, 33, 150, 181, 101, 7, 122, 203, 197, 177, 146, 225, 160, 186, 49, 229, 70,
-            206, 170, 180, 253, 90, 90, 188, 107, 108, 162, 216, 195, 81
+            244, 130, 19, 188, 172, 179, 227, 194, 92, 1, 134, 232, 193, 67, 100, 136, 45, 64, 180,
+            42, 178, 247, 49, 199, 194, 104, 96, 89, 146, 82, 46, 196
         ]
     );
 }

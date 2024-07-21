@@ -18,6 +18,7 @@ use crate::execution::validation::state_transition::data_contract_update::state:
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
 impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
@@ -78,11 +79,12 @@ mod tests {
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
 
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::PlatformVersion;
-    use drive::drive::flags::StorageFlags;
+    use drive::util::storage_flags::StorageFlags;
     use simple_signer::signer::SimpleSigner;
 
     struct TestData<T> {
@@ -179,11 +181,11 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let platform = TestPlatformBuilder::new()
@@ -207,7 +209,6 @@ mod tests {
 
         use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
         use dpp::block::block_info::BlockInfo;
-        use dpp::block::epoch::Epoch;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
@@ -294,7 +295,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
-                    &Epoch::new(0).unwrap(),
+                    &BlockInfo::default(),
                     &mut execution_context,
                     None,
                 )
@@ -388,7 +389,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
-                    &Epoch::new(0).unwrap(),
+                    &BlockInfo::default(),
                     &mut execution_context,
                     None,
                 )
@@ -546,7 +547,7 @@ mod tests {
                     None,
                     &platform_ref,
                     ValidationMode::Validator,
-                    &Epoch::new(0).unwrap(),
+                    &BlockInfo::default(),
                     &mut execution_context,
                     None,
                 )
@@ -572,15 +573,12 @@ mod tests {
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
-        let platform_state = platform.state.load();
-
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
         let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase-creation-restricted-to-owner.json";
 
-        let platform_version = platform
-            .state
-            .load()
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
             .current_platform_version()
             .expect("expected to get current platform version");
 

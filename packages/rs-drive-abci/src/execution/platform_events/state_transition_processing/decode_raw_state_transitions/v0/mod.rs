@@ -53,20 +53,14 @@ where
             .iter()
             .map(|raw_state_transition| {
                 if raw_state_transition.as_ref().len() as u64
-                    > platform_version
-                        .dpp
-                        .state_transitions
-                        .max_state_transition_size
+                    > platform_version.system_limits.max_state_transition_size
                 {
                     // The state transition is too big
                     let consensus_error = ConsensusError::BasicError(
                         BasicError::StateTransitionMaxSizeExceededError(
                             StateTransitionMaxSizeExceededError::new(
                                 raw_state_transition.as_ref().len() as u64,
-                                platform_version
-                                    .dpp
-                                    .state_transitions
-                                    .max_state_transition_size,
+                                platform_version.system_limits.max_state_transition_size,
                             ),
                         ),
                     );

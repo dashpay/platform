@@ -10,32 +10,25 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 use std::option::Option::None;
 
-use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
-use crate::drive::document::{
-    contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_keeping_history_primary_key_path_for_unknown_document_id,
-    contract_documents_keeping_history_storage_time_reference_path_size,
-    contract_documents_primary_key_path,
-};
-
-use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DocumentInfo::{
+use crate::drive::constants::STORAGE_FLAGS_SIZE;
+use crate::util::object_size_info::DocumentInfo::{
     DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
     DocumentRefAndSerialization, DocumentRefInfo,
 };
+use crate::util::storage_flags::StorageFlags;
 
-use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyRefElement, PathKeyUnknownElementSize,
-};
-use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeySize};
-use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::object_size_info::PathKeyElementInfo::{
+    PathFixedSizeKeyRefElement, PathKeyUnknownElementSize,
+};
+use crate::util::object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeySize};
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -45,6 +38,13 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::DocumentV0Getters;
 
+use crate::drive::document::paths::{
+    contract_documents_keeping_history_primary_key_path_for_document_id,
+    contract_documents_keeping_history_primary_key_path_for_unknown_document_id,
+    contract_documents_keeping_history_storage_time_reference_path_size,
+    contract_documents_primary_key_path,
+};
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::version::PlatformVersion;
 
 impl Drive {
@@ -135,6 +135,7 @@ impl Drive {
             // we first insert an empty tree if the document is new
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info,
+                false,
                 storage_flags,
                 apply_type,
                 transaction,
@@ -228,7 +229,11 @@ impl Drive {
                     PathKeyUnknownElementSize((
                         document_id_in_primary_path,
                         KnownKey(encoded_time.clone()),
-                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                        Element::required_item_space(
+                            *max_size,
+                            STORAGE_FLAGS_SIZE,
+                            &platform_version.drive.grove_version,
+                        )?,
                     ))
                 }
             };
@@ -250,7 +255,11 @@ impl Drive {
                 PathKeyUnknownElementSize((
                     document_id_in_primary_path,
                     KnownKey(vec![0]),
-                    Element::required_item_space(reference_max_size, STORAGE_FLAGS_SIZE),
+                    Element::required_item_space(
+                        reference_max_size,
+                        STORAGE_FLAGS_SIZE,
+                        &platform_version.drive.grove_version,
+                    )?,
                 ))
             } else {
                 // we should also insert a reference at 0 to the current value
@@ -325,7 +334,11 @@ impl Drive {
                         unique_id: document_type.unique_id_for_storage().to_vec(),
                         max_size: DEFAULT_HASH_SIZE_U8,
                     },
-                    Element::required_item_space(*average_size, STORAGE_FLAGS_SIZE),
+                    Element::required_item_space(
+                        *average_size,
+                        STORAGE_FLAGS_SIZE,
+                        &platform_version.drive.grove_version,
+                    )?,
                 )),
                 DocumentOwnedInfo((document, storage_flags)) => {
                     let serialized_document = document
@@ -401,7 +414,11 @@ impl Drive {
                         unique_id: document_type.unique_id_for_storage().to_vec(),
                         max_size: DEFAULT_HASH_SIZE_U8,
                     },
-                    Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                    Element::required_item_space(
+                        *max_size,
+                        STORAGE_FLAGS_SIZE,
+                        &platform_version.drive.grove_version,
+                    )?,
                 )),
             };
             let apply_type = if estimated_costs_only_with_layer_info.is_none() {

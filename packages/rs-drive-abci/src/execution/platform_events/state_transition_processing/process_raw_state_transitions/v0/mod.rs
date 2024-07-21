@@ -5,9 +5,6 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::fee_result::FeeResult;
-use dpp::util::hash::hash_single;
-use dpp::validation::ConsensusValidationResult;
-use std::time::Instant;
 
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::state_transition_container::v0::{
@@ -17,12 +14,18 @@ use crate::execution::types::state_transition_container::v0::{
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::metrics::state_transition_execution_histogram;
 use crate::platform_types::event_execution_result::EventExecutionResult;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::{
     StateTransitionExecutionResult, StateTransitionsProcessingResult,
 };
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::util::hash::hash_single;
+use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
+use std::time::Instant;
 
+#[derive(Debug)]
 struct StateTransitionAwareError<'t> {
     error: Error,
     raw_state_transition: &'t [u8],
@@ -115,6 +118,7 @@ where
                             block_info,
                             transaction,
                             platform_version,
+                            platform_ref.state.previous_fee_versions(),
                         )
                         .unwrap_or_else(error_to_internal_error_execution_result)
                     })
@@ -199,6 +203,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError<'a>> {
         // State Transition is invalid
         if !validation_result.is_valid() {
@@ -252,6 +257,7 @@ where
                     block_info,
                     transaction,
                     platform_version,
+                    previous_fee_versions,
                 )
                 .map_err(|error| StateTransitionAwareError {
                     error,
@@ -343,6 +349,7 @@ where
                 block_info,
                 transaction,
                 platform_version,
+                previous_fee_versions,
             )
             .map_err(|error| StateTransitionAwareError {
                 error,

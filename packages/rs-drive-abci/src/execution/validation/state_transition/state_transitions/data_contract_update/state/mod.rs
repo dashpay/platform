@@ -5,8 +5,9 @@ use crate::execution::validation::state_transition::data_contract_update::state:
 use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::epoch::Epoch;
+use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::ConsensusValidationResult;
 use drive::grovedb::TransactionArg;
@@ -20,7 +21,7 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -40,7 +41,7 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
                 self.validate_state_v0(
                     platform,
                     validation_mode,
-                    epoch,
+                    &block_info.epoch,
                     execution_context,
                     tx,
                     platform_version,

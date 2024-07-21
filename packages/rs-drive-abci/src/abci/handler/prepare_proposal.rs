@@ -8,7 +8,6 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
-use dpp::version::PlatformVersion;
 use dpp::version::TryIntoPlatformVersioned;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
@@ -117,12 +116,9 @@ where
         app_hash,
         state_transitions_result,
         validator_set_update,
-        protocol_version,
+        platform_version,
         mut block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
-
-    let platform_version = PlatformVersion::get(protocol_version)
-        .expect("must be set in run block proposal from existing protocol version");
 
     // We need to let Tenderdash know about the transactions we should remove from execution
     let valid_tx_count = state_transitions_result.valid_count();
@@ -130,6 +126,9 @@ where
     let delayed_tx_count = transactions_exceeding_max_block_size.len();
     let invalid_paid_tx_count = state_transitions_result.invalid_paid_count();
     let invalid_unpaid_tx_count = state_transitions_result.invalid_unpaid_count();
+
+    let storage_fees = state_transitions_result.aggregated_fees().storage_fee;
+    let processing_fees = state_transitions_result.aggregated_fees().processing_fee;
 
     let mut tx_results = Vec::new();
     let mut tx_records = Vec::new();
@@ -189,7 +188,7 @@ where
         validator_set_update,
         // TODO: implement consensus param updates
         consensus_param_updates: None,
-        app_version: protocol_version as u64,
+        app_version: platform_version.protocol_version as u64,
     };
 
     block_execution_context.set_proposer_results(Some(response.clone()));
@@ -207,6 +206,8 @@ where
         valid_tx_count,
         delayed_tx_count,
         failed_tx_count,
+        storage_fees,
+        processing_fees,
         "Prepared proposal with {} transition{} for height: {}, round: {} in {} ms",
         valid_tx_count + invalid_paid_tx_count,
         if valid_tx_count + invalid_paid_tx_count > 0 {

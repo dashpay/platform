@@ -72,18 +72,18 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
+        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13, &mut None);
 
         // we expect to see quorums with banned members
 
@@ -173,18 +173,18 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
+        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13, &mut None);
 
         // we expect to see quorums with banned members
 
@@ -229,11 +229,13 @@ mod tests {
                 updated_hpmns: Default::default(),
                 banned_hpmns: Frequency {
                     times_per_block_range: 1..2,
-                    chance_per_block: Some(0.1), //lower chance of banning
+                    chance_per_block: Some(0.1),
+                    //lower chance of banning
                 },
                 unbanned_hpmns: Frequency {
                     times_per_block_range: 1..2,
-                    chance_per_block: Some(0.3), //higher chance of unbanning
+                    chance_per_block: Some(0.3),
+                    //higher chance of unbanning
                 },
                 changed_ip_hpmns: Default::default(),
                 changed_p2p_port_hpmns: Default::default(),
@@ -263,18 +265,18 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(&mut platform, 26, strategy, config, 13);
+        let outcome = run_chain_for_strategy(&mut platform, 26, strategy, config, 13, &mut None);
 
         // We should also see validator sets with less than the quorum size
 

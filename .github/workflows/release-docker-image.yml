@@ -25,7 +25,7 @@ jobs:
   build-image:
     name: Build ${{ matrix.platform }} image
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       matrix:
         include:
@@ -42,7 +42,9 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Build and push by digest
         uses: ./.github/actions/docker
@@ -56,10 +58,13 @@ jobs:
           cargo_profile: release
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
-          region: ${{ vars.AWS_REGION }}
+          region: ${{ secrets.AWS_REGION }}
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Export digest
         run: |
+          rm -rf ${{ env.DIGEST_DIR_PATH }}
           mkdir -p ${{ env.DIGEST_DIR_PATH }}
           digest="${{ steps.docker_build.outputs.digest }}"
           touch "${{ env.DIGEST_DIR_PATH }}/${digest#sha256:}"

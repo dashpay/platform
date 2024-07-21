@@ -3,7 +3,8 @@ use crate::abci::handler::error::HandlerError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::metrics::{LABEL_ABCI_RESPONSE_CODE, LABEL_CHECK_TX_MODE, LABEL_STATE_TRANSITION_NAME};
-use crate::platform_types::platform::Platform;
+use crate::platform_types::platform::{Platform, PlatformRef};
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::SignedCredits;
@@ -13,6 +14,7 @@ use tenderdash_abci::proto::abci as proto;
 
 pub fn check_tx<C>(
     platform: &Platform<C>,
+    core_rpc: &C,
     request: proto::RequestCheckTx,
 ) -> Result<proto::ResponseCheckTx, Error>
 where
@@ -21,6 +23,14 @@ where
     let mut timer = crate::metrics::abci_request_duration("check_tx");
 
     let platform_state = platform.state.load();
+
+    let platform_ref = PlatformRef {
+        drive: &platform.drive,
+        state: &platform_state,
+        config: &platform.config,
+        core_rpc,
+    };
+
     let platform_version = platform_state.current_platform_version()?;
 
     let proto::RequestCheckTx { tx, r#type } = request;
@@ -28,7 +38,7 @@ where
     let validation_result = platform.check_tx(
         tx.as_slice(),
         r#type.try_into()?,
-        &platform_state,
+        &platform_ref,
         platform_version,
     );
 

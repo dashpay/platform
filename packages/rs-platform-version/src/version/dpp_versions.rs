@@ -12,13 +12,12 @@ pub struct DPPVersion {
     pub contract_versions: ContractVersions,
     pub document_versions: DocumentVersions,
     pub identity_versions: IdentityVersions,
+    pub voting_versions: VotingVersions,
     pub asset_lock_versions: AssetLockVersions,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct StateTransitionVersions {
-    pub max_state_transition_size: u64,
-    pub max_transitions_in_documents_batch: u16,
     pub documents: DocumentTransitionVersions,
     pub identities: IdentityTransitionVersions,
 }
@@ -63,6 +62,7 @@ pub struct DPPValidationVersions {
     pub json_schema_validator: JsonSchemaValidatorVersions,
     pub data_contract: DataContractValidationVersions,
     pub document_type: DocumentTypeValidationVersions,
+    pub voting: VotingValidationVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -76,8 +76,18 @@ pub struct DataContractValidationVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct VotingValidationVersions {
+    /// How long do we allow other contenders to join a contest after the first contender
+    pub allow_other_contenders_time_ms: u64,
+    /// How many votes do we allow from the same masternode?
+    pub votes_allowed_per_masternode: u16,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct DocumentTypeValidationVersions {
     pub validate_update: FeatureVersion,
+    pub unique_index_limit: u16,
+    pub contested_index_limit: u16,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -119,6 +129,7 @@ pub struct StateTransitionSerializationVersions {
     pub identity_top_up_state_transition: FeatureVersionBounds,
     pub identity_credit_withdrawal_state_transition: FeatureVersionBounds,
     pub identity_credit_transfer_state_transition: FeatureVersionBounds,
+    pub masternode_vote_state_transition: FeatureVersionBounds,
     pub contract_create_state_transition: FeatureVersionBounds,
     pub contract_update_state_transition: FeatureVersionBounds,
     pub documents_batch_state_transition: FeatureVersionBounds,
@@ -184,10 +195,13 @@ pub struct DocumentTypeVersions {
 pub struct DocumentTypeMethodVersions {
     pub create_document_from_data: FeatureVersion,
     pub create_document_with_prevalidated_properties: FeatureVersion,
+    pub prefunded_voting_balance_for_document: FeatureVersion,
+    pub contested_vote_poll_for_document: FeatureVersion,
     pub estimated_size: FeatureVersion,
     pub index_for_types: FeatureVersion,
     pub max_size: FeatureVersion,
     pub serialize_value_for_key: FeatureVersion,
+    pub deserialize_value_for_key: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -203,8 +217,6 @@ pub struct DocumentTypeSchemaVersions {
 #[derive(Clone, Debug, Default)]
 pub struct RecursiveSchemaValidatorVersions {
     pub traversal_validator: FeatureVersion,
-    pub byte_array_has_no_items_as_parent_validator: FeatureVersion,
-    pub pattern_is_valid_regex_validator: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -218,6 +230,12 @@ pub struct IdentityVersions {
     pub identity_structure_version: FeatureVersion,
     pub identity_key_structure_version: FeatureVersion,
     pub identity_key_type_method_versions: IdentityKeyTypeMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct VotingVersions {
+    pub default_vote_poll_time_duration_ms: u64,
+    pub contested_document_vote_poll_stored_info_version: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

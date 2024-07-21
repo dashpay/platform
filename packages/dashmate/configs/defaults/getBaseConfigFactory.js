@@ -91,8 +91,45 @@ export default function getBaseConfigFactory(homeDir) {
         rpc: {
           host: '127.0.0.1',
           port: 9998,
-          user: 'dashrpc',
-          password: 'rpcpassword',
+          users: {
+            dashmate: {
+              password: 'rpcpassword',
+              whitelist: null,
+              lowPriority: false,
+            },
+            dapi: {
+              password: 'rpcpassword',
+              whitelist: [
+                'getbestblockhash', 'getblockhash', 'sendrawtransaction', 'getrawtransaction',
+                'getblockstats', 'getmerkleblocks', 'getrawtransactionmulti', 'getrawmempool',
+                'getblockcount', 'getbestchainlock', 'getblock', 'getblockheader', 'getblockheaders',
+                'protxdiff', 'getnetworkinfo', 'getblockchaininfo', 'mnsyncstatus', 'masternodestatus',
+              ],
+              lowPriority: true,
+            },
+            drive_consensus: {
+              password: 'rpcpassword',
+              whitelist: [
+                'getbestchainlock', 'getblockchaininfo', 'getrawtransaction', 'submitchainlock',
+                'verifychainlock', 'protxlistdiff', 'quorumlistextended', 'quoruminfo',
+                'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus',
+              ],
+              lowPriority: false,
+            },
+            drive_check_tx: {
+              password: 'rpcpassword',
+              whitelist: ['getrawtransaction'],
+              lowPriority: true,
+            },
+            tenderdash: {
+              password: 'rpcpassword',
+              whitelist: [
+                'quoruminfo', 'quorumverify', 'quorumsign', 'masternodestatus', 'masternodelist',
+                'ping', 'getnetworkinfo',
+              ],
+              lowPriority: false,
+            },
+          },
           allowIps: ['127.0.0.1', '172.16.0.0/12', '192.168.0.0/16'],
         },
         spork: {
@@ -115,6 +152,12 @@ export default function getBaseConfigFactory(homeDir) {
           name: null,
           minimumDifficultyBlocks: 0,
           powTargetSpacing: 150,
+          llmq: {
+            chainLocks: 'llmq_devnet',
+            instantSend: 'llmq_devnet_dip0024',
+            platform: 'llmq_devnet_platform',
+            mnhf: 'llmq_devnet',
+          },
         },
         log: {
           file: {
@@ -274,12 +317,17 @@ export default function getBaseConfigFactory(homeDir) {
               host: '127.0.0.1',
               port: 29090,
             },
+            grovedbVisualizer: {
+              enabled: false,
+              host: '127.0.0.1',
+              port: 8083,
+            },
             epochTime: 788400,
           },
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:0.14.0-dev.6',
+              image: 'dashpay/tenderdash:1.0.0',
             },
             p2p: {
               host: '0.0.0.0',

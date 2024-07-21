@@ -7,11 +7,12 @@ use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error
 #[cfg(feature = "json-schema-validation")]
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::consensus::basic::data_contract::{
-    DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
-    DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
-    DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError,
-    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    ContestedUniqueIndexOnMutableDocumentTypeError, DataContractHaveNewUniqueIndexError,
+    DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError,
+    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
+    IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError,
+    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
+    InvalidDataContractVersionError, InvalidDocumentTypeNameError,
     InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
     UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
@@ -23,13 +24,13 @@ use crate::consensus::basic::decode::{
 };
 use crate::consensus::basic::document::{
     DataContractNotPresentError, DocumentCreationNotAllowedError,
-    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
-    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
-    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
-    MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
+    DocumentFieldMaxSizeExceededError, DocumentTransitionsAreAbsentError,
+    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
+    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
+    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
+    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
@@ -57,9 +58,12 @@ use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
     StateTransitionMaxSizeExceededError,
 };
-use crate::consensus::basic::{IncompatibleProtocolVersionError, UnsupportedProtocolVersionError};
+use crate::consensus::basic::{
+    IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
+};
 use crate::consensus::ConsensusError;
 
+use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
 #[cfg(feature = "json-schema-validation")]
@@ -69,7 +73,9 @@ use crate::consensus::basic::{
 use crate::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use crate::data_contract::errors::DataContractError;
 
-#[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
+#[derive(
+    Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, PartialEq, Clone,
+)]
 pub enum BasicError {
     /*
 
@@ -359,6 +365,9 @@ pub enum BasicError {
     MissingStateTransitionTypeError(MissingStateTransitionTypeError),
 
     #[error(transparent)]
+    DocumentFieldMaxSizeExceededError(DocumentFieldMaxSizeExceededError),
+
+    #[error(transparent)]
     StateTransitionMaxSizeExceededError(StateTransitionMaxSizeExceededError),
 
     #[error(transparent)]
@@ -372,6 +381,15 @@ pub enum BasicError {
 
     #[error(transparent)]
     IncompatibleDocumentTypeSchemaError(IncompatibleDocumentTypeSchemaError),
+
+    #[error(transparent)]
+    ContestedUniqueIndexOnMutableDocumentTypeError(ContestedUniqueIndexOnMutableDocumentTypeError),
+
+    #[error(transparent)]
+    OverflowError(OverflowError),
+
+    #[error(transparent)]
+    UnsupportedFeatureError(UnsupportedFeatureError),
 }
 
 impl From<BasicError> for ConsensusError {

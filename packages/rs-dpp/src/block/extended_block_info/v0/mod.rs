@@ -14,6 +14,8 @@ pub struct ExtendedBlockInfoV0 {
     pub quorum_hash: [u8; 32],
     /// The block id hash
     pub block_id_hash: [u8; 32],
+    /// The proposer pro_tx_hash
+    pub proposer_pro_tx_hash: [u8; 32],
     /// Signature
     #[serde(with = "signature_serializer")]
     pub signature: [u8; 96],
@@ -37,6 +39,9 @@ pub trait ExtendedBlockInfoV0Getters {
 
     /// Returns the quorum hash.
     fn quorum_hash(&self) -> &[u8; 32];
+    /// Proposer pro tx hash.
+    fn proposer_pro_tx_hash(&self) -> &[u8; 32];
+    /// The block id hash
     fn block_id_hash(&self) -> &[u8; 32];
 
     /// Returns the signature.
@@ -83,6 +88,10 @@ impl ExtendedBlockInfoV0Getters for ExtendedBlockInfoV0 {
 
     fn quorum_hash(&self) -> &[u8; 32] {
         &self.quorum_hash
+    }
+
+    fn proposer_pro_tx_hash(&self) -> &[u8; 32] {
+        &self.proposer_pro_tx_hash
     }
 
     fn block_id_hash(&self) -> &[u8; 32] {

@@ -5,14 +5,10 @@ use crate::drive::identity::key::fetch::{
 use crate::drive::Drive;
 use crate::error::Error;
 
-use dpp::block::epoch::Epoch;
-use dpp::fee::default_costs::KnownCostItem::FetchIdentityBalanceProcessingCost;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::identity::PartialIdentity;
 use grovedb::TransactionArg;
-
-use dpp::fee::default_costs::EpochCosts;
 
 use dpp::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
@@ -74,13 +70,15 @@ impl Drive {
         &self,
         identity_key_request: IdentityKeysRequest,
         apply: bool,
-        epoch: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Option<PartialIdentity>, FeeResult), Error> {
-        let balance_cost = epoch.cost_for_known_cost_item(FetchIdentityBalanceProcessingCost);
+        let balance_cost = platform_version
+            .fee_version
+            .processing
+            .fetch_identity_balance_processing_cost;
         if !apply {
-            let keys_cost = identity_key_request.processing_cost(epoch)?;
+            let keys_cost = identity_key_request.processing_cost(platform_version)?;
             return Ok((
                 None,
                 FeeResult::new_from_processing_fee(balance_cost + keys_cost),
@@ -97,7 +95,7 @@ impl Drive {
             return Ok((None, FeeResult::new_from_processing_fee(balance_cost)));
         };
 
-        let keys_cost = identity_key_request.processing_cost(epoch)?;
+        let keys_cost = identity_key_request.processing_cost(platform_version)?;
 
         let loaded_public_keys = self.fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
             identity_key_request,

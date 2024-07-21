@@ -21,6 +21,7 @@ use dpp::platform_value::Value;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -95,6 +96,8 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
         state_transitions: Vec<StateTransition>,
         options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
+        let platform_version = PlatformVersion::get(proposed_version)?;
+
         // This will be NONE, except on init chain
         let original_block_execution_context = self
             .block_execution_context
@@ -112,7 +115,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                 self.platform
                     .drive
                     .grove
-                    .root_hash(Some(transaction))
+                    .root_hash(Some(transaction), &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             });
@@ -331,7 +334,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                     .platform
                     .drive
                     .grove
-                    .root_hash(Some(transaction))
+                    .root_hash(Some(transaction), &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap();
                 assert_eq!(start_root_hash, init_chain_root_hash);
@@ -374,7 +377,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                 .platform
                 .drive
                 .grove
-                .root_hash(Some(transaction))
+                .root_hash(Some(transaction), &platform_version.drive.grove_version)
                 .unwrap()
                 .unwrap();
             assert_eq!(
@@ -392,14 +395,14 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
 
         let response_extend_vote = self.extend_vote(request_extend_vote).unwrap_or_else(|e| {
             panic!(
-                "should extend vote #{} at time #{} : {:?}",
+                "should extend votes #{} at time #{} : {:?}",
                 block_info.height, block_info.time_ms, e
             )
         });
 
         let vote_extensions = response_extend_vote.vote_extensions;
 
-        // for all proposers in the quorum we much verify each vote extension
+        // for all proposers in the quorum we much verify each votes extension
 
         for validator in current_quorum.validator_set.iter() {
             let request_verify_vote_extension = RequestVerifyVoteExtension {
@@ -413,7 +416,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                 .verify_vote_extension(request_verify_vote_extension)
                 .unwrap_or_else(|e| {
                     panic!(
-                        "should verify vote extension #{} at time #{} : {:?}",
+                        "should verify votes extension #{} at time #{} : {:?}",
                         block_info.height, block_info.time_ms, e
                     )
                 });
@@ -424,7 +427,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             }
         }
 
-        //FixMe: This is not correct for the threshold vote extension (we need to sign and do
+        //FixMe: This is not correct for the threshold votes extension (we need to sign and do
         // things differently
 
         let block_execution_context_ref = self.block_execution_context.read().unwrap();
@@ -574,7 +577,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
             .platform
             .drive
             .grove
-            .root_hash(Some(transaction))
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .unwrap();
         assert_eq!(app_hash, root_hash_before_finalization);
@@ -590,8 +593,13 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                         block_info.height, round, block_info.time_ms, e
                     )
                 });
-            let root_hash_after_finalization =
-                self.platform.drive.grove.root_hash(None).unwrap().unwrap();
+            let root_hash_after_finalization = self
+                .platform
+                .drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .unwrap();
             assert_eq!(app_hash, root_hash_after_finalization);
         }
 

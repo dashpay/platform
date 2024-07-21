@@ -30,50 +30,70 @@ use bincode::{Decode, Encode};
 use dashcore_rpc::json::QuorumType;
 use std::path::PathBuf;
 
-use dpp::util::deserializer::ProtocolVersion;
-use drive::drive::config::DriveConfig;
-use drive::drive::defaults::INITIAL_PROTOCOL_VERSION;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-
 use crate::logging::LogConfigs;
 use crate::{abci::config::AbciConfig, error::Error};
+use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::INITIAL_PROTOCOL_VERSION;
+use drive::config::DriveConfig;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-/// Configuration for Dash Core RPC client
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CoreRpcConfig {
+/// Configuration for Dash Core RPC client used in consensus logic
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ConsensusCoreRpcConfig {
     /// Core RPC client hostname or IP address
-    #[serde(rename = "core_json_rpc_host")]
+    #[serde(rename = "core_consensus_json_rpc_host")]
     pub host: String,
 
-    // FIXME: fix error  Configuration(Custom("invalid type: string \"9998\", expected i16")) and change port to i16
     /// Core RPC client port number
-    #[serde(rename = "core_json_rpc_port")]
-    pub port: String,
+    #[serde(
+        rename = "core_consensus_json_rpc_port",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub port: u16,
 
     /// Core RPC client username
-    #[serde(rename = "core_json_rpc_username")]
+    #[serde(rename = "core_consensus_json_rpc_username")]
     pub username: String,
 
     /// Core RPC client password
-    #[serde(rename = "core_json_rpc_password")]
+    #[serde(rename = "core_consensus_json_rpc_password")]
     pub password: String,
 }
 
-impl CoreRpcConfig {
+impl ConsensusCoreRpcConfig {
     /// Return core address in the `host:port` format.
     pub fn url(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
 }
 
-impl Default for CoreRpcConfig {
-    fn default() -> Self {
-        Self {
-            host: String::from("127.0.0.1"),
-            port: String::from("1234"),
-            username: String::from(""),
-            password: String::from(""),
-        }
+/// Configuration for Dash Core RPC client used in check tx
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct CheckTxCoreRpcConfig {
+    /// Core RPC client hostname or IP address
+    #[serde(rename = "core_check_tx_json_rpc_host")]
+    pub host: String,
+
+    /// Core RPC client port number
+    #[serde(
+        rename = "core_check_tx_json_rpc_port",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub port: u16,
+
+    /// Core RPC client username
+    #[serde(rename = "core_check_tx_json_rpc_username")]
+    pub username: String,
+
+    /// Core RPC client password
+    #[serde(rename = "core_check_tx_json_rpc_password")]
+    pub password: String,
+}
+
+impl CheckTxCoreRpcConfig {
+    /// Return core address in the `host:port` format.
+    pub fn url(&self) -> String {
+        format!("{}:{}", self.host, self.port)
     }
 }
 
@@ -81,9 +101,12 @@ impl Default for CoreRpcConfig {
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct CoreConfig {
-    /// Core RPC config
+    /// Core RPC config for consensus
     #[serde(flatten)]
-    pub rpc: CoreRpcConfig,
+    pub consensus_rpc: ConsensusCoreRpcConfig,
+    /// Core RPC config for check tx
+    #[serde(flatten)]
+    pub check_tx_rpc: CheckTxCoreRpcConfig,
 }
 
 /// Configuration of the execution part of Dash Platform.
@@ -98,14 +121,6 @@ pub struct ExecutionConfig {
     /// Should we verify sum trees? Useful to set as `false` for tests
     #[serde(default = "ExecutionConfig::default_verify_sum_trees")]
     pub verify_sum_trees: bool,
-
-    // TODO: Move to ValidatorSetConfig
-    /// How often should quorums change?
-    #[serde(
-        default = "ExecutionConfig::default_validator_set_rotation_block_count",
-        deserialize_with = "from_str_or_number"
-    )]
-    pub validator_set_rotation_block_count: u32,
 
     /// How long in seconds should an epoch last
     /// It might last a lot longer if the chain is halted
@@ -214,6 +229,7 @@ pub struct PlatformConfig {
     /// Enable tokio console (console feature must be enabled)
     pub tokio_console_enabled: bool,
 
+    // TODO: Use from_str_to_socket_address
     /// Tokio console address to connect to
     #[serde(default = "PlatformConfig::default_tokio_console_address")]
     pub tokio_console_address: String,
@@ -543,10 +559,6 @@ impl ExecutionConfig {
         true
     }
 
-    fn default_validator_set_rotation_block_count() -> u32 {
-        15
-    }
-
     fn default_epoch_time_length_s() -> u64 {
         788400
     }
@@ -594,8 +606,6 @@ impl Default for ExecutionConfig {
         Self {
             use_document_triggers: ExecutionConfig::default_use_document_triggers(),
             verify_sum_trees: ExecutionConfig::default_verify_sum_trees(),
-            validator_set_rotation_block_count:
-                ExecutionConfig::default_validator_set_rotation_block_count(),
             epoch_time_length_s: ExecutionConfig::default_epoch_time_length_s(),
         }
     }
@@ -646,7 +656,7 @@ impl PlatformConfig {
             tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
             initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
-            grpc_bind_address: "0.0.0.0:26670".to_string(),
+            grpc_bind_address: "127.0.0.1:26670".to_string(),
         }
     }
 
@@ -684,7 +694,7 @@ impl PlatformConfig {
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
-            grpc_bind_address: "0.0.0.0:26670".to_string(),
+            grpc_bind_address: "127.0.0.1:26670".to_string(),
             tokio_console_enabled: false,
             tokio_console_address: PlatformConfig::default_tokio_console_address(),
             tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
@@ -725,7 +735,7 @@ impl PlatformConfig {
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
-            grpc_bind_address: "0.0.0.0:26670".to_string(),
+            grpc_bind_address: "127.0.0.1:26670".to_string(),
             tokio_console_enabled: false,
             tokio_console_address: PlatformConfig::default_tokio_console_address(),
             tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
@@ -739,6 +749,8 @@ impl PlatformConfig {
 pub struct PlatformTestConfig {
     /// Block signing
     pub block_signing: bool,
+    /// Storing of platform state
+    pub store_platform_state: bool,
     /// Block signature verification
     pub block_commit_signature_verification: bool,
     /// Disable instant lock signature verification
@@ -748,11 +760,12 @@ pub struct PlatformTestConfig {
 #[cfg(feature = "testing-config")]
 impl PlatformTestConfig {
     /// Much faster config for tests
-    pub fn default_with_no_block_signing() -> Self {
+    pub fn default_minimal_verifications() -> Self {
         Self {
             block_signing: false,
+            store_platform_state: false,
             block_commit_signature_verification: false,
-            disable_instant_lock_signature_verification: false,
+            disable_instant_lock_signature_verification: true,
         }
     }
 }
@@ -762,6 +775,7 @@ impl Default for PlatformTestConfig {
     fn default() -> Self {
         Self {
             block_signing: true,
+            store_platform_state: true,
             block_commit_signature_verification: true,
             disable_instant_lock_signature_verification: false,
         }

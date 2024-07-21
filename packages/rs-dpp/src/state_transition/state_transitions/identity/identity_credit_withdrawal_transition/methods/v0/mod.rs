@@ -4,6 +4,7 @@ use crate::identity::core_script::CoreScript;
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
+use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
@@ -20,6 +21,7 @@ pub trait IdentityCreditWithdrawalTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity<S: Signer>(
         identity: &Identity,
+        withdrawal_key_to_use: Option<&IdentityPublicKey>,
         output_script: CoreScript,
         amount: u64,
         pooling: Pooling,
@@ -27,8 +29,8 @@ pub trait IdentityCreditWithdrawalTransitionMethodsV0 {
         user_fee_increase: UserFeeIncrease,
         signer: S,
         nonce: IdentityNonce,
-        _platform_version: &PlatformVersion,
-        _version: Option<FeatureVersion>,
+        platform_version: &PlatformVersion,
+        version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;
 
     /// Get State Transition Type

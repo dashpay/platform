@@ -1,16 +1,17 @@
 mod v0;
 
-use crate::drive::flags::StorageFlags;
+use crate::util::storage_flags::StorageFlags;
 
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::object_size_info::{DocumentAndContractInfo, PathInfo};
 use dpp::version::drive_versions::DriveVersion;
 
 use grovedb::batch::KeyInfoPath;
 
+use dpp::data_contract::document_type::IndexType;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
@@ -20,7 +21,7 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
-        unique: bool,
+        index_type: IndexType,
         any_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
@@ -40,7 +41,7 @@ impl Drive {
             0 => self.add_reference_for_index_level_for_contract_operations_v0(
                 document_and_contract_info,
                 index_path_info,
-                unique,
+                index_type,
                 any_fields_null,
                 previous_batch_operations,
                 storage_flags,

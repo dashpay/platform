@@ -1,9 +1,3 @@
-// Grouping std imports
-use std::{
-    collections::{BTreeMap, HashSet},
-    ops::RangeFull,
-};
-
 // Conditional imports for the features "server" or "verify"
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
@@ -24,6 +18,7 @@ use {
     },
     grovedb::{PathQuery, SizedQuery},
     integer_encoding::VarInt,
+    std::{collections::BTreeMap, ops::RangeFull},
 };
 
 // Conditional imports for the feature "server"
@@ -31,11 +26,7 @@ use {
 use {
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
     dpp::{
-        block::epoch::Epoch,
-        fee::{
-            default_costs::{EpochCosts, KnownCostItem::FetchSingleIdentityKeyProcessingCost},
-            Credits,
-        },
+        fee::Credits,
         identity::{IdentityPublicKey, SecurityLevel},
         serialization::PlatformDeserializable,
         version::PlatformVersion,
@@ -47,6 +38,7 @@ use {
         Element,
         Element::Item,
     },
+    std::collections::HashSet,
 };
 
 // Modules conditionally compiled for the feature "server"
@@ -653,18 +645,25 @@ pub struct IdentityKeysRequest {
 impl IdentityKeysRequest {
     #[cfg(feature = "server")]
     /// Gets the processing cost of an identity keys request
-    pub fn processing_cost(&self, epoch: &Epoch) -> Result<Credits, Error> {
+    pub fn processing_cost(&self, platform_version: &PlatformVersion) -> Result<Credits, Error> {
         match &self.request_type {
             AllKeys => Err(Error::Fee(FeeError::OperationNotAllowed(
                 "You can not get costs for requesting all keys",
             ))),
             SpecificKeys(keys) => Ok(keys.len() as u64
-                * epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost)),
+                * platform_version
+                    .fee_version
+                    .processing
+                    .fetch_single_identity_key_processing_cost),
             SearchKey(_search) => todo!(),
             ContractBoundKey(_, _, key_kind) | ContractDocumentTypeBoundKey(_, _, _, key_kind) => {
                 match key_kind {
                     CurrentKeyOfKindRequest => {
-                        Ok(epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost))
+                        // not accessible
+                        Ok(platform_version
+                            .fee_version
+                            .processing
+                            .fetch_single_identity_key_processing_cost)
                     }
                     AllKeysOfKindRequest => Err(Error::Fee(FeeError::OperationNotAllowed(
                         "You can not get costs for an all keys of kind request",
@@ -996,11 +995,10 @@ impl IdentityKeysRequest {
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive;
+    use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
-    use dpp::version::drive_versions::DriveVersion;
 
     use super::*;
 
@@ -1043,7 +1041,6 @@ mod tests {
     #[test]
     fn test_fetch_single_identity_key() {
         let drive = setup_drive(None);
-        let _drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
@@ -1084,7 +1081,6 @@ mod tests {
     #[test]
     fn test_fetch_multiple_identity_key() {
         let drive = setup_drive(None);
-        let _drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
@@ -1125,7 +1121,6 @@ mod tests {
     #[test]
     fn test_fetch_unknown_identity_key_returns_not_found() {
         let drive = setup_drive(None);
-        let _drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 

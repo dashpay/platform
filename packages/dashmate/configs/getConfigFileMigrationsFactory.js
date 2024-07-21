@@ -344,7 +344,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
               if (name !== base.getName()) {
                 options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-                options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+                options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 14000;
                 options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
               }
             }
@@ -360,7 +360,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (options.network === NETWORK_TESTNET && name !== base.getName()) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-              options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+              options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 1400;
               options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
             }
           });
@@ -372,7 +372,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([name, options]) => {
             if (options.network === NETWORK_TESTNET && name !== base.getName()) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-              options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+              options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 1400;
               options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
             }
           });
@@ -630,6 +630,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.0.0-dev.16': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
+            // Update Drive's quorum configuration
             if (name === 'base') {
               options.network = NETWORK_MAINNET;
             }
@@ -664,6 +665,41 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 rotation: networkConfig.get('platform.drive.abci.instantLock.quorum.rotation'),
               },
             };
+          });
+
+        return configFile;
+      },
+      '1.0.0-dev.17': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.abci.grovedbVisualizer = base.get('platform.drive.abci.grovedbVisualizer');
+
+            // Update Core image
+            options.core.docker.image = getDefaultConfigByNameOrGroup(name, options.group)
+              .get('core.docker.image');
+
+            // Update Core RPC auth configuration
+            options.core.rpc.users = base.get('core.rpc.users');
+            options.core.rpc.users.dashmate.password = options.core.rpc.password;
+
+            delete options.core.rpc.user;
+            delete options.core.rpc.password;
+          });
+        return configFile;
+      },
+      '1.0.0-beta.4': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            // Update Core image
+            options.core.docker.image = getDefaultConfigByNameOrGroup(name, options.group)
+              .get('core.docker.image');
+
+            options.core.devnet.llmq = base.get('core.devnet.llmq');
+
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+            }
           });
         return configFile;
       },

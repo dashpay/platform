@@ -31,9 +31,27 @@ where
                 request,
             )?;
 
-        // We get core height early, as this also verifies v20 fork
-        let core_height =
-            self.initial_core_height(request.initial_core_height, platform_version)?;
+        // Wait until we have an initial core height to start the chain
+        let core_height = loop {
+            match self.initial_core_height(request.initial_core_height, platform_version) {
+                Ok(height) => break height,
+                Err(e) => match e {
+                    Error::Execution(ExecutionError::InitializationForkNotActive(_))
+                    | Error::Execution(ExecutionError::InitializationBadCoreLockedHeight {
+                        ..
+                    }) => {
+                        tracing::warn!(
+                            error = ?e,
+                            "Failed to obtain deterministic initial core height to start the chain. Retrying in 30 seconds.",
+                        );
+
+                        // We need to wait for the fork to be active
+                        std::thread::sleep(std::time::Duration::from_secs(30));
+                    }
+                    e => return Err(e),
+                },
+            }
+        };
 
         let genesis_time = request.genesis_time;
 
@@ -103,7 +121,7 @@ where
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
-                platform_state_fingerprint = hex::encode(initial_platform_state.fingerprint()),
+                platform_state_fingerprint = hex::encode(initial_platform_state.fingerprint()?),
                 "platform runtime state",
             );
         }
@@ -113,7 +131,7 @@ where
         let app_hash = self
             .drive
             .grove
-            .root_hash(Some(transaction))
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .map_err(GroveDB)?;
 

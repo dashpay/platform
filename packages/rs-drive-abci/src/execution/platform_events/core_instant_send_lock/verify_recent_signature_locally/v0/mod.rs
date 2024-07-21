@@ -55,12 +55,19 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
         )))
     })?;
 
+    let mut selected_quorums_for_logging = Vec::new();
+    if tracing::enabled!(tracing::Level::TRACE) {
+        selected_quorums_for_logging = Vec::from_iter(selected_quorums.clone());
+    }
+
     for (i, quorums) in selected_quorums.enumerate() {
         let Some((quorum_hash, quorum)) = quorums.choose_quorum(request_id.as_ref()) else {
             if tracing::enabled!(tracing::Level::TRACE) {
                 tracing::trace!(
                     quorums_iteration = i + 1,
+                    selected_quorums = ?selected_quorums_for_logging,
                     instant_lock = ?InstantLockDebug(instant_lock),
+                    ?quorum_set,
                     request_id = request_id.to_string(),
                     quorums = ?quorums.quorums,
                     request_id = request_id.to_string(),
@@ -99,9 +106,10 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
                 quorums_iteration = i + 1,
+                selected_quorums = ?selected_quorums_for_logging,
                 instant_lock = ?InstantLockDebug(instant_lock),
+                ?quorum_set,
                 quorum_hash = quorum_hash.to_string(),
-                quorum_config = ?quorum_set.config(),
                 quorum = ?quorum,
                 request_id = request_id.to_string(),
                 message_digest = message_digest.to_string(),

@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/dapi",
   "private": true,
-  "version": "1.0.0-dev.15",
+  "version": "1.0.0-beta.4",
   "description": "A decentralized API for the Dash network",
   "scripts": {
     "api": "node scripts/api.js",
@@ -35,8 +35,8 @@
   "dependencies": {
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dapi-grpc": "workspace:*",
-    "@dashevo/dashcore-lib": "~0.21.1",
-    "@dashevo/dashd-rpc": "^18.3.0",
+    "@dashevo/dashcore-lib": "~0.21.3",
+    "@dashevo/dashd-rpc": "^19.0.0",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
     "@grpc/grpc-js": "1.4.4",

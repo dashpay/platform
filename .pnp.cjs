@@ -2551,7 +2551,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./packages/bench-suite/",\
         "packageDependencies": [\
           ["@dashevo/bench-suite", "workspace:packages/bench-suite"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.1"],\
+          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
@@ -2589,8 +2589,8 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.1"],\
-          ["@dashevo/dashd-rpc", "npm:18.3.0"],\
+          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
+          ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
@@ -2634,7 +2634,7 @@ const RAW_RUNTIME_STATE =
           ["@babel/core", "npm:7.23.3"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
           ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.1"],\
+          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["assert-browserify", "npm:2.0.0"],\
@@ -2726,7 +2726,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
           ["@dashevo/dark-gravity-wave", "npm:1.1.1"],\
           ["@dashevo/dash-util", "npm:2.0.3"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.1"],\
+          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
           ["chai", "npm:4.3.10"],\
           ["eslint", "npm:8.53.0"],\
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
@@ -2753,10 +2753,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@dashevo/dashcore-lib", [\
-      ["npm:0.21.1", {\
-        "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.21.1-2fe9b7647d-68502e4078.zip/node_modules/@dashevo/dashcore-lib/",\
+      ["npm:0.21.3", {\
+        "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.21.3-8c8abba924-28e2731ac6.zip/node_modules/@dashevo/dashcore-lib/",\
         "packageDependencies": [\
-          ["@dashevo/dashcore-lib", "npm:0.21.1"],\
+          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/x11-hash-js", "npm:1.0.2"],\
           ["@types/node", "npm:12.20.37"],\
@@ -2774,10 +2774,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@dashevo/dashd-rpc", [\
-      ["npm:18.3.0", {\
-        "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-npm-18.3.0-4f165136e8-b83fbdb149.zip/node_modules/@dashevo/dashd-rpc/",\
+      ["npm:19.0.0", {\
+        "packageLocation": "./.yarn/cache/@dashevo-dashd-rpc-npm-19.0.0-54bb2a5dfc-2eab84af3e.zip/node_modules/@dashevo/dashd-rpc/",\
         "packageDependencies": [\
-          ["@dashevo/dashd-rpc", "npm:18.3.0"],\
+          ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["async", "npm:3.2.4"],\
           ["bluebird", "npm:3.7.2"]\
         ],\
@@ -2939,7 +2939,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["@dashevo/platform-test-suite", "workspace:packages/platform-test-suite"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.1"],\
+          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
@@ -3034,7 +3034,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.1"],\
+          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
@@ -3096,7 +3096,7 @@ const RAW_RUNTIME_STATE =
           ["@babel/core", "npm:7.23.3"],\
           ["@babel/preset-env", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.23.3"],\
           ["@dashevo/bls", "npm:1.2.9"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.1"],\
+          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@types/bs58", "npm:4.0.1"],\
           ["@types/node", "npm:14.17.34"],\
@@ -8378,7 +8378,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.1"],\
+          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
           ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
@@ -8457,8 +8457,8 @@ const RAW_RUNTIME_STATE =
           ["@babel/eslint-parser", "virtual:6c6296bde00603e266f7d80babe1e01aa0c19f626934f58fe08f890a291bb1a38fcee25bf30c24857d5cfba290f01209decc48384318fd6815c5a514cb48be25#npm:7.23.3"],\
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-          ["@dashevo/dashcore-lib", "npm:0.21.1"],\
-          ["@dashevo/dashd-rpc", "npm:18.3.0"],\
+          ["@dashevo/dashcore-lib", "npm:0.21.3"],\
+          ["@dashevo/dashd-rpc", "npm:19.0.0"],\
           ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
           ["@dashevo/docker-compose", "npm:0.24.4"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
@@ -8478,6 +8478,7 @@ const RAW_RUNTIME_STATE =
           ["chalk", "npm:4.1.2"],\
           ["cron", "npm:2.1.0"],\
           ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
+          ["diskusage", "npm:1.2.0"],\
           ["dockerode", "npm:3.3.5"],\
           ["dot", "npm:1.1.3"],\
           ["dotenv", "npm:8.6.0"],\
@@ -8507,6 +8508,7 @@ const RAW_RUNTIME_STATE =
           ["semver", "npm:7.5.3"],\
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
+          ["systeminformation", "npm:5.22.11"],\
           ["table", "npm:6.8.1"],\
           ["wrap-ansi", "npm:7.0.0"]\
         ],\
@@ -8995,6 +8997,18 @@ const RAW_RUNTIME_STATE =
         "packagePeers": [\
           "@types/chai",\
           "chai"\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["diskusage", [\
+      ["npm:1.2.0", {\
+        "packageLocation": "./.yarn/unplugged/diskusage-npm-1.2.0-3d0577ad86/node_modules/diskusage/",\
+        "packageDependencies": [\
+          ["diskusage", "npm:1.2.0"],\
+          ["es6-promise", "npm:4.2.8"],\
+          ["nan", "npm:2.20.0"],\
+          ["node-gyp", "npm:10.0.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -14294,6 +14308,14 @@ const RAW_RUNTIME_STATE =
           ["node-gyp", "npm:10.0.1"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:2.20.0", {\
+        "packageLocation": "./.yarn/unplugged/nan-npm-2.20.0-5b5be83e88/node_modules/nan/",\
+        "packageDependencies": [\
+          ["nan", "npm:2.20.0"],\
+          ["node-gyp", "npm:10.0.1"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["nanoid", [\
@@ -17886,6 +17908,15 @@ const RAW_RUNTIME_STATE =
           ["openapi-types", "npm:1.3.5"],\
           ["swagger-methods", "npm:2.0.2"],\
           ["z-schema", "npm:4.2.4"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["systeminformation", [\
+      ["npm:5.22.11", {\
+        "packageLocation": "./.yarn/unplugged/systeminformation-npm-5.22.11-e704a1605b/node_modules/systeminformation/",\
+        "packageDependencies": [\
+          ["systeminformation", "npm:5.22.11"]\
         ],\
         "linkType": "HARD"\
       }]\

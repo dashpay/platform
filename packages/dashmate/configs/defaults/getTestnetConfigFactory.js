@@ -25,7 +25,7 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:20.1.0',
+          image: 'dashpay/dashd:21.0.0-rc.2',
           commandArgs: [],
         },
         p2p: {
@@ -112,10 +112,9 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
               port: 36660,
             },
             genesis: {
-              genesis_time: '2024-03-07T13:26:00.000Z',
-              chain_id: 'dash-testnet-39',
+              genesis_time: '2024-07-17T17:15:00.000Z',
+              chain_id: 'dash-testnet-47',
               validator_quorum_type: 6,
-              initial_core_chain_locked_height: 984306,
             },
           },
         },

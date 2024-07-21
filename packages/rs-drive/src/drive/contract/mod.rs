@@ -41,11 +41,9 @@ mod tests {
     use std::borrow::Cow;
     use std::option::Option::None;
 
-    use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::{
-        DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
-    };
     use crate::drive::Drive;
+    use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
@@ -63,7 +61,7 @@ mod tests {
     use dpp::tests::json_document::json_document_to_contract;
 
     use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec};
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
     #[allow(dead_code)]
@@ -239,7 +237,7 @@ mod tests {
     //
     //     let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
     //     drive
-    //         .add_document_for_contract(
+    //         .add_contested_document_for_contract(
     //             DocumentAndContractInfo {
     //                 owned_document_info: OwnedDocumentInfo {
     //                     document_info: DocumentInfo::DocumentRefInfo((&document, storage_flags)),
@@ -292,6 +290,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -494,6 +493,7 @@ mod tests {
                 false,
                 None,
                 platform_version,
+                None,
             )
             .expect("expected to apply contract successfully");
     }

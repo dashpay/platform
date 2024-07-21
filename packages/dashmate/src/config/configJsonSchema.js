@@ -127,6 +127,20 @@ export default {
       required: ['llmqType', 'dkgInterval', 'activeSigners', 'rotation'],
       additionalProperties: false,
     },
+    quorumName: {
+      type: 'string',
+      enum: [
+        'llmq_devnet',
+        'llmq_devnet_dip0024',
+        'llmq_devnet_platform',
+        'llmq_50_60',
+        'llmq_60_75',
+        'llmq_400_60',
+        'llmq_400_85',
+        'llmq_100_67',
+        'llmq_25_67',
+      ],
+    },
   },
   properties: {
     description: {
@@ -253,13 +267,35 @@ export default {
             port: {
               $ref: '#/definitions/port',
             },
-            user: {
-              type: 'string',
-              minLength: 1,
-            },
-            password: {
-              type: 'string',
-              minLength: 1,
+            users: {
+              type: 'object',
+              minProperties: 1,
+              propertyNames: {
+                type: 'string',
+                minLength: 1,
+              },
+              additionalProperties: {
+                type: 'object',
+                properties: {
+                  password: {
+                    type: 'string',
+                    minLength: 1,
+                  },
+                  whitelist: {
+                    type: ['null', 'array'],
+                    items: {
+                      type: 'string',
+                      minLength: 1,
+                    },
+                    minItems: 1,
+                  },
+                  lowPriority: {
+                    type: 'boolean',
+                  },
+                },
+                required: ['password', 'whitelist', 'lowPriority'],
+                additionalProperties: false,
+              },
             },
             allowIps: {
               type: 'array',
@@ -268,7 +304,7 @@ export default {
               },
             },
           },
-          required: ['host', 'port', 'user', 'password'],
+          required: ['host', 'port', 'users', 'allowIps'],
           additionalProperties: false,
         },
         spork: {
@@ -338,6 +374,25 @@ export default {
             powTargetSpacing: {
               type: 'integer',
               minimum: 1,
+            },
+            llmq: {
+              type: 'object',
+              properties: {
+                chainLocks: {
+                  $ref: '#/definitions/quorumName',
+                },
+                instantSend: {
+                  $ref: '#/definitions/quorumName',
+                },
+                platform: {
+                  $ref: '#/definitions/quorumName',
+                },
+                mnhf: {
+                  $ref: '#/definitions/quorumName',
+                },
+              },
+              required: ['chainLocks', 'instantSend', 'platform', 'mnhf'],
+              additionalProperties: false,
             },
           },
           additionalProperties: false,
@@ -822,9 +877,12 @@ export default {
                 metrics: {
                   $ref: '#/definitions/enabledHostPort',
                 },
+                grovedbVisualizer: {
+                  $ref: '#/definitions/enabledHostPort',
+                },
               },
               additionalProperties: false,
-              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics'],
+              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics', 'grovedbVisualizer'],
             },
             tenderdash: {
               type: 'object',

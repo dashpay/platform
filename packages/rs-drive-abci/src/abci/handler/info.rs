@@ -48,7 +48,7 @@ where
 
     if tracing::enabled!(tracing::Level::TRACE) {
         tracing::trace!(
-            platform_state_fingerprint = hex::encode(platform_state.fingerprint()),
+            platform_state_fingerprint = hex::encode(platform_state.fingerprint()?),
             "platform runtime state",
         );
     }

@@ -118,6 +118,7 @@ async fn test_epoch_list_limit() {
     let query: LimitQuery<EpochIndex> = LimitQuery {
         query: starting_epoch,
         limit: Some(limit),
+        start_info: None,
     };
 
     let epochs = ExtendedEpochInfo::fetch_many(&sdk, query)

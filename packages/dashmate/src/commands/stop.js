@@ -11,7 +11,7 @@ export default class StopCommand extends ConfigBaseCommand {
     ...ConfigBaseCommand.flags,
     force: Flags.boolean({
       char: 'f',
-      description: 'force stop even if any service is running',
+      description: 'force stop even if any service is running or DKG is in progress',
       default: false,
     }),
     platform: Flags.boolean({

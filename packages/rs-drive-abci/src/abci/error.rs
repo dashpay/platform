@@ -13,18 +13,18 @@ pub enum AbciError {
     /// Request does not match currently processed block
     #[error("request does not match current block: {0}")]
     RequestForWrongBlockReceived(String),
-    /// Withdrawal vote extensions mismatch
-    #[error("vote extensions mismatch: got {got:?}, expected {expected:?}")]
+    /// Withdrawal votes extensions mismatch
+    #[error("votes extensions mismatch: got {got:?}, expected {expected:?}")]
     #[allow(missing_docs)]
     VoteExtensionMismatchReceived {
         got: Vec<VoteExtension>,
         expected: Vec<ExtendVoteExtension>,
     },
     /// Vote extensions signature is invalid
-    #[error("one of vote extension signatures is invalid")]
+    #[error("one of votes extension signatures is invalid")]
     VoteExtensionsSignatureInvalid,
-    /// Invalid vote extensions verification
-    #[error("invalid vote extensions verification")]
+    /// Invalid votes extensions verification
+    #[error("invalid votes extensions verification")]
     InvalidVoteExtensionsVerification,
     /// Cannot load withdrawal transactions
     #[error("cannot load withdrawal transactions: {0}")]

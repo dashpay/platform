@@ -1,6 +1,6 @@
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::identity::{identity_contract_info_root_path_vec, identity_path_vec};
 use crate::drive::{identity_tree_path, Drive};
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;

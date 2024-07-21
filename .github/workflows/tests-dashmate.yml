@@ -35,7 +35,9 @@ jobs:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
@@ -56,8 +58,8 @@ jobs:
           set -x
 
           # Login to ECR
-          DOCKER_HUB_ORG="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
-          aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
+          DOCKER_HUB_ORG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
 
           SHA_TAG=sha-${{ github.sha }}
 
@@ -101,6 +103,7 @@ jobs:
       - name: Run tests with cache
         run: yarn workspace dashmate run mocha ${{ inputs.test-pattern }}
         env:
+          DEBUG: 1
           DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD: true
           DASHMATE_E2E_TESTS_LOCAL_HOMEDIR: /home/ubuntu/.dashmate
         if: steps.local-network-data.outputs.cache-hit == 'true'
@@ -108,6 +111,7 @@ jobs:
       - name: Run tests without cache
         run: yarn workspace dashmate run mocha ${{ inputs.test-pattern }}
         env:
+          DEBUG: 1
           DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD: true
         if: steps.local-network-data.outputs.cache-hit != 'true'
 

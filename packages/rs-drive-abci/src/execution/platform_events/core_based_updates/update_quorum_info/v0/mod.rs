@@ -68,10 +68,22 @@ where
 
         let last_committed_core_height = block_platform_state.last_committed_core_height();
 
+        let validator_set_quorum_type = self.config.validator_set.quorum_type;
+        let chain_lock_quorum_type = self.config.chain_lock.quorum_type;
+        let instant_lock_quorum_type = self.config.instant_lock.quorum_type;
+
         if start_from_scratch {
-            tracing::debug!("update quorum info from scratch up to {core_block_height}");
+            tracing::debug!(
+                ?validator_set_quorum_type,
+                ?chain_lock_quorum_type,
+                ?instant_lock_quorum_type,
+                "update quorum info from scratch up to {core_block_height}",
+            );
         } else if core_block_height != last_committed_core_height {
             tracing::debug!(
+                ?validator_set_quorum_type,
+                ?chain_lock_quorum_type,
+                ?instant_lock_quorum_type,
                 previous_core_block_height = last_committed_core_height,
                 "update quorum info from {} to {}",
                 last_committed_core_height,
@@ -90,10 +102,6 @@ where
         let mut extended_quorum_list = self
             .core_rpc
             .get_quorum_listextended(Some(core_block_height))?;
-
-        let validator_set_quorum_type = self.config.validator_set.quorum_type;
-        let chain_lock_quorum_type = self.config.chain_lock.quorum_type;
-        let instant_lock_quorum_type = self.config.instant_lock.quorum_type;
 
         let validator_quorums_list: BTreeMap<_, _> = extended_quorum_list
             .quorums_by_type
@@ -236,7 +244,7 @@ where
         if instant_lock_quorum_type == chain_lock_quorum_type {
             if are_chainlock_quorum_updated {
                 tracing::trace!(
-                    "updated instant lock validating quorums to chain lock validating quorums",
+                    "updated instant lock validating quorums to chain lock validating quorums because they share the same quorum type",
                 );
 
                 block_platform_state.set_instant_lock_validating_quorums(
@@ -288,7 +296,7 @@ where
             .collect();
 
         tracing::trace!(
-            "updated {} validating quorums to current validator set",
+            "updated {} validating quorums to current validator set because they share the same quorum type",
             quorum_set_type
         );
 
@@ -315,6 +323,7 @@ where
         last_committed_core_height: u32,
         next_core_height: u32,
     ) -> Result<bool, Error> {
+        // TODO: Use HashSet, we don't need to update index for existing quorums
         let quorums_list: BTreeMap<_, _> = full_quorum_list
             .quorums_by_type
             .get(&quorum_set_type.quorum_type())
@@ -403,7 +412,7 @@ where
         if are_quorums_updated {
             if let Some(old_state) = platform_state {
                 let previous_validating_quorums =
-                    old_state.chain_lock_validating_quorums().current_quorums();
+                    quorum_set_by_type(old_state, &quorum_set_type).current_quorums();
 
                 quorum_set.set_previous_past_quorums(
                     previous_validating_quorums.clone(),
@@ -418,11 +427,21 @@ where
 }
 
 fn quorum_set_by_type_mut<'p>(
-    block_platform_state: &'p mut PlatformState,
+    platform_state: &'p mut PlatformState,
     quorum_set_type: &QuorumSetType,
 ) -> &'p mut SignatureVerificationQuorumSet {
     match quorum_set_type {
-        QuorumSetType::ChainLock(_) => block_platform_state.chain_lock_validating_quorums_mut(),
-        QuorumSetType::InstantLock(_) => block_platform_state.instant_lock_validating_quorums_mut(),
+        QuorumSetType::ChainLock(_) => platform_state.chain_lock_validating_quorums_mut(),
+        QuorumSetType::InstantLock(_) => platform_state.instant_lock_validating_quorums_mut(),
+    }
+}
+
+fn quorum_set_by_type<'p>(
+    platform_state: &'p PlatformState,
+    quorum_set_type: &QuorumSetType,
+) -> &'p SignatureVerificationQuorumSet {
+    match quorum_set_type {
+        QuorumSetType::ChainLock(_) => platform_state.chain_lock_validating_quorums(),
+        QuorumSetType::InstantLock(_) => platform_state.instant_lock_validating_quorums(),
     }
 }

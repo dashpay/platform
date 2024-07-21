@@ -3,7 +3,6 @@ mod identity_nonce;
 mod state;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -26,6 +25,7 @@ use crate::execution::validation::state_transition::processor::v0::{
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 impl ValidationMode {
     /// Returns if we should validate the contract when we transform it from its serialized form
@@ -109,7 +109,7 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
-        epoch: &Epoch,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -125,7 +125,7 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
             0 => self.validate_state_v0(
                 platform,
                 validation_mode,
-                epoch,
+                &block_info.epoch,
                 tx,
                 execution_context,
                 platform_version,

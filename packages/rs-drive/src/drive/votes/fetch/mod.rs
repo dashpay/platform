@@ -1,0 +1,3 @@
+mod fetch_contested_document_vote_poll_stored_info;
+mod fetch_identities_voting_for_contenders;
+mod fetch_identity_contested_resource_vote;

@@ -23,6 +23,7 @@ use crate::config::PlatformConfig;
 use crate::platform_types::signature_verification_quorum_set::{
     SignatureVerificationQuorumSet, SignatureVerificationQuorumSetForSaving,
 };
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
@@ -42,6 +43,10 @@ pub struct PlatformStateV0 {
     pub current_validator_set_quorum_hash: QuorumHash,
     /// next quorum
     pub next_validator_set_quorum_hash: Option<QuorumHash>,
+    /// This is a modified current platform version based on
+    /// `current_protocol_version_in_consensus` with some function versions
+    /// changed to fix an urgent bug that is not a part of normal upgrade process
+    pub patched_platform_version: Option<&'static PlatformVersion>,
     /// current validator set quorums
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members
@@ -58,6 +63,9 @@ pub struct PlatformStateV0 {
 
     /// current HPMN masternode list
     pub hpmn_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
+
+    /// previous Fee Versions
+    pub previous_fee_versions: CachedEpochIndexFeeVersions,
 }
 
 impl Debug for PlatformStateV0 {
@@ -143,13 +151,16 @@ pub struct PlatformStateForSavingV0 {
 
     /// current HPMN masternode list
     pub hpmn_masternode_list: BTreeMap<Bytes32, Masternode>,
+
+    /// previous FeeVersions
+    pub previous_fee_versions: CachedEpochIndexFeeVersions,
 }
 
 impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
     type Error = Error;
 
     fn try_from(value: PlatformStateV0) -> Result<Self, Self::Error> {
-        let platform_version = PlatformVersion::get(value.current_protocol_version_in_consensus)?;
+        let platform_version = value.current_platform_version()?;
         Ok(PlatformStateForSavingV0 {
             genesis_block_info: value.genesis_block_info,
             last_committed_block_info: value.last_committed_block_info,
@@ -189,6 +200,7 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
                     ))
                 })
                 .collect::<Result<BTreeMap<Bytes32, Masternode>, Error>>()?,
+            previous_fee_versions: value.previous_fee_versions,
         })
     }
 }
@@ -206,6 +218,7 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
             next_validator_set_quorum_hash: value
                 .next_validator_set_quorum_hash
                 .map(|bytes| QuorumHash::from_byte_array(bytes.to_buffer())),
+            patched_platform_version: None,
             validator_sets: value
                 .validator_sets
                 .into_iter()
@@ -223,6 +236,7 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
                 .into_iter()
                 .map(|(k, v)| (ProTxHash::from_byte_array(k.to_buffer()), v.into()))
                 .collect(),
+            previous_fee_versions: value.previous_fee_versions,
         }
     }
 }
@@ -242,6 +256,7 @@ impl PlatformStateV0 {
             next_epoch_protocol_version,
             current_validator_set_quorum_hash: QuorumHash::all_zeros(),
             next_validator_set_quorum_hash: None,
+            patched_platform_version: None,
             validator_sets: Default::default(),
             chain_lock_validating_quorums: SignatureVerificationQuorumSet::new(
                 &config.chain_lock,
@@ -254,10 +269,32 @@ impl PlatformStateV0 {
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
             genesis_block_info: None,
+            previous_fee_versions: Default::default(),
         };
 
         Ok(state)
     }
+}
+
+/// Masternode list Changes
+#[derive(Debug, Clone)]
+pub struct MasternodeListChanges {
+    /// The new masternodes
+    pub new_masternodes: Vec<ProTxHash>,
+    /// The removed masternodes
+    pub removed_masternodes: Vec<ProTxHash>,
+    /// The banned masternodes
+    pub banned_masternodes: Vec<ProTxHash>,
+    /// The unbanned masternodes
+    pub unbanned_masternodes: Vec<ProTxHash>,
+    /// the new masternodes that come in as banned
+    pub new_banned_masternodes: Vec<ProTxHash>,
+}
+
+pub(super) trait PlatformStateV0PrivateMethods {
+    /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
+    /// The patched version returns from the public current_platform_version getter in case if present.
+    fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>);
 }
 
 /// Platform state methods introduced in version 0 of Platform State Struct
@@ -274,6 +311,8 @@ pub trait PlatformStateV0Methods {
     fn last_committed_block_time_ms(&self) -> Option<u64>;
     /// The last quorum hash
     fn last_committed_quorum_hash(&self) -> [u8; 32];
+    /// The last block proposer pro tx hash
+    fn last_committed_block_proposer_pro_tx_hash(&self) -> [u8; 32];
     /// The last block signature
     fn last_committed_block_signature(&self) -> [u8; 96];
     /// The last block app hash
@@ -290,7 +329,15 @@ pub trait PlatformStateV0Methods {
     fn last_committed_block_info(&self) -> &Option<ExtendedBlockInfo>;
     /// Returns the current protocol version that is in consensus.
     fn current_protocol_version_in_consensus(&self) -> ProtocolVersion;
-
+    /// Patched platform version. Used to fix urgent bugs as not part of normal upgrade process.
+    /// The patched version returns from the public current_platform_version getter in case if present.
+    fn patched_platform_version(&self) -> Option<&'static PlatformVersion>;
+    /// Get the current platform version or patched if present
+    fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
+        self.patched_platform_version().map(Ok).unwrap_or_else(|| {
+            PlatformVersion::get(self.current_protocol_version_in_consensus()).map_err(Error::from)
+        })
+    }
     /// Returns the upcoming protocol version for the next epoch.
     fn next_epoch_protocol_version(&self) -> ProtocolVersion;
 
@@ -390,6 +437,30 @@ pub trait PlatformStateV0Methods {
     fn last_committed_block_epoch_ref(&self) -> &Epoch;
     /// The last block id hash
     fn last_committed_block_id_hash(&self) -> [u8; 32];
+
+    /// Returns reference to the previous feeversions
+    fn previous_fee_versions(&self) -> &CachedEpochIndexFeeVersions;
+
+    /// Returns a mutable reference to the previous feeversions
+    fn previous_fee_versions_mut(&mut self) -> &mut CachedEpochIndexFeeVersions;
+
+    /// The changes in the full masternode list between two platform states
+    fn full_masternode_list_changes(&self, previous: &Self) -> MasternodeListChanges
+    where
+        Self: Sized;
+
+    /// The changes in the high performance masternode list (evonodes) between two platform states
+    fn hpmn_masternode_list_changes(&self, previous: &Self) -> MasternodeListChanges
+    where
+        Self: Sized;
+}
+
+impl PlatformStateV0PrivateMethods for PlatformStateV0 {
+    /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
+    /// The patched version returns from the public current_platform_version getter in case if present.
+    fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>) {
+        self.patched_platform_version = version;
+    }
 }
 
 impl PlatformStateV0Methods for PlatformStateV0 {
@@ -450,6 +521,14 @@ impl PlatformStateV0Methods for PlatformStateV0 {
             .unwrap_or_default()
     }
 
+    /// The last committed block proposer's pro tx hash
+    fn last_committed_block_proposer_pro_tx_hash(&self) -> [u8; 32] {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| *block_info.proposer_pro_tx_hash())
+            .unwrap_or_default()
+    }
+
     /// The last block signature
     fn last_committed_block_signature(&self) -> [u8; 96] {
         self.last_committed_block_info
@@ -504,6 +583,12 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     /// Get the current protocol version in consensus
     fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
         self.current_protocol_version_in_consensus
+    }
+
+    /// Patched platform version. Used to fix urgent bugs as not part of normal upgrade process.
+    /// The patched version returns from the public current_platform_version getter in case if present.
+    fn patched_platform_version(&self) -> Option<&'static PlatformVersion> {
+        self.patched_platform_version
     }
 
     /// Returns the upcoming protocol version for the next epoch.
@@ -675,5 +760,115 @@ impl PlatformStateV0Methods for PlatformStateV0 {
             .as_ref()
             .map(|block_info| *block_info.block_id_hash())
             .unwrap_or_default()
+    }
+
+    /// Returns a reference to the previous feeversions
+    fn previous_fee_versions(&self) -> &CachedEpochIndexFeeVersions {
+        &self.previous_fee_versions
+    }
+
+    /// Returns a mutable reference to the previous feeversions
+    fn previous_fee_versions_mut(&mut self) -> &mut CachedEpochIndexFeeVersions {
+        &mut self.previous_fee_versions
+    }
+
+    fn full_masternode_list_changes(&self, previous: &PlatformStateV0) -> MasternodeListChanges {
+        let mut new_masternodes = Vec::new();
+        let mut removed_masternodes = Vec::new();
+        let mut banned_masternodes = Vec::new();
+        let mut unbanned_masternodes = Vec::new();
+        let mut new_banned_masternodes = Vec::new();
+
+        // Check for new, banned/unbanned, and new banned masternodes
+        for (pro_tx_hash, current_item) in &self.full_masternode_list {
+            if let Some(previous_item) = previous.full_masternode_list.get(pro_tx_hash) {
+                let current_ban_height = current_item.state.pose_ban_height;
+                let previous_ban_height = previous_item.state.pose_ban_height;
+
+                if current_ban_height.is_some() && previous_ban_height.is_none() {
+                    // Masternode was banned
+                    banned_masternodes.push(*pro_tx_hash);
+                    if previous_item.state.pose_ban_height.is_none() {
+                        // New banned masternode
+                        new_banned_masternodes.push(*pro_tx_hash);
+                    }
+                } else if current_ban_height.is_none() && previous_ban_height.is_some() {
+                    // Masternode was unbanned
+                    unbanned_masternodes.push(*pro_tx_hash);
+                }
+            } else {
+                // New masternode
+                new_masternodes.push(*pro_tx_hash);
+                if current_item.state.pose_ban_height.is_some() {
+                    // New banned masternode
+                    new_banned_masternodes.push(*pro_tx_hash);
+                }
+            }
+        }
+
+        // Check for removed masternodes
+        for pro_tx_hash in previous.full_masternode_list.keys() {
+            if !self.full_masternode_list.contains_key(pro_tx_hash) {
+                removed_masternodes.push(*pro_tx_hash);
+            }
+        }
+
+        MasternodeListChanges {
+            new_masternodes,
+            removed_masternodes,
+            banned_masternodes,
+            unbanned_masternodes,
+            new_banned_masternodes,
+        }
+    }
+
+    fn hpmn_masternode_list_changes(&self, previous: &PlatformStateV0) -> MasternodeListChanges {
+        let mut new_masternodes = Vec::new();
+        let mut removed_masternodes = Vec::new();
+        let mut banned_masternodes = Vec::new();
+        let mut unbanned_masternodes = Vec::new();
+        let mut new_banned_masternodes = Vec::new();
+
+        // Check for new, banned/unbanned, and new banned masternodes
+        for (pro_tx_hash, current_item) in &self.hpmn_masternode_list {
+            if let Some(previous_item) = previous.hpmn_masternode_list.get(pro_tx_hash) {
+                let current_ban_height = current_item.state.pose_ban_height;
+                let previous_ban_height = previous_item.state.pose_ban_height;
+
+                if current_ban_height.is_some() && previous_ban_height.is_none() {
+                    // Masternode was banned
+                    banned_masternodes.push(*pro_tx_hash);
+                    if previous_item.state.pose_ban_height.is_none() {
+                        // New banned masternode
+                        new_banned_masternodes.push(*pro_tx_hash);
+                    }
+                } else if current_ban_height.is_none() && previous_ban_height.is_some() {
+                    // Masternode was unbanned
+                    unbanned_masternodes.push(*pro_tx_hash);
+                }
+            } else {
+                // New masternode
+                new_masternodes.push(*pro_tx_hash);
+                if current_item.state.pose_ban_height.is_some() {
+                    // New banned masternode
+                    new_banned_masternodes.push(*pro_tx_hash);
+                }
+            }
+        }
+
+        // Check for removed masternodes
+        for pro_tx_hash in previous.hpmn_masternode_list.keys() {
+            if !self.hpmn_masternode_list.contains_key(pro_tx_hash) {
+                removed_masternodes.push(*pro_tx_hash);
+            }
+        }
+
+        MasternodeListChanges {
+            new_masternodes,
+            removed_masternodes,
+            banned_masternodes,
+            unbanned_masternodes,
+            new_banned_masternodes,
+        }
     }
 }
