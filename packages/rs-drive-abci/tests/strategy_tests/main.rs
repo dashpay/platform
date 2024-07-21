@@ -1915,7 +1915,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "6e4fb02e2619715b4a190ee206b560a8d34830a721d02d29bb5731783ba2b08a".to_string()
+            "cae9c984e5fe548cc7a3edd720ab0f58a2d25e5a16071402605a9ff8cfe870c7".to_string()
         )
     }
 
@@ -2050,7 +2050,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "e3cd37a5139f08af5ae5933c71ba7f3d1a922291bb625e78c245f115034f8408".to_string()
+            "6cbe10061aac832a35ec0eb9b22826aebfcbe697cec76fe899afa1b1803dd2c7".to_string()
         )
     }
 
@@ -2393,7 +2393,7 @@ mod tests {
 
         let outcome =
             run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
-        assert_eq!(outcome.identities.len() as u64, 470);
+        assert_eq!(outcome.identities.len() as u64, 472);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2528,7 +2528,7 @@ mod tests {
 
         let outcome =
             run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
-        assert_eq!(outcome.identities.len() as u64, 90);
+        assert_eq!(outcome.identities.len() as u64, 83);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2679,7 +2679,7 @@ mod tests {
 
         let outcome =
             run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
-        assert_eq!(outcome.identities.len() as u64, 97);
+        assert_eq!(outcome.identities.len() as u64, 79);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances

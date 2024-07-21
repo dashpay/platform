@@ -564,17 +564,29 @@ impl NetworkStrategy {
         let mut deleted = vec![];
         for op in &self.strategy.operations {
             if op.frequency.check_hit(rng) {
-                let count = rng.gen_range(op.frequency.times_per_block_range.clone());
+                let mut count = rng.gen_range(op.frequency.times_per_block_range.clone());
                 match &op.op_type {
                     OperationType::Document(DocumentOp {
                         action: DocumentAction::DocumentActionInsertRandom(fill_type, fill_size),
                         document_type,
                         contract,
                     }) => {
+                        if current_identities.len() < count as usize {
+                            count = current_identities.len() as u16;
+
+                            tracing::warn!(
+                                "Not enough identities to insert documents, reducing count to {}",
+                                count
+                            );
+                        }
+
+                        let current_identities_as_refs: Vec<&dpp::identity::Identity> =
+                            current_identities.iter().collect();
+
                         let documents = document_type
                             .random_documents_with_params(
                                 count as u32,
-                                current_identities,
+                                current_identities_as_refs.as_ref(),
                                 Some(block_info.time_ms),
                                 Some(block_info.height),
                                 Some(block_info.core_height),
@@ -673,15 +685,20 @@ impl NetworkStrategy {
                         contract,
                     }) => {
                         let documents = if let Some(identifier) = identifier {
-                            let held_identity = vec![current_identities
+                            let held_identity = current_identities
                                 .iter()
                                 .find(|identity| identity.id() == identifier)
-                                .expect("expected to find identifier, review strategy params")
-                                .clone()];
+                                .expect("expected to find identifier, review strategy params");
+
+                            let mut eligible_identities = Vec::with_capacity(count as usize);
+                            for _ in 0..count {
+                                eligible_identities.push(held_identity);
+                            }
+
                             document_type
                                 .random_documents_with_params(
                                     count as u32,
-                                    &held_identity,
+                                    &eligible_identities,
                                     Some(block_info.time_ms),
                                     Some(block_info.height),
                                     Some(block_info.core_height),
@@ -692,10 +709,13 @@ impl NetworkStrategy {
                                 )
                                 .expect("expected random_documents_with_params")
                         } else {
+                            let current_identities_as_refs: Vec<&dpp::identity::Identity> =
+                                current_identities.iter().collect();
+
                             document_type
                                 .random_documents_with_params(
                                     count as u32,
-                                    current_identities,
+                                    current_identities_as_refs.as_ref(),
                                     Some(block_info.time_ms),
                                     Some(block_info.height),
                                     Some(block_info.core_height),

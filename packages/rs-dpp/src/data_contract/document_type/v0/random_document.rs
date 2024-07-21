@@ -7,7 +7,7 @@
 
 use platform_value::{Bytes32, Identifier};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::SeedableRng;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -266,10 +266,10 @@ impl CreateRandomDocument for DocumentTypeV0 {
     }
 
     /// Creates `count` Documents with random data using the random number generator given.
-    fn random_documents_with_params(
+    fn random_documents_with_params<'i>(
         &self,
         count: u32,
-        identities: &[Identity],
+        identities: &[&'i Identity],
         time_ms: Option<TimestampMillis>,
         block_height: Option<BlockHeight>,
         core_block_height: Option<CoreBlockHeight>,
@@ -277,11 +277,17 @@ impl CreateRandomDocument for DocumentTypeV0 {
         document_field_fill_size: DocumentFieldFillSize,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<(Document, Identity, Bytes32)>, ProtocolError> {
+    ) -> Result<Vec<(Document, &'i Identity, Bytes32)>, ProtocolError> {
         let mut vec = vec![];
-        for _i in 0..count {
-            let identity_num = rng.gen_range(0..identities.len());
-            let identity = identities.get(identity_num).unwrap().clone();
+
+        if identities.len() < count as usize {
+            return Err(ProtocolError::CorruptedCodeExecution(format!(
+                "not enough identities to create {count} documents"
+            )));
+        }
+
+        for i in 0..count {
+            let identity = identities[i as usize];
             let entropy = Bytes32::random_with_rng(rng);
             vec.push((
                 self.random_document_with_params(

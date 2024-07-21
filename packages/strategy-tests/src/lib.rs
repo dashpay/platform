@@ -42,7 +42,7 @@ use dpp::state_transition::data_contract_update_transition::methods::DataContrac
 use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
-use rand::seq::SliceRandom;
+use rand::seq::{IteratorRandom, SliceRandom};
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use bincode::{Decode, Encode};
@@ -50,7 +50,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::platform_value::{BinaryData, Value};
+use dpp::platform_value::{BinaryData, Bytes32, Value};
 use dpp::ProtocolError;
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
@@ -324,6 +324,71 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
     }
 }
 
+pub type MempoolDocumentCounter<'c> = BTreeMap<(Identifier, Identifier), u64>;
+
+fn choose_capable_identities<'i>(
+    identities: &'i [Identity],
+    contract: &DataContract,
+    mempool_document_counter: &MempoolDocumentCounter,
+    count: usize,
+    rng: &mut StdRng,
+) -> Vec<&'i Identity> {
+    // Filter out those that already have 24 documents in the mempool for this contract
+    let mut all_capable_identities: Vec<&'i Identity> = identities
+        .iter()
+        .filter(|identity| {
+            mempool_document_counter
+                .get(&(identity.id(), contract.id()))
+                .unwrap_or(&0)
+                < &24u64
+        })
+        .collect();
+
+    // If we need more documents than we have eligible identities, we will need to use some identities more than once
+    if all_capable_identities.len() < count {
+        let mut additional_identities_count = count - all_capable_identities.len();
+
+        let mut additional_identities = Vec::with_capacity(additional_identities_count);
+        let mut index = 0;
+        while additional_identities_count > 0 && index < all_capable_identities.len() {
+            // Iterate through the identities only one time, using as many documents as each identity can submit
+            // We should see if this often causes identities to max out their mempool count, which could potentially
+            // lead to issues, even though this function should really only be covering an edge case
+            let identity = all_capable_identities[index];
+
+            // How many documents are in the mempool for this (identity, contract) plus the one that we are already planning to use
+            let mempool_documents_count = mempool_document_counter
+                .get(&(identity.id(), contract.id()))
+                .unwrap_or(&0)
+                + 1;
+
+            let identity_capacity = 24 - mempool_documents_count;
+
+            if identity_capacity > 0 {
+                for _ in 0..identity_capacity {
+                    additional_identities.push(identity);
+                    additional_identities_count -= 1;
+                    if additional_identities_count == 0 {
+                        break;
+                    }
+                }
+            }
+
+            index += 1;
+        }
+
+        all_capable_identities.extend(additional_identities);
+        all_capable_identities
+    } else {
+        all_capable_identities
+            .iter()
+            .choose_multiple(rng, count)
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+}
+
 impl Strategy {
     /// Generates comprehensive state transitions for a given block, including handling new identities and contracts.
     ///
@@ -381,7 +446,7 @@ impl Strategy {
     /// This function is central to simulating the lifecycle of block processing and strategy execution
     /// on the Dash Platform. It encapsulates the complexity of transaction generation, identity management,
     /// and contract dynamics within a block's context.
-    pub async fn state_transitions_for_block(
+    pub fn state_transitions_for_block(
         &mut self,
         document_query_callback: &mut impl FnMut(LocalDocumentQuery) -> Vec<Document>,
         identity_fetch_callback: &mut impl FnMut(
@@ -395,7 +460,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
-        mempool_document_counter: BTreeMap<(Identifier, Identifier), u64>,
+        mempool_document_counter: &MempoolDocumentCounter,
         rng: &mut StdRng,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
@@ -544,7 +609,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
-        mempool_document_counter: BTreeMap<(Identifier, Identifier), u64>,
+        mempool_document_counter: &MempoolDocumentCounter,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -570,44 +635,37 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
-                        // Get the first 10 identities who are eligible to submit documents for this contract
-                        let first_10_eligible_identities: Vec<Identity> = current_identities
-                            .iter()
-                            .filter(|identity| {
-                                mempool_document_counter
-                                    .get(&(identity.id(), contract.id()))
-                                    .unwrap_or(&0)
-                                    < &24u64
-                            })
-                            .take(10)
-                            .cloned()
-                            .collect();
-
-                        if first_10_eligible_identities.len() == 0 {
-                            tracing::warn!(
-                                "No eligible identities to submit a document to contract {}",
-                                contract.id().to_string(Encoding::Base64)
-                            );
-                        }
+                        let eligible_identities = choose_capable_identities(
+                            current_identities,
+                            contract,
+                            mempool_document_counter,
+                            count as usize,
+                            rng,
+                        );
 
                         // TO-DO: these documents should be created according to the data contract's validation rules
-                        let documents = document_type
-                            .random_documents_with_params(
-                                count as u32,
-                                &first_10_eligible_identities,
-                                Some(block_info.time_ms),
-                                Some(block_info.height),
-                                Some(block_info.core_height),
-                                *fill_type,
-                                *fill_size,
-                                rng,
-                                platform_version,
-                            )
-                            .expect("expected random_documents_with_params");
+                        let mut documents_with_identity_and_entropy: Vec<(
+                            Document,
+                            &Identity,
+                            Bytes32,
+                        )> = Vec::new();
+                        match document_type.random_documents_with_params(
+                            count as u32,
+                            &eligible_identities,
+                            Some(block_info.time_ms),
+                            Some(block_info.height),
+                            Some(block_info.core_height),
+                            *fill_type,
+                            *fill_size,
+                            rng,
+                            platform_version,
+                        ) {
+                            Ok(documents) => documents_with_identity_and_entropy = documents,
+                            Err(e) => tracing::warn!("Failed to create random documents: {}", e),
+                        }
 
-                        documents
-                            .into_iter()
-                            .for_each(|(document, identity, entropy)| {
+                        documents_with_identity_and_entropy.into_iter().for_each(
+                            |(document, identity, entropy)| {
                                 let identity_contract_nonce =
                                     if contract.owner_id() == identity.id() {
                                         contract_nonce_counter
@@ -675,7 +733,8 @@ impl Strategy {
                                     .expect("expected to sign");
 
                                 operations.push(document_batch_transition);
-                            });
+                            },
+                        );
                     }
 
                     // Generate state transition for specific document insert operation
@@ -691,15 +750,20 @@ impl Strategy {
                         contract,
                     }) => {
                         let documents = if let Some(identifier) = identifier {
-                            let held_identity = vec![current_identities
+                            let held_identity = current_identities
                                 .iter()
                                 .find(|identity| identity.id() == identifier)
-                                .expect("expected to find identifier, review strategy params")
-                                .clone()];
+                                .expect("expected to find identifier, review strategy params");
+
+                            let mut eligible_identities = Vec::with_capacity(count as usize);
+                            for _ in 0..count {
+                                eligible_identities.push(held_identity);
+                            }
+
                             document_type
                                 .random_documents_with_params(
                                     count as u32,
-                                    &held_identity,
+                                    &eligible_identities,
                                     Some(block_info.time_ms),
                                     Some(block_info.height),
                                     Some(block_info.core_height),
@@ -710,10 +774,18 @@ impl Strategy {
                                 )
                                 .expect("expected random_documents_with_params")
                         } else {
+                            let eligible_identities = choose_capable_identities(
+                                current_identities,
+                                contract,
+                                mempool_document_counter,
+                                count as usize,
+                                rng,
+                            );
+
                             document_type
                                 .random_documents_with_params(
                                     count as u32,
-                                    current_identities,
+                                    &eligible_identities,
                                     Some(block_info.time_ms),
                                     Some(block_info.height),
                                     Some(block_info.core_height),
