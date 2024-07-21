@@ -1,0 +1,33 @@
+# Use the official Rust image based on Debian Bullseye
+FROM rust@sha256:4c45f61ebe054560190f232b7d883f174ff287e1a0972c8f6d7ab88da0188870
+
+# Install necessary packages
+RUN apt-get update && apt-get install -y \
+    clang \
+    cmake \
+    git \
+    wget \
+    bash \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install protoc - protobuf compiler
+RUN if [ "$(uname -m)" = "aarch64" ]; then \
+        PROTOC_ARCH="aarch_64"; \
+    else \
+        PROTOC_ARCH="x86_64"; \
+    fi && \
+    wget -q -O /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v25.2/protoc-25.2-linux-$PROTOC_ARCH.zip && \
+    unzip -qd /opt/protoc /tmp/protoc.zip && \
+    rm /tmp/protoc.zip && \
+    ln -s /opt/protoc/bin/protoc /usr/bin/
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Copy your source code into the container
+COPY . .
+
+# Build the Rust project
+RUN cargo build --release --locked
+
