@@ -27,6 +27,7 @@ mod unknown_security_level_error;
 mod unknown_storage_key_requirements_error;
 mod unknown_trade_mode_error;
 mod unknown_transferable_type_error;
+mod contested_unique_index_with_unique_index_error;
 
 pub use data_contract_have_new_unique_index_error::*;
 pub use data_contract_immutable_properties_update_error::*;
@@ -51,6 +52,7 @@ pub use undefined_index_property_error::*;
 pub use unique_indices_limit_reached_error::*;
 
 pub use contested_unique_index_on_mutable_document_type_error::*;
+pub use contested_unique_index_with_unique_index_error::*;
 pub use incompatible_document_type_schema_error::*;
 pub use invalid_document_type_name_error::*;
 pub use unknown_document_creation_restriction_mode_error::*;

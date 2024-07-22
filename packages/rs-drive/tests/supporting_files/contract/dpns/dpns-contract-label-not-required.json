@@ -23,7 +23,7 @@
           "name": "dashIdentityId",
           "properties": [
             {
-              "records.dashUniqueIdentityId": "asc"
+              "records.identity": "asc"
             }
           ],
           "unique": true
@@ -74,7 +74,7 @@
         "records": {
           "type": "object",
           "properties": {
-            "dashUniqueIdentityId": {
+            "identity": {
               "type": "array",
               "byteArray": true,
               "minItems": 32,
@@ -95,7 +95,7 @@
               "$comment": "Must be equal to the document owner"
             }
           },
-          "$comment": "Constraint with max and min properties ensure that only one identity record is used - either a `dashUniqueIdentityId` or a `dashAliasIdentityId`",
+          "$comment": "Constraint with max and min properties ensure that only one identity record is used - either a `identity` or a `dashAliasIdentityId`",
           "minProperties": 1,
           "maxProperties": 1,
           "position": 4,

@@ -29,10 +29,11 @@
         }
       },
       {
-        "name": "referredId",
+        "name": "identityId",
+        "nullSearchable": false,
         "properties": [
           {
-            "recordId": "asc"
+            "records.identity": "asc"
           }
         ]
       }
@@ -79,14 +80,22 @@
         "position": 4,
         "description": "Salt used in the preorder document"
       },
-      "recordId": {
-        "type": "array",
-        "byteArray": true,
-        "minItems": 32,
-        "maxItems": 32,
+      "records": {
+        "type": "object",
+        "properties": {
+          "identity": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "position": 1,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "description": "Identifier name record that refers to an Identity"
+          }
+        },
+        "minProperties": 1,
         "position": 5,
-        "contentMediaType": "application/x.dash.dpp.identifier",
-        "description": "Identity, Contract or other ID that we are referring to"
+        "additionalProperties": false
       },
       "subdomainRules": {
         "type": "object",
@@ -96,18 +105,12 @@
             "description": "This option defines who can create subdomains: true - anyone; false - only the domain owner",
             "$comment": "Only the domain owner is allowed to create subdomains for non top-level domains",
             "position": 0
-          },
-          "subdomainType": {
-            "type": "string",
-            "enum": ["Identity", "Contract"],
-            "description": "Type of the subdomain",
-            "position": 1
           }
         },
         "position": 6,
         "description": "Subdomain rules allow domain owners to define rules for subdomains",
         "additionalProperties": false,
-        "required": ["allowSubdomains", "subdomainType"]
+        "required": ["allowSubdomains"]
       }
     },
     "required": [
@@ -118,7 +121,7 @@
       "normalizedLabel",
       "normalizedParentDomainName",
       "preorderSalt",
-      "recordId",
+      "records",
       "subdomainRules"
     ],
     "additionalProperties": false,

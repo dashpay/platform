@@ -58,6 +58,7 @@ impl Index {
             name: index_name,
             properties,
             unique,
+            null_searchable: true,
             contested_index: None,
         })
     }

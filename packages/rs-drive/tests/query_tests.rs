@@ -3439,9 +3439,9 @@ fn test_dpns_query() {
                 .expect("we should be able to get the records");
             let map_records_value = records_value.as_map().expect("this should be a map");
             let record_dash_unique_identity_id =
-                Value::inner_optional_bytes_value(map_records_value, "dashUniqueIdentityId")
+                Value::inner_optional_bytes_value(map_records_value, "identity")
                     .unwrap()
-                    .expect("there should be a dashUniqueIdentityId");
+                    .expect("there should be a identity");
             bs58::encode(record_dash_unique_identity_id).into_string()
         })
         .collect();
@@ -3450,15 +3450,15 @@ fn test_dpns_query() {
 
     assert_eq!(record_id_base68, a_record_id_base58);
 
-    // A query getting elements by the dashUniqueIdentityId desc
+    // A query getting elements by the identity desc
 
     let query_value = json!({
         "where": [
-            ["records.dashUniqueIdentityId", "<=", "5hXRj1xmmnNQ7RN1ATYym4x6bQugxcKn7FWiMnkQTQpF"],
+            ["records.identity", "<=", "5hXRj1xmmnNQ7RN1ATYym4x6bQugxcKn7FWiMnkQTQpF"],
         ],
         "limit": 10,
         "orderBy": [
-            ["records.dashUniqueIdentityId", "desc"]
+            ["records.identity", "desc"]
         ]
     });
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -3506,15 +3506,15 @@ fn test_dpns_query() {
     assert_eq!(root_hash, proof_root_hash);
     assert_eq!(results, proof_results);
 
-    // A query getting 2 elements asc by the dashUniqueIdentityId
+    // A query getting 2 elements asc by the identity
 
     let query_value = json!({
         "where": [
-            ["records.dashUniqueIdentityId", "<=", "5hXRj1xmmnNQ7RN1ATYym4x6bQugxcKn7FWiMnkQTQpF"],
+            ["records.identity", "<=", "5hXRj1xmmnNQ7RN1ATYym4x6bQugxcKn7FWiMnkQTQpF"],
         ],
         "limit": 2,
         "orderBy": [
-            ["records.dashUniqueIdentityId", "asc"]
+            ["records.identity", "asc"]
         ]
     });
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -3562,7 +3562,7 @@ fn test_dpns_query() {
 
     let query_value = json!({
         "orderBy": [
-            ["records.dashUniqueIdentityId", "desc"]
+            ["records.identity", "desc"]
         ]
     });
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -3602,7 +3602,7 @@ fn test_dpns_insertion_no_aliases() {
     let db_transaction = drive.grove.start_transaction();
 
     let query_value = json!({
-        "orderBy": [["records.dashUniqueIdentityId", "desc"]],
+        "orderBy": [["records.identity", "desc"]],
     });
 
     let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -3658,7 +3658,7 @@ fn test_dpns_insertion_with_aliases() {
     let db_transaction = drive.grove.start_transaction();
 
     let query_value = json!({
-        "orderBy": [["records.dashUniqueIdentityId", "desc"]],
+        "orderBy": [["records.identity", "desc"]],
     });
 
     let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)

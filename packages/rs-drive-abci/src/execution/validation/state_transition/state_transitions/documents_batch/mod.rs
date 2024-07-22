@@ -578,14 +578,14 @@ mod tests {
             document_1.set("normalizedParentDomainName", "dash".into());
             document_1.set("label", "quantum".into());
             document_1.set("normalizedLabel", "quantum".into());
-            document_1.set("records.dashUniqueIdentityId", document_1.owner_id().into());
+            document_1.set("records.identity", document_1.owner_id().into());
             document_1.set("subdomainRules.allowSubdomains", false.into());
 
             document_2.set("parentDomainName", "dash".into());
             document_2.set("normalizedParentDomainName", "dash".into());
             document_2.set("label", "quantum".into());
             document_2.set("normalizedLabel", "quantum".into());
-            document_2.set("records.dashUniqueIdentityId", document_2.owner_id().into());
+            document_2.set("records.identity", document_2.owner_id().into());
             document_2.set("subdomainRules.allowSubdomains", false.into());
 
             let salt_1: [u8; 32] = rng.gen();

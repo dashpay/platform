@@ -285,7 +285,7 @@ mod tests {
     //                 (
     //                     "records".into(),
     //                     BTreeMap::from([(
-    //                         "dashUniqueIdentityId",
+    //                         "identity",
     //                         Value::from(start_identities.first().unwrap().0.id()),
     //                     )])
     //                     .into(),
@@ -308,7 +308,7 @@ mod tests {
     //                 (
     //                     "records".into(),
     //                     BTreeMap::from([(
-    //                         "dashUniqueIdentityId",
+    //                         "identity",
     //                         Value::from(start_identities.last().unwrap().0.id()),
     //                     )])
     //                     .into(),

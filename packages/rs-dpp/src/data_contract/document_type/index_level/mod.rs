@@ -265,6 +265,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 
@@ -291,6 +292,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 
@@ -302,7 +304,8 @@ mod tests {
                     ascending: false,
                 }],
                 unique: false,
-                contested_index: None,
+                null_searchable: true,
+            contested_index: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -311,7 +314,8 @@ mod tests {
                     ascending: false,
                 }],
                 unique: false,
-                contested_index: None,
+                null_searchable: true,
+            contested_index: None,
             },
         ];
 
@@ -346,7 +350,8 @@ mod tests {
                     ascending: false,
                 }],
                 unique: false,
-                contested_index: None,
+                null_searchable: true,
+            contested_index: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -355,7 +360,8 @@ mod tests {
                     ascending: false,
                 }],
                 unique: false,
-                contested_index: None,
+                null_searchable: true,
+            contested_index: None,
             },
         ];
 
@@ -366,6 +372,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 
@@ -399,6 +406,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 
@@ -415,6 +423,7 @@ mod tests {
                 },
             ],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 
@@ -454,6 +463,7 @@ mod tests {
                 },
             ],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 
@@ -464,6 +474,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 

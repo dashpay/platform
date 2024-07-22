@@ -663,7 +663,7 @@ pub(crate) mod tests {
             "normalizedLabel",
             convert_to_homograph_safe_chars(name).into(),
         );
-        document_1.set("records.dashUniqueIdentityId", document_1.owner_id().into());
+        document_1.set("records.identity", document_1.owner_id().into());
         document_1.set("subdomainRules.allowSubdomains", false.into());
 
         document_2.set("parentDomainName", "dash".into());
@@ -673,7 +673,7 @@ pub(crate) mod tests {
             "normalizedLabel",
             convert_to_homograph_safe_chars(name).into(),
         );
-        document_2.set("records.dashUniqueIdentityId", document_2.owner_id().into());
+        document_2.set("records.identity", document_2.owner_id().into());
         document_2.set("subdomainRules.allowSubdomains", false.into());
 
         let salt_1: [u8; 32] = rng.gen();
@@ -900,7 +900,7 @@ pub(crate) mod tests {
             "normalizedLabel",
             convert_to_homograph_safe_chars(name).into(),
         );
-        document_1.set("records.dashUniqueIdentityId", document_1.owner_id().into());
+        document_1.set("records.identity", document_1.owner_id().into());
         document_1.set("subdomainRules.allowSubdomains", false.into());
 
         let salt_1: [u8; 32] = rng.gen();

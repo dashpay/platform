@@ -333,6 +333,9 @@
           "unique": {
             "type": "boolean"
           },
+          "nullSearchable": {
+            "type": "boolean"
+          },
           "contested": {
             "type": "object",
             "properties": {

@@ -9,10 +9,10 @@ use thiserror::Error;
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-    "Document type '{document_type}' has a contested unique index '{contested_unique_index_name}' but is set as mutable which is not allowed"
+    "Document type '{document_type}' has a contested unique index '{contested_unique_index_name}' and a unique index '{unique_index_name}' as well which is not allowed"
 )]
 #[platform_serialize(unversioned)]
-pub struct ContestedUniqueIndexOnMutableDocumentTypeError {
+pub struct ContestedUniqueIndexWithUniqueIndexError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
@@ -20,13 +20,15 @@ pub struct ContestedUniqueIndexOnMutableDocumentTypeError {
     */
     document_type: String,
     contested_unique_index_name: String,
+    unique_index_name: String,
 }
 
-impl ContestedUniqueIndexOnMutableDocumentTypeError {
-    pub fn new(document_type: String, contested_unique_index_name: String) -> Self {
+impl ContestedUniqueIndexWithUniqueIndexError {
+    pub fn new(document_type: String, contested_unique_index_name: String, unique_index_name: String) -> Self {
         Self {
             document_type,
             contested_unique_index_name,
+            unique_index_name,
         }
     }
 
@@ -37,11 +39,15 @@ impl ContestedUniqueIndexOnMutableDocumentTypeError {
     pub fn contested_unique_index_name(&self) -> &str {
         &self.contested_unique_index_name
     }
+
+    pub fn unique_index_name(&self) -> &str {
+        &self.unique_index_name
+    }
 }
 
-impl From<ContestedUniqueIndexOnMutableDocumentTypeError> for ConsensusError {
-    fn from(err: ContestedUniqueIndexOnMutableDocumentTypeError) -> Self {
-        Self::BasicError(BasicError::ContestedUniqueIndexOnMutableDocumentTypeError(
+impl From<ContestedUniqueIndexWithUniqueIndexError> for ConsensusError {
+    fn from(err: ContestedUniqueIndexWithUniqueIndexError) -> Self {
+        Self::BasicError(BasicError::ContestedUniqueIndexWithUniqueIndexError(
             err,
         ))
     }

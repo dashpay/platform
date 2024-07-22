@@ -42,6 +42,7 @@ mod property_names {
     pub const REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY: &str =
         "requiresIdentityDecryptionBoundedKey";
     pub const INDICES: &str = "indices";
+    pub const NULL_SEARCHABLE: &str = "nullSearchable";
     pub const PROPERTIES: &str = "properties";
     pub const POSITION: &str = "position";
     pub const REQUIRED: &str = "required";

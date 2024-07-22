@@ -50,6 +50,8 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
+use crate::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
+
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
 const SYSTEM_PROPERTIES: [&str; 11] = [
@@ -283,6 +285,12 @@ impl DocumentTypeV0 {
         let mut unique_indices_count = 0;
 
         #[cfg(feature = "validation")]
+        let mut last_non_contested_unique_index_name : Option<String> = None;
+
+        #[cfg(feature = "validation")]
+        let mut last_contested_unique_index_name : Option<String> = None;
+
+        #[cfg(feature = "validation")]
         let mut contested_indices_count = 0;
 
         let indices: BTreeMap<String, Index> = index_values
@@ -330,6 +338,23 @@ impl DocumentTypeV0 {
                                         .into(),
                                     )));
                                 }
+
+                                if let Some(last_contested_unique_index_name) = last_contested_unique_index_name.as_ref() {
+
+                                    return Err(ProtocolError::ConsensusError(Box::new(
+                                        ContestedUniqueIndexWithUniqueIndexError::new(
+                                            name.to_string(),
+                                            last_contested_unique_index_name.clone(),
+                                            index.name,
+                                        )
+                                            .into(),
+                                    )));
+
+                                }
+
+                                if index.contested_index.is_none() {
+                                    last_non_contested_unique_index_name = Some(index.name.clone());
+                                }
                             }
 
                             if index.contested_index.is_some() {
@@ -354,6 +379,19 @@ impl DocumentTypeV0 {
                                         .into(),
                                     )));
                                 }
+                                
+                                if let Some(last_unique_index_name) = last_non_contested_unique_index_name.as_ref() {
+                                    
+                                        return Err(ProtocolError::ConsensusError(Box::new(
+                                            ContestedUniqueIndexWithUniqueIndexError::new(
+                                                name.to_string(),
+                                                index.name,
+                                                last_unique_index_name.clone()
+                                            )
+                                                .into(),
+                                        )));
+                                    
+                                }
 
                                 if documents_mutable {
                                     return Err(ProtocolError::ConsensusError(Box::new(
@@ -364,6 +402,8 @@ impl DocumentTypeV0 {
                                         .into(),
                                     )));
                                 }
+
+                                last_contested_unique_index_name = Some(index.name.clone());
                             }
 
                             // Index names must be unique for the document type
