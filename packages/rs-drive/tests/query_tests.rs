@@ -3167,8 +3167,8 @@ fn test_dpns_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        244, 146, 123, 117, 189, 33, 121, 197, 170, 145, 77, 125, 25, 189, 87, 118, 50, 94, 170, 7,
-        21, 208, 63, 241, 89, 4, 243, 50, 118, 21, 49, 24,
+        142, 246, 25, 166, 52, 184, 158, 102, 192, 111, 173, 255, 155, 125, 53, 233, 98, 241, 201,
+        233, 2, 58, 47, 90, 209, 207, 147, 204, 83, 68, 183, 143,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3439,9 +3439,9 @@ fn test_dpns_query() {
                 .expect("we should be able to get the records");
             let map_records_value = records_value.as_map().expect("this should be a map");
             let record_dash_unique_identity_id =
-                Value::inner_optional_bytes_value(map_records_value, "identity")
+                Value::inner_optional_bytes_value(map_records_value, "dashUniqueIdentityId")
                     .unwrap()
-                    .expect("there should be a identity");
+                    .expect("there should be a dashUniqueIdentityId");
             bs58::encode(record_dash_unique_identity_id).into_string()
         })
         .collect();
@@ -3454,11 +3454,11 @@ fn test_dpns_query() {
 
     let query_value = json!({
         "where": [
-            ["records.identity", "<=", "5hXRj1xmmnNQ7RN1ATYym4x6bQugxcKn7FWiMnkQTQpF"],
+            ["records.dashUniqueIdentityId", "<=", "5hXRj1xmmnNQ7RN1ATYym4x6bQugxcKn7FWiMnkQTQpF"],
         ],
         "limit": 10,
         "orderBy": [
-            ["records.identity", "desc"]
+            ["records.dashUniqueIdentityId", "desc"]
         ]
     });
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -3510,11 +3510,11 @@ fn test_dpns_query() {
 
     let query_value = json!({
         "where": [
-            ["records.identity", "<=", "5hXRj1xmmnNQ7RN1ATYym4x6bQugxcKn7FWiMnkQTQpF"],
+            ["records.dashUniqueIdentityId", "<=", "5hXRj1xmmnNQ7RN1ATYym4x6bQugxcKn7FWiMnkQTQpF"],
         ],
         "limit": 2,
         "orderBy": [
-            ["records.identity", "asc"]
+            ["records.dashUniqueIdentityId", "asc"]
         ]
     });
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -3562,7 +3562,7 @@ fn test_dpns_query() {
 
     let query_value = json!({
         "orderBy": [
-            ["records.identity", "desc"]
+            ["records.dashUniqueIdentityId", "desc"]
         ]
     });
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -3602,7 +3602,7 @@ fn test_dpns_insertion_no_aliases() {
     let db_transaction = drive.grove.start_transaction();
 
     let query_value = json!({
-        "orderBy": [["records.identity", "desc"]],
+        "orderBy": [["records.dashUniqueIdentityId", "desc"]],
     });
 
     let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -3658,7 +3658,7 @@ fn test_dpns_insertion_with_aliases() {
     let db_transaction = drive.grove.start_transaction();
 
     let query_value = json!({
-        "orderBy": [["records.identity", "desc"]],
+        "orderBy": [["records.dashUniqueIdentityId", "desc"]],
     });
 
     let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -3719,8 +3719,8 @@ fn test_dpns_query_start_at() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        244, 146, 123, 117, 189, 33, 121, 197, 170, 145, 77, 125, 25, 189, 87, 118, 50, 94, 170, 7,
-        21, 208, 63, 241, 89, 4, 243, 50, 118, 21, 49, 24,
+        142, 246, 25, 166, 52, 184, 158, 102, 192, 111, 173, 255, 155, 125, 53, 233, 98, 241, 201,
+        233, 2, 58, 47, 90, 209, 207, 147, 204, 83, 68, 183, 143,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -3813,8 +3813,8 @@ fn test_dpns_query_start_after() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        244, 146, 123, 117, 189, 33, 121, 197, 170, 145, 77, 125, 25, 189, 87, 118, 50, 94, 170, 7,
-        21, 208, 63, 241, 89, 4, 243, 50, 118, 21, 49, 24,
+        142, 246, 25, 166, 52, 184, 158, 102, 192, 111, 173, 255, 155, 125, 53, 233, 98, 241, 201,
+        233, 2, 58, 47, 90, 209, 207, 147, 204, 83, 68, 183, 143,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3907,8 +3907,8 @@ fn test_dpns_query_start_at_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        244, 146, 123, 117, 189, 33, 121, 197, 170, 145, 77, 125, 25, 189, 87, 118, 50, 94, 170, 7,
-        21, 208, 63, 241, 89, 4, 243, 50, 118, 21, 49, 24,
+        142, 246, 25, 166, 52, 184, 158, 102, 192, 111, 173, 255, 155, 125, 53, 233, 98, 241, 201,
+        233, 2, 58, 47, 90, 209, 207, 147, 204, 83, 68, 183, 143,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4001,8 +4001,8 @@ fn test_dpns_query_start_after_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        244, 146, 123, 117, 189, 33, 121, 197, 170, 145, 77, 125, 25, 189, 87, 118, 50, 94, 170, 7,
-        21, 208, 63, 241, 89, 4, 243, 50, 118, 21, 49, 24,
+        142, 246, 25, 166, 52, 184, 158, 102, 192, 111, 173, 255, 155, 125, 53, 233, 98, 241, 201,
+        233, 2, 58, 47, 90, 209, 207, 147, 204, 83, 68, 183, 143,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4195,8 +4195,8 @@ fn test_dpns_query_start_at_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        217, 196, 25, 2, 88, 47, 16, 244, 117, 34, 65, 18, 208, 158, 14, 207, 158, 105, 191, 62,
-        108, 124, 189, 159, 196, 137, 212, 243, 65, 230, 231, 95,
+        72, 138, 172, 70, 225, 95, 64, 122, 142, 96, 131, 223, 154, 119, 132, 79, 182, 97, 202, 63,
+        120, 116, 39, 217, 25, 208, 176, 49, 242, 138, 67, 112,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4398,8 +4398,8 @@ fn test_dpns_query_start_after_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        217, 196, 25, 2, 88, 47, 16, 244, 117, 34, 65, 18, 208, 158, 14, 207, 158, 105, 191, 62,
-        108, 124, 189, 159, 196, 137, 212, 243, 65, 230, 231, 95,
+        72, 138, 172, 70, 225, 95, 64, 122, 142, 96, 131, 223, 154, 119, 132, 79, 182, 97, 202, 63,
+        120, 116, 39, 217, 25, 208, 176, 49, 242, 138, 67, 112,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4605,8 +4605,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        217, 196, 25, 2, 88, 47, 16, 244, 117, 34, 65, 18, 208, 158, 14, 207, 158, 105, 191, 62,
-        108, 124, 189, 159, 196, 137, 212, 243, 65, 230, 231, 95,
+        72, 138, 172, 70, 225, 95, 64, 122, 142, 96, 131, 223, 154, 119, 132, 79, 182, 97, 202, 63,
+        120, 116, 39, 217, 25, 208, 176, 49, 242, 138, 67, 112,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);

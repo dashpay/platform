@@ -4,6 +4,7 @@ use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::core_script::CoreScript;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::{Identity, KeyType, Purpose, SecurityLevel};

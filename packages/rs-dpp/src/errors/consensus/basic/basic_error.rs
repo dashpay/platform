@@ -6,7 +6,19 @@ use thiserror::Error;
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 #[cfg(feature = "json-schema-validation")]
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
-use crate::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError, IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError, InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError, ContestedUniqueIndexWithUniqueIndexError};
+use crate::consensus::basic::data_contract::{
+    ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
+    DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
+    DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
+    DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError,
+    IncompatibleDocumentTypeSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
+    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidDocumentTypeNameError,
+    InvalidDocumentTypeRequiredSecurityLevelError, InvalidIndexPropertyTypeError,
+    InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
+    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
+    UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError,
+    UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError,
+};
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };

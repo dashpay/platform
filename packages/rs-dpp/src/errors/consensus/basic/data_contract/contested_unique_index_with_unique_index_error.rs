@@ -24,7 +24,11 @@ pub struct ContestedUniqueIndexWithUniqueIndexError {
 }
 
 impl ContestedUniqueIndexWithUniqueIndexError {
-    pub fn new(document_type: String, contested_unique_index_name: String, unique_index_name: String) -> Self {
+    pub fn new(
+        document_type: String,
+        contested_unique_index_name: String,
+        unique_index_name: String,
+    ) -> Self {
         Self {
             document_type,
             contested_unique_index_name,
@@ -47,8 +51,6 @@ impl ContestedUniqueIndexWithUniqueIndexError {
 
 impl From<ContestedUniqueIndexWithUniqueIndexError> for ConsensusError {
     fn from(err: ContestedUniqueIndexWithUniqueIndexError) -> Self {
-        Self::BasicError(BasicError::ContestedUniqueIndexWithUniqueIndexError(
-            err,
-        ))
+        Self::BasicError(BasicError::ContestedUniqueIndexWithUniqueIndexError(err))
     }
 }

@@ -23,6 +23,8 @@ use std::convert::TryInto;
 
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumentTypeError;
+#[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
 #[cfg(any(test, feature = "validation"))]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 #[cfg(feature = "validation")]
@@ -50,7 +52,6 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
-use crate::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
 
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
@@ -285,10 +286,10 @@ impl DocumentTypeV0 {
         let mut unique_indices_count = 0;
 
         #[cfg(feature = "validation")]
-        let mut last_non_contested_unique_index_name : Option<String> = None;
+        let mut last_non_contested_unique_index_name: Option<String> = None;
 
         #[cfg(feature = "validation")]
-        let mut last_contested_unique_index_name : Option<String> = None;
+        let mut last_contested_unique_index_name: Option<String> = None;
 
         #[cfg(feature = "validation")]
         let mut contested_indices_count = 0;
@@ -339,17 +340,17 @@ impl DocumentTypeV0 {
                                     )));
                                 }
 
-                                if let Some(last_contested_unique_index_name) = last_contested_unique_index_name.as_ref() {
-
+                                if let Some(last_contested_unique_index_name) =
+                                    last_contested_unique_index_name.as_ref()
+                                {
                                     return Err(ProtocolError::ConsensusError(Box::new(
                                         ContestedUniqueIndexWithUniqueIndexError::new(
                                             name.to_string(),
                                             last_contested_unique_index_name.clone(),
                                             index.name,
                                         )
-                                            .into(),
+                                        .into(),
                                     )));
-
                                 }
 
                                 if index.contested_index.is_none() {
@@ -379,18 +380,18 @@ impl DocumentTypeV0 {
                                         .into(),
                                     )));
                                 }
-                                
-                                if let Some(last_unique_index_name) = last_non_contested_unique_index_name.as_ref() {
-                                    
-                                        return Err(ProtocolError::ConsensusError(Box::new(
-                                            ContestedUniqueIndexWithUniqueIndexError::new(
-                                                name.to_string(),
-                                                index.name,
-                                                last_unique_index_name.clone()
-                                            )
-                                                .into(),
-                                        )));
-                                    
+
+                                if let Some(last_unique_index_name) =
+                                    last_non_contested_unique_index_name.as_ref()
+                                {
+                                    return Err(ProtocolError::ConsensusError(Box::new(
+                                        ContestedUniqueIndexWithUniqueIndexError::new(
+                                            name.to_string(),
+                                            index.name,
+                                            last_unique_index_name.clone(),
+                                        )
+                                        .into(),
+                                    )));
                                 }
 
                                 if documents_mutable {

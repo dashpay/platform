@@ -8,7 +8,6 @@ use grovedb::batch::KeyInfoPath;
 
 use grovedb::EstimatedLayerInformation;
 
-use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use std::collections::HashMap;
 

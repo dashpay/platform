@@ -116,8 +116,7 @@ mod tests {
                     ("normalizedParentDomainName".into(), "dash".into()),
                     (
                         "records".into(),
-                        BTreeMap::from([("identity", Value::from(identity1_id))])
-                            .into(),
+                        BTreeMap::from([("identity", Value::from(identity1_id))]).into(),
                     ),
                 ]),
                 Some(start_identities.first().unwrap().0.id()),
@@ -393,8 +392,7 @@ mod tests {
                     ("normalizedParentDomainName".into(), "dash".into()),
                     (
                         "records".into(),
-                        BTreeMap::from([("identity", Value::from(identity1_id))])
-                            .into(),
+                        BTreeMap::from([("identity", Value::from(identity1_id))]).into(),
                     ),
                 ]),
                 Some(start_identities.first().unwrap().0.id()),
@@ -750,8 +748,7 @@ mod tests {
                     ("normalizedParentDomainName".into(), "dash".into()),
                     (
                         "records".into(),
-                        BTreeMap::from([("identity", Value::from(identity1_id))])
-                            .into(),
+                        BTreeMap::from([("identity", Value::from(identity1_id))]).into(),
                     ),
                 ]),
                 Some(start_identities.first().unwrap().0.id()),
@@ -1119,8 +1116,7 @@ mod tests {
                     ("normalizedParentDomainName".into(), "dash".into()),
                     (
                         "records".into(),
-                        BTreeMap::from([("identity", Value::from(identity1_id))])
-                            .into(),
+                        BTreeMap::from([("identity", Value::from(identity1_id))]).into(),
                     ),
                 ]),
                 Some(start_identities.first().unwrap().0.id()),

@@ -131,6 +131,7 @@ impl Drive {
             }
 
             let any_fields_null = document_top_field.is_empty();
+            let all_fields_null = document_top_field.is_empty();
 
             let mut index_path_info = if document_and_contract_info
                 .owned_document_info
@@ -152,6 +153,7 @@ impl Drive {
                 index_path_info,
                 sub_level,
                 any_fields_null,
+                all_fields_null,
                 &storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,

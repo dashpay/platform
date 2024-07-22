@@ -11,6 +11,7 @@ use dpp::data_contract::DataContract;
 
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 
+use crate::drive::votes::paths::vote_contested_resource_active_polls_contract_document_tree_path;
 use crate::util::type_constants::{DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -19,7 +20,6 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
-use crate::drive::votes::paths::{vote_contested_resource_active_polls_contract_document_tree_path, vote_contested_resource_contract_documents_indexes_path};
 
 impl Drive {
     /// Adds the estimation costs for a contract insertion
@@ -41,9 +41,10 @@ impl Drive {
         } else {
             None
         };
-        
-        let document_types_with_contested_unique_indexes = contract.document_types_with_contested_indexes();
-        
+
+        let document_types_with_contested_unique_indexes =
+            contract.document_types_with_contested_indexes();
+
         if !document_types_with_contested_unique_indexes.is_empty() {
             Self::add_estimation_costs_for_contested_document_tree_levels_up_to_contract_document_type_excluded(
                 contract,

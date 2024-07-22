@@ -23,7 +23,7 @@
           "name": "dashIdentityId",
           "properties": [
             {
-              "records.identity": "asc"
+              "records.dashUniqueIdentityId": "asc"
             }
           ],
           "unique": true
@@ -74,7 +74,7 @@
         "records": {
           "type": "object",
           "properties": {
-            "identity": {
+            "dashUniqueIdentityId": {
               "type": "array",
               "byteArray": true,
               "minItems": 32,

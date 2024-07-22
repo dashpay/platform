@@ -1,6 +1,4 @@
-use crate::drive::constants::{
-    ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE, 
-};
+use crate::drive::constants::ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE;
 
 use crate::drive::Drive;
 
@@ -11,8 +9,7 @@ use grovedb::EstimatedLayerSizes::AllSubtrees;
 
 use crate::drive::votes::paths::{
     vote_contested_resource_active_polls_contract_tree_path,
-    vote_contested_resource_active_polls_tree_path,
-    vote_contested_resource_tree_path,
+    vote_contested_resource_active_polls_tree_path, vote_contested_resource_tree_path,
     vote_root_path,
 };
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
