@@ -6,19 +6,18 @@ import DashPayContract from '@dashevo/dashpay-contract/lib/systemIds.js';
 
 import FeatureFlagsContract from '@dashevo/feature-flags-contract/lib/systemIds.js';
 
-import MasternodeRewardSharesContract
-  from '@dashevo/masternode-reward-shares-contract/lib/systemIds.js';
+import MasternodeRewardSharesContract from '@dashevo/masternode-reward-shares-contract/lib/systemIds.js';
 
 import WithdrawalsContract from '@dashevo/withdrawals-contract/lib/systemIds.js';
 
 import semver from 'semver';
 
 import fs from 'fs';
+import Config from '../../src/config/Config.js';
 import {
   NETWORK_MAINNET,
   PACKAGE_ROOT_DIR,
 } from '../../src/constants.js';
-import Config from '../../src/config/Config.js';
 
 const {
   contractId: dpnsContractId,
@@ -124,7 +123,7 @@ export default function getBaseConfigFactory(homeDir) {
             tenderdash: {
               password: 'rpcpassword',
               whitelist: [
-                'quoruminfo', 'quorumverify', 'quorumsign', 'masternodestatus', 'masternodelist',
+                'quoruminfo', 'quorumverify', 'quorumplatformsign', 'masternodestatus', 'masternodelist',
                 'ping', 'getnetworkinfo',
               ],
               lowPriority: false,
@@ -327,7 +326,7 @@ export default function getBaseConfigFactory(homeDir) {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.0.0',
+              image: 'dashpay/tenderdash:feat-use-dash-core-quorum-platformsign',
             },
             p2p: {
               host: '0.0.0.0',
