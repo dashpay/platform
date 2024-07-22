@@ -96,7 +96,6 @@ pub(crate) mod tests {
     use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
     use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
     use dpp::state_transition::StateTransition;
-    use dpp::tests::json_document::json_document_to_contract_with_ids;
     use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;
     use dpp::voting::contender_structs::{Contender, ContenderV0};
