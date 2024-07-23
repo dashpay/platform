@@ -9,7 +9,7 @@ use thiserror::Error;
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-    "Document type '{document_type}' has a contested unique index '{contested_unique_index_name}'"
+    "Document type '{document_type}' has a contested unique index '{contested_unique_index_name}' but is set as mutable which is not allowed"
 )]
 #[platform_serialize(unversioned)]
 pub struct ContestedUniqueIndexOnMutableDocumentTypeError {

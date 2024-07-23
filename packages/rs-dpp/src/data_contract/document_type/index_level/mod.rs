@@ -29,6 +29,14 @@ pub enum IndexType {
     ContestedResourceIndex,
 }
 
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub struct IndexLevelTypeInfo {
+    /// should we insert if all fields up to here are null
+    pub should_insert_with_all_null: bool,
+    /// The index type
+    pub index_type: IndexType,
+}
+
 impl IndexType {
     pub fn is_unique(&self) -> bool {
         match self {
@@ -39,12 +47,14 @@ impl IndexType {
     }
 }
 
+pub type ShouldInsertWithAllNull = bool;
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct IndexLevel {
     /// the lower index levels from this level
     sub_index_levels: BTreeMap<String, IndexLevel>,
     /// did an index terminate at this level
-    has_index_with_type: Option<IndexType>,
+    has_index_with_type: Option<IndexLevelTypeInfo>,
     /// unique level identifier
     level_identifier: u64,
 }
@@ -58,7 +68,7 @@ impl IndexLevel {
         &self.sub_index_levels
     }
 
-    pub fn has_index_with_type(&self) -> Option<IndexType> {
+    pub fn has_index_with_type(&self) -> Option<IndexLevelTypeInfo> {
         self.has_index_with_type
     }
 
@@ -199,7 +209,12 @@ impl IndexLevel {
                         NonUniqueIndex
                     };
 
-                    current_level.has_index_with_type = Some(index_type);
+                    // if things are null searchable that means we should insert with all null
+
+                    current_level.has_index_with_type = Some(IndexLevelTypeInfo {
+                        should_insert_with_all_null: index.null_searchable,
+                        index_type,
+                    });
                 }
             }
         }
@@ -265,6 +280,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 
@@ -291,6 +307,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 
@@ -302,6 +319,7 @@ mod tests {
                     ascending: false,
                 }],
                 unique: false,
+                null_searchable: true,
                 contested_index: None,
             },
             Index {
@@ -311,6 +329,7 @@ mod tests {
                     ascending: false,
                 }],
                 unique: false,
+                null_searchable: true,
                 contested_index: None,
             },
         ];
@@ -346,6 +365,7 @@ mod tests {
                     ascending: false,
                 }],
                 unique: false,
+                null_searchable: true,
                 contested_index: None,
             },
             Index {
@@ -355,6 +375,7 @@ mod tests {
                     ascending: false,
                 }],
                 unique: false,
+                null_searchable: true,
                 contested_index: None,
             },
         ];
@@ -366,6 +387,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 
@@ -399,6 +421,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 
@@ -415,6 +438,7 @@ mod tests {
                 },
             ],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 
@@ -454,6 +478,7 @@ mod tests {
                 },
             ],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 
@@ -464,6 +489,7 @@ mod tests {
                 ascending: false,
             }],
             unique: false,
+            null_searchable: true,
             contested_index: None,
         }];
 

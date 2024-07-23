@@ -671,12 +671,12 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1761
+                storage_fee: 1840
                     * Epoch::new(0).unwrap().cost_for_known_cost_item(
                         &EPOCH_CHANGE_FEE_VERSION_TEST,
                         StorageDiskUsageCreditPerByte,
                     ),
-                processing_fee: 1227900,
+                processing_fee: 1264300,
                 ..Default::default()
             }
         );

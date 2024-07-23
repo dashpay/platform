@@ -8,7 +8,7 @@
   "normalizedParentDomainName": "dashpay",
   "preorderSalt": "SysX9ol1uoyAaEbFzImAcPP2JCO+ydh/Lb6ES0wU8Tc=",
   "records": {
-    "dashUniqueIdentityId": "AYjYxDqLy2hvGQADqE6FAkBnQEpJSzNd3CRw1tpS6vZ7"
+    "identity": "AYjYxDqLy2hvGQADqE6FAkBnQEpJSzNd3CRw1tpS6vZ7"
   },
   "subdomainRules": {
     "allowSubdomains": false

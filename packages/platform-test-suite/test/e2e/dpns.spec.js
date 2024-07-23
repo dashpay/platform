@@ -80,7 +80,7 @@ describe('DPNS', () => {
     // skip if DPNS owner private key is not passed and use `dash` in tests above
     it('should be able to register a TLD', async () => {
       createdTLD = await ownerClient.platform.names.register(newTopLevelDomain, {
-        dashAliasIdentityId: identity.getId(),
+        identity: identity.getId(),
       }, identity);
 
       // Additional wait time to mitigate testnet latency
@@ -148,7 +148,7 @@ describe('DPNS', () => {
 
       try {
         await client.platform.names.register(getRandomDomain(), {
-          dashAliasIdentityId: identity.getId(),
+          identity: identity.getId(),
         }, identity);
       } catch (e) {
         broadcastError = e;
@@ -161,7 +161,7 @@ describe('DPNS', () => {
 
     it('should be able to register a second level domain', async () => {
       registeredDomain = await client.platform.names.register(`${secondLevelDomain}0.${topLevelDomain}`, {
-        dashUniqueIdentityId: identity.getId(),
+        identity: identity.getId(),
       }, identity);
 
       // Additional wait time to mitigate testnet latency
@@ -179,7 +179,7 @@ describe('DPNS', () => {
         const domain = `${secondLevelDomain}O.${topLevelDomain}`;
 
         await client.platform.names.register(domain, {
-          dashAliasIdentityId: identity.getId(),
+          identity: identity.getId(),
         }, identity);
 
         expect.fail('should throw error');
@@ -199,7 +199,7 @@ describe('DPNS', () => {
         const domain = `${getRandomDomain()}.${getRandomDomain()}`;
 
         await client.platform.names.register(domain, {
-          dashAliasIdentityId: identity.getId(),
+          identity: identity.getId(),
         }, identity);
 
         expect.fail('should throw error');
@@ -252,8 +252,8 @@ describe('DPNS', () => {
 
     it('should be able to resolve domain by it\'s record', async () => {
       const [document] = await client.platform.names.resolveByRecord(
-        'dashUniqueIdentityId',
-        registeredDomain.getData().records.dashUniqueIdentityId,
+        'identity',
+        registeredDomain.getData().records.identity,
       );
 
       const rawDocument = document.toObject();
@@ -310,9 +310,9 @@ describe('DPNS', () => {
       expect(broadcastError.code).to.equal(40500);
     });
 
-    it('should not be able to register two domains with same `dashAliasIdentityId` record');
+    it('should not be able to register two domains with same `identity` record');
 
-    it('should be able to register many domains with same `dashAliasIdentityId` record');
+    it('should be able to register many domains with same `identity` record');
 
     it('should not be able to update preorder');
 

@@ -293,11 +293,8 @@ mod tests {
                 .expect("should obtain root hash");
 
             assert_eq!(
-                root_hash,
-                [
-                    122, 78, 218, 93, 76, 126, 219, 4, 222, 149, 39, 191, 51, 199, 229, 9, 180,
-                    151, 132, 38, 91, 7, 107, 20, 46, 4, 39, 59, 203, 2, 86, 79
-                ]
+                hex::encode(root_hash),
+                "edc1f51a2725e13e02f0a5dd9aad1b3de07872c9cd03e83388a10b0016a27f86"
             )
         }
     }

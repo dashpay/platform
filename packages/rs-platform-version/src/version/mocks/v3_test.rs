@@ -315,6 +315,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 add_estimation_costs_for_levels_up_to_contract: 0,
                 add_estimation_costs_for_levels_up_to_contract_document_type_excluded: 0,
                 add_estimation_costs_for_contested_document_tree_levels_up_to_contract: 0,
+                add_estimation_costs_for_contested_document_tree_levels_up_to_contract_document_type_excluded: 0,
             },
             asset_lock: DriveAssetLockMethodVersions {
                 add_asset_lock_outpoint: 0,

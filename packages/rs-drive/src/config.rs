@@ -162,7 +162,8 @@ fn default_data_contracts_cache_size() -> u64 {
     DEFAULT_DATA_CONTRACTS_CACHE_SIZE
 }
 
-fn default_grovedb_visualizer_address() -> std::net::SocketAddr {
+/// The default grovedb visualizer_address
+pub fn default_grovedb_visualizer_address() -> std::net::SocketAddr {
     "127.0.0.1:8083".parse().unwrap()
 }
 

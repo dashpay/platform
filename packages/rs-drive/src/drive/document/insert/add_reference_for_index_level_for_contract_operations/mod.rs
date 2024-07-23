@@ -11,7 +11,7 @@ use dpp::version::drive_versions::DriveVersion;
 
 use grovedb::batch::KeyInfoPath;
 
-use dpp::data_contract::document_type::IndexType;
+use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
@@ -21,8 +21,9 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
-        index_type: IndexType,
+        index_type: IndexLevelTypeInfo,
         any_fields_null: bool,
+        all_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -43,6 +44,7 @@ impl Drive {
                 index_path_info,
                 index_type,
                 any_fields_null,
+                all_fields_null,
                 previous_batch_operations,
                 storage_flags,
                 estimated_costs_only_with_layer_info,

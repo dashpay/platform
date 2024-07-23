@@ -261,6 +261,9 @@ pub struct Index {
     pub name: String,
     pub properties: Vec<IndexProperty>,
     pub unique: bool,
+    /// Null searchable indicates what to do if all members of the index are null
+    /// If this is set to false then we do not insert references which makes such items non-searchable
+    pub null_searchable: bool,
     /// Contested indexes are useful when a resource is considered valuable
     pub contested_index: Option<ContestedIndexInformation>,
 }
@@ -431,6 +434,9 @@ impl TryFrom<&[(Value, Value)]> for Index {
         // For properties, we iterate each and move it to IndexProperty
 
         let mut unique = false;
+        // The default for null searchable should be true. Do not change this without very
+        // careful thought and consideration.
+        let mut null_searchable = true;
         let mut name = None;
         let mut contested_index = None;
         let mut index_properties: Vec<IndexProperty> = Vec::new();
@@ -452,6 +458,11 @@ impl TryFrom<&[(Value, Value)]> for Index {
                 "unique" => {
                     if value_value.is_bool() {
                         unique = value_value.as_bool().expect("confirmed as bool");
+                    }
+                }
+                "nullSearchable" => {
+                    if value_value.is_bool() {
+                        null_searchable = value_value.as_bool().expect("confirmed as bool");
                     }
                 }
                 "contested" => {
@@ -580,6 +591,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
             name,
             properties: index_properties,
             unique,
+            null_searchable,
             contested_index,
         })
     }

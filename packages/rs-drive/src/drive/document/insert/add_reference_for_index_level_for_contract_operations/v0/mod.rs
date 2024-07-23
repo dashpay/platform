@@ -16,7 +16,7 @@ use crate::util::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyEl
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::data_contract::document_type::IndexType;
+use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::document::DocumentV0Getters;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
@@ -33,8 +33,9 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         mut index_path_info: PathInfo<0>,
-        index_type: IndexType,
+        index_type: IndexLevelTypeInfo,
         any_fields_null: bool,
+        all_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -44,9 +45,12 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
+        if all_fields_null && !index_type.should_insert_with_all_null {
+            return Ok(());
+        }
         // unique indexes will be stored under key "0"
         // non-unique indices should have a tree at key "0" that has all elements based off of primary key
-        if !index_type.is_unique() || any_fields_null {
+        if !index_type.index_type.is_unique() || any_fields_null {
             // Tree generation, this happens for both non unique indexes, unique indexes with a null inside
             // a member of the path
             let key_path_info = KeyRef(&[0]);

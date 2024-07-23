@@ -7,7 +7,7 @@
 	"$revision": 1,
 	"label": "user-9999",
 	"records": {
-		"dashUniqueIdentityId": "HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn"
+		"identity": "HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn"
 	},
 	"preorderSalt": "BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0",
 	"subdomainRules": {
