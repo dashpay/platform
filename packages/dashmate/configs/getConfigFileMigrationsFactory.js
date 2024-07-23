@@ -706,8 +706,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.0.0-beta.5': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.tenderdash.genesis.consensus_params.block = base
-              .get('platform.drive.tenderdash.genesis.consensus_params.block');
+            options.platform.drive.tenderdash.genesis.consensus_params.block.max_gas = base
+              .get('platform.drive.tenderdash.genesis.consensus_params.block.max_gas');
           });
         return configFile;
       },
