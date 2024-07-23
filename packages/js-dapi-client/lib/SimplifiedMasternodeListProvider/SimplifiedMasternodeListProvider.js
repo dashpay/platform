@@ -104,7 +104,7 @@ class SimplifiedMasternodeListProvider {
         try {
           simplifiedMNListDiffBuffer = Buffer.from(response.getMasternodeListDiff_asU8());
 
-          simplifiedMNListDiffObject = cbor.decodeAllSync(simplifiedMNListDiffBuffer);
+          simplifiedMNListDiffObject = cbor.decodeFirstSync(simplifiedMNListDiffBuffer);
 
           simplifiedMNListDiff = new SimplifiedMNListDiff(
             simplifiedMNListDiffObject,
