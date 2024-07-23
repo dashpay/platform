@@ -29,7 +29,6 @@ impl JsonSchemaValidator {
             .should_validate_formats(true)
             .with_draft(jsonschema::Draft::Draft202012)
             .with_keyword("byteArray", |_, _, _| Ok(Box::new(ByteArrayKeyword)))
-            // .with_keyword("transient", |_, _, _| Ok(Box::new(TransientKeyword))) //todo
             .compile(json_schema)
             .map_err(|error| {
                 ProtocolError::ConsensusError(Box::new(ConsensusError::from(error)))
@@ -67,7 +66,6 @@ impl JsonSchemaValidator {
                 .should_validate_formats(true)
                 .with_draft(jsonschema::Draft::Draft202012)
                 .with_keyword("byteArray", |_, _, _| Ok(Box::new(ByteArrayKeyword)))
-                // .with_keyword("transient", |_, _, _| Ok(Box::new(TransientKeyword))) //todo
                 .compile(json_schema)
                 .map_err(|error| {
                     // Todo: not sure this is a consensus error
