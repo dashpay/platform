@@ -242,7 +242,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
         let DocumentCreateTransitionActionV0 {
             base,
             block_info,
-            data,
+            mut data,
             ..
         } = v0;
 
@@ -260,6 +260,12 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                     .document_type_for_name(document_type_name.as_str())?;
 
                 let required_fields = document_type.required_fields();
+                
+                let transient_fields = document_type.transient_fields();
+                
+                if !transient_fields.is_empty() {
+                    data.retain(|key, _| !transient_fields.contains(key));
+                }
 
                 let is_created_at_required = required_fields.contains(CREATED_AT);
                 let is_updated_at_required = required_fields.contains(UPDATED_AT);

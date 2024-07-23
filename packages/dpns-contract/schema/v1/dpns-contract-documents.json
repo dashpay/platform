@@ -124,6 +124,9 @@
       "records",
       "subdomainRules"
     ],
+    "transient": [
+      "preorderSalt"
+    ],
     "additionalProperties": false,
     "$comment": "In order to register a domain you need to create a preorder. The preorder step is needed to prevent man-in-the-middle attacks. normalizedLabel + '.' + normalizedParentDomain must not be longer than 253 chars length as defined by RFC 1035. Domain documents are immutable: modification and deletion are restricted"
   },

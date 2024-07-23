@@ -43,6 +43,8 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) binary_paths: BTreeSet<String>,
     /// The required fields on the document type
     pub(in crate::data_contract) required_fields: BTreeSet<String>,
+    /// The transient fields on the document type
+    pub(in crate::data_contract) transient_fields: BTreeSet<String>,
     /// Should documents keep history?
     pub(in crate::data_contract) documents_keep_history: bool,
     /// Are documents mutable?

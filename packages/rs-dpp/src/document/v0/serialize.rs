@@ -237,11 +237,18 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                         Ok(())
                     }
                 } else if property.required {
-                    Err(ProtocolError::DataContractError(
-                        DataContractError::MissingRequiredKey(format!(
-                            "a required field {field_name} is not present"
-                        )),
-                    ))
+                    //TODO: LEFT OFF HERE: this is probably wrong
+                    if property.transient {
+                        // We don't have something that was required but is transient, we push 0
+                        buffer.push(0);
+                        Ok(())
+                    } else {
+                        Err(ProtocolError::DataContractError(
+                            DataContractError::MissingRequiredKey(format!(
+                                "a required field {field_name} is not present"
+                            )),
+                        ))
+                    }
                 } else {
                     // dbg!("we pushed {} with 0", field_name);
                     // We don't have something that wasn't required
