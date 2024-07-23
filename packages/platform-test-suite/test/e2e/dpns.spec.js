@@ -220,14 +220,28 @@ describe('DPNS', () => {
       const rawDocument = documents[0].toObject();
 
       delete rawDocument.$createdAt;
+      delete rawDocument.$createdAtCoreBlockHeight;
+      delete rawDocument.$createdAtBlockHeight;
       delete rawDocument.$updatedAt;
+      delete rawDocument.$updatedAtCoreBlockHeight;
+      delete rawDocument.$updatedAtBlockHeight;
       delete rawDocument.$transferredAt;
+      delete rawDocument.$transferredAtCoreBlockHeight;
+      delete rawDocument.$transferredAtBlockHeight;
+      delete rawDocument.preorderSalt;
 
       const rawRegisteredDomain = registeredDomain.toObject();
 
       delete rawRegisteredDomain.$createdAt;
+      delete rawRegisteredDomain.$createdAtCoreBlockHeight;
+      delete rawRegisteredDomain.$createdAtBlockHeight;
       delete rawRegisteredDomain.$updatedAt;
+      delete rawRegisteredDomain.$updatedAtCoreBlockHeight;
+      delete rawRegisteredDomain.$updatedAtBlockHeight;
       delete rawRegisteredDomain.$transferredAt;
+      delete rawRegisteredDomain.$transferredAtCoreBlockHeight;
+      delete rawRegisteredDomain.$transferredAtBlockHeight;
+      delete rawRegisteredDomain.preorderSalt;
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
@@ -238,14 +252,28 @@ describe('DPNS', () => {
       const rawDocument = document.toObject();
 
       delete rawDocument.$createdAt;
+      delete rawDocument.$createdAtCoreBlockHeight;
+      delete rawDocument.$createdAtBlockHeight;
       delete rawDocument.$updatedAt;
+      delete rawDocument.$updatedAtCoreBlockHeight;
+      delete rawDocument.$updatedAtBlockHeight;
       delete rawDocument.$transferredAt;
+      delete rawDocument.$transferredAtCoreBlockHeight;
+      delete rawDocument.$transferredAtBlockHeight;
+      delete rawDocument.preorderSalt;
 
       const rawRegisteredDomain = registeredDomain.toObject();
 
       delete rawRegisteredDomain.$createdAt;
+      delete rawRegisteredDomain.$createdAtCoreBlockHeight;
+      delete rawRegisteredDomain.$createdAtBlockHeight;
       delete rawRegisteredDomain.$updatedAt;
+      delete rawRegisteredDomain.$updatedAtCoreBlockHeight;
+      delete rawRegisteredDomain.$updatedAtBlockHeight;
       delete rawRegisteredDomain.$transferredAt;
+      delete rawRegisteredDomain.$transferredAtCoreBlockHeight;
+      delete rawRegisteredDomain.$transferredAtBlockHeight;
+      delete rawRegisteredDomain.preorderSalt;
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
@@ -259,14 +287,28 @@ describe('DPNS', () => {
       const rawDocument = document.toObject();
 
       delete rawDocument.$createdAt;
+      delete rawDocument.$createdAtCoreBlockHeight;
+      delete rawDocument.$createdAtBlockHeight;
       delete rawDocument.$updatedAt;
+      delete rawDocument.$updatedAtCoreBlockHeight;
+      delete rawDocument.$updatedAtBlockHeight;
       delete rawDocument.$transferredAt;
+      delete rawDocument.$transferredAtCoreBlockHeight;
+      delete rawDocument.$transferredAtBlockHeight;
+      delete rawDocument.preorderSalt;
 
       const rawRegisteredDomain = registeredDomain.toObject();
 
       delete rawRegisteredDomain.$createdAt;
+      delete rawRegisteredDomain.$createdAtCoreBlockHeight;
+      delete rawRegisteredDomain.$createdAtBlockHeight;
       delete rawRegisteredDomain.$updatedAt;
+      delete rawRegisteredDomain.$updatedAtCoreBlockHeight;
+      delete rawRegisteredDomain.$updatedAtBlockHeight;
       delete rawRegisteredDomain.$transferredAt;
+      delete rawRegisteredDomain.$transferredAtCoreBlockHeight;
+      delete rawRegisteredDomain.$transferredAtBlockHeight;
+      delete rawRegisteredDomain.preorderSalt;
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });

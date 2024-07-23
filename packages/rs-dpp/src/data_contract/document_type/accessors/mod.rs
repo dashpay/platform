@@ -77,6 +77,12 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
+    fn transient_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(v0) => v0.transient_fields(),
+        }
+    }
+
     fn documents_keep_history(&self) -> bool {
         match self {
             DocumentType::V0(v0) => v0.documents_keep_history(),
@@ -205,6 +211,12 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
+    fn transient_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.transient_fields(),
+        }
+    }
+
     fn documents_keep_history(&self) -> bool {
         match self {
             DocumentTypeRef::V0(v0) => v0.documents_keep_history(),
@@ -330,6 +342,12 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
     fn required_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.required_fields(),
+        }
+    }
+
+    fn transient_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.transient_fields(),
         }
     }
 

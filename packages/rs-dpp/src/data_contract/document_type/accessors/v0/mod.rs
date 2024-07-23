@@ -44,6 +44,10 @@ pub trait DocumentTypeV0Getters {
     /// Returns the required fields of the document type.
     fn required_fields(&self) -> &BTreeSet<String>;
 
+    /// Returns the transient fields of the document type.
+    /// Transient fields are fields that should be stripped from the document before storage.
+    fn transient_fields(&self) -> &BTreeSet<String>;
+
     /// Returns the documents keep history flag of the document type.
     fn documents_keep_history(&self) -> bool;
 

@@ -506,6 +506,12 @@
       "minProperties": 1,
       "maxProperties": 100
     },
+    "transient": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "additionalProperties": {
       "type": "boolean",
       "const": false

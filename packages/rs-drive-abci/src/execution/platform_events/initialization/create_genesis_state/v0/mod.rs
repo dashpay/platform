@@ -294,7 +294,7 @@ mod tests {
 
             assert_eq!(
                 hex::encode(root_hash),
-                "edc1f51a2725e13e02f0a5dd9aad1b3de07872c9cd03e83388a10b0016a27f86"
+                "6cf0ca2eea48431b1df389a2d360fa1e9889c34f05248a7159b4e45c818fb80d"
             )
         }
     }
