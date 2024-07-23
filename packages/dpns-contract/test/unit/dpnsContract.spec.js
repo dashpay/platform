@@ -158,7 +158,7 @@ describe('DPNS Contract', () => {
           normalizedParentDomainName: 'dash',
           preorderSalt: crypto.randomBytes(32),
           records: {
-            identity: await generateRandomIdentifier(),
+            dashIdentityId: await generateRandomIdentifier(),
           },
           subdomainRules: {
             allowSubdomains: false,
@@ -471,7 +471,7 @@ describe('DPNS Contract', () => {
           describe('identity record', () => {
             it('should no less than 32 bytes', async () => {
               rawDomainDocument.records = {
-                identity: crypto.randomBytes(30),
+                dashIdentityId: crypto.randomBytes(30),
               };
 
               expect(() => {
@@ -483,7 +483,7 @@ describe('DPNS Contract', () => {
 
             it('should no more than 32 bytes', async () => {
               rawDomainDocument.records = {
-                identity: crypto.randomBytes(64),
+                dashIdentityId: crypto.randomBytes(64),
               };
 
               expect(() => {
