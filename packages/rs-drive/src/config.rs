@@ -34,7 +34,10 @@ pub struct DriveConfig {
     pub has_raw_enabled: bool,
 
     /// Boolean if GroveDB verification should happen on startup
-    #[cfg_attr(feature = "serde", serde(default = "default_grove_verify_on_startup_enabled"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "default_grove_verify_on_startup_enabled")
+    )]
     pub grovedb_verify_on_startup: bool,
 
     /// The default returned count if no limit is set
