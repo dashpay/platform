@@ -212,7 +212,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             .try_for_each(|(field_name, property)| {
                 if let Some(value) = self.properties.get(field_name) {
                     if value.is_null() {
-                        if property.required {
+                        if property.required && !property.transient {
                             Err(ProtocolError::DataContractError(
                                 DataContractError::MissingRequiredKey(
                                     "a required field is not present".to_string(),
@@ -225,7 +225,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                             Ok(())
                         }
                     } else {
-                        if !property.required {
+                        if !property.required || property.transient {
                             // dbg!("we added 1", field_name);
                             buffer.push(1);
                         }
@@ -236,19 +236,12 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                         buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if property.required {
-                    //TODO: LEFT OFF HERE: this is probably wrong
-                    if property.transient {
-                        // We don't have something that was required but is transient, we push 0
-                        buffer.push(0);
-                        Ok(())
-                    } else {
-                        Err(ProtocolError::DataContractError(
-                            DataContractError::MissingRequiredKey(format!(
-                                "a required field {field_name} is not present"
-                            )),
-                        ))
-                    }
+                } else if property.required && !property.transient {
+                    Err(ProtocolError::DataContractError(
+                        DataContractError::MissingRequiredKey(format!(
+                            "a required field {field_name} is not present"
+                        )),
+                    ))
                 } else {
                     // dbg!("we pushed {} with 0", field_name);
                     // We don't have something that wasn't required
@@ -448,7 +441,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                             Ok(())
                         }
                     } else {
-                        if !property.required {
+                        if !property.required || property.transient {
                             // dbg!("we added 1", field_name);
                             buffer.push(1);
                         }
@@ -459,7 +452,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                         buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if property.required {
+                } else if property.required && !property.transient {
                     Err(ProtocolError::DataContractError(
                         DataContractError::MissingRequiredKey(format!(
                             "a required field {field_name} is not present"
@@ -651,7 +644,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             .iter()
             .filter_map(|(key, property)| {
                 if finished_buffer {
-                    return if property.required {
+                    return if property.required && !property.transient {
                         Some(Err(DataContractError::CorruptedSerialization(
                             "required field after finished buffer".to_string(),
                         )))
@@ -661,7 +654,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                 }
                 let read_value = property
                     .property_type
-                    .read_optionally_from(&mut buf, property.required);
+                    .read_optionally_from(&mut buf, property.required & !property.transient);
 
                 match read_value {
                     Ok(read_value) => {
