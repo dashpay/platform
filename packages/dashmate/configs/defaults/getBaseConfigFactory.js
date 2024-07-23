@@ -399,7 +399,7 @@ export default function getBaseConfigFactory(homeDir) {
               consensus_params: {
                 block: {
                   max_bytes: '2097152',
-                  max_gas: '57631392000',
+                  max_gas: '19210464000',
                   time_iota_ms: '5000',
                 },
                 evidence: {
