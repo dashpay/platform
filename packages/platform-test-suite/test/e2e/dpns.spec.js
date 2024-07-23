@@ -161,7 +161,7 @@ describe('DPNS', () => {
 
     it('should be able to register a second level domain', async () => {
       registeredDomain = await client.platform.names.register(`${secondLevelDomain}0.${topLevelDomain}`, {
-        dashUniqueIdentityId: identity.getId(),
+        identity: identity.getId(),
       }, identity);
 
       // Additional wait time to mitigate testnet latency
@@ -252,8 +252,8 @@ describe('DPNS', () => {
 
     it('should be able to resolve domain by it\'s record', async () => {
       const [document] = await client.platform.names.resolveByRecord(
-        'dashUniqueIdentityId',
-        registeredDomain.getData().records.dashUniqueIdentityId,
+        'identity',
+        registeredDomain.getData().records.identity,
       );
 
       const rawDocument = document.toObject();
