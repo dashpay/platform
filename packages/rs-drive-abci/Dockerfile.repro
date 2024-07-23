@@ -24,10 +24,3 @@ RUN if [ "$(uname -m)" = "aarch64" ]; then \
 
 # Set the working directory inside the container
 WORKDIR /app
-
-# Copy your source code into the container
-# COPY . .
-
-# Build the Rust project
-# RUN cargo build --release --locked
-
