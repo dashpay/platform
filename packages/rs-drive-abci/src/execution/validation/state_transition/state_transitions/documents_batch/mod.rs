@@ -578,14 +578,14 @@ mod tests {
             document_1.set("normalizedParentDomainName", "dash".into());
             document_1.set("label", "quantum".into());
             document_1.set("normalizedLabel", "quantum".into());
-            document_1.set("records.identity", document_1.owner_id().into());
+            document_1.set("records.dashIdentityId", document_1.owner_id().into());
             document_1.set("subdomainRules.allowSubdomains", false.into());
 
             document_2.set("parentDomainName", "dash".into());
             document_2.set("normalizedParentDomainName", "dash".into());
             document_2.set("label", "quantum".into());
             document_2.set("normalizedLabel", "quantum".into());
-            document_2.set("records.identity", document_2.owner_id().into());
+            document_2.set("records.dashIdentityId", document_2.owner_id().into());
             document_2.set("subdomainRules.allowSubdomains", false.into());
 
             let salt_1: [u8; 32] = rng.gen();
@@ -5570,21 +5570,21 @@ mod tests {
             document_1.set("normalizedParentDomainName", "dash".into());
             document_1.set("label", "quantum123".into());
             document_1.set("normalizedLabel", "quantum123".into());
-            document_1.set("records.contract", dashpay_contract.id().into());
+            document_1.set("records.dashDataContractId", dashpay_contract.id().into());
             document_1.set("subdomainRules.allowSubdomains", false.into());
 
             document_2.set("parentDomainName", "dash".into());
             document_2.set("normalizedParentDomainName", "dash".into());
             document_2.set("label", "van89".into());
             document_2.set("normalizedLabel", "van89".into());
-            document_2.set("records.contract", card_game.id().into());
+            document_2.set("records.dashDataContractId", card_game.id().into());
             document_2.set("subdomainRules.allowSubdomains", false.into());
 
             document_3.set("parentDomainName", "dash".into());
             document_3.set("normalizedParentDomainName", "dash".into());
             document_3.set("label", "jazz65".into());
             document_3.set("normalizedLabel", "jazz65".into());
-            document_3.set("records.identity", document_3.owner_id().into());
+            document_3.set("records.dashIdentityId", document_3.owner_id().into());
             document_3.set("subdomainRules.allowSubdomains", false.into());
 
             let salt_1: [u8; 32] = rng.gen();
@@ -5798,9 +5798,9 @@ mod tests {
             let mut order_by = IndexMap::new();
 
             order_by.insert(
-                "records.identity".to_string(),
+                "records.dashIdentityId".to_string(),
                 OrderClause {
-                    field: "records.identity".to_string(),
+                    field: "records.dashIdentityId".to_string(),
                     ascending: true,
                 },
             );
@@ -5813,7 +5813,7 @@ mod tests {
                     primary_key_equal_clause: None,
                     in_clause: None,
                     range_clause: Some(WhereClause {
-                        field: "records.identity".to_string(),
+                        field: "records.dashIdentityId".to_string(),
                         operator: WhereOperator::LessThanOrEquals,
                         value: Value::Bytes32([255; 32]),
                     }),
@@ -5848,9 +5848,9 @@ mod tests {
                     in_clause: None,
                     range_clause: None,
                     equal_clauses: BTreeMap::from([(
-                        "records.identity".to_string(),
+                        "records.dashIdentityId".to_string(),
                         WhereClause {
-                            field: "records.identity".to_string(),
+                            field: "records.dashIdentityId".to_string(),
                             operator: WhereOperator::Equal,
                             value: Value::Null,
                         },
@@ -6004,21 +6004,21 @@ mod tests {
             document_1.set("normalizedParentDomainName", "dash".into());
             document_1.set("label", "quantum123".into());
             document_1.set("normalizedLabel", "quantum123".into());
-            document_1.set("records.contract", dashpay_contract.id().into());
+            document_1.set("records.dashDataContractId", dashpay_contract.id().into());
             document_1.set("subdomainRules.allowSubdomains", false.into());
 
             document_2.set("parentDomainName", "dash".into());
             document_2.set("normalizedParentDomainName", "dash".into());
             document_2.set("label", "van89".into());
             document_2.set("normalizedLabel", "van89".into());
-            document_2.set("records.contract", card_game.id().into());
+            document_2.set("records.dashDataContractId", card_game.id().into());
             document_2.set("subdomainRules.allowSubdomains", false.into());
 
             document_3.set("parentDomainName", "dash".into());
             document_3.set("normalizedParentDomainName", "dash".into());
             document_3.set("label", "jazz65".into());
             document_3.set("normalizedLabel", "jazz65".into());
-            document_3.set("records.identity", document_3.owner_id().into());
+            document_3.set("records.dashIdentityId", document_3.owner_id().into());
             document_3.set("subdomainRules.allowSubdomains", false.into());
 
             let salt_1: [u8; 32] = rng.gen();
@@ -6232,9 +6232,9 @@ mod tests {
             let mut order_by = IndexMap::new();
 
             order_by.insert(
-                "records.identity".to_string(),
+                "records.dashIdentityId".to_string(),
                 OrderClause {
-                    field: "records.identity".to_string(),
+                    field: "records.dashIdentityId".to_string(),
                     ascending: true,
                 },
             );
@@ -6247,7 +6247,7 @@ mod tests {
                     primary_key_equal_clause: None,
                     in_clause: None,
                     range_clause: Some(WhereClause {
-                        field: "records.identity".to_string(),
+                        field: "records.dashIdentityId".to_string(),
                         operator: WhereOperator::LessThanOrEquals,
                         value: Value::Bytes32([255; 32]),
                     }),
@@ -6279,9 +6279,9 @@ mod tests {
                     in_clause: None,
                     range_clause: None,
                     equal_clauses: BTreeMap::from([(
-                        "records.identity".to_string(),
+                        "records.dashIdentityId".to_string(),
                         WhereClause {
-                            field: "records.identity".to_string(),
+                            field: "records.dashIdentityId".to_string(),
                             operator: WhereOperator::Equal,
                             value: Value::Null,
                         },

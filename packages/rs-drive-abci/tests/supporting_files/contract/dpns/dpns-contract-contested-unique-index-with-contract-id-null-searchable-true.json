@@ -37,7 +37,7 @@
           "name": "identityId",
           "properties": [
             {
-              "records.identity": "asc"
+              "records.dashIdentityId": "asc"
             }
           ]
         },
@@ -45,7 +45,7 @@
           "name": "contractId",
           "properties": [
             {
-              "records.contract": "asc"
+              "records.dashDataContractId": "asc"
             }
           ]
         }
@@ -95,7 +95,7 @@
         "records": {
           "type": "object",
           "properties": {
-            "identity": {
+            "dashIdentityId": {
               "type": "array",
               "byteArray": true,
               "minItems": 32,
@@ -104,7 +104,7 @@
               "contentMediaType": "application/x.dash.dpp.identifier",
               "description": "Identifier name record that refers to an Identity"
             },
-            "contract": {
+            "dashDataContractId": {
               "type": "array",
               "byteArray": true,
               "minItems": 32,

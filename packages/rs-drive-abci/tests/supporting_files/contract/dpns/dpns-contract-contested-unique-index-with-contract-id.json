@@ -38,7 +38,7 @@
           "nullSearchable": false,
           "properties": [
             {
-              "records.identity": "asc"
+              "records.dashIdentityId": "asc"
             }
           ]
         },
@@ -47,7 +47,7 @@
           "nullSearchable": false,
           "properties": [
             {
-              "records.contract": "asc"
+              "records.dashDataContractId": "asc"
             }
           ]
         }
@@ -97,16 +97,16 @@
         "records": {
           "type": "object",
           "properties": {
-            "identity": {
+            "dashIdentityId": {
               "type": "array",
               "byteArray": true,
               "minItems": 32,
               "maxItems": 32,
               "position": 1,
               "contentMediaType": "application/x.dash.dpp.identifier",
-              "description": "Identifier name record that refers to an Identity"
+              "description": "Identifier name record that refers to a dash identity"
             },
-            "contract": {
+            "dashDataContractId": {
               "type": "array",
               "byteArray": true,
               "minItems": 32,

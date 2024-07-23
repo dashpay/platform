@@ -38,7 +38,7 @@
           "nullSearchable": false,
           "properties": [
             {
-              "records.identity": "asc"
+              "records.dashIdentityId": "asc"
             }
           ]
         }
@@ -88,7 +88,7 @@
         "records": {
           "type": "object",
           "properties": {
-            "identity": {
+            "dashIdentityId": {
               "type": "array",
               "byteArray": true,
               "minItems": 32,
