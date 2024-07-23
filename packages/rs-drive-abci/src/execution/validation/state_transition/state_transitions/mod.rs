@@ -197,6 +197,64 @@ pub(crate) mod tests {
         (identity, signer, critical_public_key)
     }
 
+    pub(crate) fn setup_identity_return_master_key(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        seed: u64,
+        credits: Credits,
+    ) -> (Identity, SimpleSigner, IdentityPublicKey) {
+        let platform_version = PlatformVersion::latest();
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                0,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
+        let (critical_public_key, private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
+                1,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(critical_public_key.clone(), private_key.clone());
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([
+                (0, master_key.clone()),
+                (1, critical_public_key.clone()),
+            ]),
+            balance: credits,
+            revision: 0,
+        }
+        .into();
+
+        // We just add this identity to the system first
+
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new identity");
+
+        (identity, signer, master_key)
+    }
+
     pub(crate) fn setup_identity_with_withdrawal_key_and_system_credits(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,

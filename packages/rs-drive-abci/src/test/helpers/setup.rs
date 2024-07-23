@@ -38,7 +38,6 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 #[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
-use crate::test::fixture::abci::static_system_identity_public_keys_v0;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
 use dpp::block::block_info::BlockInfo;
 use dpp::document::transfer::Transferable;
@@ -194,12 +193,7 @@ impl TempPlatform<MockCoreRPCLike> {
     /// Sets Platform to genesis state.
     pub fn set_genesis_state(self) -> Self {
         self.platform
-            .create_genesis_state(
-                Default::default(),
-                static_system_identity_public_keys_v0().into(),
-                None,
-                PlatformVersion::latest(),
-            )
+            .create_genesis_state(Default::default(), None, PlatformVersion::latest())
             .expect("should create root tree successfully");
 
         self

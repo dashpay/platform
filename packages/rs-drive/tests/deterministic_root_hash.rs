@@ -297,7 +297,7 @@ mod tests {
             .unwrap()
             .expect("should return app hash");
 
-        let expected_app_hash = "d4adde72efa33c20ba41ae2c6b34255060bea5f51592e4e9977dd41e893bd21e";
+        let expected_app_hash = "1b80f4a9f00597b3f1ddca904b3cee67576868adcdd802c0a3f91e14209bb402";
 
         assert_eq!(hex::encode(app_hash), expected_app_hash);
     }
