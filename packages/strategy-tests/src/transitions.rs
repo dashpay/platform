@@ -671,7 +671,6 @@ pub fn create_identities_state_transitions(
                     )?;
                     identity.add_public_key(key.clone());
                     let key_num = key_count as usize * (i + 1) + i;
-                    tracing::info!("key num: {key_num}");
                     keys.insert(key_num, (key, private_key))
                 }
             }
