@@ -80,7 +80,7 @@ describe('DPNS', () => {
     // skip if DPNS owner private key is not passed and use `dash` in tests above
     it('should be able to register a TLD', async () => {
       createdTLD = await ownerClient.platform.names.register(newTopLevelDomain, {
-        identity: identity.getId(),
+        dashIdentityId: identity.getId(),
       }, identity);
 
       // Additional wait time to mitigate testnet latency
@@ -148,7 +148,7 @@ describe('DPNS', () => {
 
       try {
         await client.platform.names.register(getRandomDomain(), {
-          identity: identity.getId(),
+          dashIdentityId: identity.getId(),
         }, identity);
       } catch (e) {
         broadcastError = e;
@@ -179,7 +179,7 @@ describe('DPNS', () => {
         const domain = `${secondLevelDomain}O.${topLevelDomain}`;
 
         await client.platform.names.register(domain, {
-          identity: identity.getId(),
+          dashIdentityId: identity.getId(),
         }, identity);
 
         expect.fail('should throw error');
@@ -199,7 +199,7 @@ describe('DPNS', () => {
         const domain = `${getRandomDomain()}.${getRandomDomain()}`;
 
         await client.platform.names.register(domain, {
-          identity: identity.getId(),
+          dashIdentityId: identity.getId(),
         }, identity);
 
         expect.fail('should throw error');
