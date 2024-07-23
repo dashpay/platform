@@ -39,7 +39,15 @@ class DAPIClient extends EventEmitter {
       ...options,
     };
 
-    this.dapiAddressProvider = createDAPIAddressProviderFromOptions(this.options);
+    this.logger = logger.getForId(
+      this.options.loggerOptions.identifier,
+      this.options.loggerOptions.level,
+    );
+
+    this.dapiAddressProvider = createDAPIAddressProviderFromOptions({
+      ...this.options,
+      logger: this.logger,
+    });
 
     const grpcTransport = new GrpcTransport(
       createDAPIAddressProviderFromOptions,
@@ -58,10 +66,6 @@ class DAPIClient extends EventEmitter {
 
     this.core = new CoreMethodsFacade(jsonRpcTransport, grpcTransport);
     this.platform = new PlatformMethodsFacade(grpcTransport);
-    this.logger = logger.getForId(
-      this.options.loggerOptions.identifier,
-      this.options.loggerOptions.level,
-    );
 
     this.initBlockHeadersProvider();
   }

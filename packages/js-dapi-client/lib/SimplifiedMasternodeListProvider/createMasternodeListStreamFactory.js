@@ -42,6 +42,7 @@ function createMasternodeListStreamFactory(
       ),
       {
         maxRetriesOnError: -1,
+        logger: options.logger,
       },
     );
 }
