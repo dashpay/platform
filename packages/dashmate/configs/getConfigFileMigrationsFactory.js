@@ -705,7 +705,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       },
       '1.0.0-beta.5': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([name, options]) => {
+          .forEach(([, options]) => {
             options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
 
             // Update Core RPC Tenderdash auth whitelist to replace quorumsign with qurumplatformsign
