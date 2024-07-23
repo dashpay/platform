@@ -275,7 +275,6 @@ describe('DPNS', () => {
       delete rawRegisteredDomain.$transferredAtBlockHeight;
       delete rawRegisteredDomain.preorderSalt;
 
-
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
 
@@ -310,7 +309,6 @@ describe('DPNS', () => {
       delete rawRegisteredDomain.$transferredAtCoreBlockHeight;
       delete rawRegisteredDomain.$transferredAtBlockHeight;
       delete rawRegisteredDomain.preorderSalt;
-
 
       expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
