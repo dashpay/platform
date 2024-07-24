@@ -57,7 +57,6 @@ pub struct Config {
     /// ID of existing identity.
     ///
     /// Format: Base58
-    #[serde(default = "Config::default_identity_id")]
     pub existing_identity_id: Identifier,
     /// ID of existing data contract.
     ///
@@ -222,10 +221,6 @@ impl Config {
         };
 
         sdk
-    }
-
-    fn default_identity_id() -> Identifier {
-        data_contracts::dpns_contract::OWNER_ID_BYTES.into()
     }
 
     fn default_data_contract_id() -> Identifier {
