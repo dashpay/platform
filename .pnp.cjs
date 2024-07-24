@@ -8459,11 +8459,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
           ["@dashevo/dashcore-lib", "npm:0.21.3"],\
           ["@dashevo/dashd-rpc", "npm:19.0.0"],\
-          ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
           ["@dashevo/docker-compose", "npm:0.24.4"],\
-          ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
-          ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
-          ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
           ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
           ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
           ["@oclif/core", "npm:3.26.5"],\
