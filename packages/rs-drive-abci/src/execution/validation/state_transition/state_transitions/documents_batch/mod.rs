@@ -476,7 +476,7 @@ mod tests {
                     )),
                     FeeResult {
                         storage_fee: 11556000,
-                        processing_fee: 634380,
+                        processing_fee: 526140,
                         fee_refunds: FeeRefunds::default(),
                         removed_bytes_from_system: 0
                     }
@@ -1487,7 +1487,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1449980);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 1341740);
         }
 
         #[test]
@@ -1910,7 +1910,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 624280);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 516040);
         }
     }
 
@@ -2049,7 +2049,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 1);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 1717580);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 1609340);
         }
 
         #[test]
@@ -2514,7 +2514,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 552580);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
         }
 
         #[test]
@@ -2603,7 +2603,7 @@ mod tests {
 
             assert_eq!(processing_result.valid_count(), 0);
 
-            assert_eq!(processing_result.aggregated_fees().processing_fee, 624280);
+            assert_eq!(processing_result.aggregated_fees().processing_fee, 516040);
         }
     }
 

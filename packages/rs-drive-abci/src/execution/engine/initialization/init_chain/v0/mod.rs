@@ -10,7 +10,6 @@ use drive::grovedb::Transaction;
 use crate::platform_types::cleaned_abci_messages::request_init_chain_cleaned_params;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
-use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
@@ -55,16 +54,8 @@ where
 
         let genesis_time = request.genesis_time;
 
-        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
-            self.config.abci.keys.clone().into();
-
         // Create genesis drive state
-        self.create_genesis_state(
-            genesis_time,
-            system_identity_public_keys_v0.into(),
-            Some(transaction),
-            platform_version,
-        )?;
+        self.create_genesis_state(genesis_time, Some(transaction), platform_version)?;
 
         // Create platform execution state
         let mut initial_platform_state = PlatformState::default_with_protocol_versions(

@@ -2,7 +2,6 @@ const crypto = require('crypto');
 
 const {
   contractId: dpnsContractId,
-  ownerId: dpnsOwnerId,
 } = require('@dashevo/dpns-contract/lib/systemIds');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
@@ -33,8 +32,6 @@ describe('DPNS', () => {
     topLevelDomain = 'dash';
     secondLevelDomain = getRandomDomain();
     client = await createClientWithFundedWallet(1000000);
-
-    await client.platform.identities.topUp(dpnsOwnerId, 300000);
   });
 
   after(async () => {
@@ -49,84 +46,6 @@ describe('DPNS', () => {
 
       expect(createdDataContract).to.exist();
       expect(createdDataContract.getId().toString()).to.equal(dpnsContractId);
-    });
-  });
-
-  describe('DPNS owner', () => {
-    let createdTLD;
-    let newTopLevelDomain;
-    let ownerClient;
-
-    before(async () => {
-      ownerClient = await createClientWithFundedWallet(
-        200000,
-        process.env.DPNS_OWNER_PRIVATE_KEY,
-      );
-
-      newTopLevelDomain = getRandomDomain();
-      identity = await ownerClient.platform.identities.get(dpnsOwnerId);
-
-      expect(identity).to.exist();
-      await ownerClient.platform.identities.topUp(dpnsOwnerId, 60000);
-    });
-
-    after(async () => {
-      if (ownerClient) {
-        await ownerClient.disconnect();
-      }
-    });
-
-    // generate a random one which will be used in tests above
-    // skip if DPNS owner private key is not passed and use `dash` in tests above
-    it('should be able to register a TLD', async () => {
-      createdTLD = await ownerClient.platform.names.register(newTopLevelDomain, {
-        identity: identity.getId(),
-      }, identity);
-
-      // Additional wait time to mitigate testnet latency
-      await waitForSTPropagated();
-
-      expect(createdTLD).to.exist();
-      expect(createdTLD.getType()).to.equal('domain');
-      expect(createdTLD.getData().label).to.equal(newTopLevelDomain);
-      expect(createdTLD.getData().normalizedParentDomainName).to.equal('');
-    });
-
-    // TODO: Enable test when we figure out how to skip a check in the SDK's state transition
-    //  factory
-    it.skip('should not be able to update domain', async () => {
-      createdTLD.set('label', 'anotherlabel');
-
-      let broadcastError;
-
-      try {
-        await ownerClient.platform.documents.broadcast({
-          replace: [createdTLD],
-        }, identity);
-      } catch (e) {
-        broadcastError = e;
-      }
-
-      expect(broadcastError).to.exist();
-      expect(broadcastError.message).to.be.equal('Action is not allowed');
-      expect(broadcastError.code).to.equal(40500);
-    });
-
-    // TODO: Enable test when we documentsMutable true fixed and do not prevent from deleting
-    it.skip('should not be able to delete domain', async () => {
-      let broadcastError;
-
-      try {
-        await ownerClient.platform.documents.broadcast({
-          delete: [createdTLD],
-        }, identity);
-      } catch (e) {
-        broadcastError = e;
-      }
-
-      expect(broadcastError).to.exist();
-      expect(broadcastError.message).to.be.equal('Action is not allowed');
-      expect(broadcastError.code).to.equal(40500);
     });
   });
 

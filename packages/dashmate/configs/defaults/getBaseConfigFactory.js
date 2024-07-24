@@ -1,15 +1,4 @@
 import path from 'path';
-
-import DPNSContract from '@dashevo/dpns-contract/lib/systemIds.js';
-
-import DashPayContract from '@dashevo/dashpay-contract/lib/systemIds.js';
-
-import FeatureFlagsContract from '@dashevo/feature-flags-contract/lib/systemIds.js';
-
-import MasternodeRewardSharesContract from '@dashevo/masternode-reward-shares-contract/lib/systemIds.js';
-
-import WithdrawalsContract from '@dashevo/withdrawals-contract/lib/systemIds.js';
-
 import semver from 'semver';
 
 import fs from 'fs';
@@ -18,20 +7,6 @@ import {
   NETWORK_MAINNET,
   PACKAGE_ROOT_DIR,
 } from '../../src/constants.js';
-
-const {
-  contractId: dpnsContractId,
-  ownerId: dpnsOwnerId,
-} = DPNSContract;
-
-const { contractId: dashpayContractId } = DashPayContract;
-
-const {
-  contractId: featureFlagsContractId,
-  ownerId: featureFlagsOwnerId,
-} = FeatureFlagsContract;
-const { contractId: masternodeRewardSharesContractId } = MasternodeRewardSharesContract;
-const { contractId: withdrawalsContractId } = WithdrawalsContract;
 
 const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
@@ -432,44 +407,7 @@ export default function getBaseConfigFactory(homeDir) {
             moniker: null,
           },
         },
-        dpns: {
-          contract: {
-            id: dpnsContractId,
-          },
-          ownerId: dpnsOwnerId,
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
-        dashpay: {
-          contract: {
-            id: dashpayContractId,
-          },
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
-        featureFlags: {
-          contract: {
-            id: featureFlagsContractId,
-          },
-          ownerId: featureFlagsOwnerId,
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
         sourcePath: null,
-        masternodeRewardShares: {
-          contract: {
-            id: masternodeRewardSharesContractId,
-          },
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
-        withdrawals: {
-          contract: {
-            id: withdrawalsContractId,
-          },
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
         enable: true,
       },
       dashmate: {

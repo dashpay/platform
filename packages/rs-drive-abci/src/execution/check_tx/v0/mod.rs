@@ -205,7 +205,6 @@ mod tests {
         SuccessfulPaidExecution, UnpaidConsensusExecutionError, UnsuccessfulPaidExecution,
     };
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
@@ -220,7 +219,6 @@ mod tests {
     use dpp::data_contract::document_type::random_document::{
         CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
     };
-    use dpp::data_contracts::dpns_contract;
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::DocumentV0Setters;
     use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
@@ -249,19 +247,25 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
+    use crate::execution::validation::state_transition::tests::{
+        setup_identity, setup_identity_return_master_key,
+    };
     use crate::platform_types::platform::PlatformRef;
+    use assert_matches::assert_matches;
     use dpp::consensus::state::state_error::StateError;
+    use dpp::dash_to_credits;
     use dpp::data_contract::document_type::v0::random_document_type::{
         FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
     };
     use dpp::data_contract::document_type::v0::DocumentTypeV0;
     use dpp::data_contract::document_type::DocumentType;
     use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::signer::Signer;
     use dpp::platform_value::Bytes32;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
     use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
-    use dpp::system_data_contracts::dashpay_contract;
     use dpp::system_data_contracts::SystemDataContract::Dashpay;
     use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
     use rand::rngs::StdRng;
@@ -2614,28 +2618,6 @@ mod tests {
 
     #[test]
     fn identity_update_with_non_master_key_check_tx() {
-        let mut config = PlatformConfig::default();
-
-        let mut rng = StdRng::seed_from_u64(1);
-
-        let secp = Secp256k1::new();
-
-        let master_key_pair = KeyPair::new(&secp, &mut rng);
-
-        let _master_secret_key = master_key_pair.secret_key();
-
-        let master_public_key = master_key_pair.public_key();
-
-        config.abci.keys.dpns_master_public_key = master_public_key.serialize().to_vec();
-
-        let high_key_pair = KeyPair::new(&secp, &mut rng);
-
-        let high_secret_key = high_key_pair.secret_key();
-
-        let high_public_key = high_key_pair.public_key();
-
-        config.abci.keys.dpns_second_public_key = high_public_key.serialize().to_vec();
-
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -2644,33 +2626,20 @@ mod tests {
             ..Default::default()
         };
 
-        let platform = TestPlatformBuilder::new()
+        let platform_version = PlatformVersion::latest();
+
+        let mut platform = TestPlatformBuilder::new()
             .with_config(platform_config)
-            .build_with_mock_rpc();
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
 
         let platform_state = platform.state.load();
-        let platform_version = platform_state.current_platform_version().unwrap();
 
-        let platform_ref = PlatformRef {
-            drive: &platform.drive,
-            state: &platform_state,
-            config: &platform.config,
-            core_rpc: &platform.core_rpc,
-        };
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let genesis_time = 0;
-
-        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
-            platform.config.abci.keys.clone().into();
-
-        platform
-            .create_genesis_state(
-                genesis_time,
-                system_identity_public_keys_v0.into(),
-                None,
-                platform_version,
-            )
-            .expect("expected to create genesis state");
+        let secp = Secp256k1::new();
 
         let new_key_pair = KeyPair::new(&secp, &mut rng);
 
@@ -2695,32 +2664,38 @@ mod tests {
         new_key.signature = signature.to_vec().into();
 
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
-            identity_id: dpns_contract::OWNER_ID_BYTES.into(),
+            identity_id: identity.id(),
             revision: 0,
             nonce: 1,
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
             disable_public_keys: vec![],
             user_fee_increase: 0,
-            signature_public_key_id: 1,
+            signature_public_key_id: key.id(),
             signature: Default::default(),
         }
         .into();
 
         let mut update_transition: StateTransition = update_transition.into();
 
-        let signature = signer::sign(
-            &update_transition
-                .signable_bytes()
-                .expect("expected signable bytes"),
-            &high_secret_key.secret_bytes(),
-        )
-        .expect("expected to sign");
-
-        update_transition.set_signature(signature.to_vec().into());
+        let data = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+        update_transition.set_signature(
+            signer
+                .sign(&key, data.as_slice())
+                .expect("expected to sign"),
+        );
 
         let update_transition_bytes = update_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let validation_result = platform
             .check_tx(
@@ -2733,33 +2708,16 @@ mod tests {
 
         // Only master keys can sign an update
 
-        validation_result.errors.first().expect("expected an error");
+        assert_matches!(
+            validation_result.errors.first(),
+            Some(ConsensusError::SignatureError(
+                SignatureError::InvalidSignaturePublicKeySecurityLevelError(_)
+            ))
+        );
     }
 
     #[test]
     fn identity_update_with_encryption_key_check_tx() {
-        let mut config = PlatformConfig::default();
-
-        let mut rng = StdRng::seed_from_u64(1);
-
-        let secp = Secp256k1::new();
-
-        let master_key_pair = KeyPair::new(&secp, &mut rng);
-
-        let master_secret_key = master_key_pair.secret_key();
-
-        let master_public_key = master_key_pair.public_key();
-
-        config.abci.keys.dashpay_master_public_key = master_public_key.serialize().to_vec();
-
-        let high_key_pair = KeyPair::new(&secp, &mut rng);
-
-        let _high_secret_key = high_key_pair.secret_key();
-
-        let high_public_key = high_key_pair.public_key();
-
-        config.abci.keys.dashpay_second_public_key = high_public_key.serialize().to_vec();
-
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -2768,37 +2726,25 @@ mod tests {
             ..Default::default()
         };
 
-        let platform = TestPlatformBuilder::new()
+        let platform_version = PlatformVersion::latest();
+
+        let mut platform = TestPlatformBuilder::new()
             .with_config(platform_config)
-            .build_with_mock_rpc();
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+        let mut rng = StdRng::seed_from_u64(1);
+
+        let secp = Secp256k1::new();
 
         let platform_state = platform.state.load();
-        let platform_version = platform_state.current_platform_version().unwrap();
-
-        let platform_ref = PlatformRef {
-            drive: &platform.drive,
-            state: &platform_state,
-            config: &platform.config,
-            core_rpc: &platform.core_rpc,
-        };
-
-        let genesis_time = 0;
-
-        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
-            platform.config.abci.keys.clone().into();
-
-        platform
-            .create_genesis_state(
-                genesis_time,
-                system_identity_public_keys_v0.into(),
-                None,
-                platform_version,
-            )
-            .expect("expected to create genesis state");
 
         let new_key_pair = KeyPair::new(&secp, &mut rng);
 
-        let mut new_key = IdentityPublicKeyInCreationV0 {
+        let new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
             purpose: Purpose::ENCRYPTION,
             security_level: SecurityLevel::MEDIUM,
@@ -2817,51 +2763,38 @@ mod tests {
             .expect("expected to get signable bytes");
 
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
-            identity_id: dashpay_contract::OWNER_ID_BYTES.into(),
+            identity_id: identity.id(),
             revision: 1,
             nonce: 1,
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key.clone())],
             disable_public_keys: vec![],
             user_fee_increase: 0,
-            signature_public_key_id: 0,
-            signature: Default::default(),
-        }
-        .into();
-
-        let update_transition: StateTransition = update_transition.into();
-
-        let signable_bytes = update_transition
-            .signable_bytes()
-            .expect("expected signable bytes");
-
-        let secret = new_key_pair.secret_key();
-        let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
-
-        new_key.signature = signature.to_vec().into();
-
-        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
-            identity_id: dashpay_contract::OWNER_ID_BYTES.into(),
-            revision: 1,
-            nonce: 1,
-            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
-            disable_public_keys: vec![],
-            user_fee_increase: 0,
-            signature_public_key_id: 0,
+            signature_public_key_id: key.id(),
             signature: Default::default(),
         }
         .into();
 
         let mut update_transition: StateTransition = update_transition.into();
 
-        let signature = signer::sign(&signable_bytes, &master_secret_key.secret_bytes())
-            .expect("expected to sign");
-
-        update_transition.set_signature(signature.to_vec().into());
+        let data = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+        update_transition.set_signature(
+            signer
+                .sign(&key, data.as_slice())
+                .expect("expected to sign"),
+        );
 
         let update_transition_bytes = update_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let validation_result = platform
             .check_tx(
@@ -2872,8 +2805,8 @@ mod tests {
             )
             .expect("expected to execute identity top up tx");
 
-        // we won't have enough funds
+        // we shouldn't have any errors
 
-        validation_result.errors.first().expect("expected an error");
+        assert_eq!(validation_result.errors.len(), 0);
     }
 }

@@ -706,6 +706,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.0.0-rc.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
+            delete options.platform.dpns;
+            delete options.platform.dashpay;
+            delete options.platform.featureFlags;
+            delete options.platform.masternodeRewardShares;
+            delete options.platform.withdrawals;
+
+            // Update tenderdash image
             options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
 
             // Replace quorumsign with qurumplatformsign in Core RPC Tenderdash auth whitelist
