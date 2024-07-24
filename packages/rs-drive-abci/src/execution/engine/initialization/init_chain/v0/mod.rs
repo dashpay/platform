@@ -36,7 +36,7 @@ where
                 Ok(height) => break height,
                 Err(e) => match e {
                     Error::Execution(ExecutionError::InitializationForkNotActive(_))
-                    | Error::Execution(ExecutionError::InitializationBadCoreLockedHeight {
+                    | Error::Execution(ExecutionError::InitializationHeightIsNotLocked {
                         ..
                     }) => {
                         tracing::warn!(

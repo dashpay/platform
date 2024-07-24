@@ -41,37 +41,40 @@ where
             tracing::debug!(?fork_info, "core fork mn_rr is active");
         };
         // We expect height to present if the fork is active
-        let mn_rr_fork = fork_info.height.unwrap();
+        let mn_rr_fork_height = fork_info.height.unwrap();
 
-        if let Some(requested) = requested {
-            let best = self.core_rpc.get_best_chain_lock()?.block_height;
-
-            tracing::trace!(
+        let initial_height = if let Some(requested) = requested {
+            tracing::debug!(
                 requested,
-                mn_rr_fork,
-                best,
-                "selecting initial core lock height"
+                mn_rr_fork_height,
+                "initial core lock height is set in genesis"
             );
-            // TODO in my opinion, the condition should be:
-            //
-            // `mn_rr_fork <= requested && requested <= best`
-            //
-            // but it results in 1440 <=  1243 <= 1545
-            //
-            // So, fork_info.since differs? is it non-deterministic?
-            if requested <= best {
-                Ok(requested)
-            } else {
-                Err(ExecutionError::InitializationBadCoreLockedHeight {
-                    requested,
-                    best,
-                    mn_rr_fork,
-                }
-                .into())
-            }
+
+            requested
         } else {
-            tracing::trace!(mn_rr_fork, "used fork height as initial core lock height");
-            Ok(mn_rr_fork)
+            tracing::debug!(mn_rr_fork_height, "used fork height as initial core height");
+
+            mn_rr_fork_height
+        };
+
+        // Make sure initial height is chain locked
+        let chain_lock_height = self.core_rpc.get_best_chain_lock()?.block_height;
+
+        // TODO (Lukazs) in my opinion, the condition should be:
+        //
+        // `mn_rr_fork <= requested && requested <= best`
+        //
+        // but it results in 1440 <=  1243 <= 1545
+        //
+        // So, fork_info.since differs? is it non-deterministic?
+        if initial_height <= chain_lock_height {
+            Ok(initial_height)
+        } else {
+            Err(ExecutionError::InitializationHeightIsNotLocked {
+                initial_height,
+                chain_lock_height,
+            }
+            .into())
         }
     }
 }

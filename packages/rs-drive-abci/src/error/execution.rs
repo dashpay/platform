@@ -60,14 +60,12 @@ pub enum ExecutionError {
     InitializationForkNotActive(String),
 
     /// Invalid core chain locked height
-    #[error("core chain locked height {requested} is invalid: {mn_rr_fork} <=  {requested} <= {best} is not true")]
-    InitializationBadCoreLockedHeight {
-        /// mn_rr fork height
-        mn_rr_fork: u32,
-        /// requested core height
-        requested: u32,
+    #[error("initial height {initial_height} is not chain locked. latest chainlocked height is {chain_lock_height}")]
+    InitializationHeightIsNotLocked {
+        /// initial height (requested or fork)
+        initial_height: u32,
         /// best core lock height
-        best: u32,
+        chain_lock_height: u32,
     },
 
     /// An error occurred during initialization.
