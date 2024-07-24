@@ -1,12 +1,12 @@
 /* eslint-disable no-param-reassign */
 import fs from 'fs';
-import path from 'path';
 import lodash from 'lodash';
+import path from 'path';
 
 import {
   NETWORK_LOCAL,
-  NETWORK_TESTNET,
   NETWORK_MAINNET,
+  NETWORK_TESTNET,
   SSL_PROVIDERS,
 } from '../src/constants.js';
 
@@ -700,6 +700,16 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
             }
+          });
+        return configFile;
+      },
+      '1.0.0-rc.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+
+            // Replace quorumsign with qurumplatformsign in Core RPC Tenderdash auth whitelist
+            options.core.rpc.users.tenderdash.whitelist = base.get('core.rpc.users.tenderdash.whitelist');
           });
         return configFile;
       },
