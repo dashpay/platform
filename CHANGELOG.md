@@ -1,3 +1,47 @@
+## [1.0.0-rc.1](https://github.com/dashpay/platform/compare/v1.0.0-beta.4...v1.0.0-rc.1) (2024-07-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** system data contracts should not have an owner (#1992)
+* **platform:** transient properties (#1990)
+* **platform:** document types should not have a contested unique index with a unique index  (#1984)
+* **platform:** add hyphen to match for contested documents on Dashpay (#1982)
+
+### Features
+
+* **drive:** added config for grovedb verify on startup ([#1975](https://github.com/dashpay/platform/issues/1975))
+* **platform:** system data contracts should not have an owner ([#1992](https://github.com/dashpay/platform/issues/1992))
+* **platform:** transient properties ([#1990](https://github.com/dashpay/platform/issues/1990))
+* use all eligible identities and slightly more robust checking
+
+
+### Bug Fixes
+
+* **dapi:** can't parse masternode list diff ([#1988](https://github.com/dashpay/platform/issues/1988))
+* **drive:** unknown mn_rr fork height ([#1994](https://github.com/dashpay/platform/issues/1994))
+* improve efficiency of identity random sampling
+* only clone the eligible identities
+* **platform:** add hyphen to match for contested documents on Dashpay ([#1982](https://github.com/dashpay/platform/issues/1982))
+* **platform:** document types should not have a contested unique index with a unique index  ([#1984](https://github.com/dashpay/platform/issues/1984))
+* select random identities for strategy documents
+* spent asset lock estimated fees, and misc ([#1993](https://github.com/dashpay/platform/issues/1993))
+* **strategy-tests:** key ids for new identities with extra keys were not calculated properly ([#1991](https://github.com/dashpay/platform/issues/1991))
+* **strategy-tests:** transfer keys were being disabled ([#1995](https://github.com/dashpay/platform/issues/1995))
+* voting test
+
+
+### Miscellaneous Chores
+
+* chose capable identities for random documents
+* **dapi:** enable logger for reconnectable stream ([#1986](https://github.com/dashpay/platform/issues/1986))
+
+
+### Build System
+
+* update tenderdash to 1.1.0-dev.1 ([#1985](https://github.com/dashpay/platform/issues/1985))
+* update tenderdash to 1.1.0-dev.2 ([#1996](https://github.com/dashpay/platform/issues/1996))
+
 ## [1.0.0-beta.4](https://github.com/dashpay/platform/compare/v1.0.0-beta.3...v1.0.0-beta.4) (2024-07-19)
 
 
