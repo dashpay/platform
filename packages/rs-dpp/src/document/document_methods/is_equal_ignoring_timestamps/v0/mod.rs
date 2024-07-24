@@ -1,5 +1,7 @@
 use crate::document::document_methods::DocumentGetRawForDocumentTypeV0;
 use crate::document::DocumentV0Getters;
+use platform_value::Value;
+use std::collections::BTreeMap;
 
 pub trait DocumentIsEqualIgnoringTimestampsV0:
     DocumentV0Getters + DocumentGetRawForDocumentTypeV0
@@ -11,10 +13,31 @@ pub trait DocumentIsEqualIgnoringTimestampsV0:
     ///     created_at/updated_at
     ///     created_at_block_height/updated_at_block_height
     ///     created_at_core_block_height/updated_at_core_block_height
-    fn is_equal_ignoring_time_based_fields_v0(&self, rhs: &Self) -> bool {
+    fn is_equal_ignoring_time_based_fields_v0(
+        &self,
+        rhs: &Self,
+        also_ignore_fields: Option<Vec<&str>>,
+    ) -> bool {
+        fn filtered_properties<'a>(
+            properties: &'a BTreeMap<String, Value>,
+            ignore_fields: &Vec<&str>,
+        ) -> BTreeMap<&'a String, &'a Value> {
+            properties
+                .iter()
+                .filter(|(key, _)| !ignore_fields.contains(&key.as_str()))
+                .collect()
+        }
+
+        let properties_equal = if let Some(fields) = &also_ignore_fields {
+            filtered_properties(self.properties(), fields)
+                == filtered_properties(rhs.properties(), fields)
+        } else {
+            self.properties() == rhs.properties()
+        };
+
         self.id() == rhs.id()
             && self.owner_id() == rhs.owner_id()
-            && self.properties() == rhs.properties()
+            && properties_equal
             && self.revision() == rhs.revision()
     }
 }

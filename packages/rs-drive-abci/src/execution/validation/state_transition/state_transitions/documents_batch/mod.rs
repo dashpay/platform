@@ -5833,10 +5833,20 @@ mod tests {
                 .expect("expected to get back documents")
                 .documents_owned();
 
+            let transient_fields = domain
+                .transient_fields()
+                .iter()
+                .map(|a| a.as_str())
+                .collect();
+
             assert!(documents
                 .get(0)
                 .expect("expected a document")
-                .is_equal_ignoring_time_based_fields(&document_3, platform_version)
+                .is_equal_ignoring_time_based_fields(
+                    &document_3,
+                    Some(transient_fields),
+                    platform_version
+                )
                 .expect("expected to run is equal"));
 
             let drive_query = DriveDocumentQuery {

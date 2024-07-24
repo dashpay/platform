@@ -165,8 +165,15 @@ impl Drive {
                             platform_version,
                         )?;
 
+                        let transient_fields = document_type
+                            .transient_fields()
+                            .iter()
+                            .map(|a| a.as_str())
+                            .collect();
+
                         if !document.is_equal_ignoring_time_based_fields(
                             &expected_document,
+                            Some(transient_fields),
                             platform_version,
                         )? {
                             return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after create with id {}", create_transition.base().id()))));
@@ -192,8 +199,15 @@ impl Drive {
                             platform_version,
                         )?;
 
+                        let transient_fields = document_type
+                            .transient_fields()
+                            .iter()
+                            .map(|a| a.as_str())
+                            .collect();
+
                         if !document.is_equal_ignoring_time_based_fields(
                             &expected_document,
+                            Some(transient_fields),
                             platform_version,
                         )? {
                             return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain expected document (time fields were not checked) after replace with id {}", replace_transition.base().id()))));
