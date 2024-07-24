@@ -664,6 +664,11 @@ pub(crate) fn run_chain_for_strategy<'a>(
 
     platform
         .core_rpc
+        .expect_get_block_time_from_height()
+        .returning(|_| Ok(GENESIS_TIME_MS));
+
+    platform
+        .core_rpc
         .expect_get_best_chain_lock()
         .returning(move || {
             let block_height = match &mut core_height_increase {

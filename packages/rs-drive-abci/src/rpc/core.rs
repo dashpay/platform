@@ -10,6 +10,7 @@ use dpp::dashcore::InstantLock;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
+use dpp::prelude::TimestampMillis;
 
 /// Information returned by QuorumListExtended
 pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
@@ -21,6 +22,9 @@ pub type CoreHeight = u32;
 pub trait CoreRPCLike {
     /// Get block hash by height
     fn get_block_hash(&self, height: CoreHeight) -> Result<BlockHash, Error>;
+
+    /// Get block time of a chain locked core height
+    fn get_block_time_from_height(&self, height: CoreHeight) -> Result<TimestampMillis, Error>;
 
     /// Get the best chain lock
     fn get_best_chain_lock(&self) -> Result<ChainLock, Error>;
@@ -210,6 +214,13 @@ impl DefaultCoreRPC {
 impl CoreRPCLike for DefaultCoreRPC {
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
         retry!(self.inner.get_block_hash(height))
+    }
+
+    fn get_block_time_from_height(&self, height: CoreHeight) -> Result<TimestampMillis, Error> {
+        let block_hash = self.get_block_hash(height)?;
+        let block = self.get_block(&block_hash)?;
+        let block_time = (block.header.time * 1000) as u64;
+        Ok(block_time)
     }
 
     fn get_best_chain_lock(&self) -> Result<ChainLock, Error> {

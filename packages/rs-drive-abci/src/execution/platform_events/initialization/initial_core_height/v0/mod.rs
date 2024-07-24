@@ -2,6 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::prelude::{CoreBlockHeight, TimestampMillis};
 
 impl<C> Platform<C>
 where
@@ -23,10 +24,10 @@ where
     /// * `requested` core height is before mn_rr fork
     /// * `requested` core height is after current best chain lock
     ///
-    pub(in crate::execution::platform_events) fn initial_core_height_v0(
+    pub(in crate::execution::platform_events) fn initial_core_height_and_time_v0(
         &self,
         requested: Option<u32>,
-    ) -> Result<u32, Error> {
+    ) -> Result<(CoreBlockHeight, TimestampMillis), Error> {
         let fork_info = self.core_rpc.get_fork_info("mn_rr")?.ok_or(
             ExecutionError::InitializationForkNotActive("fork is not yet known".to_string()),
         )?;
@@ -59,16 +60,10 @@ where
 
         // Make sure initial height is chain locked
         let chain_lock_height = self.core_rpc.get_best_chain_lock()?.block_height;
-
-        // TODO (Lukazs) in my opinion, the condition should be:
-        //
-        // `mn_rr_fork <= requested && requested <= best`
-        //
-        // but it results in 1440 <=  1243 <= 1545
-        //
-        // So, fork_info.since differs? is it non-deterministic?
+        
         if initial_height <= chain_lock_height {
-            Ok(initial_height)
+            let block_time = self.core_rpc.get_block_time_from_height(mn_rr_fork_height)?;
+            Ok((initial_height, block_time))
         } else {
             Err(ExecutionError::InitializationHeightIsNotLocked {
                 initial_height,
