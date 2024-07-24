@@ -2,7 +2,7 @@ const { expect } = require('chai');
 
 const { Identifier } = require('@dashevo/wasm-dpp');
 
-const { ownerId: dpnsOwnerId } = require('@dashevo/dpns-contract/lib/systemIds');
+const { contractId: dpnsContractIdString } = require('@dashevo/dpns-contract/lib/systemIds');
 
 const {
   Networks,
@@ -19,7 +19,7 @@ describe('SDK', function suite() {
   let clientInstance;
 
   beforeEach(async () => {
-    dpnsContractId = Identifier.from(dpnsOwnerId);
+    dpnsContractId = Identifier.from(dpnsContractIdString);
 
     const clientOpts = {
       seeds: process.env.DAPI_SEED.split(','),
