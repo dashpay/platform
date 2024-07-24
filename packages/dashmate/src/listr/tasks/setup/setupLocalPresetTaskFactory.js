@@ -97,7 +97,7 @@ export default function setupLocalPresetTaskFactory(
       },
       {
         title: 'Create local group configs',
-        task: async (ctx, task) => {
+        task: async (ctx) => {
           ctx.configGroup = new Array(ctx.nodeCount)
             .fill(undefined)
             .map((value, i) => `local_${i + 1}`)
