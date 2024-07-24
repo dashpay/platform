@@ -231,7 +231,7 @@ impl Config {
         //  Next time we need to do it again and update this value :(. This is terrible.
         //  We should automate creation of identity for SDK tests when we have time.
         Identifier::from_string(
-            "6Zft8WEaEPzfbSVMsd6xCw3KgCqAQEneupSB9wx2EhJ",
+            "J2aTnrrc8eea3pQBY91QisM3QH5FM9JK11mQCVwxeMqj",
             Encoding::Base58,
         )
         .unwrap()
