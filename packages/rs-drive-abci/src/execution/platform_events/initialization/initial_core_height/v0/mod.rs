@@ -41,14 +41,14 @@ where
             tracing::debug!(?fork_info, "core fork mn_rr is active");
         };
         // We expect height to present if the fork is active
-        let mn_rr_fork = fork_info.height.unwrap();
+        let mn_rr_fork_height = fork_info.height.unwrap();
+
+        let best = self.core_rpc.get_best_chain_lock()?.block_height;
 
         if let Some(requested) = requested {
-            let best = self.core_rpc.get_best_chain_lock()?.block_height;
-
             tracing::trace!(
                 requested,
-                mn_rr_fork,
+                mn_rr_fork_height,
                 best,
                 "selecting initial core lock height"
             );
@@ -65,13 +65,26 @@ where
                 Err(ExecutionError::InitializationBadCoreLockedHeight {
                     requested,
                     best,
-                    mn_rr_fork,
+                    mn_rr_fork: mn_rr_fork_height,
                 }
                 .into())
             }
         } else {
-            tracing::trace!(mn_rr_fork, "used fork height as initial core lock height");
-            Ok(mn_rr_fork)
+            tracing::trace!(
+                mn_rr_fork_height,
+                "used fork height as initial core lock height"
+            );
+
+            if mn_rr_fork_height <= best {
+                Ok(mn_rr_fork_height)
+            } else {
+                Err(ExecutionError::InitializationBadCoreLockedHeight {
+                    requested: 0,
+                    best,
+                    mn_rr_fork: mn_rr_fork_height,
+                }
+                .into())
+            }
         }
     }
 }
