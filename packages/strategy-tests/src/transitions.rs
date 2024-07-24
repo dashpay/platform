@@ -13,7 +13,7 @@ use dpp::identity::identity_public_key::accessors::v0::{
 };
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
-use dpp::identity::Purpose::AUTHENTICATION;
+use dpp::identity::Purpose::{AUTHENTICATION, TRANSFER};
 use dpp::identity::SecurityLevel::{CRITICAL, MASTER};
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::AssetLockProof;
@@ -398,6 +398,7 @@ pub fn create_identity_update_transition_disable_keys(
                     && !(key.security_level() == CRITICAL
                         && key.purpose() == AUTHENTICATION
                         && key.key_type() == ECDSA_SECP256K1))
+                && key.purpose() != TRANSFER
         })
         .map(|(key_id, _)| *key_id)
         .collect::<Vec<_>>();
