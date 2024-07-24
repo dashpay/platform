@@ -720,6 +720,15 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.0.0-rc.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+            }
+          });
+        return configFile;
+      },
     };
   }
 

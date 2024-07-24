@@ -113,7 +113,7 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
             },
             genesis: {
               genesis_time: '2024-07-17T17:15:00.000Z',
-              chain_id: 'dash-testnet-47',
+              chain_id: 'dash-testnet-48',
               validator_quorum_type: 6,
             },
           },
