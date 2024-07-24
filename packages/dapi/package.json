@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/dapi",
   "private": true,
-  "version": "1.0.0-beta.4",
+  "version": "1.0.0-rc.1",
   "description": "A decentralized API for the Dash network",
   "scripts": {
     "api": "node scripts/api.js",
