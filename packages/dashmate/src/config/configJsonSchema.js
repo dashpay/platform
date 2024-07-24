@@ -1128,153 +1128,15 @@ export default {
           required: ['abci', 'tenderdash'],
           additionalProperties: false,
         },
-        dpns: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            ownerId: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
-        },
-        dashpay: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
-        },
-        featureFlags: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            ownerId: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
-        },
         sourcePath: {
           type: ['string', 'null'],
           minLength: 1,
-        },
-        masternodeRewardShares: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
-        },
-        withdrawals: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
         },
         enable: {
           type: 'boolean',
         },
       },
-      required: ['gateway', 'dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals', 'enable'],
+      required: ['gateway', 'dapi', 'drive', 'sourcePath', 'enable'],
       additionalProperties: false,
     },
     dashmate: {
