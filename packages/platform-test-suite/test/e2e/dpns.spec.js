@@ -2,7 +2,6 @@ const crypto = require('crypto');
 
 const {
   contractId: dpnsContractId,
-  ownerId: dpnsOwnerId,
 } = require('@dashevo/dpns-contract/lib/systemIds');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
@@ -33,8 +32,6 @@ describe('DPNS', () => {
     topLevelDomain = 'dash';
     secondLevelDomain = getRandomDomain();
     client = await createClientWithFundedWallet(1000000);
-
-    await client.platform.identities.topUp(dpnsOwnerId, 300000);
   });
 
   after(async () => {

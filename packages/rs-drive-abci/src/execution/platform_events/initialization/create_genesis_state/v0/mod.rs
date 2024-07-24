@@ -15,21 +15,15 @@ use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::SystemDataContract;
 use drive::util::batch::{DataContractOperationType, DocumentOperationType, DriveOperation};
 
+use dpp::system_data_contracts::dpns_contract::{
+    DPNS_DASH_TLD_DOCUMENT_ID, DPNS_DASH_TLD_PREORDER_SALT,
+};
 use drive::query::TransactionArg;
 use drive::util::object_size_info::{
     DataContractInfo, DocumentInfo, DocumentTypeInfo, OwnedDocumentInfo,
 };
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-
-const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
-    215, 242, 197, 63, 70, 169, 23, 171, 110, 91, 57, 162, 215, 188, 38, 11, 100, 146, 137, 69, 55,
-    68, 209, 224, 212, 242, 106, 141, 142, 255, 55, 207,
-];
-const DPNS_DASH_TLD_PREORDER_SALT: [u8; 32] = [
-    224, 181, 8, 197, 163, 104, 37, 162, 6, 105, 58, 31, 65, 74, 161, 62, 219, 236, 244, 60, 65,
-    227, 199, 153, 234, 158, 115, 123, 79, 154, 162, 38,
-];
 
 impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
