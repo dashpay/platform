@@ -25,33 +25,17 @@ where
     ///
     pub(in crate::execution::platform_events) fn initial_core_height_v0(
         &self,
-        requested: Option<u32>,
+        requested_height: Option<u32>,
     ) -> Result<u32, Error> {
-        let fork_info = self.core_rpc.get_fork_info("mn_rr")?.ok_or(
-            ExecutionError::InitializationForkNotActive("fork is not yet known".to_string()),
-        )?;
-        if !fork_info.active || fork_info.height.is_none() {
-            // fork is not good yet
-            return Err(ExecutionError::InitializationForkNotActive(format!(
-                "fork is not yet known (currently {:?})",
-                fork_info
-            ))
-            .into());
-        } else {
-            tracing::debug!(?fork_info, "core fork mn_rr is active");
-        };
-        // We expect height to present if the fork is active
-        let mn_rr_fork = fork_info.height.unwrap();
-
-        if let Some(requested) = requested {
-            let best = self.core_rpc.get_best_chain_lock()?.block_height;
-
-            tracing::trace!(
-                requested,
-                mn_rr_fork,
-                best,
-                "selecting initial core lock height"
+        if let Some(height) = requested_height {
+            tracing::debug!(
+                initial_core_chain_locked_height = height,
+                "genesis initial core chain locked height is set to {}, skip fork height initialization",
+                height
             );
+
+            let best_chain_locked_height = self.core_rpc.get_best_chain_lock()?.block_height;
+
             // TODO in my opinion, the condition should be:
             //
             // `mn_rr_fork <= requested && requested <= best`
@@ -59,19 +43,40 @@ where
             // but it results in 1440 <=  1243 <= 1545
             //
             // So, fork_info.since differs? is it non-deterministic?
-            if requested <= best {
-                Ok(requested)
-            } else {
-                Err(ExecutionError::InitializationBadCoreLockedHeight {
-                    requested,
-                    best,
-                    mn_rr_fork,
+            if height > best_chain_locked_height {
+                return Err(ExecutionError::InitializationBadCoreLockedHeight {
+                    requested: height,
+                    best: best_chain_locked_height,
                 }
-                .into())
-            }
-        } else {
-            tracing::trace!(mn_rr_fork, "used fork height as initial core lock height");
-            Ok(mn_rr_fork)
+                .into());
+            };
+
+            return Ok(height);
         }
+
+        let fork_info = self.core_rpc.get_fork_info("mn_rr")?.ok_or(
+            ExecutionError::InitializationForkNotActive(
+                "platform activation fork is not yet known".to_string(),
+            ),
+        )?;
+
+        if !fork_info.active || fork_info.height.is_none() {
+            // fork is not good yet
+            return Err(ExecutionError::InitializationForkNotActive(format!(
+                "platform activation fork is not yet known (currently {:?})",
+                fork_info
+            ))
+            .into());
+        };
+
+        // We expect height to present if the fork is active
+        let mn_rr_fork = fork_info.height.unwrap();
+
+        tracing::debug!(
+            mn_rr_fork,
+            "used platform activation fork height as initial core lock height"
+        );
+
+        Ok(mn_rr_fork)
     }
 }
