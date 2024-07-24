@@ -7,10 +7,10 @@ use dashcore_rpc::dashcore_rpc_json::{
 use dashcore_rpc::json::GetRawTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dpp::dashcore::InstantLock;
+use dpp::prelude::TimestampMillis;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
-use dpp::prelude::TimestampMillis;
 
 /// Information returned by QuorumListExtended
 pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;

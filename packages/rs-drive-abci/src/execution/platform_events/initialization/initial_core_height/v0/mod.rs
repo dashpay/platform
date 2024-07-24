@@ -60,9 +60,11 @@ where
 
         // Make sure initial height is chain locked
         let chain_lock_height = self.core_rpc.get_best_chain_lock()?.block_height;
-        
+
         if initial_height <= chain_lock_height {
-            let block_time = self.core_rpc.get_block_time_from_height(mn_rr_fork_height)?;
+            let block_time = self
+                .core_rpc
+                .get_block_time_from_height(mn_rr_fork_height)?;
             Ok((initial_height, block_time))
         } else {
             Err(ExecutionError::InitializationHeightIsNotLocked {
