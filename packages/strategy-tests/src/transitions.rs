@@ -649,8 +649,15 @@ pub fn create_identities_state_transitions(
         )
         .expect("Expected to create identities and keys");
 
-    for identity in identities.iter_mut() {
-        for (purpose, security_to_key_type_map) in extra_keys {
+    let starting_id_num = signer
+        .private_keys
+        .keys()
+        .max()
+        .map_or(0, |max_key| max_key.id() + 1);
+
+    for (i, identity) in identities.iter_mut().enumerate() {
+        // TODO: deal with the case where there's more than one extra key
+        for (_, (purpose, security_to_key_type_map)) in extra_keys.iter().enumerate() {
             for (security_level, key_types) in security_to_key_type_map {
                 for key_type in key_types {
                     let (key, private_key) = IdentityPublicKey::random_key_with_known_attributes(
@@ -663,17 +670,12 @@ pub fn create_identities_state_transitions(
                         platform_version,
                     )?;
                     identity.add_public_key(key.clone());
-                    keys.push((key, private_key));
+                    let key_num = key_count as usize * (i + 1) + i;
+                    keys.insert(key_num, (key, private_key))
                 }
             }
         }
     }
-
-    let starting_id_num = signer
-        .private_keys
-        .keys()
-        .max()
-        .map_or(0, |max_key| max_key.id() + 1);
 
     // Update keys with new KeyIDs and add them to signer
     let mut current_id_num = starting_id_num;
@@ -690,7 +692,8 @@ pub fn create_identities_state_transitions(
         .enumerate()
         .map(|(index, mut identity)| {
             // Calculate the starting KeyID for this identity
-            let identity_starting_id = starting_id_num + (index as u32) * key_count;
+            let identity_starting_id =
+                starting_id_num + index as u32 * (key_count + extra_keys.len() as u32);
 
             // Update the identity with the new KeyIDs
             let public_keys_map = identity.public_keys_mut();
