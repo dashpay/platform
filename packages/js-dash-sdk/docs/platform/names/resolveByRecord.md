@@ -5,7 +5,7 @@ Parameters:
 
 | parameters | type      | required       | Description                                                          |  
 |------------|-----------|----------------|----------------------------------------------------------------------|
-| **record** | String    | yes            | Type of the record (`dashUniqueIdentityId` or `dashAliasIdentityId`) |
+| **record** | String    | yes            | Type of the record (`identity`) |
 | **value**  | String    | yes            | Identifier value for the record                                      |
 
 **Example**: 
@@ -13,7 +13,7 @@ Parameters:
 This example will describe how to resolve names by the dash unique identity id.  
 ```js
 const identityId = '3ge4yjGinQDhxh2aVpyLTQaoka45BkijkoybfAkDepoN';
-const document = await client.platform.names.resolveByRecord('dashUniqueIdentityId', identityId);
+const document = await client.platform.names.resolveByRecord('identity', identityId);
 ```
 
 Returns: array of ExtendedDocument.
