@@ -3,6 +3,7 @@
 //! This module contains [Config] struct that can be used to configure dash-platform-sdk.
 //! It's mainly used for testing.
 
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::{
     dashcore::{hashes::Hash, ProTxHash},
     prelude::Identifier,
@@ -57,6 +58,7 @@ pub struct Config {
     /// ID of existing identity.
     ///
     /// Format: Base58
+    #[serde(default = "Config::default_identity_id")]
     pub existing_identity_id: Identifier,
     /// ID of existing data contract.
     ///
@@ -221,6 +223,19 @@ impl Config {
         };
 
         sdk
+    }
+
+    fn default_identity_id() -> Identifier {
+        // TODO: We don't have default system identities anymore.
+        //  So now I used this manually created identity to populate test vectors.
+        //  Next time we need to do it again and update this value :(. This is terrible.
+        //  We should automate creation of identity for SDK tests when we have time.
+        Identifier::from_string(
+            "6Zft8WEaEPzfbSVMsd6xCw3KgCqAQEneupSB9wx2EhJ",
+            Encoding::Base58,
+        )
+        .unwrap()
+        .into()
     }
 
     fn default_data_contract_id() -> Identifier {
