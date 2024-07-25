@@ -58,7 +58,7 @@ where
             core_block_height,
             block_platform_state.last_committed_core_height()
         );
-        
+
         let update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome {
             masternode_list_diff,
             removed_masternodes,
