@@ -891,19 +891,14 @@ impl Strategy {
                             //todo: fix this into a search key request for the following
                             //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);
 
-                            let request = IdentityKeysRequest {
-                                identity_id: document.owner_id().to_buffer(),
-                                request_type: KeyRequestType::SpecificKeys(vec![1]),
-                                limit: Some(1),
-                                offset: None,
-                            };
-                            let identity =
-                                identity_fetch_callback(request.identity_id.into(), Some(request));
+                            let identity_id = document.owner_id();
+                            let identity = current_identities
+                                .iter()
+                                .find(|&identity| identity.id() == identity_id)
+                                .expect("Expected to find the identity in current_identities");
                             let identity_contract_nonce = contract_nonce_counter
-                                .get_mut(&(identity.id, contract.id()))
-                                .expect(
-                                    "the identity should already have a nonce for that contract",
-                                );
+                                .entry((identity.id(), contract.id()))
+                                .or_default();
                             *identity_contract_nonce += 1;
 
                             let document_delete_transition: DocumentDeleteTransition =
@@ -920,7 +915,7 @@ impl Strategy {
 
                             let document_batch_transition: DocumentsBatchTransition =
                                 DocumentsBatchTransitionV0 {
-                                    owner_id: identity.id,
+                                    owner_id: identity.id(),
                                     transitions: vec![document_delete_transition.into()],
                                     user_fee_increase: 0,
                                     signature_public_key_id: 1,
@@ -932,10 +927,12 @@ impl Strategy {
                                 document_batch_transition.into();
 
                             let identity_public_key = identity
-                                .loaded_public_keys
-                                .values()
-                                .next()
-                                .expect("expected a key");
+                                .get_first_public_key_matching(
+                                    Purpose::AUTHENTICATION,
+                                    HashSet::from([SecurityLevel::CRITICAL]),
+                                    HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                                )
+                                .expect("expected to get a signing key");
 
                             document_batch_transition
                                 .sign_external(

@@ -727,6 +727,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
               options.core.rpc.users.drive_consensus.whitelist = base.get('core.rpc.users.drive_consensus.whitelist');
             }
+
+            // Update tenderdash image
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
           });
         return configFile;
       },
