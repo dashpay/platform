@@ -1,20 +1,21 @@
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
-
+use dapi_grpc::platform::v0::get_epochs_info_request::{self, GetEpochsInfoRequestV0};
+use dapi_grpc::platform::v0::GetEpochsInfoRequest;
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dapi_grpc::tonic::Code;
+use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
 use dpp::prelude::{AssetLockProof, Identity};
-use drive_proof_verifier::error::ContextProviderError;
-use drive_proof_verifier::DataContractProvider;
-
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use drive::drive::Drive;
-use rs_dapi_client::{DapiClientError, DapiRequest, RequestSettings};
+use drive_proof_verifier::error::ContextProviderError;
+use drive_proof_verifier::{ContextProvider, DataContractProvider};
+use rs_dapi_client::{DapiClientError, DapiRequest, DapiRequestExecutor, RequestSettings};
 
 #[async_trait::async_trait]
 /// A trait for putting an identity to platform
@@ -37,6 +38,71 @@ pub trait PutIdentity<S: Signer> {
     ) -> Result<Identity, Error>;
 }
 
+#[async_trait::async_trait]
+pub trait AssetLockProofVerifier {
+    /// Verifies the asset lock proof against the platform
+    async fn verify(&self, sdk: &Sdk) -> Result<(), Error>;
+}
+
+#[async_trait::async_trait]
+impl AssetLockProofVerifier for AssetLockProof {
+    async fn verify(&self, sdk: &Sdk) -> Result<(), Error> {
+        let context_provider = sdk
+            .context_provider()
+            .ok_or(Error::Config("Context Provider not configured".to_string()))?;
+
+        // Check status of Platform first
+        // TODO: implement some caching mechanism to avoid fetching the same data multiple times
+        let request = GetEpochsInfoRequest {
+            version: Some(get_epochs_info_request::Version::V0(
+                GetEpochsInfoRequestV0 {
+                    ascending: false,
+                    count: 1,
+                    prove: true,
+                    start_epoch: None,
+                },
+            )),
+        };
+        let response = sdk.execute(request, RequestSettings::default()).await?;
+
+        let platform_core_chain_locked_height = response.metadata()?.core_chain_locked_height;
+        let proof = response.proof_owned()?;
+        let platform_quorum_hash = proof.quorum_hash.try_into().map_err(|e: Vec<u8>| {
+            Error::Protocol(dpp::ProtocolError::DecodingError(format!(
+                "Invalid quorum hash size {}, expected 32 bytes",
+                e.len()
+            )))
+        })?;
+
+        let platform_quorum_type = proof.quorum_type;
+
+        let (quorum_hash, core_chain_locked_height) = match self {
+            AssetLockProof::Chain(v) => (platform_quorum_hash, v.core_chain_locked_height),
+            AssetLockProof::Instant(v) => (
+                v.instant_lock().cyclehash.to_raw_hash().to_byte_array(),
+                platform_core_chain_locked_height,
+            ),
+        };
+
+        // Try to fetch the quorum public key; if it fails, the
+        let result = context_provider.get_quorum_public_key(
+            platform_quorum_type,
+            quorum_hash,
+            core_chain_locked_height,
+        );
+
+        match result {
+            Err(ContextProviderError::InvalidQuorum(s)) => Err(Error::QuorumNotFound {
+                e: ContextProviderError::InvalidQuorum(s),
+                quorum_hash_hex: hex::encode(quorum_hash),
+                quorum_type: platform_quorum_type,
+                core_chain_locked_height,
+            }),
+            Err(e) => Err(e.into()),
+            Ok(_) => Ok(()),
+        }
+    }
+}
 #[async_trait::async_trait]
 impl<S: Signer> PutIdentity<S> for Identity {
     async fn put_to_platform(
