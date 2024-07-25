@@ -5,7 +5,6 @@ import chalk from 'chalk';
 import {
   NODE_TYPE_MASTERNODE,
   NODE_TYPE_FULLNODE,
-  PRESET_MAINNET,
 } from '../../../constants.js';
 
 import {
@@ -52,7 +51,7 @@ export default function setupRegularPresetTaskFactory(
           let nodeTypeName;
 
           if (!ctx.nodeType) {
-            nodeTypeName = await task.prompt([
+            ctx.nodeTypeName = await task.prompt([
               {
                 type: 'select',
                 // Keep this order, because each item references the text in the previous item
@@ -75,16 +74,15 @@ export default function setupRegularPresetTaskFactory(
               },
             ]);
 
-            ctx.nodeType = getNodeTypeByName(nodeTypeName);
+            ctx.nodeType = getNodeTypeByName(ctx.nodeTypeName);
             ctx.isHP = isNodeTypeNameHighPerformance(nodeTypeName);
           } else {
-            nodeTypeName = getNodeTypeNameByType(ctx.nodeType);
+            ctx.nodeTypeName = getNodeTypeNameByType(ctx.nodeType);
           }
 
           ctx.config = defaultConfigs.get(ctx.preset);
 
-          // TODO: We need to change this and enable platform on mainnet
-          ctx.config.set('platform.enable', ctx.isHP && ctx.config.get('network') !== PRESET_MAINNET);
+          ctx.config.set('platform.enable', ctx.isHP);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
 
           if (ctx.config.get('core.masternode.enable')) {
@@ -99,7 +97,7 @@ export default function setupRegularPresetTaskFactory(
           });
 
           // eslint-disable-next-line no-param-reassign
-          task.output = ctx.nodeType ? ctx.nodeType : nodeTypeName;
+          task.output = ctx.nodeTypeName;
         },
         options: {
           persistentOutput: true,

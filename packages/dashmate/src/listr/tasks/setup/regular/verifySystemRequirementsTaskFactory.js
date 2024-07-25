@@ -170,6 +170,8 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
 
               if (!proceed) {
                 throw new Error('System requirements have not been met');
+              } else {
+                this.output = chalk`{orange System requirements have not been met.}`;
               }
             }
           }

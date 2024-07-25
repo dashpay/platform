@@ -146,7 +146,7 @@ export default function reindexNodeTaskFactory(
           await waitForCoreSync(ctx.coreService, (verificationProgress) => {
             const { percent, blocks, headers } = verificationProgress;
 
-            observer.next(`${(percent * 100).toFixed(4)}%, ${blocks} / ${headers}`);
+            observer.next(`${(percent * 100).toFixed(1)}%, ${blocks} / ${headers}`);
           });
 
           await new Promise((res) => { setTimeout(res, 2000); });
