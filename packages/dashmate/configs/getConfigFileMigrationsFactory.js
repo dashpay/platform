@@ -726,6 +726,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
             }
+
+            // Update tenderdash image
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
           });
         return configFile;
       },
