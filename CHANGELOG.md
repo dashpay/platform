@@ -1,3 +1,34 @@
+## [1.0.0-rc.2](https://github.com/dashpay/platform/compare/v1.0.0-rc.1...v1.0.0-rc.2) (2024-07-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** genesis state from core block time (#2003)
+
+### Features
+
+* specify transition names within documents batch ([#2007](https://github.com/dashpay/platform/issues/2007))
+
+
+### Bug Fixes
+
+* dpns js sdk fix for identity record rename ([#2001](https://github.com/dashpay/platform/issues/2001))
+* **platform:** core info is lost between genesis and first block ([#2004](https://github.com/dashpay/platform/issues/2004))
+* **platform:** genesis state from core block time ([#2003](https://github.com/dashpay/platform/issues/2003))
+* sdk should ignore transient fields when verifying proofs ([#2000](https://github.com/dashpay/platform/issues/2000))
+* **strategy-tests:** document delete transitions were not selecting identity correctly
+* two error messages had typos ([#2005](https://github.com/dashpay/platform/issues/2005))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update genesis config to the latest testnet ([#1998](https://github.com/dashpay/platform/issues/1998))
+
+
+### Build System
+
+* update to tenderdash 1.1.0-dev.3, rs-tenderdash-abci 1.1.0-dev.1 ([#2008](https://github.com/dashpay/platform/issues/2008))
+
 ## [1.0.0-rc.1](https://github.com/dashpay/platform/compare/v1.0.0-beta.4...v1.0.0-rc.1) (2024-07-24)
 
 
