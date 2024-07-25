@@ -112,8 +112,7 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
               port: 36660,
             },
             genesis: {
-              genesis_time: '2024-07-17T17:15:00.000Z',
-              chain_id: 'dash-testnet-48',
+              chain_id: 'dash-testnet-49',
               validator_quorum_type: 6,
             },
           },
