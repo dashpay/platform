@@ -86,7 +86,7 @@ export default function getBaseConfigFactory(homeDir) {
               whitelist: [
                 'getbestchainlock', 'getblockchaininfo', 'getrawtransaction', 'submitchainlock',
                 'verifychainlock', 'protxlistdiff', 'quorumlistextended', 'quoruminfo',
-                'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus', 'getblock', 'getblockhash',
+                'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus', 'getblockheader', 'getblockhash',
               ],
               lowPriority: false,
             },
