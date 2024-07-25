@@ -132,6 +132,7 @@ where
             validator_set_update: Some(validator_set),
             next_core_chain_lock_update: None,
             initial_core_height: core_height, // we send back the core height when the fork happens
+            genesis_time: None,
         })
     }
 }
