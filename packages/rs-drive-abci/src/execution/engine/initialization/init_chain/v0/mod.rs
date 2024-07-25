@@ -125,7 +125,7 @@ where
             .map_err(GroveDB)?;
 
         Ok(ResponseInitChain {
-            consensus_params: None, //todo
+            consensus_params: None,
             app_hash: app_hash.to_vec(),
             validator_set_update: Some(validator_set),
             next_core_chain_lock_update: None,
