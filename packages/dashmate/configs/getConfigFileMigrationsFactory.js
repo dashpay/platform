@@ -225,7 +225,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+              options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
             }
           });
         return configFile;
@@ -247,7 +247,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+              options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
               options.platform.drive.tenderdash.genesis
                 .initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
             }
@@ -345,7 +345,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               if (name !== base.getName()) {
                 options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
                 options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 14000;
-                options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+                options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
               }
             }
           });
@@ -361,7 +361,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.network === NETWORK_TESTNET && name !== base.getName()) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
               options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 1400;
-              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+              options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
             }
           });
 
@@ -373,7 +373,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.network === NETWORK_TESTNET && name !== base.getName()) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
               options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 1400;
-              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+              options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
             }
           });
 
@@ -729,6 +729,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             // Update tenderdash image
             options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.core.rpc.users.drive_consensus.whitelist = base.get('core.rpc.users.drive_consensus.whitelist');
           });
         return configFile;
       },

@@ -13,6 +13,8 @@ use crate::platform_types::platform_state::PlatformState;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
+use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::proto::serializers::timestamp::FromMilis;
 
 impl<C> Platform<C>
 where
@@ -31,12 +33,15 @@ where
             )?;
 
         // Wait until we have an initial core height to start the chain
-        let core_height = loop {
-            match self.initial_core_height(request.initial_core_height, platform_version) {
+        let (core_height, genesis_time) = loop {
+            match self.initial_core_height_and_time(request.initial_core_height, platform_version) {
                 Ok(height) => break height,
                 Err(e) => match e {
                     Error::Execution(ExecutionError::InitializationForkNotActive(_))
                     | Error::Execution(ExecutionError::InitializationHeightIsNotLocked {
+                        ..
+                    })
+                    | Error::Execution(ExecutionError::InitializationGenesisTimeInFuture {
                         ..
                     }) => {
                         tracing::warn!(
@@ -51,8 +56,6 @@ where
                 },
             }
         };
-
-        let genesis_time = request.genesis_time;
 
         // Create genesis drive state
         self.create_genesis_state(genesis_time, Some(transaction), platform_version)?;
@@ -127,12 +130,12 @@ where
             .map_err(GroveDB)?;
 
         Ok(ResponseInitChain {
-            consensus_params: None, //todo
+            consensus_params: None,
             app_hash: app_hash.to_vec(),
             validator_set_update: Some(validator_set),
             next_core_chain_lock_update: None,
             initial_core_height: core_height, // we send back the core height when the fork happens
-            genesis_time: None,
+            genesis_time: Some(Timestamp::from_milis(genesis_time)),
         })
     }
 }

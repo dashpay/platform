@@ -599,7 +599,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 finalize_block_proposal: 0,
             },
             initialization: DriveAbciInitializationMethodVersions {
-                initial_core_height: 0,
+                initial_core_height_and_time: 0,
                 create_genesis_state: 0,
             },
             core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions {

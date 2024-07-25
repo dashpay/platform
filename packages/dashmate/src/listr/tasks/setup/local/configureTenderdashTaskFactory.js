@@ -23,10 +23,7 @@ export default function configureTenderdashTaskFactory() {
               const randomChainIdPart = Math.floor(Math.random() * 60) + 1;
               const chainId = `dashmate_local_${randomChainIdPart}`;
 
-              const genesisTime = new Date().toISOString();
-
               platformConfigs.forEach((config, index) => {
-                config.set('platform.drive.tenderdash.genesis.genesis_time', genesisTime);
                 config.set('platform.drive.tenderdash.genesis.chain_id', chainId);
 
                 const p2pPeers = platformConfigs
