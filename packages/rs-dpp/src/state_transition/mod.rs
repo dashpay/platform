@@ -353,7 +353,7 @@ impl StateTransition {
                 let mut document_transition_types = vec![];
                 match documents_batch_transition {
                     DocumentsBatchTransition::V0(documents_batch_transition_v0) => {
-                        for transition in documents_batch_transition_v0.transitions() {
+                        for transition in documents_batch_transition_v0.transitions().iter() {
                             let document_transition_name = match transition {
                                 DocumentTransition::Create(_) => "Create",
                                 DocumentTransition::Replace(_) => "Replace",
@@ -366,7 +366,7 @@ impl StateTransition {
                         }
                     }
                 }
-                format!("DocumentsBatch({:?})", document_transition_types)
+                format!("DocumentsBatch([{}])", document_transition_types.join(", "))
             }
             Self::IdentityCreate(_) => "IdentityCreate".to_string(),
             Self::IdentityTopUp(_) => "IdentityTopUp".to_string(),
