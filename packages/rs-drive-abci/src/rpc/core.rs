@@ -226,7 +226,7 @@ impl CoreRPCLike for DefaultCoreRPC {
     fn get_block_time_from_height(&self, height: CoreHeight) -> Result<TimestampMillis, Error> {
         let block_hash = self.get_block_hash(height)?;
         let block_header = self.get_block_header(&block_hash)?;
-        let block_time = (block_header.time * 1000) as u64;
+        let block_time = block_header.time as u64 * 1000;
         Ok(block_time)
     }
 
