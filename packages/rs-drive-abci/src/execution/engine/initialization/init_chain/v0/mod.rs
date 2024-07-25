@@ -40,6 +40,9 @@ where
                     Error::Execution(ExecutionError::InitializationForkNotActive(_))
                     | Error::Execution(ExecutionError::InitializationHeightIsNotLocked {
                         ..
+                    })
+                    | Error::Execution(ExecutionError::InitializationGenesisTimeInFuture {
+                        ..
                     }) => {
                         tracing::warn!(
                             error = ?e,

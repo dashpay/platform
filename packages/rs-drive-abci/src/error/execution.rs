@@ -1,5 +1,6 @@
 use dashcore_rpc::dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use dpp::bls_signatures::BlsError;
+use dpp::identity::TimestampMillis;
 use dpp::version::FeatureVersion;
 use drive::error::Error as DriveError;
 
@@ -66,6 +67,17 @@ pub enum ExecutionError {
         initial_height: u32,
         /// best core lock height
         chain_lock_height: u32,
+    },
+
+    /// Genesis time is in the future.
+    #[error("genesis time {genesis_time} for initial height {initial_height} is in the future. current time is {current_time}")]
+    InitializationGenesisTimeInFuture {
+        /// initial height (requested or fork)
+        initial_height: u32,
+        /// genesis time
+        genesis_time: TimestampMillis,
+        /// current time
+        current_time: TimestampMillis,
     },
 
     /// An error occurred during initialization.

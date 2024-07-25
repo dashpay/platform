@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::prelude::{CoreBlockHeight, TimestampMillis};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 impl<C> Platform<C>
 where
@@ -63,6 +64,20 @@ where
 
         if initial_height <= chain_lock_height {
             let block_time = self.core_rpc.get_block_time_from_height(initial_height)?;
+
+            let current_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards") // Copilot rocks :))
+                .as_millis() as TimestampMillis;
+
+            if block_time > current_time {
+                return Err(ExecutionError::InitializationGenesisTimeInFuture {
+                    initial_height,
+                    genesis_time: block_time,
+                    current_time,
+                }
+                .into());
+            }
 
             Ok((initial_height, block_time))
         } else {
