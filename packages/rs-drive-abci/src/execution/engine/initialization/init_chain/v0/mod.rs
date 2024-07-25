@@ -13,6 +13,7 @@ use crate::platform_types::platform_state::PlatformState;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
+use tenderdash_abci::proto::google::protobuf::Timestamp;
 
 impl<C> Platform<C>
 where
@@ -130,7 +131,10 @@ where
             validator_set_update: Some(validator_set),
             next_core_chain_lock_update: None,
             initial_core_height: core_height, // we send back the core height when the fork happens
-            genesis_time: None,
+            genesis_time: Some(Timestamp {
+                seconds: (genesis_time / 1000) as i64,
+                nanos: ((genesis_time % 1000) * 1000) as i32,
+            }),
         })
     }
 }
