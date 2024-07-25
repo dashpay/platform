@@ -1,4 +1,6 @@
 use derive_more::From;
+use documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use documents_batch_transition::document_transition::DocumentTransition;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -343,17 +345,35 @@ impl StateTransition {
     }
 
     /// Returns state transition name
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self) -> String {
         match self {
-            Self::DataContractCreate(_) => "DataContractCreate",
-            Self::DataContractUpdate(_) => "DataContractUpdate",
-            Self::DocumentsBatch(_) => "DocumentsBatch",
-            Self::IdentityCreate(_) => "IdentityCreate",
-            Self::IdentityTopUp(_) => "IdentityTopUp",
-            Self::IdentityCreditWithdrawal(_) => "IdentityCreditWithdrawal",
-            Self::IdentityUpdate(_) => "IdentityUpdate",
-            Self::IdentityCreditTransfer(_) => "IdentityCreditTransfer",
-            Self::MasternodeVote(_) => "MasternodeVote",
+            Self::DataContractCreate(_) => "DataContractCreate".to_string(),
+            Self::DataContractUpdate(_) => "DataContractUpdate".to_string(),
+            Self::DocumentsBatch(documents_batch_transition) => {
+                let mut document_transition_types = vec![];
+                match documents_batch_transition {
+                    DocumentsBatchTransition::V0(documents_batch_transition_v0) => {
+                        for transition in documents_batch_transition_v0.transitions().iter() {
+                            let document_transition_name = match transition {
+                                DocumentTransition::Create(_) => "Create",
+                                DocumentTransition::Replace(_) => "Replace",
+                                DocumentTransition::Delete(_) => "Delete",
+                                DocumentTransition::Transfer(_) => "Transfer",
+                                DocumentTransition::UpdatePrice(_) => "UpdatePrice",
+                                DocumentTransition::Purchase(_) => "Purchase",
+                            };
+                            document_transition_types.push(document_transition_name);
+                        }
+                    }
+                }
+                format!("DocumentsBatch([{}])", document_transition_types.join(", "))
+            }
+            Self::IdentityCreate(_) => "IdentityCreate".to_string(),
+            Self::IdentityTopUp(_) => "IdentityTopUp".to_string(),
+            Self::IdentityCreditWithdrawal(_) => "IdentityCreditWithdrawal".to_string(),
+            Self::IdentityUpdate(_) => "IdentityUpdate".to_string(),
+            Self::IdentityCreditTransfer(_) => "IdentityCreditTransfer".to_string(),
+            Self::MasternodeVote(_) => "MasternodeVote".to_string(),
         }
     }
 
