@@ -18,8 +18,6 @@ service Platform {
       returns (GetIdentityBalanceResponse);
   rpc getIdentitiesBalances(GetIdentitiesBalancesRequest)
       returns (GetIdentitiesBalancesResponse);
-  rpc getMasternodesBalances(GetMasternodesBalancesRequest)
-      returns (GetMasternodesBalancesResponse);
   rpc getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest)
       returns (GetIdentityBalanceAndRevisionResponse);
   rpc getProofs(GetProofsRequest) returns (GetProofsResponse);
@@ -358,47 +356,6 @@ message GetIdentitiesBalancesResponse {
   }
 
   oneof version { GetIdentitiesBalancesResponseV0 v0 = 1; }
-}
-
-
-message GetMasternodesBalancesRequest {
-  message GetMasternodesBalancesRequestV0 {
-    message StartAtProTxHash {
-      bytes start_pro_tx_hash = 1;
-      bool start_pro_tx_hash_included = 2;
-    }
-
-    optional StartAtProTxHash start_at = 1;
-    optional uint32 limit = 2;
-    optional uint32 offset = 3;
-    bool ascending = 4;
-    bool prove = 5;
-  }
-
-  oneof version {
-    GetMasternodesBalancesRequestV0 v0 = 1;
-  }
-}
-
-message GetMasternodesBalancesResponse {
-  message GetMasternodesBalancesResponseV0 {
-    message MasternodeBalance {
-      bytes identity_id = 1;
-      optional uint64 balance = 2;
-    }
-
-    message MasternodesBalances {
-      repeated MasternodeBalance entries = 1;
-    };
-
-    oneof result {
-      MasternodesBalances masternode_balances = 1;
-      Proof proof = 2;
-    }
-    ResponseMetadata metadata = 3;
-  }
-
-  oneof version { GetMasternodesBalancesResponseV0 v0 = 1; }
 }
 
 message GetProofsRequest {

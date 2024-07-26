@@ -7,4 +7,3 @@ mod identity_by_public_key_hash;
 mod identity_contract_nonce;
 mod identity_nonce;
 mod keys;
-mod masternode_balances;
