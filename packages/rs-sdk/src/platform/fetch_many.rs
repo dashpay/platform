@@ -10,13 +10,7 @@ use crate::{
     platform::{document_query::DocumentQuery, query::Query},
     Sdk,
 };
-use dapi_grpc::platform::v0::{
-    GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
-    GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
-    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetVotePollsByEndDateRequest,
-};
+use dapi_grpc::platform::v0::{GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest, GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest, GetIdentityBalanceRequest, GetIdentitiesBalancesRequest};
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::data_contract::DataContract;
 use dpp::identity::KeyID;
@@ -28,16 +22,12 @@ use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, voting::votes::resource_vote::ResourceVote,
 };
 use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
-use drive_proof_verifier::types::{
-    Contenders, ContestedResource, ContestedResources, DataContracts, ExtendedEpochInfos,
-    IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes, ProtocolVersionUpgrades,
-    ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
-};
+use drive_proof_verifier::types::{Contenders, ContestedResource, ContestedResources, DataContracts, ExtendedEpochInfos, IdentitiesBalances, IdentityBalance, IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes, ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
 
-use super::LimitQuery;
+use super::{Fetch, LimitQuery};
 
 /// Fetch multiple objects from the Platform.
 ///
@@ -270,6 +260,12 @@ impl FetchMany<KeyID, IdentityPublicKeys> for IdentityPublicKey {
 impl FetchMany<EpochIndex, ExtendedEpochInfos> for ExtendedEpochInfo {
     type Request = GetEpochsInfoRequest;
 }
+
+/// todo: doc
+impl FetchMany<Identifier, IdentitiesBalances> for IdentityBalance {
+    type Request = GetIdentitiesBalancesRequest;
+}
+
 
 /// Fetch information about number of votes for each protocol version upgrade.
 ///
