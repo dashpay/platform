@@ -1,6 +1,6 @@
 //! Epoch-related types and helpers
 use async_trait::async_trait;
-use dapi_grpc::platform::v0::{GetEpochsInfoRequest, ResponseMetadata};
+use dapi_grpc::platform::v0::{GetEpochsInfoRequest, Proof, ResponseMetadata};
 use dpp::block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo};
 
 use crate::{
@@ -16,6 +16,8 @@ pub trait ExtendedEpochInfoEx: Sized {
     async fn fetch_current(sdk: &Sdk) -> Result<Self, Error>;
     /// Fetch current (the latest) epoch from Platform with metadata.
     async fn fetch_current_with_metadata(sdk: &Sdk) -> Result<(Self, ResponseMetadata), Error>;
+    /// Fetch current (the latest) epoch from Platform with metadata and proof.
+    async fn fetch_current_with_metadata_and_proof(sdk: &Sdk) -> Result<(Self, ResponseMetadata, Proof), Error>;
 }
 
 #[async_trait]
@@ -38,6 +40,21 @@ impl ExtendedEpochInfoEx for ExtendedEpochInfo {
         let (epoch, metadata) = Self::fetch_with_metadata(sdk, query, None).await?;
 
         Ok((epoch.ok_or(Error::EpochNotFound)?, metadata))
+    }
+
+    async fn fetch_current_with_metadata_and_proof(sdk: &Sdk) -> Result<(Self, ResponseMetadata, Proof), Error> {
+        let query = LimitQuery {
+            query: EpochQuery {
+                start: None,
+                ascending: false,
+            },
+            limit: Some(1),
+            start_info: None,
+        };
+
+        let (epoch, metadata, proof) = Self::fetch_with_metadata_and_proof(sdk, query, None).await?;
+
+        Ok((epoch.ok_or(Error::EpochNotFound)?, metadata, proof))
     }
 }
 /// Query used to fetch multiple epochs from Platform.
