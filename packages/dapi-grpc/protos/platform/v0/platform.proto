@@ -16,6 +16,10 @@ service Platform {
   rpc getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
       returns (GetIdentityBalanceResponse);
+  rpc getIdentitiesBalances(GetIdentitiesBalancesRequest)
+      returns (GetIdentitiesBalancesResponse);
+  rpc getMasternodesBalances(GetMasternodesBalancesRequest)
+      returns (GetMasternodesBalancesResponse);
   rpc getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest)
       returns (GetIdentityBalanceAndRevisionResponse);
   rpc getProofs(GetProofsRequest) returns (GetProofsResponse);
@@ -303,6 +307,96 @@ message GetIdentitiesContractKeysResponse {
   }
 
   oneof version { GetIdentitiesContractKeysResponseV0 v0 = 1; }
+}
+
+message GetIdentitiesBalancesRequest {
+  message GetIdentitiesBalancesRequestV0 {
+    message GetIdentitiesBalancesByKnownIdentityIds {
+      repeated bytes identities_ids = 1;
+    }
+    message GetIdentitiesBalancesByIdentityIdRange {
+      message StartAtIdentity {
+        bytes start_identity_id = 1;
+        bool start_identity_id_included = 2;
+      }
+
+      optional StartAtIdentity start_at = 1;
+      optional uint32 limit = 2;
+      optional uint32 offset = 3;
+    }
+    oneof request_type {
+        GetIdentitiesBalancesByKnownIdentityIds by_known_identity_ids = 1;
+        GetIdentitiesBalancesByIdentityIdRange by_range = 2;
+    }
+    bool ascending = 3;
+    bool prove = 4;
+  }
+
+  oneof version {
+    GetIdentitiesBalancesRequestV0 v0 = 1;
+  }
+}
+
+message GetIdentitiesBalancesResponse {
+  message GetIdentitiesBalancesResponseV0 {
+    message IdentityBalance {
+      bytes identity_id = 1;
+      optional uint64 balance = 2;
+    }
+
+    message IdentitiesBalances {
+      repeated IdentityBalance entries = 1;
+    };
+
+    oneof result {
+      IdentitiesBalances identities_balances = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetIdentitiesBalancesResponseV0 v0 = 1; }
+}
+
+
+message GetMasternodesBalancesRequest {
+  message GetMasternodesBalancesRequestV0 {
+    message StartAtProTxHash {
+      bytes start_pro_tx_hash = 1;
+      bool start_pro_tx_hash_included = 2;
+    }
+
+    optional StartAtProTxHash start_at = 1;
+    optional uint32 limit = 2;
+    optional uint32 offset = 3;
+    bool ascending = 4;
+    bool prove = 5;
+  }
+
+  oneof version {
+    GetMasternodesBalancesRequestV0 v0 = 1;
+  }
+}
+
+message GetMasternodesBalancesResponse {
+  message GetMasternodesBalancesResponseV0 {
+    message MasternodeBalance {
+      bytes identity_id = 1;
+      optional uint64 balance = 2;
+    }
+
+    message MasternodesBalances {
+      repeated MasternodeBalance entries = 1;
+    };
+
+    oneof result {
+      MasternodesBalances masternode_balances = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetMasternodesBalancesResponseV0 v0 = 1; }
 }
 
 message GetProofsRequest {

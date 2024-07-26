@@ -881,6 +881,16 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                identities_balances: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                masternodes_balances: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
                 balance_and_revision: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,

@@ -47,13 +47,15 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 25] = [
+    const VERSIONED_REQUESTS: [&str; 27] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
         "GetDocumentsRequest",
         "GetIdentitiesByPublicKeyHashesRequest",
         "GetIdentitiesRequest",
+        "GetIdentitiesBalancesRequest",
+        "GetMasternodesBalancesRequest",
         "GetIdentityNonceRequest",
         "GetIdentityContractNonceRequest",
         "GetIdentityBalanceAndRevisionRequest",
@@ -76,13 +78,15 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     ];
 
     //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
-    const VERSIONED_RESPONSES: [&str; 26] = [
+    const VERSIONED_RESPONSES: [&str; 28] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
         "GetDocumentsResponse",
         "GetIdentitiesByPublicKeyHashesResponse",
         "GetIdentitiesResponse",
+        "GetIdentitiesBalancesResponse",
+        "GetMasternodesBalancesResponse",
         "GetIdentityBalanceAndRevisionResponse",
         "GetIdentityBalanceResponse",
         "GetIdentityNonceResponse",
