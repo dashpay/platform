@@ -4,13 +4,13 @@
 //! It allows fetching of various types of data such as `Identity`, `DataContract`, and `Document`.
 //!
 //! ## Traits
-//! - [Fetch]: An asynchronous trait that defines how to fetch data from the platform.
+//! - [Fetch]: An asynchronous trait that defines how to fetch data from Platform.
 //!   It requires the implementing type to also implement [Debug] and [FromProof]
 //!   traits. The associated [Fetch::Request]` type needs to implement [TransportRequest].
 
 use crate::mock::MockResponse;
 use crate::{error::Error, platform::query::Query, Sdk};
-use dapi_grpc::platform::v0::{self as platform_proto, ResponseMetadata};
+use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
 use dpp::voting::votes::Vote;
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, document::Document, platform_value::Identifier,
@@ -23,9 +23,9 @@ use std::fmt::Debug;
 use super::types::identity::IdentityRequest;
 use super::DocumentQuery;
 
-/// Trait implemented by objects that can be fetched from the platform.
+/// Trait implemented by objects that can be fetched from Platform.
 ///
-/// To fetch an object from the platform, you need to define some query (criteria that fetched object must match) and
+/// To fetch an object from Platform, you need to define some query (criteria that fetched object must match) and
 /// use [Fetch::fetch()] for your object type.
 ///
 /// Implementators of this trait should implement at least the [fetch_with_metadata()](Fetch::fetch_with_metadata)
@@ -59,16 +59,16 @@ where
             Response = <<Self as Fetch>::Request as DapiRequest>::Response,
         >,
 {
-    /// Type of request used to fetch data from the platform.
+    /// Type of request used to fetch data from Platform.
     ///
     /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
     /// This type must implement [`TransportRequest`] and [`MockRequest`].
     type Request: TransportRequest + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>;
 
-    /// Fetch single object from the Platfom.
+    /// Fetch single object from Platform.
     ///
-    /// Fetch object from the platform that satisfies provided [Query].
+    /// Fetch object from Platform that satisfies provided [Query].
     /// Most often, the Query is an [Identifier] of the object to be fetched.
     ///
     /// ## Parameters
@@ -93,15 +93,16 @@ where
         Self::fetch_with_settings(sdk, query, RequestSettings::default()).await
     }
 
-    /// Fetch single object from the Platfom.
+    /// Fetch single object from Platform with metadata.
     ///
-    /// Fetch object from the platform that satisfies provided [Query].
+    /// Fetch object from Platform that satisfies provided [Query].
     /// Most often, the Query is an [Identifier] of the object to be fetched.
     ///
     /// ## Parameters
     ///
     /// - `sdk`: An instance of [Sdk].
     /// - `query`: A query parameter implementing [`crate::platform::query::Query`] to specify the data to be fetched.
+    /// - `settings`: An optional `RequestSettings` to give greater flexibility on the request.
     ///
     /// ## Returns
     ///
@@ -137,9 +138,58 @@ where
         }
     }
 
-    /// Fetch single object from the Platfom.
+    /// Fetch single object from Platform with metadata and underlying proof.
     ///
-    /// Fetch object from the platform that satisfies provided [Query].
+    /// Fetch object from Platform that satisfies provided [Query].
+    /// Most often, the Query is an [Identifier] of the object to be fetched.
+    ///
+    /// This method is meant to give the user library a way to see the underlying proof
+    /// for educational purposes. This method should most likely only be used for debugging.
+    ///
+    /// ## Parameters
+    ///
+    /// - `sdk`: An instance of [Sdk].
+    /// - `query`: A query parameter implementing [`crate::platform::query::Query`] to specify the data to be fetched.
+    /// - `settings`: An optional `RequestSettings` to give greater flexibility on the request.
+    ///
+    /// ## Returns
+    ///
+    /// Returns:
+    /// * `Ok(Some(Self))` when object is found
+    /// * `Ok(None)` when object is not found
+    /// * [`Err(Error)`](Error) when an error occurs
+    ///
+    /// ## Error Handling
+    ///
+    /// Any errors encountered during the execution are returned as [Error] instances.
+    async fn fetch_with_metadata_and_proof<Q: Query<<Self as Fetch>::Request>>(
+        sdk: &Sdk,
+        query: Q,
+        settings: Option<RequestSettings>,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
+        let request = query.query(sdk.prove())?;
+
+        let response = request
+            .clone()
+            .execute(sdk, settings.unwrap_or_default())
+            .await?;
+
+        let object_type = std::any::type_name::<Self>().to_string();
+        tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
+
+        let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) = sdk
+            .parse_proof_with_metadata_and_proof(request, response)
+            .await?;
+
+        match object {
+            Some(item) => Ok((item.into(), response_metadata, proof)),
+            None => Ok((None, response_metadata, proof)),
+        }
+    }
+
+    /// Fetch single object from Platform.
+    ///
+    /// Fetch object from Platform that satisfies provided [Query].
     /// Most often, the Query is an [Identifier] of the object to be fetched.
     ///
     /// ## Parameters
@@ -167,7 +217,7 @@ where
         Ok(object)
     }
 
-    /// Fetch single object from the Platform by identifier.
+    /// Fetch single object from Platform by identifier.
     ///
     /// Convenience method that allows fetching objects by identifier for types that implement [Query] for [Identifier].
     ///

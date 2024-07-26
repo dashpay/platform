@@ -38,7 +38,7 @@ In order to build application that uses Dash Platform SDK, you need to:
 
 Dash Platform SDK supports mocking with `mocks` feature which provides a
 convenient way to define mock expectations and use the SDK without actual
-connection to the Platform.
+connection to Platform.
 
 You can see examples of mocking in [mock_fetch.rs](tests/fetch/mock_fetch.rs) and  [mock_fetch_many.rs](tests/fetch/mock_fetch_many.rs).
 

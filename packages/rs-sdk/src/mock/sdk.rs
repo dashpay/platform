@@ -1,7 +1,7 @@
 //! Mocking mechanisms for Dash Platform SDK.
 //!
 //! See [MockDashPlatformSdk] for more details.
-use dapi_grpc::platform::v0::ResponseMetadata;
+use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dapi_grpc::{
     mock::Mockable,
     platform::v0::{self as proto},
@@ -219,11 +219,11 @@ impl MockDashPlatformSdk {
     /// ## Generic Parameters
     ///
     /// - `O`: Type of the object that will be returned in response to the query. Must implement [Fetch] and [MockResponse].
-    /// - `Q`: Type of the query that will be sent to the platform. Must implement [Query] and [Mockable].
+    /// - `Q`: Type of the query that will be sent to Platform. Must implement [Query] and [Mockable].
     ///
     /// ## Arguments
     ///
-    /// - `query`: Query that will be sent to the platform.
+    /// - `query`: Query that will be sent to Platform.
     /// - `object`: Object that will be returned in response to `query`, or None if the object is expected to not exist.
     ///
     /// ## Returns
@@ -284,11 +284,11 @@ impl MockDashPlatformSdk {
     ///
     /// - `O`: Type of the object that will be returned in response to the query.
     /// Must implement [FetchMany]. `Vec<O>` must implement [MockResponse].
-    /// - `Q`: Type of the query that will be sent to the platform. Must implement [Query] and [Mockable].
+    /// - `Q`: Type of the query that will be sent to Platform. Must implement [Query] and [Mockable].
     ///
     /// ## Arguments
     ///
-    /// - `query`: Query that will be sent to the platform.
+    /// - `query`: Query that will be sent to Platform.
     /// - `objects`: Vector of objects that will be returned in response to `query`, or None if no objects are expected.
     ///
     /// ## Returns
@@ -369,7 +369,7 @@ impl MockDashPlatformSdk {
         &self,
         request: O::Request,
         response: O::Response,
-    ) -> Result<(Option<O>, ResponseMetadata), drive_proof_verifier::Error>
+    ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
     where
         O::Request: Mockable,
         Option<O>: MockResponse,
@@ -381,6 +381,7 @@ impl MockDashPlatformSdk {
             Some(d) => (
                 Option::<O>::mock_deserialize(self, d),
                 ResponseMetadata::default(),
+                Proof::default(),
             ),
             None => {
                 let version = self.version();

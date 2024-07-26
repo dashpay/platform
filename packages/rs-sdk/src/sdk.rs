@@ -8,7 +8,7 @@ use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
 use dapi_grpc::mock::Mockable;
-use dapi_grpc::platform::v0::ResponseMetadata;
+use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -78,7 +78,7 @@ pub type LastQueryTimestamp = u64;
 #[derive(Clone)]
 pub struct Sdk {
     inner: SdkInstance,
-    /// Use proofs when retrieving data from the platform.
+    /// Use proofs when retrieving data from Platform.
     ///
     /// This is set to `true` by default. `false` is not implemented yet.
     proofs: bool,
@@ -193,6 +193,42 @@ impl Sdk {
         request: O::Request,
         response: O::Response,
     ) -> Result<(Option<O>, ResponseMetadata), drive_proof_verifier::Error>
+    where
+        O::Request: Mockable,
+    {
+        let provider = self
+            .context_provider
+            .as_ref()
+            .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
+
+        match self.inner {
+            SdkInstance::Dapi { .. } => {
+                O::maybe_from_proof_with_metadata(request, response, self.version(), &provider)
+                    .map(|(a, b, _)| (a, b))
+            }
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { ref mock, .. } => {
+                let guard = mock.lock().await;
+                guard
+                    .parse_proof_with_metadata(request, response)
+                    .map(|(a, b, _)| (a, b))
+            }
+        }
+    }
+
+    /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
+    ///
+    /// This method is used to retrieve objects from proofs returned by Dash Platform.
+    ///
+    /// ## Generic Parameters
+    ///
+    /// - `R`: Type of the request that was used to fetch the proof.
+    /// - `O`: Type of the object to be retrieved from the proof.
+    pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
+        &self,
+        request: O::Request,
+        response: O::Response,
+    ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
     where
         O::Request: Mockable,
     {
