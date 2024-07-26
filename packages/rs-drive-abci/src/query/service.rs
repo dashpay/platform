@@ -25,7 +25,7 @@ use dapi_grpc::platform::v0::{
     GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
     GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
     GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
-    GetMasternodesBalancesRequest, GetMasternodesBalancesResponse, GetPathElementsRequest,
+    GetPathElementsRequest,
     GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
     GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
@@ -547,17 +547,18 @@ impl PlatformService for QueryService {
         .await
     }
 
-    async fn get_masternodes_balances(
-        &self,
-        request: Request<GetMasternodesBalancesRequest>,
-    ) -> Result<Response<GetMasternodesBalancesResponse>, Status> {
-        self.handle_blocking_query(
-            request,
-            Platform::<DefaultCoreRPC>::query_masternodes_balances,
-            "get_masternodes_balances",
-        )
-        .await
-    }
+    // todo v2
+    // async fn get_masternodes_balances(
+    //     &self,
+    //     request: Request<GetMasternodesBalancesRequest>,
+    // ) -> Result<Response<GetMasternodesBalancesResponse>, Status> {
+    //     self.handle_blocking_query(
+    //         request,
+    //         Platform::<DefaultCoreRPC>::query_masternodes_balances,
+    //         "get_masternodes_balances",
+    //     )
+    //     .await
+    // }
 }
 
 fn query_error_into_status(error: QueryError) -> Status {

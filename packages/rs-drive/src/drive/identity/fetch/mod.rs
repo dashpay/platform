@@ -33,8 +33,6 @@ use dpp::fee::Credits;
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "server")]
 use std::collections::BTreeMap;
-use dpp::platform_value::Value;
-use platform_version::version::drive_versions::DriveVersion;
 
 #[cfg(feature = "server")]
 mod balance;
@@ -198,7 +196,7 @@ impl Drive {
 
         results
             .into_iter()
-            .map(|(path, key, mut element)| {
+            .map(|(_, key, element)| {
                 let identifier: [u8; 32] = key.try_into().map_err(|_| {
                     Error::Drive(DriveError::CorruptedSerialization(String::from(
                         "expected 32 bytes",
