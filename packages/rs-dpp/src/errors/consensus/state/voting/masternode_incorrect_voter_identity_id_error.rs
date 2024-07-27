@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -11,17 +11,18 @@ use thiserror::Error;
 )]
 #[error("Masternode {pro_tx_hash} voter identity id is incorrect, expected is {expected_voter_identity_id}, provided is {provided_voter_identity_id}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct MasternodeIncorrectVoterIdentityIdError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    pro_tx_hash: Identifier,
+    pub pro_tx_hash: Identifier,
 
-    expected_voter_identity_id: Identifier,
+    pub expected_voter_identity_id: Identifier,
 
-    provided_voter_identity_id: Identifier,
+    pub provided_voter_identity_id: Identifier,
 }
 
 impl MasternodeIncorrectVoterIdentityIdError {

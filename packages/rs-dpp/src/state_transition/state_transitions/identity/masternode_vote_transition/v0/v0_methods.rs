@@ -1,15 +1,15 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::identifier::MasternodeIdentifiers;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::hash::IdentityPublicKeyHashMethodsV0;
+use crate::identity::identity_public_key::hash::IdentityPublicKeyHashMethodsV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::{IdentityPublicKey, SecurityLevel};
+use crate::identity::{IdentityPublicKey, identity_public_key::SecurityLevel};
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use crate::state_transition::identity::masternode_vote_transition::MasternodeVoteTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
@@ -19,7 +19,7 @@ use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_value::Identifier;
 
-use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+use crate::state_transition::identity::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
 
 impl MasternodeVoteTransitionV0 {
     #[cfg(feature = "state-transition-signing")]

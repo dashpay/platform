@@ -3,17 +3,11 @@ use base64::Engine;
 use platform_value::BinaryData;
 
 use crate::prelude::UserFeeIncrease;
-use crate::{
-    prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
-};
-
-use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
-use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-
-use crate::state_transition::StateTransition;
-use crate::state_transition::StateTransitionType::MasternodeVote;
+use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType, StateTransitionType::MasternodeVote};
+use crate::state_transition::identity::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+use crate::state_transition::identity::masternode_vote_transition::MasternodeVoteTransition;
 use crate::version::FeatureVersion;
+use platform_value::Identifier;
 
 impl From<MasternodeVoteTransitionV0> for StateTransition {
     fn from(value: MasternodeVoteTransitionV0) -> Self {

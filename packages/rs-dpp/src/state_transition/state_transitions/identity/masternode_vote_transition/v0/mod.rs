@@ -8,15 +8,13 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
+use crate::errors::ProtocolError;
 use crate::identity::KeyID;
-
-use crate::prelude::{Identifier, IdentityNonce};
-
-use crate::protocol_error::ProtocolError;
+use crate::prelude::IdentityNonce;
 use crate::voting::votes::Vote;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Identifier};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 

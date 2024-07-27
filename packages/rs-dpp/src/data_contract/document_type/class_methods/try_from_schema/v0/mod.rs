@@ -9,7 +9,7 @@ use crate::errors::consensus::ConsensusError;
 use crate::data_contract::document_type::property::array::ArrayItemType;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
+use crate::data_contract::document_type::property::{ByteArrayPropertySizes, DocumentProperty, DocumentPropertyType, StringPropertySizes};
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validate_max_depth;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
@@ -22,9 +22,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
 #[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumentTypeError;
+use crate::errors::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumentTypeError;
 #[cfg(feature = "validation")]
-use crate::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
+use crate::errors::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
 #[cfg(any(test, feature = "validation"))]
 use crate::errors::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 #[cfg(feature = "validation")]
@@ -39,7 +39,7 @@ use crate::data_contract::document_type::property_names::{
     TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::{
-    property_names, ByteArrayPropertySizes, DocumentType, StringPropertySizes,
+    property_names, DocumentType,
 };
 use crate::data_contract::errors::contract::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;

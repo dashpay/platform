@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -11,17 +11,18 @@ use thiserror::Error;
 )]
 #[error("Masternode with id: {pro_tx_hash} already voted {times_already_voted} times and is trying to vote again, they can only vote {max_times_allowed} times")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct MasternodeVotedTooManyTimesError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    pro_tx_hash: Identifier,
+    pub pro_tx_hash: Identifier,
 
-    times_already_voted: u16,
+    pub times_already_voted: u16,
 
-    max_times_allowed: u16,
+    pub max_times_allowed: u16,
 }
 
 impl MasternodeVotedTooManyTimesError {

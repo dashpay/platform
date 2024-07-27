@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use bincode::{Decode, Encode};
@@ -14,14 +14,15 @@ use thiserror::Error;
     "An Identity with the id {identity_id} is already a contestant for the vote_poll {vote_poll}"
 )]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DocumentContestIdentityAlreadyContestantError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    vote_poll: ContestedDocumentResourceVotePoll,
-    identity_id: Identifier,
+    pub vote_poll: ContestedDocumentResourceVotePoll,
+    pub identity_id: Identifier,
 }
 
 impl DocumentContestIdentityAlreadyContestantError {

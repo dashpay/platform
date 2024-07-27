@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::prelude::TimestampMillis;
 use crate::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
@@ -13,17 +13,18 @@ use thiserror::Error;
 )]
 #[error("Document Contest for vote_poll {vote_poll} is not joinable {stored_info}, it started {start_time} and it is now {current_time}, and you can only join for {joinable_time}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DocumentContestNotJoinableError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    vote_poll: ContestedDocumentResourceVotePoll,
-    stored_info: ContestedDocumentVotePollStoredInfo,
-    start_time: TimestampMillis,
-    current_time: TimestampMillis,
-    joinable_time: TimestampMillis,
+    pub vote_poll: ContestedDocumentResourceVotePoll,
+    pub stored_info: ContestedDocumentVotePollStoredInfo,
+    pub start_time: TimestampMillis,
+    pub current_time: TimestampMillis,
+    pub joinable_time: TimestampMillis,
 }
 
 impl DocumentContestNotJoinableError {

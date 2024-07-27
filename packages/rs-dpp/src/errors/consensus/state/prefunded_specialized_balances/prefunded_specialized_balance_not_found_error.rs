@@ -1,10 +1,10 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::prelude::Identifier;
+use platform_value::Identifier;
 
 use bincode::{Decode, Encode};
 
@@ -13,6 +13,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Did not find a specialized balance with id: {balance_id}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct PrefundedSpecializedBalanceNotFoundError {
     /*
 

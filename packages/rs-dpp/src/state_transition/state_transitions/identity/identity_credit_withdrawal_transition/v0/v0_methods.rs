@@ -7,7 +7,7 @@ use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::{Identity, KeyType, Purpose, SecurityLevel};
+use crate::identity::{Identity, KeyType, identity_public_key::{Purpose, SecurityLevel}};
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;

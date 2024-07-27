@@ -1,4 +1,5 @@
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct SystemLimits {
     pub estimated_contract_max_serialized_size: u16,
     pub max_field_value_size: u32,

@@ -1,6 +1,4 @@
 use derive_more::From;
-use documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use documents_batch_transition::document_transition::DocumentTransition;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -70,13 +68,14 @@ use crate::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
     feature = "state-transition-validation"
 ))]
 use crate::identity::{IdentityPublicKey, KeyType};
-use crate::identity::{KeyID, SecurityLevel};
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransitionSignable;
 pub use state_transitions::*;
 
 use crate::serialization::Signable;
+use crate::state_transition::document::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::document::documents_batch_transition::document_transition::DocumentTransition;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionSignable,
 };
@@ -110,7 +109,7 @@ use crate::state_transition::state_transitions::identity::identity_update_transi
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
 
-use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use crate::state_transition::identity::masternode_vote_transition::MasternodeVoteTransition;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;

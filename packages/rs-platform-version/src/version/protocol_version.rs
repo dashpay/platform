@@ -13,20 +13,42 @@ use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 use crate::version::v1::PLATFORM_V1;
 #[cfg(feature = "mock-versions")]
 use std::sync::OnceLock;
-
 use crate::version::limits::SystemLimits;
 use crate::version::ProtocolVersion;
-pub use versioned_feature_core::*;
+
+#[ferment_macro::export]
+pub type FeatureVersion = u16;
+#[ferment_macro::export]
+pub type OptionalFeatureVersion = Option<u16>; //This is a feature that didn't always exist
 
 #[derive(Clone, Debug, Default)]
 #[ferment_macro::export]
+pub struct FeatureVersionBounds {
+    pub min_version: FeatureVersion,
+    pub max_version: FeatureVersion,
+    pub default_current_version: FeatureVersion,
+}
+
+impl FeatureVersionBounds {
+    /// Will get a protocol error if the version is unknown
+    pub fn check_version(&self, version: FeatureVersion) -> bool {
+        version >= self.min_version && version <= self.max_version
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
+pub struct AbciStructureVersion {
+    pub extended_block_info: FeatureVersionBounds,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct PlatformArchitectureVersion {
     pub data_contract_factory_structure_version: FeatureVersion,
     pub document_factory_structure_version: FeatureVersion,
 }
 
 #[derive(Clone, Debug)]
-#[ferment_macro::export]
 pub struct PlatformVersion {
     pub protocol_version: ProtocolVersion,
     pub proofs: FeatureVersionBounds,

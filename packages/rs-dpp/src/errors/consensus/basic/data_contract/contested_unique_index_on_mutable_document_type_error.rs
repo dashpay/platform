@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -12,14 +12,15 @@ use thiserror::Error;
     "Document type '{document_type}' has a contested unique index '{contested_unique_index_name}' but is set as mutable which is not allowed"
 )]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct ContestedUniqueIndexOnMutableDocumentTypeError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    document_type: String,
-    contested_unique_index_name: String,
+    pub document_type: String,
+    pub contested_unique_index_name: String,
 }
 
 impl ContestedUniqueIndexOnMutableDocumentTypeError {

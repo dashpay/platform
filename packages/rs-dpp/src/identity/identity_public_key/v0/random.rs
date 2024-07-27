@@ -1,9 +1,9 @@
 use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType::{ECDSA_HASH160, ECDSA_SECP256K1};
-use crate::identity::Purpose::{AUTHENTICATION, VOTING};
-use crate::identity::SecurityLevel::{CRITICAL, HIGH, MASTER, MEDIUM};
-use crate::identity::{KeyCount, KeyID, KeyType, Purpose, SecurityLevel};
+use crate::identity::identity_public_key::Purpose::{AUTHENTICATION, VOTING};
+use crate::identity::identity_public_key::SecurityLevel::{CRITICAL, HIGH, MASTER, MEDIUM};
+use crate::identity::{KeyCount, KeyID, KeyType, identity_public_key::{Purpose, SecurityLevel}};
 use crate::errors::ProtocolError;
 use platform_value::BinaryData;
 use platform_version::version::PlatformVersion;

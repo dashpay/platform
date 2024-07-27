@@ -1,5 +1,5 @@
 use crate::prelude::UserFeeIncrease;
-use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use crate::state_transition::identity::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};

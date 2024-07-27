@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStatus;
 use crate::voting::vote_polls::VotePoll;
@@ -12,14 +12,15 @@ use thiserror::Error;
 )]
 #[error("VotePoll {vote_poll} not available for voting: {status}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct VotePollNotAvailableForVotingError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    vote_poll: VotePoll,
-    status: ContestedDocumentVotePollStatus,
+    pub vote_poll: VotePoll,
+    pub status: ContestedDocumentVotePollStatus,
 }
 
 impl VotePollNotAvailableForVotingError {

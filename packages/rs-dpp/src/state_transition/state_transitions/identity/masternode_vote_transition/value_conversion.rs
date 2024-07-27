@@ -4,9 +4,9 @@ use platform_value::Value;
 
 use crate::ProtocolError;
 
-use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
-use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-use crate::state_transition::state_transitions::masternode_vote_transition::fields::*;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
 use crate::serialization::ValueConvertible;

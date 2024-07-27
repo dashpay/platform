@@ -1,13 +1,12 @@
 use crate::errors::consensus::ConsensusError;
-use crate::data_contract::JsonValue;
 use crate::validation::byte_array_keyword::ByteArrayKeyword;
 use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 use crate::ProtocolError;
 use jsonschema::{JSONSchema, RegexEngine, RegexOptions};
-
+use serde_json::Value;
 impl JsonSchemaValidator {
     #[inline(always)]
-    pub(super) fn compile_v0(&self, json_schema: &serde_json::Value) -> Result<bool, ProtocolError> {
+    pub(super) fn compile_v0(&self, json_schema: &Value) -> Result<bool, ProtocolError> {
         if self.is_compiled_v0() {
             return Ok(false);
         }

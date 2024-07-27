@@ -13,7 +13,7 @@ use crate::util::object_size_info::DataContractOwnedResolvedInfo;
 use crate::util::object_size_info::DataContractResolvedInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 #[cfg(any(feature = "server", feature = "verify"))]
-use dpp::prelude::DataContract;
+use dpp::data_contract::DataContract;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;

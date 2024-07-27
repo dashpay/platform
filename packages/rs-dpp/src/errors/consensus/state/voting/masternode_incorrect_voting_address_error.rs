@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -11,17 +11,18 @@ use thiserror::Error;
 )]
 #[error("Masternode {pro_tx_hash} voting address is incorrect, current is {current_voting_address}, given is {given_voting_address}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct MasternodeIncorrectVotingAddressError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    pro_tx_hash: Identifier,
+    pub pro_tx_hash: Identifier,
 
-    current_voting_address: Bytes20,
+    pub current_voting_address: Bytes20,
 
-    given_voting_address: Bytes20,
+    pub given_voting_address: Bytes20,
 }
 
 impl MasternodeIncorrectVotingAddressError {

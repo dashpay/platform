@@ -18,6 +18,7 @@ pub use v0::ContestedDocumentVotePollStoredInfoV0Getters;
 pub type LockedVotePollCounter = u16;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode)]
+#[ferment_macro::export]
 pub enum ContestedDocumentVotePollStatus {
     #[default]
     NotStarted,

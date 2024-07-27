@@ -1,5 +1,5 @@
-use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::state::state_error::StateError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -12,15 +12,16 @@ use thiserror::Error;
 )]
 #[error("Document Contest for vote_poll {vote_poll} is currently already locked {stored_info}, unlocking is possible by paying {unlock_cost} credits")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct DocumentContestCurrentlyLockedError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    vote_poll: ContestedDocumentResourceVotePoll,
-    stored_info: ContestedDocumentVotePollStoredInfo,
-    unlock_cost: u64,
+    pub vote_poll: ContestedDocumentResourceVotePoll,
+    pub stored_info: ContestedDocumentVotePollStoredInfo,
+    pub unlock_cost: u64,
 }
 
 impl DocumentContestCurrentlyLockedError {

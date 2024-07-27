@@ -42,7 +42,7 @@ use {
 };
 
 #[cfg(feature = "verify")]
-use crate::drive::verify::RootHash;
+use crate::verify::RootHash;
 
 #[cfg(feature = "server")]
 pub use grovedb::{
@@ -55,6 +55,7 @@ use {
     crate::{drive::Drive, error::Error::GroveDB, fees::op::LowLevelDriveOperation},
     dpp::block::block_info::BlockInfo,
 };
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 
 // Crate-local unconditional imports
 use crate::config::DriveConfig;
@@ -1918,7 +1919,6 @@ mod tests {
 
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
-    use dpp::prelude::Identifier;
     use serde_json::json;
     use std::borrow::Cow;
     use std::option::Option::None;
@@ -1940,6 +1940,7 @@ mod tests {
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::util::cbor_serializer;
     use dpp::version::PlatformVersion;
+    use platform_value::Identifier;
 
     fn setup_family_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
