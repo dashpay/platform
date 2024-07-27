@@ -74,8 +74,8 @@ use crate::state_transition::state_transitions::identity::masternode_vote_transi
 pub use state_transitions::*;
 
 use crate::serialization::Signable;
-use crate::state_transition::document::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use crate::state_transition::document::documents_batch_transition::document_transition::DocumentTransition;
+use crate::state_transition::state_transitions::document::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::DocumentTransition;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionSignable,
 };
