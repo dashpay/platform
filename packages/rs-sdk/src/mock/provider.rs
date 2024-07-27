@@ -7,11 +7,12 @@ use arc_swap::ArcSwapAny;
 use dpp::data_contract::DataContract;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
-use platform_value::Identifier;
+// use platform_value::Identifier;
 use pollster::FutureExt;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use dpp::platform_value::Identifier;
 
 /// Context provider that uses the Core gRPC API to fetch data from the platform.
 ///

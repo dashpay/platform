@@ -18,9 +18,9 @@ use dpp::{
     platform_value::{platform_value, Value},
     ProtocolError,
 };
+use dpp::identifier::Identifier;
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::{types::Documents, FromProof};
-use platform_value::Identifier;
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
 };

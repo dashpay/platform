@@ -98,4 +98,5 @@ pub use ed25519_dalek;
 #[cfg(feature = "jsonschema")]
 pub use jsonschema;
 pub use platform_serialization;
+pub use platform_serialization_derive;
 pub use platform_value;

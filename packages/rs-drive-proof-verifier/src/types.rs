@@ -25,16 +25,16 @@ use dpp::{
 };
 use drive::grovedb::Element;
 use platform_value::{Identifier, Value};
-use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "mocks")]
-use {
+use dpp::{
     bincode::{Decode, Encode},
-    dpp::{dashcore::hashes::Hash, version as platform_version, ProtocolError},
+    dashcore::hashes::Hash, ProtocolError,
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
+use platform_version::version::PlatformVersion;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
@@ -94,7 +94,7 @@ impl Contenders {
                 let contender = v.try_to_contender(document_type.as_ref(), platform_version)?;
                 Ok((*id, contender))
             })
-            .collect::<Result<BTreeMap<Identifier, Contender>, dpp::ProtocolError>>()
+            .collect::<Result<BTreeMap<Identifier, Contender>, ProtocolError>>()
             .map_err(Into::into)
     }
 }
@@ -196,7 +196,7 @@ impl PlatformVersionEncode for ContestedResource {
     fn platform_encode<E: bincode::enc::Encoder>(
         &self,
         encoder: &mut E,
-        _platform_version: &platform_version::PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<(), bincode::error::EncodeError> {
         match self {
             ContestedResource::Value(value) => value.encode(encoder),
@@ -208,7 +208,7 @@ impl PlatformVersionEncode for ContestedResource {
 impl PlatformVersionedDecode for ContestedResource {
     fn platform_versioned_decode<D: bincode::de::Decoder>(
         decoder: &mut D,
-        _platform_version: &platform_version::PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, bincode::error::DecodeError> {
         Ok(ContestedResource::Value(Value::decode(decoder)?))
     }
@@ -223,7 +223,7 @@ impl PlatformVersionEncode for ContestedResources {
     fn platform_encode<E: bincode::enc::Encoder>(
         &self,
         encoder: &mut E,
-        platform_version: &platform_version::PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), bincode::error::EncodeError> {
         self.0.platform_encode(encoder, platform_version)
     }
@@ -233,7 +233,7 @@ impl PlatformVersionEncode for ContestedResources {
 impl PlatformVersionedDecode for ContestedResources {
     fn platform_versioned_decode<D: bincode::de::Decoder>(
         decoder: &mut D,
-        platform_version: &platform_version::PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, bincode::error::DecodeError> {
         let inner = <Vec<ContestedResource>>::platform_versioned_decode(decoder, platform_version)?;
         Ok(Self(inner))
@@ -399,7 +399,7 @@ impl PlatformVersionEncode for MasternodeProtocolVote {
     fn platform_encode<E: bincode::enc::Encoder>(
         &self,
         encoder: &mut E,
-        platform_version: &platform_version::PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), bincode::error::EncodeError> {
         let protx_bytes: [u8; 32] = self.pro_tx_hash.to_raw_hash().to_byte_array();
         protx_bytes.platform_encode(encoder, platform_version)?;

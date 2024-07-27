@@ -7,7 +7,7 @@ pub mod dpp_versions;
 pub mod drive_abci_versions;
 pub mod drive_versions;
 pub mod fee;
-mod limits;
+pub mod limits;
 #[cfg(feature = "mock-versions")]
 pub mod mocks;
 pub mod patches;

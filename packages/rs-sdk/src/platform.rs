@@ -28,7 +28,7 @@ pub use drive::query::DriveDocumentQuery;
 pub use drive_proof_verifier::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use drive_proof_verifier::MockContextProvider;
-pub use platform_value::Identifier;
+pub use dpp::platform_value::Identifier;
 pub use rs_dapi_client as dapi;
 pub use {
     document_query::DocumentQuery,

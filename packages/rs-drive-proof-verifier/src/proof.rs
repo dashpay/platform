@@ -31,11 +31,12 @@ use dpp::dashcore::ProTxHash;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
-use dpp::identity::{Identity, Purpose};
+use dpp::identity::{Identity, identity_public_key::Purpose};
 use dpp::platform_value::{self};
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
@@ -48,7 +49,6 @@ use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuer
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use platform_value::Identifier;
-use platform_version::version::PlatformVersion;
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;

@@ -5,12 +5,13 @@ use crate::{Error, Sdk};
 
 use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::put_settings::PutSettings;
-use crate::platform::Identifier;
+// use crate::platform::Identifier;
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::identifier::Identifier;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;

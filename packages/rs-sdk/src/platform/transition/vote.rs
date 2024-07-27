@@ -6,17 +6,18 @@ use crate::platform::Fetch;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::identifier::MasternodeIdentifiers;
-use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
+use dpp::identity::identity_public_key::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
-use dpp::prelude::Identifier;
-use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
-use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::platform_value;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
 use drive::drive::Drive;
 use drive_proof_verifier::{error::ContextProviderError, DataContractProvider};
+use platform_value::Identifier;
 use rs_dapi_client::DapiRequest;
 
 #[async_trait::async_trait]

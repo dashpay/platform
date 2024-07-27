@@ -6,10 +6,9 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
-use dpp::prelude::DataContract;
-use dpp::version::PlatformVersion;
+use dpp::data_contract::DataContract;
 use dpp::voting::votes::Vote;
-
+use platform_version::version::PlatformVersion;
 impl Drive {
     /// Verifies the authenticity of a masternode vote using the provided proof.
     ///

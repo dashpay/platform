@@ -28,7 +28,6 @@ use grovedb::Element::SumItem;
 use grovedb::TransactionArg;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::{PathQuery, SizedQuery};
-
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "server")]
 use std::collections::BTreeMap;

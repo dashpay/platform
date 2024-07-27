@@ -17,8 +17,8 @@ use drive_proof_verifier::types::{
     Contenders, ContestedResources, IdentityBalanceAndRevision, MasternodeProtocolVote,
     PrefundedSpecializedBalance, VotePollsGroupedByTimestamp, Voters,
 };
-use platform_value::Identifier;
 use std::collections::BTreeMap;
+use dpp::identifier::Identifier;
 
 static BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 

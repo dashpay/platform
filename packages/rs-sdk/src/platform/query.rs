@@ -24,12 +24,13 @@ use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuer
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use drive_proof_verifier::from_request::TryFromRequest;
-use platform_value::Identifier;
-use platform_version::PlatformVersionError;
+// use platform_version::PlatformVersionError;
 use rs_dapi_client::transport::TransportRequest;
 use std::fmt::Debug;
+use dpp::version::PlatformVersionError;
 
 use crate::{error::Error, platform::document_query::DocumentQuery};
+use crate::platform::Identifier;
 
 use super::types::epoch::EpochQuery;
 /// Default limit of epoch records returned by the platform.
@@ -57,7 +58,7 @@ pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 /// or [FetchMany](crate::platform::FetchMany) trait:
 ///
 /// ```rust
-/// use dash_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
+/// use dash_sdk::{Sdk, platform::{Identifier, Query, Fetch, Identity}};
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
 /// let sdk = Sdk::new_mock();
@@ -149,9 +150,9 @@ impl Query<proto::GetDataContractHistoryRequest> for LimitQuery<(Identifier, u64
     }
 }
 
-impl Query<proto::GetIdentityKeysRequest> for Identifier {
+impl Query<GetIdentityKeysRequest> for Identifier {
     /// Get all keys for an identity with provided identifier.
-    fn query(self, prove: bool) -> Result<proto::GetIdentityKeysRequest, Error> {
+    fn query(self, prove: bool) -> Result<GetIdentityKeysRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }

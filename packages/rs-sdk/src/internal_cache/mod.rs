@@ -1,9 +1,10 @@
-use crate::platform::Identifier;
+// use crate::platform::Identifier;
 use crate::sdk::LastQueryTimestamp;
 use dpp::prelude;
 use dpp::prelude::IdentityNonce;
 use std::collections::BTreeMap;
 use tokio::sync::Mutex;
+use dpp::identifier::Identifier;
 
 /// This is a cache that is internal to the SDK that the user does not have to worry about
 pub struct InternalSdkCache {
