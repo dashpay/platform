@@ -65,7 +65,8 @@ where
         epoch_info: EpochInfo,
         transaction: &Transaction,
         last_committed_platform_state: &PlatformState,
-        platform_version: &PlatformVersion,
+        mut block_platform_state: PlatformState,
+        platform_version: &'static PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
         tracing::trace!(
@@ -101,9 +102,6 @@ where
         );
         let last_block_core_height = last_committed_platform_state
             .last_committed_known_core_height_or(self.config.abci.genesis_core_height);
-
-        // Create a bock state from previous committed state
-        let mut block_platform_state = last_committed_platform_state.clone();
 
         // Init block execution context
         let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(
@@ -294,6 +292,17 @@ where
                 platform_version,
             )?;
 
+        // Run all dao platform events, such as vote tallying and distribution of contested documents
+        // This must be done before state transition processing
+        // Otherwise we would expect a proof after a successful vote that has since been cleaned up.
+        self.run_dao_platform_events(
+            &block_info,
+            last_committed_platform_state,
+            &block_platform_state,
+            Some(transaction),
+            platform_version,
+        )?;
+
         // Process transactions
         let state_transitions_result = self.process_raw_state_transitions(
             raw_state_transitions,
@@ -344,7 +353,7 @@ where
         let root_hash = self
             .drive
             .grove
-            .root_hash(Some(transaction))
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
 
@@ -353,6 +362,7 @@ where
             .set_app_hash(Some(root_hash));
 
         let validator_set_update = self.validator_set_update(
+            block_proposal.proposer_pro_tx_hash,
             last_committed_platform_state,
             &mut block_execution_context,
             platform_version,
@@ -362,8 +372,11 @@ where
             tracing::trace!(
                 method = "run_block_proposal_v0",
                 app_hash = hex::encode(root_hash),
-                platform_state_fingerprint =
-                    hex::encode(block_execution_context.block_platform_state().fingerprint()),
+                platform_state_fingerprint = hex::encode(
+                    block_execution_context
+                        .block_platform_state()
+                        .fingerprint()?
+                ),
                 "Block proposal executed successfully",
             );
         }
@@ -373,7 +386,7 @@ where
                 app_hash: root_hash,
                 state_transitions_result,
                 validator_set_update,
-                protocol_version: platform_version.protocol_version,
+                platform_version,
                 block_execution_context,
             },
         ))

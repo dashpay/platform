@@ -32,7 +32,7 @@ impl DocumentTypeV0 {
                 DocumentPropertyType::Identifier => {
                     identifier_paths.insert(new_path);
                 }
-                DocumentPropertyType::ByteArray(_, _) => {
+                DocumentPropertyType::ByteArray(_) => {
                     binary_paths.insert(new_path);
                 }
                 DocumentPropertyType::Object(inner_properties) => {

@@ -90,8 +90,6 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
     }
 }
 
-//todo: there shouldn't be a default
-
 impl IdentityCreateTransitionV0 {
     pub fn try_from_identity_v0(
         identity: &Identity,

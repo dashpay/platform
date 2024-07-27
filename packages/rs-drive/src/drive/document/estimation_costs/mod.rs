@@ -1,3 +1,5 @@
 mod stateless_delete_of_non_tree_for_costs;
 
 mod add_estimation_costs_for_add_document_to_primary_storage;
+
+mod add_estimation_costs_for_add_contested_document_to_primary_storage;

@@ -1,9 +1,10 @@
 [package]
 name = "dash-sdk"
-version = "1.0.0-dev.15"
+version = "1.0.0-rc.2"
 edition = "2021"
 
 [dependencies]
+arc-swap = { version = "1.7.1" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
 ] }
@@ -11,19 +12,18 @@ dapi-grpc = { path = "../dapi-grpc" }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
-  "serde",
 ] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
-platform-value = { path = "../rs-platform-value" }
-bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 thiserror = "1.0.58"
 tokio = { version = "1.36.0", features = ["macros"] }
 tokio-util = { version = "0.7.10" }
 async-trait = { version = "0.1.79" }
 http = { version = "0.2.12" }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
-serde = { version = "1.0.197", default-features = false, features = ["rc"] }
+serde = { version = "1.0.197", default-features = false, features = [
+  "rc",
+], optional = true }
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 tracing = { version = "0.1.40" }
 hex = { version = "0.4.3", optional = true }
@@ -35,12 +35,12 @@ derive_more = { version = "0.99.17" }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.2" }
 lru = { version = "0.12.3", optional = true }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
-
+pollster = { version = "0.3.0" }
 
 [dev-dependencies]
 tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
 rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks"] }
-base64 = { version = "0.22.0" }
+base64 = { version = "0.22.1" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 dpp = { path = "../rs-dpp", features = [
   "client",
@@ -51,19 +51,21 @@ data-contracts = { path = "../data-contracts" }
 tokio-test = { version = "0.4.4" }
 clap = { version = "4.5.4", features = ["derive"] }
 sanitize-filename = { version = "0.5.0" }
+chrono = { version = "0.4.38" }
+test-case = { version = "3.3.1" }
 
 [features]
 default = ["mocks", "offline-testing"]
 
 mocks = [
+  "dep:serde",
   "dep:serde_json",
   "rs-dapi-client/mocks",
   "rs-dapi-client/dump",
   "dpp/document-cbor-conversion",
-  "dpp/identity-value-conversion",
   "dpp/random-identities",
+  "drive/serde",
   "drive-proof-verifier/mocks",
-  "dep:bincode",
   "dep:hex",
   "dep:dotenvy",
   "dep:envy",

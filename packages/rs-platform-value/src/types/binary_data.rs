@@ -8,9 +8,15 @@ use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(Default, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Encode, Decode)]
 #[ferment_macro::export]
 pub struct BinaryData(pub Vec<u8>);
+
+impl fmt::Debug for BinaryData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&format!("BinaryData(0x{})", hex::encode(&self.0)))
+    }
+}
 
 impl Serialize for BinaryData {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

@@ -3,10 +3,10 @@ mod tests {
 
     use dpp::prelude::*;
 
-    use crate::common::test_utils::identities::create_test_identity;
     use crate::error::drive::DriveError;
     use crate::error::Error;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::test_utils::identities::create_test_identity;
     use dpp::block::epoch::Epoch;
     use dpp::identity::accessors::IdentityGettersV0;
 
@@ -16,7 +16,7 @@ mod tests {
         use dpp::identity::accessors::IdentityGettersV0;
         use dpp::version::PlatformVersion;
 
-        use crate::fee::op::LowLevelDriveOperation;
+        use crate::fees::op::LowLevelDriveOperation;
 
         use super::*;
 
@@ -62,7 +62,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 517620,
+                    processing_fee: 174660,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -157,7 +157,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 1205880,
+                    processing_fee: 385160,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -239,7 +239,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 879150,
+                    processing_fee: 260540,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -284,7 +284,7 @@ mod tests {
 
             let app_hash_before = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -302,14 +302,14 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 9751440,
+                    processing_fee: 4278840,
                     ..Default::default()
                 }
             );
 
             let app_hash_after = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -371,13 +371,14 @@ mod tests {
                     true,
                     Some(&db_transaction),
                     platform_version,
+                    None,
                 )
                 .expect("expected to add to identity balance");
 
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 517620,
+                    processing_fee: 174660,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -415,7 +416,7 @@ mod tests {
 
             let app_hash_before = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -429,12 +430,13 @@ mod tests {
                     false,
                     None,
                     platform_version,
+                    None,
                 )
                 .expect("expected to add to identity balance");
 
             let app_hash_after = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -443,7 +445,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 5418770,
+                    processing_fee: 2476860,
                     ..Default::default()
                 }
             );
@@ -465,7 +467,7 @@ mod tests {
     mod apply_balance_change_from_fee_to_identity_operations {
         use super::*;
         use crate::error::identity::IdentityError;
-        use crate::fee::op::LowLevelDriveOperation;
+        use crate::fees::op::LowLevelDriveOperation;
         use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use dpp::fee::fee_result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};

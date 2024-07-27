@@ -1,110 +1,68 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
+use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::GroveDb;
+use std::fmt;
 
 #[cfg(any(feature = "server", feature = "verify"))]
-use crate::drive::config::DriveConfig;
+use crate::config::DriveConfig;
 
 #[cfg(feature = "server")]
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod balances;
-/// Batch module
-#[cfg(feature = "server")]
-pub mod batch;
-/// Drive Cache
-#[cfg(feature = "server")]
-pub mod cache;
 #[cfg(any(feature = "server", feature = "verify"))]
-pub mod config;
+pub mod constants;
 ///DataContract module
 #[cfg(any(feature = "server", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod contract;
 /// Fee pools module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod credit_pools;
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod defaults;
 /// Document module
 #[cfg(any(feature = "server", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod document;
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod flags;
 
-/// Low level GroveDB operations
-#[cfg(feature = "server")]
-pub mod grove_operations;
 /// Identity module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod identity;
 #[cfg(feature = "server")]
 pub mod initialization;
-#[cfg(feature = "server")]
-pub mod object_size_info;
 
 /// Protocol upgrade module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod protocol_upgrade;
-#[cfg(feature = "server")]
-mod shared_estimation_costs;
 #[cfg(feature = "server")]
 mod system;
 
 #[cfg(feature = "server")]
 mod asset_lock;
 #[cfg(feature = "server")]
-pub(crate) mod fee;
-#[cfg(feature = "server")]
-mod open;
-#[cfg(feature = "server")]
-mod operations;
-#[cfg(feature = "server")]
 mod platform_state;
-#[cfg(feature = "server")]
-mod prove;
-/// Contains a set of useful grovedb proof verification functions
-#[cfg(feature = "verify")]
-pub mod verify;
+pub(crate) mod prefunded_specialized_balances;
+
+/// Vote module
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod votes;
 
 #[cfg(feature = "server")]
-use crate::drive::cache::DriveCache;
+mod shared;
+
+#[cfg(feature = "server")]
+use crate::cache::DriveCache;
+use crate::error::drive::DriveError;
+use crate::error::Error;
 
 /// Drive struct
 #[cfg(any(feature = "server", feature = "verify"))]
 pub struct Drive {
     /// GroveDB
-    pub grove: GroveDb,
+    pub grove: Arc<GroveDb>,
+
     /// Drive config
     pub config: DriveConfig,
+
     /// Drive Cache
     #[cfg(feature = "server")]
     pub cache: DriveCache,
@@ -115,13 +73,13 @@ pub struct Drive {
 // is at the top of the tree in order to reduce proof size
 // the most import tree is theDataContract Documents tree
 
-//                                   DataContract_Documents 64
-//                      /                                            \
-//             Identities 32                                       Balances 96
-//             /        \                                  /                              \
-//   Token_Balances 16    Pools 48      WithdrawalTransactions 80                       Misc  112
-//       /      \                                /                                              \
-//     NUPKH->I 8 UPKH->I 24    SpentAssetLockTransactions 72                                 Versions 120
+//                                                      DataContract_Documents 64
+//                                 /                                                                         \
+//                       Identities 32                                                                        Balances 96
+//             /                            \                                              /                                               \
+//   Token_Balances 16                    Pools 48                    WithdrawalTransactions 80                                        Votes  112
+//       /      \                           /                                      /                                                    /                          \
+//     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40          SpentAssetLockTransactions 72                             Misc 104                          Versions 120
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -134,22 +92,51 @@ pub enum RootTree {
     Identities = 32,
     /// Unique Public Key Hashes to Identities
     UniquePublicKeyHashesToIdentities = 24, // UPKH->I above
-    /// Non Unique Public Key Hashes to Identities, useful for Masternode Identities
+    /// Non-Unique Public Key Hashes to Identities, useful for Masternode Identities
     NonUniquePublicKeyKeyHashesToIdentities = 8, // NUPKH->I
     /// Pools
     Pools = 48,
+    /// PreFundedSpecializedBalances are balances that can fund specific state transitions that match
+    /// predefined criteria
+    PreFundedSpecializedBalances = 40,
     /// Spent Asset Lock Transactions
     SpentAssetLockTransactions = 72,
     /// Misc
-    Misc = 112,
+    Misc = 104,
     /// Asset Unlock Transactions
     WithdrawalTransactions = 80,
-    /// Balances
+    /// Balances (For identities)
     Balances = 96,
     /// Token Balances
     TokenBalances = 16,
     /// Versions desired by proposers
     Versions = 120,
+    /// Registered votes
+    Votes = 112,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl fmt::Display for RootTree {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let variant_name = match self {
+            RootTree::DataContractDocuments => "DataContractAndDocumentsRoot",
+            RootTree::Identities => "Identities",
+            RootTree::UniquePublicKeyHashesToIdentities => "UniquePublicKeyHashesToIdentities",
+            RootTree::NonUniquePublicKeyKeyHashesToIdentities => {
+                "NonUniquePublicKeyKeyHashesToIdentities"
+            }
+            RootTree::Pools => "Pools",
+            RootTree::PreFundedSpecializedBalances => "PreFundedSpecializedBalances",
+            RootTree::SpentAssetLockTransactions => "SpentAssetLockTransactions",
+            RootTree::Misc => "Misc",
+            RootTree::WithdrawalTransactions => "WithdrawalTransactions",
+            RootTree::Balances => "Balances",
+            RootTree::TokenBalances => "TokenBalances",
+            RootTree::Versions => "Versions",
+            RootTree::Votes => "Votes",
+        };
+        write!(f, "{}", variant_name)
+    }
 }
 
 /// Storage cost
@@ -171,6 +158,32 @@ impl From<RootTree> for [u8; 1] {
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
+impl TryFrom<u8> for RootTree {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            64 => Ok(RootTree::DataContractDocuments),
+            32 => Ok(RootTree::Identities),
+            24 => Ok(RootTree::UniquePublicKeyHashesToIdentities),
+            8 => Ok(RootTree::NonUniquePublicKeyKeyHashesToIdentities),
+            48 => Ok(RootTree::Pools),
+            40 => Ok(RootTree::PreFundedSpecializedBalances),
+            72 => Ok(RootTree::SpentAssetLockTransactions),
+            104 => Ok(RootTree::Misc),
+            80 => Ok(RootTree::WithdrawalTransactions),
+            96 => Ok(RootTree::Balances),
+            16 => Ok(RootTree::TokenBalances),
+            120 => Ok(RootTree::Versions),
+            112 => Ok(RootTree::Votes),
+            _ => Err(Error::Drive(DriveError::NotSupported(
+                "unknown root tree item",
+            ))),
+        }
+    }
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
 impl From<RootTree> for &'static [u8; 1] {
     fn from(root_tree: RootTree) -> Self {
         match root_tree {
@@ -179,12 +192,14 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::UniquePublicKeyHashesToIdentities => &[24],
             RootTree::SpentAssetLockTransactions => &[72],
             RootTree::Pools => &[48],
-            RootTree::Misc => &[112],
+            RootTree::PreFundedSpecializedBalances => &[40],
+            RootTree::Misc => &[104],
             RootTree::WithdrawalTransactions => &[80],
             RootTree::Balances => &[96],
             RootTree::TokenBalances => &[16],
             RootTree::NonUniquePublicKeyKeyHashesToIdentities => &[8],
             RootTree::Versions => &[120],
+            RootTree::Votes => &[112],
         }
     }
 }

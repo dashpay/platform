@@ -1,8 +1,7 @@
-use crate::drive::document::query::query_documents::QueryDocumentsOutcome;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::query::DriveQuery;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::query::DriveDocumentQuery;
 use dpp::block::epoch::Epoch;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
@@ -53,21 +52,15 @@ impl QueryDocumentsOutcomeV0Methods for QueryDocumentsOutcomeV0 {
     }
 }
 
-impl From<QueryDocumentsOutcomeV0> for QueryDocumentsOutcome {
-    fn from(val: QueryDocumentsOutcomeV0) -> Self {
-        QueryDocumentsOutcome::V0(val)
-    }
-}
-
 impl Drive {
     /// Performs a specified drive query and returns the result, along with any skipped items and the cost.
     ///
-    /// This function is used to execute a given [DriveQuery]. It has options to operate in a dry-run mode
+    /// This function is used to execute a given [DriveDocumentQuery]. It has options to operate in a dry-run mode
     /// and supports different protocol versions. In case an epoch is specified, it calculates the fee.
     ///
     /// # Arguments
     ///
-    /// * `query` - The [DriveQuery] being executed.
+    /// * `query` - The [DriveDocumentQuery] being executed.
     /// * `epoch` - An `Option<&Epoch>`. If provided, it will be used to calculate the processing fee.
     /// * `dry_run` - If true, the function will not perform any actual operation and return a default `QueryDocumentsOutcome`.
     /// * `transaction` - The `TransactionArg` holding the transaction data.
@@ -80,7 +73,7 @@ impl Drive {
     #[inline(always)]
     pub(super) fn query_documents_v0(
         &self,
-        query: DriveQuery,
+        query: DriveDocumentQuery,
         epoch: Option<&Epoch>,
         dry_run: bool,
         transaction: TransactionArg,
@@ -109,6 +102,7 @@ impl Drive {
                 epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {

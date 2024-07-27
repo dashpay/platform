@@ -1,15 +1,15 @@
-use crate::drive::flags::SINGLE_EPOCH_FLAGS_SIZE;
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::identity::{
     identity_key_location_within_identity_vec,
     identity_query_keys_for_authentication_full_tree_path,
     identity_query_keys_for_transfer_full_tree_path, identity_query_keys_purpose_tree_path,
 };
-use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
-use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
+use crate::util::object_size_info::PathKeyInfo::PathFixedSizeKey;
+use crate::util::storage_flags::SINGLE_EPOCH_FLAGS_SIZE;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::version::drive_versions::DriveVersion;
@@ -87,6 +87,7 @@ impl Drive {
                     // We need to insert the security level if it doesn't yet exist
                     self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
                         PathFixedSizeKey((purpose_path, vec![security_level as u8])),
+                        false,
                         None,
                         apply_type,
                         transaction,

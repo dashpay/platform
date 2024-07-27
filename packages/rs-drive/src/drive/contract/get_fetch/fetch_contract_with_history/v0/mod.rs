@@ -1,4 +1,4 @@
-use crate::common::decode::decode_u64;
+use crate::util::common::decode::decode_u64;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;

@@ -7,6 +7,7 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
 
 mod v0;
 
+#[allow(unused)]
 pub fn create_feature_flag_data_trigger(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,

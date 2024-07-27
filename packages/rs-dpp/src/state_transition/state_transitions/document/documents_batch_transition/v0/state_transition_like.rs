@@ -68,7 +68,7 @@ impl StateTransitionLike for DocumentsBatchTransitionV0 {
         self.user_fee_increase
     }
 
-    fn set_user_fee_increase(&mut self, fee_multiplier: UserFeeIncrease) {
-        self.user_fee_increase = fee_multiplier
+    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+        self.user_fee_increase = user_fee_increase
     }
 }

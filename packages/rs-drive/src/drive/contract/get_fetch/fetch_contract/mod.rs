@@ -4,7 +4,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::block::epoch::Epoch;
 use grovedb_costs::{CostResult, CostsExt, OperationCost};

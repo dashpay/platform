@@ -11,7 +11,9 @@ use crate::errors::consensus::ConsensusError;
 use crate::data_contract::errors::json_schema_error::JsonSchemaError;
 
 // @append_only
-#[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
+#[derive(
+    Error, Debug, PartialEq, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone,
+)]
 #[ferment_macro::export]
 pub enum DataContractError {
     #[error(transparent)]
@@ -31,6 +33,9 @@ pub enum DataContractError {
 
     #[error("field requirement unmet: {0}")]
     FieldRequirementUnmet(String),
+
+    #[error("regex error: {0}")]
+    RegexError(String),
 
     #[error("key wrong type error: {0}")]
     KeyWrongType(String),
@@ -79,7 +84,7 @@ pub enum DataContractError {
     #[error("Corrupted Serialization: {0}")]
     CorruptedSerialization(String),
 
-    #[error("Corrupted Code Execution: {0}")]
+    #[error("Json schema error: {0}")]
     JsonSchema(JsonSchemaError),
 }
 

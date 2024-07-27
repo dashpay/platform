@@ -7,6 +7,7 @@ use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
 
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 
@@ -36,6 +37,17 @@ impl DataContractV0Getters for DataContractV0 {
             })
     }
 
+    fn document_type_borrowed_for_name(
+        &self,
+        name: &str,
+    ) -> Result<&DocumentType, DataContractError> {
+        self.document_types.get(name).ok_or_else(|| {
+            DataContractError::DocumentTypeNotFound(
+                "can not get document type from contract".to_string(),
+            )
+        })
+    }
+
     fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, DataContractError> {
         self.document_type_optional_for_name(name).ok_or_else(|| {
             DataContractError::DocumentTypeNotFound(
@@ -56,6 +68,18 @@ impl DataContractV0Getters for DataContractV0 {
 
     fn has_document_type_for_name(&self, name: &str) -> bool {
         self.document_types.get(name).is_some()
+    }
+
+    fn document_types_with_contested_indexes(&self) -> BTreeMap<&DocumentName, &DocumentType> {
+        self.document_types
+            .iter()
+            .filter(|(_, document_type)| {
+                document_type
+                    .indexes()
+                    .iter()
+                    .any(|(_, index)| index.contested_index.is_some())
+            })
+            .collect()
     }
 
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {

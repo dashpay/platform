@@ -92,20 +92,51 @@ async fn test_data_contracts_2_nx() {
     );
 }
 
-// This test currently supports offline mode only.
-// It needs Data Contract with `keep_history` set to true, which is not available in the network
-// by default and has to be created manually.
-// At the moment tests in rs-sdk do not provide Core Wallet signer, and unable to create
-// identities and data contracts.
-// The contract for this test was pre-created with
-// `packages/platform-test-suite/test/functional/platform/DataContract.spec.js`
-// and stored as a test vector for offline testing only.
-#[cfg(not(feature = "network-testing"))]
+/// Given some existing historical data contract ID, when I fetch the data contract history, I get it.
+///
+///
+/// ## Setup
+///
+/// It needs Data Contract with `keep_history` set to true, which is not available in the network
+/// by default and has to be created manually.
+/// At the moment tests in rs-sdk do not provide Core Wallet signer, and unable to create
+/// identities and data contracts, so we cannot do that setup automatically.
+///
+/// To run this test, you need to create a Data Contract with `keep_history` set to true.
+/// You can use `packages/platform-test-suite/test/functional/platform/DataContract.spec.js` test for this.
+///
+/// 1. Modify the test to display ID of the created Data Contract, for example:
+///     ```diff
+///     diff --git a/packages/platform-test-suite/test/functional/platform/DataContract.spec.js b/packages/platform-test-suite/test/functional/platform/DataContract.spec.js
+///     index 28fe50b14..5864b3a14 100644
+///     --- a/packages/platform-test-suite/test/functional/platform/DataContract.spec.js
+///     +++ b/packages/platform-test-suite/test/functional/platform/DataContract.spec.js
+///     @@ -133,7 +133,7 @@ describe('Platform', () => {
+///         it('should be able to update an existing data contract', async () => {
+///         // Additional wait time to mitigate testnet latency
+///         await waitForSTPropagated();
+///     -
+///     +   console.log(dataContractFixture.getId().toString("hex"));
+///         const fetchedDataContract = await client.platform.contracts.get(
+///             dataContractFixture.getId(),
+///         );
+///     ```
+///
+/// 2. Run the test:
+///    ```bash
+///    cd packages/platform-test-suite
+///    yarn mocha -b test/functional/platform/DataContract.spec.js
+///    ```
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg_attr(
+    not(feature = "offline-testing"),
+    ignore = "This test requires special procedure to regenerate test vectors"
+)]
+#[ignore = "todo: Lukazs to re-enable"]
 async fn test_data_contract_history_read() {
     let cfg = Config::new();
     let id = Identifier::from_string(
-        "8be1d279d6e01d6556d85d5fc69661273b563defa99d00b84e543b1b0b33b4f3",
+        "df73e40f62ab71d99254037226093f38f683b28cf552f3459d2bdc28614191e0",
         Encoding::Hex,
     )
     .unwrap();

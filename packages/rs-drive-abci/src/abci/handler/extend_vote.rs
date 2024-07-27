@@ -29,7 +29,7 @@ where
         block_execution_context_guard
             .as_ref()
             .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "block execution context must be set in block begin handler for extend vote",
+                "block execution context must be set in block begin handler for extend votes",
             )))?;
 
     // Verify Tenderdash that it called this handler correctly
@@ -37,13 +37,13 @@ where
 
     if !block_state_info.matches_current_block(height as u64, round as u32, block_hash.clone())? {
         return Err(AbciError::RequestForWrongBlockReceived(format!(
-            "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
+            "received extend votes request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
             height, round, hex::encode(block_hash),
             block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(hex::encode).unwrap_or("None".to_string())
         )).into());
     }
 
-    // Extend vote with unsigned withdrawal transactions
+    // Extend votes with unsigned withdrawal transactions
     // we only want to sign the hash of the transaction
     let vote_extensions = block_execution_context
         .unsigned_withdrawal_transactions()

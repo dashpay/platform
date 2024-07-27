@@ -1,5 +1,5 @@
 const EventEmitter = require('events');
-const { SimplifiedMNListDiff } = require('@dashevo/dashcore-lib');
+const cbor = require('cbor');
 const logger = require('./logger');
 
 const NULL_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
@@ -69,17 +69,14 @@ class MasternodeListSync extends EventEmitter {
   async sync(blockHash, blockHeight) {
     const fullDiffObject = await this.coreRpc.getMnListDiff(NULL_HASH, blockHash);
 
-    // TODO: It's a dirty hack to fix serialisation issue, introduced by reverting version of the
-    //  diff from 2 to 1. So now version 1 of diff contains entries of version 1 and 2 and
-    //  we don't know how to parse it since version field is introduced in version 2.
-    fullDiffObject.nVersion = 2;
-
     const previousBlockHash = this.blockHash;
     const previousBlockHeight = this.blockHeight;
 
-    const fullDiff = new SimplifiedMNListDiff(fullDiffObject, this.network);
-
-    this.fullDiffBuffer = fullDiff.toBuffer();
+    // TODO: We can't use dashcore-lib SimplifiedMNListDiff toBuffer method, because due to SML
+    //  design it's impossible to deserialize it back without knowing of the protocol version.
+    //  In future, we want to switch to Rust implementation of SML so we don't want to spend
+    //  time on fixing this issue in JS dashcore-lib
+    this.fullDiffBuffer = await cbor.encodeAsync(fullDiffObject);
     this.blockHeight = blockHeight;
     this.blockHash = blockHash;
 
@@ -95,13 +92,11 @@ class MasternodeListSync extends EventEmitter {
     if (previousBlockHash) {
       const diffObject = await this.coreRpc.getMnListDiff(previousBlockHash, blockHash);
 
-      // TODO: It's a dirty hack to fix serialisation issue, introduced by reverting version of the
-      //  diff from 2 to 1. So now version 1 of diff contains entries of version 1 and 2 and we
-      //  don't know how to parse it since version field is introduced in version 2.
-      diffObject.nVersion = 2;
-
-      const diff = new SimplifiedMNListDiff(diffObject, this.network);
-      const diffBuffer = diff.toBuffer();
+      // TODO: We can't use dashcore-lib SimplifiedMNListDiff toBuffer method, because due to SML
+      //  design it's impossible to deserialize it back without knowing of the protocol version.
+      //  In future, we want to switch to Rust implementation of SML so we don't want to spend
+      //  time on fixing this issue in JS dashcore-lib
+      const diffBuffer = await cbor.encodeAsync(diffObject);
 
       this.logger.debug({
         previousBlockHash,

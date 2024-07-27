@@ -19,7 +19,6 @@ use crate::execution::types::state_transition_container::v0::{
 };
 #[cfg(test)]
 use crate::execution::validation::state_transition::processor::process_state_transition;
-use crate::platform_types::platform_state::PlatformState;
 #[cfg(test)]
 use dpp::serialization::PlatformDeserializable;
 #[cfg(test)]
@@ -70,6 +69,7 @@ where
                 state_read_guard.last_block_info(),
                 transaction,
                 platform_ref.state.current_platform_version()?,
+                platform_ref.state.previous_fee_versions(),
             )
         } else {
             Ok(UnpaidConsensusExecutionError(
@@ -97,7 +97,7 @@ where
         &self,
         raw_tx: &[u8],
         check_tx_level: CheckTxLevel,
-        platform_state: &PlatformState,
+        platform_ref: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
         let mut state_transition_hash = None;
@@ -144,13 +144,6 @@ where
             }
         };
 
-        let platform_ref = PlatformRef {
-            drive: &self.drive,
-            state: platform_state,
-            config: &self.config,
-            core_rpc: &self.core_rpc,
-        };
-
         let user_fee_increase = state_transition.user_fee_increase() as u32;
 
         check_tx_result.priority =
@@ -164,6 +157,7 @@ where
             &platform_ref,
             state_transition,
             check_tx_level,
+            platform_version,
         )?;
 
         // If there are any validation errors happen we return
@@ -182,9 +176,10 @@ where
         if let Some(execution_event) = validation_result.into_data()? {
             let validation_result = self.validate_fees_of_event(
                 &execution_event,
-                platform_state.last_block_info(),
+                platform_ref.state.last_block_info(),
                 None,
                 platform_version,
+                platform_ref.state.previous_fee_versions(),
             )?;
 
             let (estimated_fee_result, errors) = validation_result.into_data_and_errors()?;
@@ -205,12 +200,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::config::PlatformConfig;
+    use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::platform_types::event_execution_result::EventExecutionResult::{
         SuccessfulPaidExecution, UnpaidConsensusExecutionError, UnsuccessfulPaidExecution,
     };
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
@@ -225,7 +219,6 @@ mod tests {
     use dpp::data_contract::document_type::random_document::{
         CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
     };
-    use dpp::data_contracts::dpns_contract;
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::DocumentV0Setters;
     use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
@@ -254,18 +247,25 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
+    use crate::execution::validation::state_transition::tests::{
+        setup_identity, setup_identity_return_master_key,
+    };
+    use crate::platform_types::platform::PlatformRef;
+    use assert_matches::assert_matches;
     use dpp::consensus::state::state_error::StateError;
+    use dpp::dash_to_credits;
     use dpp::data_contract::document_type::v0::random_document_type::{
         FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
     };
     use dpp::data_contract::document_type::v0::DocumentTypeV0;
     use dpp::data_contract::document_type::DocumentType;
     use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::signer::Signer;
     use dpp::platform_value::Bytes32;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
     use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
-    use dpp::system_data_contracts::dashpay_contract;
     use dpp::system_data_contracts::SystemDataContract::Dashpay;
     use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
     use rand::rngs::StdRng;
@@ -276,18 +276,28 @@ mod tests {
     #[test]
     #[ignore]
     fn verify_check_tx_on_data_contract_create() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let tx: Vec<u8> = vec![
             0, 0, 0, 104, 37, 39, 102, 34, 99, 205, 58, 189, 155, 27, 93, 128, 49, 86, 24, 164, 86,
@@ -339,13 +349,13 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let check_result = platform
-            .check_tx(&tx, FirstTimeCheck, &platform_state, platform_version)
+            .check_tx(&tx, FirstTimeCheck, &platform_ref, platform_version)
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
 
         let check_result = platform
-            .check_tx(&tx, Recheck, &platform_state, platform_version)
+            .check_tx(&tx, Recheck, &platform_ref, platform_version)
             .expect("expected to check tx");
 
         assert!(check_result.is_valid());
@@ -362,7 +372,7 @@ mod tests {
             .expect("expected to process state transition");
 
         let check_result = platform
-            .check_tx(&tx, Recheck, &platform_state, platform_version)
+            .check_tx(&tx, Recheck, &platform_ref, platform_version)
             .expect("expected to check tx");
 
         assert!(!check_result.is_valid());
@@ -370,14 +380,17 @@ mod tests {
 
     #[test]
     fn data_contract_create_check_tx() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
@@ -427,11 +440,18 @@ mod tests {
             )
             .expect("expected to insert identity");
 
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
         let validation_result = platform
             .check_tx(
                 serialized.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -442,7 +462,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -462,13 +482,13 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2985330);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2483610);
 
         let check_result = platform
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -486,7 +506,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -501,18 +521,28 @@ mod tests {
 
     #[test]
     fn data_contract_create_check_tx_for_invalid_contract() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -620,7 +650,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -631,7 +661,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -654,13 +684,13 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 905460);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 346660);
 
         let check_result = platform
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -678,7 +708,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -693,18 +723,28 @@ mod tests {
 
     #[test]
     fn data_contract_create_check_tx_priority() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -757,7 +797,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -770,7 +810,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -794,16 +834,13 @@ mod tests {
 
         // The processing fees should be twice as much as a fee multiplier of 0,
         // since a fee multiplier of 100 means 100% more of 1 (gives 2)
-        assert_eq!(
-            processing_result.aggregated_fees().processing_fee,
-            2985330 * 2
-        );
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 4967220);
 
         let check_result = platform
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -823,7 +860,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -838,18 +875,28 @@ mod tests {
 
     #[test]
     fn data_contract_create_check_tx_after_identity_balance_used_up() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -899,7 +946,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -910,7 +957,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -934,7 +981,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -952,7 +999,7 @@ mod tests {
             .check_tx(
                 serialized.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -962,18 +1009,28 @@ mod tests {
 
     #[test]
     fn data_contract_update_check_tx() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -1034,7 +1091,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2985330);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2483610);
 
         platform
             .drive
@@ -1082,7 +1139,7 @@ mod tests {
             .check_tx(
                 serialized_update.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1093,7 +1150,7 @@ mod tests {
             .check_tx(
                 serialized_update.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1118,14 +1175,14 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            7125710
+            2495990
         );
 
         let check_result = platform
             .check_tx(
                 serialized_update.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1143,7 +1200,7 @@ mod tests {
             .check_tx(
                 serialized_update.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1158,18 +1215,28 @@ mod tests {
 
     #[test]
     fn data_contract_update_check_tx_for_invalid_update() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let protocol_version = platform_state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -1230,7 +1297,7 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2985330);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2483610);
 
         platform
             .drive
@@ -1316,7 +1383,7 @@ mod tests {
             .check_tx(
                 serialized_update.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1327,7 +1394,7 @@ mod tests {
             .check_tx(
                 serialized_update.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1350,13 +1417,13 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1231130);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 448640);
 
         let check_result = platform
             .check_tx(
                 serialized_update.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1374,7 +1441,7 @@ mod tests {
             .check_tx(
                 serialized_update.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1389,18 +1456,28 @@ mod tests {
 
     #[test]
     fn document_update_check_tx() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
-
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let mut signer = SimpleSigner::default();
 
@@ -1567,7 +1644,7 @@ mod tests {
             .check_tx(
                 documents_batch_update_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1577,17 +1654,27 @@ mod tests {
 
     #[test]
     fn identity_top_up_check_tx() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let mut signer = SimpleSigner::default();
 
@@ -1692,7 +1779,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1716,17 +1803,27 @@ mod tests {
 
     #[test]
     fn identity_cant_double_top_up() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let mut signer = SimpleSigner::default();
 
@@ -1831,7 +1928,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1856,7 +1953,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1872,7 +1969,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1887,17 +1984,27 @@ mod tests {
 
     #[test]
     fn identity_top_up_with_unknown_identity_doesnt_panic() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let mut signer = SimpleSigner::default();
 
@@ -1966,7 +2073,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -1981,17 +2088,27 @@ mod tests {
 
     #[test]
     fn identity_cant_create_with_used_outpoint() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let mut signer = SimpleSigner::default();
 
@@ -2096,7 +2213,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -2168,7 +2285,7 @@ mod tests {
             .check_tx(
                 identity_create_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -2184,7 +2301,7 @@ mod tests {
             .check_tx(
                 identity_create_serialized_transition.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -2199,17 +2316,27 @@ mod tests {
 
     #[test]
     fn identity_can_create_with_semi_used_outpoint() {
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(PlatformConfig::default())
-            .build_with_mock_rpc();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc();
 
         let platform_state = platform.state.load();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
 
         let mut signer = SimpleSigner::default();
 
@@ -2388,7 +2515,7 @@ mod tests {
             .check_tx(
                 identity_top_up_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -2460,7 +2587,7 @@ mod tests {
             .check_tx(
                 identity_create_serialized_transition.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -2476,7 +2603,7 @@ mod tests {
             .check_tx(
                 identity_create_serialized_transition.as_slice(),
                 Recheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to check tx");
@@ -2491,53 +2618,28 @@ mod tests {
 
     #[test]
     fn identity_update_with_non_master_key_check_tx() {
-        let mut config = PlatformConfig::default();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        let mut rng = StdRng::seed_from_u64(1);
-
-        let secp = Secp256k1::new();
-
-        let master_key_pair = KeyPair::new(&secp, &mut rng);
-
-        let _master_secret_key = master_key_pair.secret_key();
-
-        let master_public_key = master_key_pair.public_key();
-
-        config.abci.keys.dpns_master_public_key = master_public_key.serialize().to_vec();
-
-        let high_key_pair = KeyPair::new(&secp, &mut rng);
-
-        let high_secret_key = high_key_pair.secret_key();
-
-        let high_public_key = high_key_pair.public_key();
-
-        config.abci.keys.dpns_second_public_key = high_public_key.serialize().to_vec();
+        let platform_version = PlatformVersion::latest();
 
         let mut platform = TestPlatformBuilder::new()
-            .with_config(config)
-            .build_with_mock_rpc();
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
 
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
+        let mut rng = StdRng::seed_from_u64(433);
 
         let platform_state = platform.state.load();
-        let platform_version = platform_state.current_platform_version().unwrap();
 
-        let genesis_time = 0;
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
-            platform.config.abci.keys.clone().into();
-
-        platform
-            .create_genesis_state(
-                genesis_time,
-                system_identity_public_keys_v0.into(),
-                None,
-                platform_version,
-            )
-            .expect("expected to create genesis state");
+        let secp = Secp256k1::new();
 
         let new_key_pair = KeyPair::new(&secp, &mut rng);
 
@@ -2562,100 +2664,87 @@ mod tests {
         new_key.signature = signature.to_vec().into();
 
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
-            identity_id: dpns_contract::OWNER_ID_BYTES.into(),
+            identity_id: identity.id(),
             revision: 0,
             nonce: 1,
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
             disable_public_keys: vec![],
             user_fee_increase: 0,
-            signature_public_key_id: 1,
+            signature_public_key_id: key.id(),
             signature: Default::default(),
         }
         .into();
 
         let mut update_transition: StateTransition = update_transition.into();
 
-        let signature = signer::sign(
-            &update_transition
-                .signable_bytes()
-                .expect("expected signable bytes"),
-            &high_secret_key.secret_bytes(),
-        )
-        .expect("expected to sign");
-
-        update_transition.set_signature(signature.to_vec().into());
+        let data = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+        update_transition.set_signature(
+            signer
+                .sign(&key, data.as_slice())
+                .expect("expected to sign"),
+        );
 
         let update_transition_bytes = update_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
 
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
         let validation_result = platform
             .check_tx(
                 update_transition_bytes.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to execute identity top up tx");
 
         // Only master keys can sign an update
 
-        validation_result.errors.first().expect("expected an error");
+        assert_matches!(
+            validation_result.errors.first(),
+            Some(ConsensusError::SignatureError(
+                SignatureError::InvalidSignaturePublicKeySecurityLevelError(_)
+            ))
+        );
     }
 
     #[test]
     fn identity_update_with_encryption_key_check_tx() {
-        let mut config = PlatformConfig::default();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform_version = PlatformVersion::latest();
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
 
         let mut rng = StdRng::seed_from_u64(1);
 
         let secp = Secp256k1::new();
 
-        let master_key_pair = KeyPair::new(&secp, &mut rng);
-
-        let master_secret_key = master_key_pair.secret_key();
-
-        let master_public_key = master_key_pair.public_key();
-
-        config.abci.keys.dashpay_master_public_key = master_public_key.serialize().to_vec();
-
-        let high_key_pair = KeyPair::new(&secp, &mut rng);
-
-        let _high_secret_key = high_key_pair.secret_key();
-
-        let high_public_key = high_key_pair.public_key();
-
-        config.abci.keys.dashpay_second_public_key = high_public_key.serialize().to_vec();
-
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(config)
-            .build_with_mock_rpc();
-
-        platform
-            .core_rpc
-            .expect_verify_instant_lock()
-            .returning(|_, _| Ok(true));
-
         let platform_state = platform.state.load();
-        let platform_version = platform_state.current_platform_version().unwrap();
-
-        let genesis_time = 0;
-
-        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
-            platform.config.abci.keys.clone().into();
-
-        platform
-            .create_genesis_state(
-                genesis_time,
-                system_identity_public_keys_v0.into(),
-                None,
-                platform_version,
-            )
-            .expect("expected to create genesis state");
 
         let new_key_pair = KeyPair::new(&secp, &mut rng);
 
-        let mut new_key = IdentityPublicKeyInCreationV0 {
+        let new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
             purpose: Purpose::ENCRYPTION,
             security_level: SecurityLevel::MEDIUM,
@@ -2674,63 +2763,50 @@ mod tests {
             .expect("expected to get signable bytes");
 
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
-            identity_id: dashpay_contract::OWNER_ID_BYTES.into(),
+            identity_id: identity.id(),
             revision: 1,
             nonce: 1,
             add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key.clone())],
             disable_public_keys: vec![],
             user_fee_increase: 0,
-            signature_public_key_id: 0,
-            signature: Default::default(),
-        }
-        .into();
-
-        let update_transition: StateTransition = update_transition.into();
-
-        let signable_bytes = update_transition
-            .signable_bytes()
-            .expect("expected signable bytes");
-
-        let secret = new_key_pair.secret_key();
-        let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
-
-        new_key.signature = signature.to_vec().into();
-
-        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
-            identity_id: dashpay_contract::OWNER_ID_BYTES.into(),
-            revision: 1,
-            nonce: 1,
-            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
-            disable_public_keys: vec![],
-            user_fee_increase: 0,
-            signature_public_key_id: 0,
+            signature_public_key_id: key.id(),
             signature: Default::default(),
         }
         .into();
 
         let mut update_transition: StateTransition = update_transition.into();
 
-        let signature = signer::sign(&signable_bytes, &master_secret_key.secret_bytes())
-            .expect("expected to sign");
-
-        update_transition.set_signature(signature.to_vec().into());
+        let data = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+        update_transition.set_signature(
+            signer
+                .sign(&key, data.as_slice())
+                .expect("expected to sign"),
+        );
 
         let update_transition_bytes = update_transition
             .serialize_to_bytes()
             .expect("expected to serialize");
 
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
         let validation_result = platform
             .check_tx(
                 update_transition_bytes.as_slice(),
                 FirstTimeCheck,
-                &platform_state,
+                &platform_ref,
                 platform_version,
             )
             .expect("expected to execute identity top up tx");
 
-        // we won't have enough funds
+        // we shouldn't have any errors
 
-        validation_result.errors.first().expect("expected an error");
+        assert_eq!(validation_result.errors.len(), 0);
     }
 }

@@ -10,7 +10,6 @@ use crate::execution::types::block_state_info::v0::{
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
-use dpp::version::PlatformVersion;
 use dpp::version::TryIntoPlatformVersioned;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
@@ -202,12 +201,9 @@ where
         app_hash,
         state_transitions_result: state_transition_results,
         validator_set_update,
-        protocol_version,
+        platform_version,
         block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
-
-    let platform_version = PlatformVersion::get(protocol_version)
-        .expect("must be set in run block proposer from existing platform version");
 
     app.block_execution_context()
         .write()
@@ -219,6 +215,9 @@ where
     let failed_tx_count = state_transition_results.failed_count();
     let invalid_unpaid_tx_count = state_transition_results.invalid_unpaid_count();
     let unexpected_execution_results = failed_tx_count + invalid_unpaid_tx_count;
+
+    let storage_fees = state_transition_results.aggregated_fees().storage_fee;
+    let processing_fees = state_transition_results.aggregated_fees().processing_fee;
 
     // Reject block if proposal contains failed or unpaid state transitions
     if unexpected_execution_results > 0 {
@@ -275,6 +274,8 @@ where
         invalid_tx_count,
         valid_tx_count,
         elapsed_time_ms,
+        storage_fees,
+        processing_fees,
         "Processed proposal with {} transactions for height: {}, round: {} in {} ms",
         valid_tx_count + invalid_tx_count,
         request.height,

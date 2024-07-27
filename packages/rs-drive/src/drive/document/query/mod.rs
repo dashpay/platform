@@ -1,38 +1,11 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Drive Queries
 //!
 //! Defines and implements in Drive functions relevant to querying.
 //!
 
+mod query_contested_documents_vote_state;
 mod query_documents;
+
 pub use query_documents::*;
 
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
@@ -48,15 +21,15 @@ use grovedb::TransactionArg;
 use crate::drive::Drive;
 
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
-use crate::drive::verify::RootHash;
-#[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use crate::error::query::QuerySyntaxError;
 #[cfg(feature = "fixtures-and-mocks")]
 use crate::error::Error;
 #[cfg(feature = "fixtures-and-mocks")]
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "fixtures-and-mocks")]
-use crate::query::DriveQuery;
+use crate::query::DriveDocumentQuery;
+#[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
+use crate::verify::RootHash;
 #[cfg(all(
     feature = "fixtures-and-mocks",
     feature = "data-contract-cbor-conversion"
@@ -166,6 +139,7 @@ impl Drive {
                 &block_info.epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -219,6 +193,7 @@ impl Drive {
                 &block_info.epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -257,6 +232,7 @@ impl Drive {
                 &block_info.epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -278,7 +254,8 @@ impl Drive {
         protocol_version: Option<u32>,
     ) -> Result<Vec<u8>, Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
-        let query = DriveQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
+        let query =
+            DriveDocumentQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
 
         query.execute_with_proof_internal(self, transaction, drive_operations, platform_version)
     }
@@ -313,6 +290,7 @@ impl Drive {
                 &block_info.epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -333,7 +311,8 @@ impl Drive {
         protocol_version: Option<u32>,
     ) -> Result<(RootHash, Vec<Vec<u8>>), Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
-        let query = DriveQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
+        let query =
+            DriveDocumentQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
 
         query.execute_with_proof_only_get_elements_internal(
             self,
@@ -371,6 +350,7 @@ impl Drive {
                 &block_info.epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {
@@ -408,8 +388,12 @@ impl Drive {
             .contract
             .document_type_for_name(document_type_name)?;
 
-        let query =
-            DriveQuery::from_cbor(query_cbor, &contract.contract, document_type, &self.config)?;
+        let query = DriveDocumentQuery::from_cbor(
+            query_cbor,
+            &contract.contract,
+            document_type,
+            &self.config,
+        )?;
 
         self.query_serialized_documents(query, epoch, transaction, platform_version)
     }
@@ -426,7 +410,8 @@ impl Drive {
         protocol_version: Option<u32>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
-        let query = DriveQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
+        let query =
+            DriveDocumentQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
 
         query.execute_raw_results_no_proof_internal(
             self,
@@ -441,7 +426,7 @@ impl Drive {
     /// and the cost.
     pub fn query_serialized_documents(
         &self,
-        query: DriveQuery,
+        query: DriveDocumentQuery,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -460,6 +445,7 @@ impl Drive {
                 epoch,
                 self.config.epochs_per_era,
                 platform_version,
+                None,
             )?;
             fee_result.processing_fee
         } else {

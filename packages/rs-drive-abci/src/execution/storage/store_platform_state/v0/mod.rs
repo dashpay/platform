@@ -12,6 +12,19 @@ impl<C> Platform<C> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        #[cfg(feature = "testing-config")]
+        {
+            if self.config.testing_configs.store_platform_state {
+                self.drive
+                    .store_platform_state_bytes(
+                        &state.serialize_to_bytes()?,
+                        transaction,
+                        platform_version,
+                    )
+                    .map_err(Error::Drive)?;
+            }
+        }
+        #[cfg(not(feature = "testing-config"))]
         self.drive
             .store_platform_state_bytes(&state.serialize_to_bytes()?, transaction, platform_version)
             .map_err(Error::Drive)?;

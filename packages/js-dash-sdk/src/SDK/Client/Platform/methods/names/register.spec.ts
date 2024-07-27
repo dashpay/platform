@@ -53,7 +53,7 @@ describe('Platform', () => {
         identityMock.getId.returns(identityId);
 
         await register.call(platformMock, 'Dash', {
-          dashUniqueIdentityId: identityId,
+          identity: identityId,
         }, identityMock);
 
         expect(platformMock.documents.create.getCall(0).args[0]).to.deep.equal('dpns.preorder');
@@ -72,7 +72,7 @@ describe('Platform', () => {
             normalizedParentDomainName: '',
             preorderSalt: Buffer.alloc(32),
             records: {
-              dashUniqueIdentityId: identityId,
+              identity: identityId,
             },
             subdomainRules: {
               allowSubdomains: true,
@@ -86,7 +86,7 @@ describe('Platform', () => {
         identityMock.getId.returns(identityId);
 
         await register.call(platformMock, 'User.dash', {
-          dashAliasIdentityId: identityId,
+          identity: identityId,
         }, identityMock);
 
         expect(platformMock.documents.create.getCall(0).args[0]).to.deep.equal('dpns.preorder');
@@ -105,7 +105,7 @@ describe('Platform', () => {
             normalizedParentDomainName: 'dash',
             preorderSalt: Buffer.alloc(32),
             records: {
-              dashAliasIdentityId: identityId,
+              identity: identityId,
             },
             subdomainRules: {
               allowSubdomains: false,
@@ -119,7 +119,7 @@ describe('Platform', () => {
 
         try {
           await register.call(platformMock, 'user.dash', {
-            dashUniqueIdentityId: await generateRandomIdentifier(),
+            identity: await generateRandomIdentifier(),
           }, identityMock);
         } catch (e) {
           expect(e.message).to.equal('DPNS is required to register a new name.');

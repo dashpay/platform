@@ -109,6 +109,7 @@ Definitions:
 2. `Response` - gRPC response  type, as generated in `packages/dapi-grpc/protos/platform/v0/platform.proto`.
 3. `Object` - object type that should be returned by rs-sdk, most likely defined in `dpp` crate.
    In some cases, it can be defined in `packages/rs-drive-proof-verifier/src/types.rs`.
+4. `Key` - some unique identifier of the `Object`, for example `platform_value::Identifier`
 
 Checklist:
 
@@ -125,8 +126,10 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
    that will store collection of  returned objects, indexd by some key.
 5. [ ] Implement `FromProof` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-drive-proof-verifier/src/proof.rs`.
 6. [ ] Implement `Query` trait for the `Request` in `packages/rs-sdk/src/platform/query.rs`.
-7. [ ] Implement `Fetch\<Request\>` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-sdk/src/platform/fetch.rs`.
-8. [ ] Implement `FetchMany\<Request\>` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-sdk/src/platform/fetch_many.rs`.
+7. [ ] Implement `Fetch` trait for the `Object` (or type defined in `types.rs`), with inner type Request = `Request`,
+   in `packages/rs-sdk/src/platform/fetch.rs`.
+8. [ ] Implement `FetchMany\<Key\>` trait for the `Object` (or type defined in `types.rs`),
+   with inner type Request = `Request`, in `packages/rs-sdk/src/platform/fetch_many.rs`.
 9. [ ] Add `mod ...;` clause to `packages/rs-sdk/tests/fetch/main.rs`
 10. [ ] Implement unit tests in `packages/rs-sdk/tests/fetch/*object*.rs`
 11. [ ] Add name of request type to match clause in `packages/rs-sdk/src/mock/sdk.rs` : `load_expectations()`

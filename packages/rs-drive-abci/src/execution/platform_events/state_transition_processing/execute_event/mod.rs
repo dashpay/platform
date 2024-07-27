@@ -5,9 +5,11 @@ use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::platform::Platform;
+
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
@@ -42,6 +44,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         match platform_version
             .drive_abci
@@ -55,6 +58,7 @@ where
                 block_info,
                 transaction,
                 platform_version,
+                previous_fee_versions,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "execute_event".to_string(),

@@ -9,7 +9,7 @@ mod tests {
 
     use dpp::prelude::*;
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::identity::accessors::IdentityGettersV0;
 
     mod add_new_keys_to_identity {
@@ -61,7 +61,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 14202000,
-                    processing_fee: 2434150,
+                    processing_fee: 1097520,
                     ..Default::default()
                 }
             );
@@ -121,7 +121,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 347382000,
-                    processing_fee: 9344910,
+                    processing_fee: 6818480,
                     ..Default::default()
                 }
             );
@@ -155,7 +155,7 @@ mod tests {
 
             let app_hash_before = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -172,7 +172,7 @@ mod tests {
 
             let app_hash_after = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -182,7 +182,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 17145000,
-                    processing_fee: 12012160,
+                    processing_fee: 5483620,
                     ..Default::default()
                 }
             );
@@ -255,7 +255,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 513000,
-                    processing_fee: 1452800,
+                    processing_fee: 499220,
                     ..Default::default()
                 }
             );
@@ -292,7 +292,7 @@ mod tests {
 
             let app_hash_before = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -310,7 +310,7 @@ mod tests {
 
             let app_hash_after = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -320,7 +320,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 486000,
-                    processing_fee: 5432130,
+                    processing_fee: 2429120,
                     ..Default::default()
                 }
             );
@@ -418,6 +418,7 @@ mod tests {
                     true,
                     Some(&db_transaction),
                     platform_version,
+                    None,
                 )
                 .expect("should update revision");
 
@@ -425,7 +426,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 648660,
+                    processing_fee: 238820,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -459,7 +460,7 @@ mod tests {
 
             let app_hash_before = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -471,12 +472,13 @@ mod tests {
                     false,
                     None,
                     platform_version,
+                    None,
                 )
                 .expect("should estimate the revision update");
 
             let app_hash_after = drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -486,7 +488,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 4217750,
+                    processing_fee: 1813560,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }

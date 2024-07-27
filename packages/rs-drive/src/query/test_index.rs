@@ -6,9 +6,9 @@ mod tests {
     use dpp::util::cbor_serializer;
     use serde_json::json;
 
-    use crate::drive::config::DriveConfig;
+    use crate::config::DriveConfig;
     use crate::error::{query::QuerySyntaxError, Error};
-    use crate::query::DriveQuery;
+    use crate::query::DriveDocumentQuery;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
@@ -107,7 +107,7 @@ mod tests {
         });
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type.as_ref(),
@@ -117,7 +117,10 @@ mod tests {
         let index = query
             .find_best_index(platform_version)
             .expect("expected to find index");
-        assert_eq!(index, document_type.indices().get(2).unwrap());
+        let mut iter = document_type.indexes().iter();
+        iter.next();
+        iter.next();
+        assert_eq!(index, iter.next().unwrap().1); //position 2
 
         let query_value = json!({
             "where": [
@@ -126,7 +129,7 @@ mod tests {
         });
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type.as_ref(),
@@ -136,7 +139,7 @@ mod tests {
         let index = query
             .find_best_index(platform_version)
             .expect("expected to find index");
-        assert_eq!(index, document_type.indices().first().unwrap());
+        assert_eq!(index, document_type.indexes().iter().next().unwrap().1);
     }
 
     #[test]
@@ -153,7 +156,7 @@ mod tests {
         });
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type.as_ref(),

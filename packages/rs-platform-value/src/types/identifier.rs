@@ -49,6 +49,16 @@ impl platform_serialization::PlatformVersionEncode for Identifier {
     }
 }
 
+impl platform_serialization::PlatformVersionedDecode for Identifier {
+    fn platform_versioned_decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+        _platform_version: &platform_version::version::PlatformVersion,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let bytes = <[u8; 32]>::decode(decoder)?;
+        Ok(Identifier::new(bytes))
+    }
+}
+
 impl AsRef<[u8]> for Identifier {
     fn as_ref(&self) -> &[u8] {
         &(self.0 .0)
@@ -175,7 +185,7 @@ impl Identifier {
     pub fn from_bytes(bytes: &[u8]) -> Result<Identifier, Error> {
         if bytes.len() != 32 {
             return Err(Error::ByteLengthNot32BytesError(String::from(
-                "Identifier must be 32 bytes long",
+                "Identifier must be 32 bytes long from bytes",
             )));
         }
 
@@ -186,7 +196,7 @@ impl Identifier {
     pub fn from_vec(vec: Vec<u8>) -> Result<Identifier, Error> {
         if vec.len() != 32 {
             return Err(Error::ByteLengthNot32BytesError(String::from(
-                "Identifier must be 32 bytes long",
+                "Identifier must be 32 bytes long from vec",
             )));
         }
 
@@ -240,6 +250,14 @@ impl TryFrom<&[u8]> for Identifier {
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::from_bytes(bytes)
+    }
+}
+
+impl TryFrom<&Vec<u8>> for Identifier {
+    type Error = Error;
+
+    fn try_from(bytes: &Vec<u8>) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes.as_slice())
     }
 }
 

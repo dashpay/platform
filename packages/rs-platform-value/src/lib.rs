@@ -1267,6 +1267,180 @@ impl Value {
             _other => Err(Error::StructureError("value is not a map".to_string())),
         }
     }
+
+    /// can determine if there is any very big data in a value
+    pub fn has_data_larger_than(&self, size: u32) -> Option<(Option<Value>, u32)> {
+        match self {
+            Value::U128(_) => {
+                if size < 16 {
+                    Some((None, 16))
+                } else {
+                    None
+                }
+            }
+            Value::I128(_) => {
+                if size < 16 {
+                    Some((None, 16))
+                } else {
+                    None
+                }
+            }
+            Value::U64(_) => {
+                if size < 8 {
+                    Some((None, 8))
+                } else {
+                    None
+                }
+            }
+            Value::I64(_) => {
+                if size < 8 {
+                    Some((None, 8))
+                } else {
+                    None
+                }
+            }
+            Value::U32(_) => {
+                if size < 4 {
+                    Some((None, 4))
+                } else {
+                    None
+                }
+            }
+            Value::I32(_) => {
+                if size < 4 {
+                    Some((None, 4))
+                } else {
+                    None
+                }
+            }
+            Value::U16(_) => {
+                if size < 2 {
+                    Some((None, 2))
+                } else {
+                    None
+                }
+            }
+            Value::I16(_) => {
+                if size < 2 {
+                    Some((None, 2))
+                } else {
+                    None
+                }
+            }
+            Value::U8(_) => {
+                if size < 1 {
+                    Some((None, 1))
+                } else {
+                    None
+                }
+            }
+            Value::I8(_) => {
+                if size < 1 {
+                    Some((None, 1))
+                } else {
+                    None
+                }
+            }
+            Value::Bytes(bytes) => {
+                if (size as usize) < bytes.len() {
+                    Some((None, bytes.len() as u32))
+                } else {
+                    None
+                }
+            }
+            Value::Bytes20(_) => {
+                if size < 20 {
+                    Some((None, 20))
+                } else {
+                    None
+                }
+            }
+            Value::Bytes32(_) => {
+                if size < 32 {
+                    Some((None, 32))
+                } else {
+                    None
+                }
+            }
+            Value::Bytes36(_) => {
+                if size < 36 {
+                    Some((None, 36))
+                } else {
+                    None
+                }
+            }
+            Value::EnumU8(_) => {
+                if size < 1 {
+                    Some((None, 1))
+                } else {
+                    None
+                }
+            }
+            Value::EnumString(strings) => {
+                let max_len = strings.iter().map(|string| string.as_bytes().len()).max();
+                if let Some(max) = max_len {
+                    if max > size as usize {
+                        Some((None, max as u32))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            Value::Identifier(_) => {
+                if size < 32 {
+                    Some((None, 32))
+                } else {
+                    None
+                }
+            }
+            Value::Float(_) => {
+                if size < 8 {
+                    Some((None, 8))
+                } else {
+                    None
+                }
+            }
+            Value::Text(string) => {
+                if string.as_bytes().len() > size as usize {
+                    Some((None, string.as_bytes().len() as u32))
+                } else {
+                    None
+                }
+            }
+            Value::Bool(_) => {
+                if size < 1 {
+                    Some((None, 1))
+                } else {
+                    None
+                }
+            }
+            Value::Null => {
+                if size < 1 {
+                    Some((None, 1))
+                } else {
+                    None
+                }
+            }
+            Value::Array(values) => {
+                for value in values {
+                    if let Some(result) = value.has_data_larger_than(size) {
+                        return Some((Some(value.clone()), result.1));
+                    }
+                }
+                None
+            }
+            Value::Map(map) => {
+                for (key, value) in map {
+                    if let Some(result) = value.has_data_larger_than(size) {
+                        return Some((Some(key.clone()), result.1));
+                    }
+                }
+                None
+            }
+        }
+    }
 }
 
 macro_rules! implfrom {
@@ -1285,11 +1459,11 @@ macro_rules! implfrom {
 macro_rules! impltryinto {
     ($($t:ty),+ $(,)?) => {
         $(
-            impl TryInto<$t> for Value {
+            impl TryFrom<Value> for $t {
                 type Error = Error;
                 #[inline]
-                fn try_into(self) -> Result<$t, Self::Error> {
-                    self.to_integer()
+                fn try_from(value: Value) -> Result<Self, Self::Error> {
+                    value.to_integer()
                 }
             }
         )+
@@ -1496,19 +1670,18 @@ impl From<&[&str]> for Value {
         )
     }
 }
-
-impl TryInto<Vec<u8>> for Value {
+impl TryFrom<Value> for Vec<u8> {
     type Error = Error;
 
-    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
-        self.to_bytes()
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        value.into_bytes()
     }
 }
 
-impl TryInto<String> for Value {
+impl TryFrom<Value> for String {
     type Error = Error;
 
-    fn try_into(self) -> Result<String, Self::Error> {
-        self.into_text()
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        value.into_text()
     }
 }

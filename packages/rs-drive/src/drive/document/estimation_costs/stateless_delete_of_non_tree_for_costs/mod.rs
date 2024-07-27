@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::drive::grove_operations::{BatchDeleteUpTreeApplyType, IsSubTree, IsSumSubTree};
+use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, IsSubTree, IsSumSubTree};
 
 use crate::drive::Drive;
 

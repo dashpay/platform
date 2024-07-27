@@ -2,10 +2,10 @@
 
 use crate::drive::asset_lock::asset_lock_storage_path;
 
-use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
 
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::platform_value::Bytes36;

@@ -1,7 +1,7 @@
-use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;

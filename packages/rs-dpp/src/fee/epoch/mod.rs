@@ -42,7 +42,6 @@ use crate::block::epoch::EpochIndex;
 use crate::balances::credits::{Credits, SignedCredits};
 
 /// Genesis epoch index
-//todo move to dpp
 pub const GENESIS_EPOCH_INDEX: EpochIndex = 0;
 
 /// Eras of fees charged for perpetual storage

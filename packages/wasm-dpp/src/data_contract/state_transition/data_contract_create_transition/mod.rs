@@ -141,6 +141,11 @@ impl DataContractCreateTransitionWasm {
         self.0.is_identity_state_transition()
     }
 
+    #[wasm_bindgen(js_name=isVotingStateTransition)]
+    pub fn is_voting_state_transition(&self) -> bool {
+        self.0.is_voting_state_transition()
+    }
+
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
         let serde_object = self

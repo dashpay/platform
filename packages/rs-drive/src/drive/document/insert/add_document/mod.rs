@@ -1,7 +1,7 @@
 mod v0;
 
-use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::drive::Drive;
+use crate::util::object_size_info::OwnedDocumentInfo;
 
 use crate::error::drive::DriveError;
 use crate::error::Error;

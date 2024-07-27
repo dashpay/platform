@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 
 impl Identity {
     #[inline(always)]
-    pub(super) fn create_basic_identity_v0(id: [u8; 32]) -> Self {
+    pub(super) fn create_basic_identity_v0(id: Identifier) -> Self {
         IdentityV0 {
-            id: Identifier::new(id),
+            id,
             revision: 0,
             balance: 0,
             public_keys: BTreeMap::new(),

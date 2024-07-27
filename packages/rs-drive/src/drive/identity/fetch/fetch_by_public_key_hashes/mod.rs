@@ -11,23 +11,21 @@ mod has_unique_public_key_hash;
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive;
+    use crate::util::test_helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::identity::Identity;
-    use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
 
     #[test]
     fn test_fetch_all_keys_on_identity() {
         let drive = setup_drive(None);
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
+        let drive_version = &platform_version.drive;
 
         let transaction = drive.grove.start_transaction();
-
-        let platform_version = PlatformVersion::first();
 
         drive
             .create_initial_state_structure(Some(&transaction), platform_version)
@@ -58,7 +56,7 @@ mod tests {
         assert_eq!(public_keys.len(), 5);
 
         for (_, key) in public_keys {
-            let hash = key.hash().expect("expected to get hash");
+            let hash = key.public_key_hash().expect("expected to get hash");
             if key.key_type().is_unique_key_type() {
                 let identity_id = drive
                     .fetch_identity_id_by_unique_public_key_hash(

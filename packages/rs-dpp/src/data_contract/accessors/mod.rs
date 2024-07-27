@@ -43,6 +43,15 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
+    fn document_type_borrowed_for_name(
+        &self,
+        name: &str,
+    ) -> Result<&DocumentType, DataContractError> {
+        match self {
+            DataContract::V0(v0) => v0.document_type_borrowed_for_name(name),
+        }
+    }
+
     fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, DataContractError> {
         match self {
             DataContract::V0(v0) => v0.document_type_for_name(name),
@@ -64,6 +73,12 @@ impl DataContractV0Getters for DataContract {
     fn has_document_type_for_name(&self, name: &str) -> bool {
         match self {
             DataContract::V0(v0) => v0.has_document_type_for_name(name),
+        }
+    }
+
+    fn document_types_with_contested_indexes(&self) -> BTreeMap<&DocumentName, &DocumentType> {
+        match self {
+            DataContract::V0(v0) => v0.document_types_with_contested_indexes(),
         }
     }
 

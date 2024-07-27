@@ -13,11 +13,6 @@ Usage: test <seed> [options]
   -k=key      --faucet-key=key                              - faucet private key string
   -n=network  --network=network                             - use regtest, devnet or testnet
               --skip-sync-before-height=H                   - start sync funding wallet from specific height
-              --dpns-tld-identity-private-key=private_key   - top level identity private key
-              --dpns-tld-identity-id=tld_identity_id        - top level identity id
-              --dpns-contract-id=tld_contract_id            - dpns contract id
-              --feature-flags-identity-id=ff_identity_id    - feature-flags contract id
-              --feature-flags-contract-id=ff_contract_id    - feature-flags contract id
               --faucet-wallet-use-storage=true              - use persistent wallet storage for faucet
               --faucet-wallet-storage-dir=absolute_dir      - specify directory where faucet wallet persistent storage will be stored
   -b          --bail                                        - bail after first test failure
@@ -59,21 +54,6 @@ case ${i} in
     ;;
     --skip-sync-before-height=*)
     skip_sync_before_height="${i#*=}"
-    ;;
-    --dpns-tld-identity-private-key=*)
-    identity_private_key="${i#*=}"
-    ;;
-    --dpns-tld-identity-id=*)
-    tld_identity_id="${i#*=}"
-    ;;
-    --dpns-contract-id=*)
-    tld_contract_id="${i#*=}"
-    ;;
-    --feature-flags-identity-id=*)
-    ff_identity_id="${i#*=}"
-    ;;
-    --feature-flags-contract-id=*)
-    ff_contract_id="${i#*=}"
     ;;
     -b|--bail)
     bail=true
@@ -157,31 +137,6 @@ fi
 if [ -n "$skip_sync_before_height" ]
 then
   cmd="${cmd} SKIP_SYNC_BEFORE_HEIGHT=${skip_sync_before_height}"
-fi
-
-if [ -n "$tld_contract_id" ]
-then
-  cmd="${cmd} DPNS_CONTRACT_ID=${tld_contract_id}"
-fi
-
-if [ -n "$tld_identity_id" ]
-then
-  cmd="${cmd} DPNS_TOP_LEVEL_IDENTITY_ID=${tld_identity_id}"
-fi
-
-if [ -n "$ff_identity_id" ]
-then
-  cmd="${cmd} FEATURE_FLAGS_IDENTITY_ID=${ff_identity_id}"
-fi
-
-if [ -n "$ff_contract_id" ]
-then
-  cmd="${cmd} FEATURE_FLAGS_CONTRACT_ID=${ff_contract_id}"
-fi
-
-if [ -n "$identity_private_key" ]
-then
-  cmd="${cmd} DPNS_TOP_LEVEL_IDENTITY_PRIVATE_KEY=${identity_private_key}"
 fi
 
 if [ -n "$faucet_wallet_use_storage" ]

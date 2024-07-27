@@ -11,8 +11,7 @@ const { hash } = require('@dashevo/wasm-dpp/lib/utils/hash');
  * @param {Platform} this - bound instance class
  * @param {string} name - name
  * @param {Object} records - records object having only one of the following items
- * @param {string} [records.dashUniqueIdentityId]
- * @param {string} [records.dashAliasIdentityId]
+ * @param {string} [records.identity]
  * @param identity - identity
  *
  * @returns registered domain document
@@ -21,8 +20,7 @@ export async function register(
   this: Platform,
   name: string,
   records: {
-    dashUniqueIdentityId?: Identifier | string,
-    dashAliasIdentityId?: Identifier | string,
+    identity?: Identifier | string,
   },
   identity: {
     getId(): Identifier;
@@ -31,12 +29,8 @@ export async function register(
 ): Promise<any> {
   await this.initialize();
 
-  if (records.dashUniqueIdentityId) {
-    records.dashUniqueIdentityId = Identifier.from(records.dashUniqueIdentityId);
-  }
-
-  if (records.dashAliasIdentityId) {
-    records.dashAliasIdentityId = Identifier.from(records.dashAliasIdentityId);
+  if (records.identity) {
+    records.identity = Identifier.from(records.identity);
   }
 
   const nameLabels = name.split('.');

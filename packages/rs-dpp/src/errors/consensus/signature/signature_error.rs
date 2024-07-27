@@ -12,7 +12,9 @@ use crate::errors::consensus::signature::invalid_signature_public_key_purpose_er
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone)]
+#[derive(
+    Error, Debug, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone,
+)]
 #[ferment_macro::export]
 pub enum SignatureError {
     /*

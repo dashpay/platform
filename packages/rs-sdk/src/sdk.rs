@@ -1,9 +1,5 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::collections::btree_map::Entry;
-use std::sync::Arc;
-use std::{fmt::Debug, num::NonZeroUsize};
-
 use crate::error::Error;
 use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
@@ -29,8 +25,13 @@ use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
     DapiClient, DapiClientError, DapiRequestExecutor,
 };
+use std::collections::btree_map::Entry;
+use std::fmt::Debug;
+#[cfg(feature = "mocks")]
+use std::num::NonZeroUsize;
 #[cfg(feature = "mocks")]
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
@@ -210,6 +211,9 @@ impl Sdk {
                 guard.parse_proof_with_metadata(request, response)
             }
         }
+    }
+    pub fn context_provider(&self) -> Option<impl ContextProvider> {
+        self.context_provider.as_ref().map(Arc::clone)
     }
 
     /// Returns a mutable reference to the `MockDashPlatformSdk` instance.
@@ -514,8 +518,12 @@ pub struct SdkBuilder {
     /// Platform version to use in this Sdk
     version: &'static PlatformVersion,
 
-    /// Cache settings
+    /// Cache size for data contracts. Used by mock [GrpcContextProvider].
+    #[cfg(feature = "mocks")]
     data_contract_cache_size: NonZeroUsize,
+
+    /// Cache size for quorum public keys. Used by mock [GrpcContextProvider].
+    #[cfg(feature = "mocks")]
     quorum_public_keys_cache_size: NonZeroUsize,
 
     /// Context provider used by the SDK.
@@ -542,8 +550,10 @@ impl Default for SdkBuilder {
 
             proofs: true,
 
+            #[cfg(feature = "mocks")]
             data_contract_cache_size: NonZeroUsize::new(DEFAULT_CONTRACT_CACHE_SIZE)
                 .expect("data conttact cache size must be positive"),
+            #[cfg(feature = "mocks")]
             quorum_public_keys_cache_size: NonZeroUsize::new(DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE)
                 .expect("quorum public keys cache size must be positive"),
 
@@ -661,8 +671,7 @@ impl SdkBuilder {
     /// This function will create the directory if it does not exist and save dumps of
     /// * all requests and responses - in files named `msg-*.json`
     /// * retrieved quorum public keys - in files named `quorum_pubkey-*.json`
-    ///
-    /// Data is saved in JSON format.
+    /// * retrieved data contracts - in files named `data_contract-*.json`
     ///
     /// These files can be used together with [MockDashPlatformSdk] to replay the requests and responses.
     /// See [MockDashPlatformSdk::load_expectations()] for more information.
@@ -691,6 +700,7 @@ impl SdkBuilder {
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
 
+                #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
@@ -707,15 +717,18 @@ impl SdkBuilder {
                         tracing::warn!("ContextProvider not set; mocking with Dash Core. \
                         Please provide your own ContextProvider with SdkBuilder::with_context_provider().");
 
-                        let mut context_provider = GrpcContextProvider::new(Some(sdk.clone()),
-                        &self.core_ip, self.core_port, &self.core_user, &self.core_password,
-                        self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
+                        let mut context_provider = GrpcContextProvider::new(None,
+                            &self.core_ip, self.core_port, &self.core_user, &self.core_password,
+                            self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
                         #[cfg(feature = "mocks")]
                         if sdk.dump_dir.is_some() {
                             context_provider.set_dump_dir(sdk.dump_dir.clone());
                         }
-
-                        sdk.context_provider.replace(Arc::new(Box::new(context_provider)));
+                        // We have cyclical dependency Sdk <-> GrpcContextProvider, so we just do some
+                        // workaround using additional Arc.
+                        let context_provider= Arc::new(context_provider);
+                        sdk.context_provider.replace(Arc::new(Box::new(context_provider.clone())));
+                        context_provider.set_sdk(Some(sdk.clone()));
                     } else{
                         tracing::warn!(
                             "Configure ContextProvider with Sdk::with_context_provider(); otherwise Sdk will fail");

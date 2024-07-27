@@ -13,7 +13,7 @@ use dpp::identity::identity_public_key::accessors::v0::{
 };
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
-use dpp::identity::Purpose::AUTHENTICATION;
+use dpp::identity::Purpose::{AUTHENTICATION, TRANSFER};
 use dpp::identity::SecurityLevel::{CRITICAL, MASTER};
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::AssetLockProof;
@@ -398,6 +398,7 @@ pub fn create_identity_update_transition_disable_keys(
                     && !(key.security_level() == CRITICAL
                         && key.purpose() == AUTHENTICATION
                         && key.key_type() == ECDSA_SECP256K1))
+                && key.purpose() != TRANSFER
         })
         .map(|(key_id, _)| *key_id)
         .collect::<Vec<_>>();
@@ -649,8 +650,15 @@ pub fn create_identities_state_transitions(
         )
         .expect("Expected to create identities and keys");
 
-    for identity in identities.iter_mut() {
-        for (purpose, security_to_key_type_map) in extra_keys {
+    let starting_id_num = signer
+        .private_keys
+        .keys()
+        .max()
+        .map_or(0, |max_key| max_key.id() + 1);
+
+    for (i, identity) in identities.iter_mut().enumerate() {
+        // TODO: deal with the case where there's more than one extra key
+        for (_, (purpose, security_to_key_type_map)) in extra_keys.iter().enumerate() {
             for (security_level, key_types) in security_to_key_type_map {
                 for key_type in key_types {
                     let (key, private_key) = IdentityPublicKey::random_key_with_known_attributes(
@@ -663,17 +671,12 @@ pub fn create_identities_state_transitions(
                         platform_version,
                     )?;
                     identity.add_public_key(key.clone());
-                    keys.push((key, private_key));
+                    let key_num = key_count as usize * (i + 1) + i;
+                    keys.insert(key_num, (key, private_key))
                 }
             }
         }
     }
-
-    let starting_id_num = signer
-        .private_keys
-        .keys()
-        .max()
-        .map_or(0, |max_key| max_key.id() + 1);
 
     // Update keys with new KeyIDs and add them to signer
     let mut current_id_num = starting_id_num;
@@ -690,7 +693,8 @@ pub fn create_identities_state_transitions(
         .enumerate()
         .map(|(index, mut identity)| {
             // Calculate the starting KeyID for this identity
-            let identity_starting_id = starting_id_num + (index as u32) * key_count;
+            let identity_starting_id =
+                starting_id_num + index as u32 * (key_count + extra_keys.len() as u32);
 
             // Update the identity with the new KeyIDs
             let public_keys_map = identity.public_keys_mut();
@@ -769,7 +773,7 @@ pub fn create_identities_state_transitions(
 /// - Conversion and encoding errors related to the cryptographic data.
 pub fn create_state_transitions_for_identities(
     identities: Vec<Identity>,
-    signer: &mut SimpleSigner,
+    signer: &SimpleSigner,
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> Vec<(Identity, StateTransition)> {
@@ -779,7 +783,7 @@ pub fn create_state_transitions_for_identities(
             let (_, pk) = ECDSA_SECP256K1
                 .random_public_and_private_key_data(rng, platform_version)
                 .unwrap();
-            let sk: [u8; 32] = pk.clone().try_into().unwrap();
+            let sk: [u8; 32] = pk.try_into().unwrap();
             let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
             let asset_lock_proof =
                 instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
@@ -787,7 +791,33 @@ pub fn create_state_transitions_for_identities(
                 IdentityCreateTransition::try_from_identity_with_signer(
                     &identity.clone(),
                     asset_lock_proof,
-                    pk.as_slice(),
+                    &sk,
+                    signer,
+                    &NativeBlsModule,
+                    0,
+                    platform_version,
+                )
+                .expect("expected to transform identity into identity create transition");
+            identity.set_id(identity_create_transition.owner_id());
+
+            (identity, identity_create_transition)
+        })
+        .collect()
+}
+
+pub fn create_state_transitions_for_identities_and_proofs(
+    identities_with_proofs: Vec<(Identity, [u8; 32], AssetLockProof)>,
+    signer: &mut SimpleSigner,
+    platform_version: &PlatformVersion,
+) -> Vec<(Identity, StateTransition)> {
+    identities_with_proofs
+        .into_iter()
+        .map(|(mut identity, private_key, asset_lock_proof)| {
+            let identity_create_transition =
+                IdentityCreateTransition::try_from_identity_with_signer(
+                    &identity.clone(),
+                    asset_lock_proof,
+                    &private_key,
                     signer,
                     &NativeBlsModule,
                     0,

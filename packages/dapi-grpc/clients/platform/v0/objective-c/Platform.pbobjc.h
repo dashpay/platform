@@ -34,6 +34,26 @@ CF_EXTERN_C_BEGIN
 @class GetConsensusParamsResponse_ConsensusParamsBlock;
 @class GetConsensusParamsResponse_ConsensusParamsEvidence;
 @class GetConsensusParamsResponse_GetConsensusParamsResponseV0;
+@class GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0;
+@class GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo;
+@class GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0;
+@class GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote;
+@class GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes;
+@class GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice;
+@class GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0;
+@class GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo;
+@class GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0;
+@class GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender;
+@class GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders;
+@class GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo;
+@class GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0;
+@class GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo;
+@class GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0;
+@class GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters;
+@class GetContestedResourcesRequest_GetContestedResourcesRequestV0;
+@class GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo;
+@class GetContestedResourcesResponse_GetContestedResourcesResponseV0;
+@class GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues;
 @class GetDataContractHistoryRequest_GetDataContractHistoryRequestV0;
 @class GetDataContractHistoryResponse_GetDataContractHistoryResponseV0;
 @class GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistory;
@@ -75,10 +95,14 @@ CF_EXTERN_C_BEGIN
 @class GetPathElementsRequest_GetPathElementsRequestV0;
 @class GetPathElementsResponse_GetPathElementsResponseV0;
 @class GetPathElementsResponse_GetPathElementsResponseV0_Elements;
+@class GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0;
+@class GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0;
 @class GetProofsRequest_GetProofsRequestV0;
 @class GetProofsRequest_GetProofsRequestV0_ContractRequest;
 @class GetProofsRequest_GetProofsRequestV0_DocumentRequest;
 @class GetProofsRequest_GetProofsRequestV0_IdentityRequest;
+@class GetProofsRequest_GetProofsRequestV0_VoteStatusRequest;
+@class GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest;
 @class GetProofsResponse_GetProofsResponseV0;
 @class GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0;
 @class GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0;
@@ -88,6 +112,12 @@ CF_EXTERN_C_BEGIN
 @class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0;
 @class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal;
 @class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals;
+@class GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0;
+@class GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo;
+@class GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo;
+@class GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0;
+@class GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp;
+@class GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps;
 @class KeyRequestType;
 @class Proof;
 @class ResponseMetadata;
@@ -133,7 +163,10 @@ typedef GPB_ENUM(SecurityLevelMap_KeyKindRequestType) {
    * of the field.
    **/
   SecurityLevelMap_KeyKindRequestType_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  /** Request the current key of a particular kind */
   SecurityLevelMap_KeyKindRequestType_CurrentKeyOfKindRequest = 0,
+
+  /** Request all keys of a particular kind */
   SecurityLevelMap_KeyKindRequestType_AllKeysOfKindRequest = 1,
 };
 
@@ -145,6 +178,28 @@ GPBEnumDescriptor *SecurityLevelMap_KeyKindRequestType_EnumDescriptor(void);
  **/
 BOOL SecurityLevelMap_KeyKindRequestType_IsValidValue(int32_t value);
 
+#pragma mark - Enum GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus
+
+typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_NotContested = 0,
+  GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_MaybeContested = 1,
+  GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_Contested = 2,
+};
+
+GPBEnumDescriptor *GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_IsValidValue(int32_t value);
+
 #pragma mark - Enum GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type
 
 typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type) {
@@ -154,9 +209,16 @@ typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type) {
    * of the field.
    **/
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  /** Request for the full identity */
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_FullIdentity = 0,
+
+  /** Request for the identity's balance */
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Balance = 1,
+
+  /** Request for the identity's keys */
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Keys = 2,
+
+  /** Request for the identity's revision */
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Revision = 3,
 };
 
@@ -167,6 +229,72 @@ GPBEnumDescriptor *GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_Enum
  * the time this source was generated.
  **/
 BOOL GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType
+
+typedef GPB_ENUM(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_Documents = 0,
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_VoteTally = 1,
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_DocumentsAndVoteTally = 2,
+};
+
+GPBEnumDescriptor *GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome
+
+typedef GPB_ENUM(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_TowardsIdentity = 0,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_Locked = 1,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_NoPreviousWinner = 2,
+};
+
+GPBEnumDescriptor *GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType
+
+typedef GPB_ENUM(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_TowardsIdentity = 0,
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_Abstain = 1,
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_Lock = 2,
+};
+
+GPBEnumDescriptor *GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_IsValidValue(int32_t value);
 
 #pragma mark - PlatformRoot
 
@@ -194,18 +322,27 @@ typedef GPB_ENUM(Proof_FieldNumber) {
   Proof_FieldNumber_QuorumType = 6,
 };
 
+/**
+ * Proof message includes cryptographic proofs for validating responses
+ **/
 GPB_FINAL @interface Proof : GPBMessage
 
+/** GroveDB proof for the data */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *grovedbProof;
 
+/** Hash of the quorum validating the data */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *quorumHash;
 
+/** Signature proving data authenticity */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *signature;
 
+/** Consensus round number */
 @property(nonatomic, readwrite) uint32_t round;
 
+/** Hash of the block ID */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *blockIdHash;
 
+/** Type of the quorum */
 @property(nonatomic, readwrite) uint32_t quorumType;
 
 @end
@@ -221,18 +358,27 @@ typedef GPB_ENUM(ResponseMetadata_FieldNumber) {
   ResponseMetadata_FieldNumber_ChainId = 6,
 };
 
+/**
+ * ResponseMetadata provides metadata about the blockchain state at the time of response
+ **/
 GPB_FINAL @interface ResponseMetadata : GPBMessage
 
+/** Current blockchain height */
 @property(nonatomic, readwrite) uint64_t height;
 
+/** Latest known core height in consensus */
 @property(nonatomic, readwrite) uint32_t coreChainLockedHeight;
 
+/** Current epoch number */
 @property(nonatomic, readwrite) uint32_t epoch;
 
+/** Timestamp in milliseconds */
 @property(nonatomic, readwrite) uint64_t timeMs;
 
+/** Protocol version */
 @property(nonatomic, readwrite) uint32_t protocolVersion;
 
+/** Identifier of the blockchain */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *chainId;
 
 @end
@@ -306,8 +452,10 @@ typedef GPB_ENUM(GetIdentityRequest_GetIdentityRequestV0_FieldNumber) {
 
 GPB_FINAL @interface GetIdentityRequest_GetIdentityRequestV0 : GPBMessage
 
+/** The ID of the identity being requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -426,8 +574,10 @@ typedef GPB_ENUM(GetIdentityBalanceRequest_GetIdentityBalanceRequestV0_FieldNumb
 
 GPB_FINAL @interface GetIdentityBalanceRequest_GetIdentityBalanceRequestV0 : GPBMessage
 
+/** ID of the identity whose balance is requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -465,8 +615,10 @@ typedef GPB_ENUM(GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevis
 
 GPB_FINAL @interface GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevisionRequestV0 : GPBMessage
 
+/** ID of the identity for balance and revision */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -513,10 +665,13 @@ GPB_FINAL @interface GetIdentityResponse_GetIdentityResponseV0 : GPBMessage
 
 @property(nonatomic, readonly) GetIdentityResponse_GetIdentityResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The requested identity data */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
 
+/** Proof of the identity data, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -684,10 +839,13 @@ GPB_FINAL @interface GetIdentityBalanceResponse_GetIdentityBalanceResponseV0 : G
 
 @property(nonatomic, readonly) GetIdentityBalanceResponse_GetIdentityBalanceResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The balance of the requested identity */
 @property(nonatomic, readwrite) uint64_t balance;
 
+/** Proof of the balance, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -741,10 +899,13 @@ GPB_FINAL @interface GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAnd
 
 @property(nonatomic, readonly) GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The balance and revision data */
 @property(nonatomic, readwrite, strong, null_resettable) GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0_BalanceAndRevision *balanceAndRevision;
 
+/** Proof of the data, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -765,8 +926,10 @@ typedef GPB_ENUM(GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevi
 
 GPB_FINAL @interface GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0_BalanceAndRevision : GPBMessage
 
+/** Balance of the identity */
 @property(nonatomic, readwrite) uint64_t balance;
 
+/** Revision number of the identity */
 @property(nonatomic, readwrite) uint64_t revision;
 
 @end
@@ -790,10 +953,13 @@ GPB_FINAL @interface KeyRequestType : GPBMessage
 
 @property(nonatomic, readonly) KeyRequestType_Request_OneOfCase requestOneOfCase;
 
+/** Request for all keys */
 @property(nonatomic, readwrite, strong, null_resettable) AllKeys *allKeys;
 
+/** Request for specific keys by their IDs */
 @property(nonatomic, readwrite, strong, null_resettable) SpecificKeys *specificKeys;
 
+/** Request for keys based on a search criteria */
 @property(nonatomic, readwrite, strong, null_resettable) SearchKey *searchKey;
 
 @end
@@ -805,6 +971,9 @@ void KeyRequestType_ClearRequestOneOfCase(KeyRequestType *message);
 
 #pragma mark - AllKeys
 
+/**
+ * AllKeys is an empty message used to signify a request for all keys
+ **/
 GPB_FINAL @interface AllKeys : GPBMessage
 
 @end
@@ -815,8 +984,12 @@ typedef GPB_ENUM(SpecificKeys_FieldNumber) {
   SpecificKeys_FieldNumber_KeyIdsArray = 1,
 };
 
+/**
+ * SpecificKeys is used to request specific keys by their IDs
+ **/
 GPB_FINAL @interface SpecificKeys : GPBMessage
 
+/** List of key IDs */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Array *keyIdsArray;
 /** The number of items in @c keyIdsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger keyIdsArray_Count;
@@ -829,8 +1002,12 @@ typedef GPB_ENUM(SearchKey_FieldNumber) {
   SearchKey_FieldNumber_PurposeMap = 1,
 };
 
+/**
+ * SearchKey represents a request to search for keys based on specific criteria
+ **/
 GPB_FINAL @interface SearchKey : GPBMessage
 
+/** Map of purposes to their security level maps */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32ObjectDictionary<SecurityLevelMap*> *purposeMap;
 /** The number of items in @c purposeMap without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger purposeMap_Count;
@@ -843,8 +1020,12 @@ typedef GPB_ENUM(SecurityLevelMap_FieldNumber) {
   SecurityLevelMap_FieldNumber_SecurityLevelMap = 1,
 };
 
+/**
+ * SecurityLevelMap maps security levels to a request type for key retrieval
+ **/
 GPB_FINAL @interface SecurityLevelMap : GPBMessage
 
+/** Maps security levels to key request types */
 // |securityLevelMap| values are |SecurityLevelMap_KeyKindRequestType|
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32EnumDictionary *securityLevelMap;
 /** The number of items in @c securityLevelMap without causing the array to be created. */
@@ -888,20 +1069,25 @@ typedef GPB_ENUM(GetIdentityKeysRequest_GetIdentityKeysRequestV0_FieldNumber) {
 
 GPB_FINAL @interface GetIdentityKeysRequest_GetIdentityKeysRequestV0 : GPBMessage
 
+/** ID of the identity for key retrieval */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
 
+/** Type of key request: all, specific, or search */
 @property(nonatomic, readwrite, strong, null_resettable) KeyRequestType *requestType;
 /** Test to see if @c requestType has been set. */
 @property(nonatomic, readwrite) BOOL hasRequestType;
 
+/** Limit on the number of keys to be returned */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *limit;
 /** Test to see if @c limit has been set. */
 @property(nonatomic, readwrite) BOOL hasLimit;
 
+/** Offset for pagination through the keys */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *offset;
 /** Test to see if @c offset has been set. */
 @property(nonatomic, readwrite) BOOL hasOffset;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -948,10 +1134,13 @@ GPB_FINAL @interface GetIdentityKeysResponse_GetIdentityKeysResponseV0 : GPBMess
 
 @property(nonatomic, readonly) GetIdentityKeysResponse_GetIdentityKeysResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual key data */
 @property(nonatomic, readwrite, strong, null_resettable) GetIdentityKeysResponse_GetIdentityKeysResponseV0_Keys *keys;
 
+/** Proof of the keys data, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -1179,21 +1368,29 @@ typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_FieldNumber) {
   GetProofsRequest_GetProofsRequestV0_FieldNumber_IdentitiesArray = 1,
   GetProofsRequest_GetProofsRequestV0_FieldNumber_ContractsArray = 2,
   GetProofsRequest_GetProofsRequestV0_FieldNumber_DocumentsArray = 3,
+  GetProofsRequest_GetProofsRequestV0_FieldNumber_VotesArray = 4,
 };
 
 GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0 : GPBMessage
 
+/** List of identity requests */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_IdentityRequest*> *identitiesArray;
 /** The number of items in @c identitiesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger identitiesArray_Count;
 
+/** List of contract requests */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_ContractRequest*> *contractsArray;
 /** The number of items in @c contractsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger contractsArray_Count;
 
+/** List of document requests */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_DocumentRequest*> *documentsArray;
 /** The number of items in @c documentsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger documentsArray_Count;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_GetProofsRequestV0_VoteStatusRequest*> *votesArray;
+/** The number of items in @c votesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger votesArray_Count;
 
 @end
 
@@ -1204,19 +1401,41 @@ typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber
   GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber_DocumentType = 2,
   GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber_DocumentTypeKeepsHistory = 3,
   GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber_DocumentId = 4,
+  GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber_DocumentContestedStatus = 5,
 };
 
+/**
+ * DocumentRequest specifies a request for a document proof
+ **/
 GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_DocumentRequest : GPBMessage
 
+/** ID of the contract the document belongs to */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
 
+/** Type of document being requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
 
+/** Indicates if the document type keeps a history of changes */
 @property(nonatomic, readwrite) BOOL documentTypeKeepsHistory;
 
+/** ID of the specific document being requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
 
+@property(nonatomic, readwrite) GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus documentContestedStatus;
+
 @end
+
+/**
+ * Fetches the raw value of a @c GetProofsRequest_GetProofsRequestV0_DocumentRequest's @c documentContestedStatus property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_RawValue(GetProofsRequest_GetProofsRequestV0_DocumentRequest *message);
+/**
+ * Sets the raw value of an @c GetProofsRequest_GetProofsRequestV0_DocumentRequest's @c documentContestedStatus property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_RawValue(GetProofsRequest_GetProofsRequestV0_DocumentRequest *message, int32_t value);
 
 #pragma mark - GetProofsRequest_GetProofsRequestV0_IdentityRequest
 
@@ -1225,10 +1444,15 @@ typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_IdentityRequest_FieldNumber
   GetProofsRequest_GetProofsRequestV0_IdentityRequest_FieldNumber_RequestType = 2,
 };
 
+/**
+ * IdentityRequest specifies a request for an identity proof
+ **/
 GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_IdentityRequest : GPBMessage
 
+/** ID of the identity for which the proof is requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
 
+/** Type of identity request */
 @property(nonatomic, readwrite) GetProofsRequest_GetProofsRequestV0_IdentityRequest_Type requestType;
 
 @end
@@ -1251,9 +1475,62 @@ typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_ContractRequest_FieldNumber
   GetProofsRequest_GetProofsRequestV0_ContractRequest_FieldNumber_ContractId = 1,
 };
 
+/**
+ * ContractRequest specifies a request for a data contract proof.
+ **/
 GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_ContractRequest : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
+
+@end
+
+#pragma mark - GetProofsRequest_GetProofsRequestV0_VoteStatusRequest
+
+typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_FieldNumber) {
+  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_FieldNumber_ContestedResourceVoteStatusRequest = 1,
+};
+
+typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_RequestType_OneOfCase) {
+  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_RequestType_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_RequestType_OneOfCase_ContestedResourceVoteStatusRequest = 1,
+};
+
+GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_VoteStatusRequest : GPBMessage
+
+@property(nonatomic, readonly) GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_RequestType_OneOfCase requestTypeOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest *contestedResourceVoteStatusRequest;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'requestType'.
+ **/
+void GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ClearRequestTypeOneOfCase(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest *message);
+
+#pragma mark - GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest
+
+typedef GPB_ENUM(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber) {
+  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_ContractId = 1,
+  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_DocumentTypeName = 2,
+  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_IndexName = 3,
+  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_IndexValuesArray = 4,
+  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_VoterIdentifier = 5,
+};
+
+GPB_FINAL @interface GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *indexName;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *indexValuesArray;
+/** The number of items in @c indexValuesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger indexValuesArray_Count;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *voterIdentifier;
 
 @end
 
@@ -1297,8 +1574,10 @@ GPB_FINAL @interface GetProofsResponse_GetProofsResponseV0 : GPBMessage
 
 @property(nonatomic, readonly) GetProofsResponse_GetProofsResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** Cryptographic proof for the requested data */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -1343,8 +1622,10 @@ typedef GPB_ENUM(GetDataContractRequest_GetDataContractRequestV0_FieldNumber) {
 
 GPB_FINAL @interface GetDataContractRequest_GetDataContractRequestV0 : GPBMessage
 
+/** The ID of the data contract being requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -1391,10 +1672,13 @@ GPB_FINAL @interface GetDataContractResponse_GetDataContractResponseV0 : GPBMess
 
 @property(nonatomic, readonly) GetDataContractResponse_GetDataContractResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual data contract in binary form */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *dataContract;
 
+/** Cryptographic proof of the data contract, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -1439,10 +1723,12 @@ typedef GPB_ENUM(GetDataContractsRequest_GetDataContractsRequestV0_FieldNumber) 
 
 GPB_FINAL @interface GetDataContractsRequest_GetDataContractsRequestV0 : GPBMessage
 
+/** A list of unique IDs for the data contracts being requested */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *idsArray;
 /** The number of items in @c idsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger idsArray_Count;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -1480,8 +1766,10 @@ typedef GPB_ENUM(GetDataContractsResponse_DataContractEntry_FieldNumber) {
 
 GPB_FINAL @interface GetDataContractsResponse_DataContractEntry : GPBMessage
 
+/** The unique identifier of the data contract */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identifier;
 
+/** The actual data contract content */
 @property(nonatomic, readwrite, strong, null_resettable) GPBBytesValue *dataContract;
 /** Test to see if @c dataContract has been set. */
 @property(nonatomic, readwrite) BOOL hasDataContract;
@@ -1494,8 +1782,12 @@ typedef GPB_ENUM(GetDataContractsResponse_DataContracts_FieldNumber) {
   GetDataContractsResponse_DataContracts_FieldNumber_DataContractEntriesArray = 1,
 };
 
+/**
+ * DataContracts is a collection of data contract entries.
+ **/
 GPB_FINAL @interface GetDataContractsResponse_DataContracts : GPBMessage
 
+/** A list of data contract entries */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDataContractsResponse_DataContractEntry*> *dataContractEntriesArray;
 /** The number of items in @c dataContractEntriesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger dataContractEntriesArray_Count;
@@ -1520,10 +1812,13 @@ GPB_FINAL @interface GetDataContractsResponse_GetDataContractsResponseV0 : GPBMe
 
 @property(nonatomic, readonly) GetDataContractsResponse_GetDataContractsResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual data contracts requested */
 @property(nonatomic, readwrite, strong, null_resettable) GetDataContractsResponse_DataContracts *dataContracts;
 
+/** Cryptographic proof for the data contracts, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -1571,18 +1866,23 @@ typedef GPB_ENUM(GetDataContractHistoryRequest_GetDataContractHistoryRequestV0_F
 
 GPB_FINAL @interface GetDataContractHistoryRequest_GetDataContractHistoryRequestV0 : GPBMessage
 
+/** The unique ID of the data contract */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
+/** The maximum number of history entries to return */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *limit;
 /** Test to see if @c limit has been set. */
 @property(nonatomic, readwrite) BOOL hasLimit;
 
+/** The offset for pagination through the contract history */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *offset;
 /** Test to see if @c offset has been set. */
 @property(nonatomic, readwrite) BOOL hasOffset;
 
+/** Only return results starting at this time in milliseconds */
 @property(nonatomic, readwrite) uint64_t startAtMs;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -1629,10 +1929,13 @@ GPB_FINAL @interface GetDataContractHistoryResponse_GetDataContractHistoryRespon
 
 @property(nonatomic, readonly) GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual history of the data contract */
 @property(nonatomic, readwrite, strong, null_resettable) GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistory *dataContractHistory;
 
+/** Cryptographic proof of the data contract history, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -1651,10 +1954,15 @@ typedef GPB_ENUM(GetDataContractHistoryResponse_GetDataContractHistoryResponseV0
   GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistoryEntry_FieldNumber_Value = 2,
 };
 
+/**
+ * Represents a single entry in the data contract's history
+ **/
 GPB_FINAL @interface GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistoryEntry : GPBMessage
 
+/** The date of the history entry */
 @property(nonatomic, readwrite) uint64_t date;
 
+/** The value of the data contract at this point in history */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *value;
 
 @end
@@ -1665,8 +1973,12 @@ typedef GPB_ENUM(GetDataContractHistoryResponse_GetDataContractHistoryResponseV0
   GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistory_FieldNumber_DataContractEntriesArray = 1,
 };
 
+/**
+ * Collection of data contract history entries
+ **/
 GPB_FINAL @interface GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistory : GPBMessage
 
+/** List of history entries */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistoryEntry*> *dataContractEntriesArray;
 /** The number of items in @c dataContractEntriesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger dataContractEntriesArray_Count;
@@ -1718,22 +2030,31 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV0_Start_OneOfCase) {
 
 GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV0 : GPBMessage
 
+/** The ID of the data contract containing the documents */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
 
+/** The type of document being requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
 
+/** Conditions to be met by the requested documents */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *where;
 
+/** Ordering criteria for the documents */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *orderBy;
 
+/** Maximum number of documents to return */
 @property(nonatomic, readwrite) uint32_t limit;
 
+/** Specifies the starting point for the document retrieval */
 @property(nonatomic, readonly) GetDocumentsRequest_GetDocumentsRequestV0_Start_OneOfCase startOneOfCase;
 
+/** Start retrieval after this document */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *startAfter;
 
+/** Start retrieval at this document */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *startAt;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -1785,10 +2106,13 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV0 : GPBMessage
 
 @property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual documents requested */
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV0_Documents *documents;
 
+/** Cryptographic proof of the documents, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -1806,8 +2130,12 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV0_Documents_FieldNumb
   GetDocumentsResponse_GetDocumentsResponseV0_Documents_FieldNumber_DocumentsArray = 1,
 };
 
+/**
+ * Represents a collection of documents
+ **/
 GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV0_Documents : GPBMessage
 
+/** The actual documents in binary form */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *documentsArray;
 /** The number of items in @c documentsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger documentsArray_Count;
@@ -1847,8 +2175,10 @@ typedef GPB_ENUM(GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashReq
 
 GPB_FINAL @interface GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashRequestV0 : GPBMessage
 
+/** The public key hash of the identity being requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *publicKeyHash;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -1895,10 +2225,13 @@ GPB_FINAL @interface GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHa
 
 @property(nonatomic, readonly) GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual identity data corresponding to the requested public key hash */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
 
+/** Cryptographic proof for the identity data, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -1943,8 +2276,10 @@ typedef GPB_ENUM(WaitForStateTransitionResultRequest_WaitForStateTransitionResul
 
 GPB_FINAL @interface WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0 : GPBMessage
 
+/** The hash of the state transition to wait for */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *stateTransitionHash;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -1991,10 +2326,13 @@ GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransition
 
 @property(nonatomic, readonly) WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** Any error that occurred during the state transition broadcast */
 @property(nonatomic, readwrite, strong, null_resettable) StateTransitionBroadcastError *error;
 
+/** Cryptographic proof for the state transition, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -2039,8 +2377,10 @@ typedef GPB_ENUM(GetConsensusParamsRequest_GetConsensusParamsRequestV0_FieldNumb
 
 GPB_FINAL @interface GetConsensusParamsRequest_GetConsensusParamsRequestV0 : GPBMessage
 
+/** The blockchain height at which to get the consensus parameters */
 @property(nonatomic, readwrite) int32_t height;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -2079,10 +2419,13 @@ typedef GPB_ENUM(GetConsensusParamsResponse_ConsensusParamsBlock_FieldNumber) {
 
 GPB_FINAL @interface GetConsensusParamsResponse_ConsensusParamsBlock : GPBMessage
 
+/** The maximum size of a block in bytes */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *maxBytes;
 
+/** The maximum gas allowed in a block */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *maxGas;
 
+/** The minimum time increment between consecutive blocks, in milliseconds */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *timeIotaMs;
 
 @end
@@ -2097,10 +2440,13 @@ typedef GPB_ENUM(GetConsensusParamsResponse_ConsensusParamsEvidence_FieldNumber)
 
 GPB_FINAL @interface GetConsensusParamsResponse_ConsensusParamsEvidence : GPBMessage
 
+/** The maximum age of evidence, in number of blocks */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *maxAgeNumBlocks;
 
+/** The maximum age of evidence, as a duration */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *maxAgeDuration;
 
+/** The maximum size of evidence in bytes */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *maxBytes;
 
 @end
@@ -2114,10 +2460,12 @@ typedef GPB_ENUM(GetConsensusParamsResponse_GetConsensusParamsResponseV0_FieldNu
 
 GPB_FINAL @interface GetConsensusParamsResponse_GetConsensusParamsResponseV0 : GPBMessage
 
+/** Consensus parameters related to block creation and validation */
 @property(nonatomic, readwrite, strong, null_resettable) GetConsensusParamsResponse_ConsensusParamsBlock *block;
 /** Test to see if @c block has been set. */
 @property(nonatomic, readwrite) BOOL hasBlock;
 
+/** Consensus parameters related to evidence */
 @property(nonatomic, readwrite, strong, null_resettable) GetConsensusParamsResponse_ConsensusParamsEvidence *evidence;
 /** Test to see if @c evidence has been set. */
 @property(nonatomic, readwrite) BOOL hasEvidence;
@@ -2156,6 +2504,7 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgrade
 
 GPB_FINAL @interface GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0 : GPBMessage
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -2202,10 +2551,13 @@ GPB_FINAL @interface GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUp
 
 @property(nonatomic, readonly) GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual protocol version information */
 @property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions *versions;
 
+/** Cryptographic proof of the protocol version information, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -2223,8 +2575,12 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgrad
   GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions_FieldNumber_VersionsArray = 1,
 };
 
+/**
+ * Versions holds a collection of version entries
+ **/
 GPB_FINAL @interface GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions : GPBMessage
 
+/** List of protocol version entries */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry*> *versionsArray;
 /** The number of items in @c versionsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger versionsArray_Count;
@@ -2238,10 +2594,15 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgrad
   GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry_FieldNumber_VoteCount = 2,
 };
 
+/**
+ * VersionEntry represents a single entry of a protocol version
+ **/
 GPB_FINAL @interface GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry : GPBMessage
 
+/** The protocol version number */
 @property(nonatomic, readwrite) uint32_t versionNumber;
 
+/** The vote count for this protocol version */
 @property(nonatomic, readwrite) uint32_t voteCount;
 
 @end
@@ -2280,10 +2641,13 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUp
 
 GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0 : GPBMessage
 
+/** The starting masternode provider transaction hash to filter the votes by */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *startProTxHash;
 
+/** The number of vote entries to retrieve */
 @property(nonatomic, readwrite) uint32_t count;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -2330,10 +2694,13 @@ GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVers
 
 @property(nonatomic, readonly) GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual version signal information */
 @property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals *versions;
 
+/** Cryptographic proof of the version signal information, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -2351,8 +2718,12 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionU
   GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals_FieldNumber_VersionSignalsArray = 1,
 };
 
+/**
+ * VersionSignals holds a collection of version signal entries
+ **/
 GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals : GPBMessage
 
+/** List of version signal entries */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal*> *versionSignalsArray;
 /** The number of items in @c versionSignalsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger versionSignalsArray_Count;
@@ -2366,10 +2737,15 @@ typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionU
   GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber_Version = 2,
 };
 
+/**
+ * VersionSignal represents a single voting signal for a protocol version
+ **/
 GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal : GPBMessage
 
+/** The masternode provider transaction hash associated with the vote */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *proTxHash;
 
+/** The protocol version number that is being voted on */
 @property(nonatomic, readwrite) uint32_t version;
 
 @end
@@ -2409,14 +2785,18 @@ typedef GPB_ENUM(GetEpochsInfoRequest_GetEpochsInfoRequestV0_FieldNumber) {
 
 GPB_FINAL @interface GetEpochsInfoRequest_GetEpochsInfoRequestV0 : GPBMessage
 
+/** The starting epoch for the request */
 @property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *startEpoch;
 /** Test to see if @c startEpoch has been set. */
 @property(nonatomic, readwrite) BOOL hasStartEpoch;
 
+/** The number of epochs to retrieve information for */
 @property(nonatomic, readwrite) uint32_t count;
 
+/** Flag indicating if the epochs should be listed in ascending order */
 @property(nonatomic, readwrite) BOOL ascending;
 
+/** Flag to request a proof as the response */
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -2463,10 +2843,13 @@ GPB_FINAL @interface GetEpochsInfoResponse_GetEpochsInfoResponseV0 : GPBMessage
 
 @property(nonatomic, readonly) GetEpochsInfoResponse_GetEpochsInfoResponseV0_Result_OneOfCase resultOneOfCase;
 
+/** The actual information about the requested epochs */
 @property(nonatomic, readwrite, strong, null_resettable) GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos *epochs;
 
+/** Cryptographic proof of the epoch information, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
+/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -2484,8 +2867,12 @@ typedef GPB_ENUM(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos_FieldN
   GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos_FieldNumber_EpochInfosArray = 1,
 };
 
+/**
+ * EpochInfos holds a collection of epoch information entries
+ **/
 GPB_FINAL @interface GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos : GPBMessage
 
+/** List of information for each requested epoch */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo*> *epochInfosArray;
 /** The number of items in @c epochInfosArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger epochInfosArray_Count;
@@ -2503,21 +2890,1059 @@ typedef GPB_ENUM(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNu
   GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNumber_ProtocolVersion = 6,
 };
 
+/**
+ * EpochInfo represents information about a single epoch
+ **/
 GPB_FINAL @interface GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo : GPBMessage
 
+/** The number of the epoch */
 @property(nonatomic, readwrite) uint32_t number;
 
+/** The height of the first block in this epoch */
 @property(nonatomic, readwrite) uint64_t firstBlockHeight;
 
+/** The height of the first Core block in this epoch */
 @property(nonatomic, readwrite) uint32_t firstCoreBlockHeight;
 
+/** The start time of the epoch */
 @property(nonatomic, readwrite) uint64_t startTime;
 
+/** The fee multiplier applicable in this epoch */
 @property(nonatomic, readwrite) double feeMultiplier;
 
 @property(nonatomic, readwrite) uint32_t protocolVersion;
 
 @end
+
+#pragma mark - GetContestedResourcesRequest
+
+typedef GPB_ENUM(GetContestedResourcesRequest_FieldNumber) {
+  GetContestedResourcesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetContestedResourcesRequest_Version_OneOfCase) {
+  GetContestedResourcesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContestedResourcesRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetContestedResourcesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetContestedResourcesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourcesRequest_GetContestedResourcesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetContestedResourcesRequest_ClearVersionOneOfCase(GetContestedResourcesRequest *message);
+
+#pragma mark - GetContestedResourcesRequest_GetContestedResourcesRequestV0
+
+typedef GPB_ENUM(GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber) {
+  GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_ContractId = 1,
+  GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_DocumentTypeName = 2,
+  GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_IndexName = 3,
+  GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_StartIndexValuesArray = 4,
+  GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_EndIndexValuesArray = 5,
+  GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_StartAtValueInfo = 6,
+  GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_Count = 7,
+  GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_OrderAscending = 8,
+  GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_Prove = 9,
+};
+
+GPB_FINAL @interface GetContestedResourcesRequest_GetContestedResourcesRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *indexName;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *startIndexValuesArray;
+/** The number of items in @c startIndexValuesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger startIndexValuesArray_Count;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *endIndexValuesArray;
+/** The number of items in @c endIndexValuesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger endIndexValuesArray_Count;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo *startAtValueInfo;
+/** Test to see if @c startAtValueInfo has been set. */
+@property(nonatomic, readwrite) BOOL hasStartAtValueInfo;
+
+@property(nonatomic, readwrite) uint32_t count;
+
+@property(nonatomic, readwrite) BOOL hasCount;
+@property(nonatomic, readwrite) BOOL orderAscending;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo
+
+typedef GPB_ENUM(GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo_FieldNumber) {
+  GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo_FieldNumber_StartValue = 1,
+  GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo_FieldNumber_StartValueIncluded = 2,
+};
+
+GPB_FINAL @interface GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startValue;
+
+@property(nonatomic, readwrite) BOOL startValueIncluded;
+
+@end
+
+#pragma mark - GetContestedResourcesResponse
+
+typedef GPB_ENUM(GetContestedResourcesResponse_FieldNumber) {
+  GetContestedResourcesResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetContestedResourcesResponse_Version_OneOfCase) {
+  GetContestedResourcesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContestedResourcesResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetContestedResourcesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetContestedResourcesResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourcesResponse_GetContestedResourcesResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetContestedResourcesResponse_ClearVersionOneOfCase(GetContestedResourcesResponse *message);
+
+#pragma mark - GetContestedResourcesResponse_GetContestedResourcesResponseV0
+
+typedef GPB_ENUM(GetContestedResourcesResponse_GetContestedResourcesResponseV0_FieldNumber) {
+  GetContestedResourcesResponse_GetContestedResourcesResponseV0_FieldNumber_ContestedResourceValues = 1,
+  GetContestedResourcesResponse_GetContestedResourcesResponseV0_FieldNumber_Proof = 2,
+  GetContestedResourcesResponse_GetContestedResourcesResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetContestedResourcesResponse_GetContestedResourcesResponseV0_Result_OneOfCase) {
+  GetContestedResourcesResponse_GetContestedResourcesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContestedResourcesResponse_GetContestedResourcesResponseV0_Result_OneOfCase_ContestedResourceValues = 1,
+  GetContestedResourcesResponse_GetContestedResourcesResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetContestedResourcesResponse_GetContestedResourcesResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetContestedResourcesResponse_GetContestedResourcesResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues *contestedResourceValues;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetContestedResourcesResponse_GetContestedResourcesResponseV0_ClearResultOneOfCase(GetContestedResourcesResponse_GetContestedResourcesResponseV0 *message);
+
+#pragma mark - GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues
+
+typedef GPB_ENUM(GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues_FieldNumber) {
+  GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues_FieldNumber_ContestedResourceValuesArray = 1,
+};
+
+GPB_FINAL @interface GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *contestedResourceValuesArray;
+/** The number of items in @c contestedResourceValuesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger contestedResourceValuesArray_Count;
+
+@end
+
+#pragma mark - GetVotePollsByEndDateRequest
+
+typedef GPB_ENUM(GetVotePollsByEndDateRequest_FieldNumber) {
+  GetVotePollsByEndDateRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetVotePollsByEndDateRequest_Version_OneOfCase) {
+  GetVotePollsByEndDateRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetVotePollsByEndDateRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetVotePollsByEndDateRequest : GPBMessage
+
+@property(nonatomic, readonly) GetVotePollsByEndDateRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetVotePollsByEndDateRequest_ClearVersionOneOfCase(GetVotePollsByEndDateRequest *message);
+
+#pragma mark - GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0
+
+typedef GPB_ENUM(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_FieldNumber) {
+  GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_FieldNumber_StartTimeInfo = 1,
+  GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_FieldNumber_EndTimeInfo = 2,
+  GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_FieldNumber_Limit = 3,
+  GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_FieldNumber_Offset = 4,
+  GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_FieldNumber_Ascending = 5,
+  GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_FieldNumber_Prove = 6,
+};
+
+GPB_FINAL @interface GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo *startTimeInfo;
+/** Test to see if @c startTimeInfo has been set. */
+@property(nonatomic, readwrite) BOOL hasStartTimeInfo;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo *endTimeInfo;
+/** Test to see if @c endTimeInfo has been set. */
+@property(nonatomic, readwrite) BOOL hasEndTimeInfo;
+
+@property(nonatomic, readwrite) uint32_t limit;
+
+@property(nonatomic, readwrite) BOOL hasLimit;
+@property(nonatomic, readwrite) uint32_t offset;
+
+@property(nonatomic, readwrite) BOOL hasOffset;
+@property(nonatomic, readwrite) BOOL ascending;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo
+
+typedef GPB_ENUM(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo_FieldNumber) {
+  GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo_FieldNumber_StartTimeMs = 1,
+  GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo_FieldNumber_StartTimeIncluded = 2,
+};
+
+GPB_FINAL @interface GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t startTimeMs;
+
+@property(nonatomic, readwrite) BOOL startTimeIncluded;
+
+@end
+
+#pragma mark - GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo
+
+typedef GPB_ENUM(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo_FieldNumber) {
+  GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo_FieldNumber_EndTimeMs = 1,
+  GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo_FieldNumber_EndTimeIncluded = 2,
+};
+
+GPB_FINAL @interface GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t endTimeMs;
+
+@property(nonatomic, readwrite) BOOL endTimeIncluded;
+
+@end
+
+#pragma mark - GetVotePollsByEndDateResponse
+
+typedef GPB_ENUM(GetVotePollsByEndDateResponse_FieldNumber) {
+  GetVotePollsByEndDateResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetVotePollsByEndDateResponse_Version_OneOfCase) {
+  GetVotePollsByEndDateResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetVotePollsByEndDateResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetVotePollsByEndDateResponse : GPBMessage
+
+@property(nonatomic, readonly) GetVotePollsByEndDateResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetVotePollsByEndDateResponse_ClearVersionOneOfCase(GetVotePollsByEndDateResponse *message);
+
+#pragma mark - GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0
+
+typedef GPB_ENUM(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_FieldNumber) {
+  GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_FieldNumber_VotePollsByTimestamps = 1,
+  GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_FieldNumber_Proof = 2,
+  GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_Result_OneOfCase) {
+  GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_Result_OneOfCase_VotePollsByTimestamps = 1,
+  GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps *votePollsByTimestamps;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_ClearResultOneOfCase(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0 *message);
+
+#pragma mark - GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp
+
+typedef GPB_ENUM(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp_FieldNumber) {
+  GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp_FieldNumber_Timestamp = 1,
+  GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp_FieldNumber_SerializedVotePollsArray = 2,
+};
+
+GPB_FINAL @interface GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t timestamp;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *serializedVotePollsArray;
+/** The number of items in @c serializedVotePollsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger serializedVotePollsArray_Count;
+
+@end
+
+#pragma mark - GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps
+
+typedef GPB_ENUM(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps_FieldNumber) {
+  GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps_FieldNumber_VotePollsByTimestampsArray = 1,
+  GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps_FieldNumber_FinishedResults = 2,
+};
+
+GPB_FINAL @interface GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp*> *votePollsByTimestampsArray;
+/** The number of items in @c votePollsByTimestampsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger votePollsByTimestampsArray_Count;
+
+@property(nonatomic, readwrite) BOOL finishedResults;
+
+@end
+
+#pragma mark - GetContestedResourceVoteStateRequest
+
+typedef GPB_ENUM(GetContestedResourceVoteStateRequest_FieldNumber) {
+  GetContestedResourceVoteStateRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetContestedResourceVoteStateRequest_Version_OneOfCase) {
+  GetContestedResourceVoteStateRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContestedResourceVoteStateRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * What's the state of a contested resource vote? (ie who is winning?)
+ **/
+GPB_FINAL @interface GetContestedResourceVoteStateRequest : GPBMessage
+
+@property(nonatomic, readonly) GetContestedResourceVoteStateRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetContestedResourceVoteStateRequest_ClearVersionOneOfCase(GetContestedResourceVoteStateRequest *message);
+
+#pragma mark - GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0
+
+typedef GPB_ENUM(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber) {
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_ContractId = 1,
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_DocumentTypeName = 2,
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_IndexName = 3,
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_IndexValuesArray = 4,
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_ResultType = 5,
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_AllowIncludeLockedAndAbstainingVoteTally = 6,
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_StartAtIdentifierInfo = 7,
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_Count = 8,
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_Prove = 9,
+};
+
+GPB_FINAL @interface GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *indexName;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *indexValuesArray;
+/** The number of items in @c indexValuesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger indexValuesArray_Count;
+
+@property(nonatomic, readwrite) GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType resultType;
+
+@property(nonatomic, readwrite) BOOL allowIncludeLockedAndAbstainingVoteTally;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo *startAtIdentifierInfo;
+/** Test to see if @c startAtIdentifierInfo has been set. */
+@property(nonatomic, readwrite) BOOL hasStartAtIdentifierInfo;
+
+@property(nonatomic, readwrite) uint32_t count;
+
+@property(nonatomic, readwrite) BOOL hasCount;
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0's @c resultType property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_RawValue(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0 *message);
+/**
+ * Sets the raw value of an @c GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0's @c resultType property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_RawValue(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0 *message, int32_t value);
+
+#pragma mark - GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo
+
+typedef GPB_ENUM(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo_FieldNumber) {
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo_FieldNumber_StartIdentifier = 1,
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo_FieldNumber_StartIdentifierIncluded = 2,
+};
+
+GPB_FINAL @interface GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startIdentifier;
+
+@property(nonatomic, readwrite) BOOL startIdentifierIncluded;
+
+@end
+
+#pragma mark - GetContestedResourceVoteStateResponse
+
+typedef GPB_ENUM(GetContestedResourceVoteStateResponse_FieldNumber) {
+  GetContestedResourceVoteStateResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetContestedResourceVoteStateResponse_Version_OneOfCase) {
+  GetContestedResourceVoteStateResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContestedResourceVoteStateResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetContestedResourceVoteStateResponse : GPBMessage
+
+@property(nonatomic, readonly) GetContestedResourceVoteStateResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetContestedResourceVoteStateResponse_ClearVersionOneOfCase(GetContestedResourceVoteStateResponse *message);
+
+#pragma mark - GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0
+
+typedef GPB_ENUM(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FieldNumber) {
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FieldNumber_ContestedResourceContenders = 1,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FieldNumber_Proof = 2,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Result_OneOfCase) {
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Result_OneOfCase_ContestedResourceContenders = 1,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders *contestedResourceContenders;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ClearResultOneOfCase(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0 *message);
+
+#pragma mark - GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo
+
+typedef GPB_ENUM(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber) {
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedVoteOutcome = 1,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_WonByIdentityId = 2,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedAtBlockHeight = 3,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedAtCoreBlockHeight = 4,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedAtBlockTimeMs = 5,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedAtEpoch = 6,
+};
+
+GPB_FINAL @interface GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo : GPBMessage
+
+@property(nonatomic, readwrite) GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome finishedVoteOutcome;
+
+/** Only used when vote_choice_type is TOWARDS_IDENTITY */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *wonByIdentityId;
+/** Test to see if @c wonByIdentityId has been set. */
+@property(nonatomic, readwrite) BOOL hasWonByIdentityId;
+
+@property(nonatomic, readwrite) uint64_t finishedAtBlockHeight;
+
+@property(nonatomic, readwrite) uint32_t finishedAtCoreBlockHeight;
+
+@property(nonatomic, readwrite) uint64_t finishedAtBlockTimeMs;
+
+@property(nonatomic, readwrite) uint32_t finishedAtEpoch;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo's @c finishedVoteOutcome property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_RawValue(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo *message);
+/**
+ * Sets the raw value of an @c GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo's @c finishedVoteOutcome property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_RawValue(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo *message, int32_t value);
+
+#pragma mark - GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders
+
+typedef GPB_ENUM(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders_FieldNumber) {
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders_FieldNumber_ContendersArray = 1,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders_FieldNumber_AbstainVoteTally = 2,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders_FieldNumber_LockVoteTally = 3,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders_FieldNumber_FinishedVoteInfo = 4,
+};
+
+GPB_FINAL @interface GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender*> *contendersArray;
+/** The number of items in @c contendersArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger contendersArray_Count;
+
+@property(nonatomic, readwrite) uint32_t abstainVoteTally;
+
+@property(nonatomic, readwrite) BOOL hasAbstainVoteTally;
+@property(nonatomic, readwrite) uint32_t lockVoteTally;
+
+@property(nonatomic, readwrite) BOOL hasLockVoteTally;
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo *finishedVoteInfo;
+/** Test to see if @c finishedVoteInfo has been set. */
+@property(nonatomic, readwrite) BOOL hasFinishedVoteInfo;
+
+@end
+
+#pragma mark - GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender
+
+typedef GPB_ENUM(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender_FieldNumber) {
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender_FieldNumber_Identifier = 1,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender_FieldNumber_VoteCount = 2,
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender_FieldNumber_Document = 3,
+};
+
+GPB_FINAL @interface GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identifier;
+
+@property(nonatomic, readwrite) uint32_t voteCount;
+
+@property(nonatomic, readwrite) BOOL hasVoteCount;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *document;
+/** Test to see if @c document has been set. */
+@property(nonatomic, readwrite) BOOL hasDocument;
+
+@end
+
+#pragma mark - GetContestedResourceVotersForIdentityRequest
+
+typedef GPB_ENUM(GetContestedResourceVotersForIdentityRequest_FieldNumber) {
+  GetContestedResourceVotersForIdentityRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetContestedResourceVotersForIdentityRequest_Version_OneOfCase) {
+  GetContestedResourceVotersForIdentityRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContestedResourceVotersForIdentityRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * Who voted for a contested resource to go to a specific identity?
+ **/
+GPB_FINAL @interface GetContestedResourceVotersForIdentityRequest : GPBMessage
+
+@property(nonatomic, readonly) GetContestedResourceVotersForIdentityRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetContestedResourceVotersForIdentityRequest_ClearVersionOneOfCase(GetContestedResourceVotersForIdentityRequest *message);
+
+#pragma mark - GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0
+
+typedef GPB_ENUM(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber) {
+  GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_ContractId = 1,
+  GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_DocumentTypeName = 2,
+  GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_IndexName = 3,
+  GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_IndexValuesArray = 4,
+  GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_ContestantId = 5,
+  GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_StartAtIdentifierInfo = 6,
+  GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_Count = 7,
+  GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_OrderAscending = 8,
+  GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_Prove = 9,
+};
+
+GPB_FINAL @interface GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *indexName;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *indexValuesArray;
+/** The number of items in @c indexValuesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger indexValuesArray_Count;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *contestantId;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo *startAtIdentifierInfo;
+/** Test to see if @c startAtIdentifierInfo has been set. */
+@property(nonatomic, readwrite) BOOL hasStartAtIdentifierInfo;
+
+@property(nonatomic, readwrite) uint32_t count;
+
+@property(nonatomic, readwrite) BOOL hasCount;
+@property(nonatomic, readwrite) BOOL orderAscending;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo
+
+typedef GPB_ENUM(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo_FieldNumber) {
+  GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo_FieldNumber_StartIdentifier = 1,
+  GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo_FieldNumber_StartIdentifierIncluded = 2,
+};
+
+GPB_FINAL @interface GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startIdentifier;
+
+@property(nonatomic, readwrite) BOOL startIdentifierIncluded;
+
+@end
+
+#pragma mark - GetContestedResourceVotersForIdentityResponse
+
+typedef GPB_ENUM(GetContestedResourceVotersForIdentityResponse_FieldNumber) {
+  GetContestedResourceVotersForIdentityResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetContestedResourceVotersForIdentityResponse_Version_OneOfCase) {
+  GetContestedResourceVotersForIdentityResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContestedResourceVotersForIdentityResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetContestedResourceVotersForIdentityResponse : GPBMessage
+
+@property(nonatomic, readonly) GetContestedResourceVotersForIdentityResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetContestedResourceVotersForIdentityResponse_ClearVersionOneOfCase(GetContestedResourceVotersForIdentityResponse *message);
+
+#pragma mark - GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0
+
+typedef GPB_ENUM(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_FieldNumber) {
+  GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_FieldNumber_ContestedResourceVoters = 1,
+  GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_FieldNumber_Proof = 2,
+  GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_Result_OneOfCase) {
+  GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_Result_OneOfCase_ContestedResourceVoters = 1,
+  GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters *contestedResourceVoters;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ClearResultOneOfCase(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0 *message);
+
+#pragma mark - GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters
+
+typedef GPB_ENUM(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters_FieldNumber) {
+  GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters_FieldNumber_VotersArray = 1,
+  GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters_FieldNumber_FinishedResults = 2,
+};
+
+GPB_FINAL @interface GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *votersArray;
+/** The number of items in @c votersArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger votersArray_Count;
+
+@property(nonatomic, readwrite) BOOL finishedResults;
+
+@end
+
+#pragma mark - GetContestedResourceIdentityVotesRequest
+
+typedef GPB_ENUM(GetContestedResourceIdentityVotesRequest_FieldNumber) {
+  GetContestedResourceIdentityVotesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetContestedResourceIdentityVotesRequest_Version_OneOfCase) {
+  GetContestedResourceIdentityVotesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContestedResourceIdentityVotesRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * How did an identity vote?
+ **/
+GPB_FINAL @interface GetContestedResourceIdentityVotesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetContestedResourceIdentityVotesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetContestedResourceIdentityVotesRequest_ClearVersionOneOfCase(GetContestedResourceIdentityVotesRequest *message);
+
+#pragma mark - GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0
+
+typedef GPB_ENUM(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_FieldNumber) {
+  GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_FieldNumber_IdentityId = 1,
+  GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_FieldNumber_Limit = 2,
+  GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_FieldNumber_Offset = 3,
+  GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_FieldNumber_OrderAscending = 4,
+  GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_FieldNumber_StartAtVotePollIdInfo = 5,
+  GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_FieldNumber_Prove = 6,
+};
+
+GPB_FINAL @interface GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
+
+@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *limit;
+/** Test to see if @c limit has been set. */
+@property(nonatomic, readwrite) BOOL hasLimit;
+
+@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *offset;
+/** Test to see if @c offset has been set. */
+@property(nonatomic, readwrite) BOOL hasOffset;
+
+@property(nonatomic, readwrite) BOOL orderAscending;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo *startAtVotePollIdInfo;
+/** Test to see if @c startAtVotePollIdInfo has been set. */
+@property(nonatomic, readwrite) BOOL hasStartAtVotePollIdInfo;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo
+
+typedef GPB_ENUM(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo_FieldNumber) {
+  GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo_FieldNumber_StartAtPollIdentifier = 1,
+  GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo_FieldNumber_StartPollIdentifierIncluded = 2,
+};
+
+GPB_FINAL @interface GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAtPollIdentifier;
+
+@property(nonatomic, readwrite) BOOL startPollIdentifierIncluded;
+
+@end
+
+#pragma mark - GetContestedResourceIdentityVotesResponse
+
+typedef GPB_ENUM(GetContestedResourceIdentityVotesResponse_FieldNumber) {
+  GetContestedResourceIdentityVotesResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetContestedResourceIdentityVotesResponse_Version_OneOfCase) {
+  GetContestedResourceIdentityVotesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContestedResourceIdentityVotesResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetContestedResourceIdentityVotesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetContestedResourceIdentityVotesResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetContestedResourceIdentityVotesResponse_ClearVersionOneOfCase(GetContestedResourceIdentityVotesResponse *message);
+
+#pragma mark - GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0
+
+typedef GPB_ENUM(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_FieldNumber) {
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_FieldNumber_Votes = 1,
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_FieldNumber_Proof = 2,
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_Result_OneOfCase) {
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_Result_OneOfCase_Votes = 1,
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes *votes;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ClearResultOneOfCase(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0 *message);
+
+#pragma mark - GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes
+
+typedef GPB_ENUM(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes_FieldNumber) {
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes_FieldNumber_ContestedResourceIdentityVotesArray = 1,
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes_FieldNumber_FinishedResults = 2,
+};
+
+GPB_FINAL @interface GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote*> *contestedResourceIdentityVotesArray;
+/** The number of items in @c contestedResourceIdentityVotesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger contestedResourceIdentityVotesArray_Count;
+
+@property(nonatomic, readwrite) BOOL finishedResults;
+
+@end
+
+#pragma mark - GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice
+
+typedef GPB_ENUM(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_FieldNumber) {
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_FieldNumber_VoteChoiceType = 1,
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_FieldNumber_IdentityId = 2,
+};
+
+GPB_FINAL @interface GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice : GPBMessage
+
+@property(nonatomic, readwrite) GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType voteChoiceType;
+
+/** Only used when vote_choice_type is TOWARDS_IDENTITY */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
+/** Test to see if @c identityId has been set. */
+@property(nonatomic, readwrite) BOOL hasIdentityId;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice's @c voteChoiceType property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_RawValue(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice *message);
+/**
+ * Sets the raw value of an @c GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice's @c voteChoiceType property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_RawValue(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice *message, int32_t value);
+
+#pragma mark - GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote
+
+typedef GPB_ENUM(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote_FieldNumber) {
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote_FieldNumber_ContractId = 1,
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote_FieldNumber_DocumentTypeName = 2,
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote_FieldNumber_SerializedIndexStorageValuesArray = 3,
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote_FieldNumber_VoteChoice = 4,
+};
+
+GPB_FINAL @interface GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *serializedIndexStorageValuesArray;
+/** The number of items in @c serializedIndexStorageValuesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger serializedIndexStorageValuesArray_Count;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice *voteChoice;
+/** Test to see if @c voteChoice has been set. */
+@property(nonatomic, readwrite) BOOL hasVoteChoice;
+
+@end
+
+#pragma mark - GetPrefundedSpecializedBalanceRequest
+
+typedef GPB_ENUM(GetPrefundedSpecializedBalanceRequest_FieldNumber) {
+  GetPrefundedSpecializedBalanceRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetPrefundedSpecializedBalanceRequest_Version_OneOfCase) {
+  GetPrefundedSpecializedBalanceRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetPrefundedSpecializedBalanceRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetPrefundedSpecializedBalanceRequest : GPBMessage
+
+@property(nonatomic, readonly) GetPrefundedSpecializedBalanceRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetPrefundedSpecializedBalanceRequest_ClearVersionOneOfCase(GetPrefundedSpecializedBalanceRequest *message);
+
+#pragma mark - GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0
+
+typedef GPB_ENUM(GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0_FieldNumber) {
+  GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0_FieldNumber_Id_p = 1,
+  GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetPrefundedSpecializedBalanceResponse
+
+typedef GPB_ENUM(GetPrefundedSpecializedBalanceResponse_FieldNumber) {
+  GetPrefundedSpecializedBalanceResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetPrefundedSpecializedBalanceResponse_Version_OneOfCase) {
+  GetPrefundedSpecializedBalanceResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetPrefundedSpecializedBalanceResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetPrefundedSpecializedBalanceResponse : GPBMessage
+
+@property(nonatomic, readonly) GetPrefundedSpecializedBalanceResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetPrefundedSpecializedBalanceResponse_ClearVersionOneOfCase(GetPrefundedSpecializedBalanceResponse *message);
+
+#pragma mark - GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0
+
+typedef GPB_ENUM(GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_FieldNumber) {
+  GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_FieldNumber_Balance = 1,
+  GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_FieldNumber_Proof = 2,
+  GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_Result_OneOfCase) {
+  GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_Result_OneOfCase_Balance = 1,
+  GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t balance;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_ClearResultOneOfCase(GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0 *message);
 
 #pragma mark - GetPathElementsRequest
 

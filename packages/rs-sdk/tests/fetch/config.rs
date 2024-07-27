@@ -3,7 +3,11 @@
 //! This module contains [Config] struct that can be used to configure dash-platform-sdk.
 //! It's mainly used for testing.
 
-use dpp::prelude::Identifier;
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::{
+    dashcore::{hashes::Hash, ProTxHash},
+    prelude::Identifier,
+};
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
 use std::{path::PathBuf, str::FromStr};
@@ -68,6 +72,9 @@ pub struct Config {
     /// in [`existing_data_contract_id`](Config::existing_data_contract_id).
     #[serde(default = "Config::default_document_id")]
     pub existing_document_id: Identifier,
+    // Hex-encoded ProTxHash of the existing HP masternode
+    #[serde(default)]
+    pub masternode_owner_pro_reg_tx_hash: String,
 }
 
 impl Config {
@@ -147,7 +154,11 @@ impl Config {
     pub async fn setup_api(&self, namespace: &str) -> dash_sdk::Sdk {
         let dump_dir = match namespace.is_empty() {
             true => self.dump_dir.clone(),
-            false => self.dump_dir.join(sanitize_filename::sanitize(namespace)),
+            false => {
+                // looks like spaces are not replaced by sanitize_filename, and we don't want them as they are confusing
+                let namespace = namespace.replace(' ', "_");
+                self.dump_dir.join(sanitize_filename::sanitize(namespace))
+            }
         };
 
         if dump_dir.is_relative() {
@@ -180,9 +191,12 @@ impl Config {
                     if let Err(err) = std::fs::remove_dir_all(&dump_dir) {
                         tracing::warn!(?err, ?dump_dir, "failed to remove dump dir");
                     }
-                    std::fs::create_dir_all(&dump_dir).expect("create dump dir");
+                    std::fs::create_dir_all(&dump_dir)
+                        .expect(format!("create dump dir {}", dump_dir.display()).as_str());
                     // ensure dump dir is committed to git
-                    std::fs::write(dump_dir.join(".gitkeep"), "").expect("create .gitkeep file")
+                    let gitkeep = dump_dir.join(".gitkeep");
+                    std::fs::write(&gitkeep, "")
+                        .expect(format!("create {} file", gitkeep.display()).as_str());
                 }
 
                 builder.with_dump_dir(&dump_dir)
@@ -212,7 +226,16 @@ impl Config {
     }
 
     fn default_identity_id() -> Identifier {
-        data_contracts::dpns_contract::OWNER_ID_BYTES.into()
+        // TODO: We don't have default system identities anymore.
+        //  So now I used this manually created identity to populate test vectors.
+        //  Next time we need to do it again and update this value :(. This is terrible.
+        //  We should automate creation of identity for SDK tests when we have time.
+        Identifier::from_string(
+            "J2aTnrrc8eea3pQBY91QisM3QH5FM9JK11mQCVwxeMqj",
+            Encoding::Base58,
+        )
+        .unwrap()
+        .into()
     }
 
     fn default_data_contract_id() -> Identifier {
@@ -230,6 +253,21 @@ impl Config {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("vectors")
+    }
+
+    /// Return ProTxHash of an existing evo node, or None if not set
+    pub fn existing_protxhash(&self) -> Result<ProTxHash, String> {
+        hex::decode(&self.masternode_owner_pro_reg_tx_hash)
+            .map_err(|e| e.to_string())
+            .and_then(|b| ProTxHash::from_slice(&b).map_err(|e| e.to_string()))
+            .map_err(|e| {
+                format!(
+                    "Invalid {}MASTERNODE_OWNER_PRO_REG_TX_HASH {}: {}",
+                    Self::CONFIG_PREFIX,
+                    self.masternode_owner_pro_reg_tx_hash,
+                    e
+                )
+            })
     }
 }
 

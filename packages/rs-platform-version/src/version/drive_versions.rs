@@ -1,4 +1,5 @@
 use crate::version::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
+use grovedb_version::version::GroveVersion;
 
 #[derive(Clone, Debug, Default)]
 #[ferment_macro::export]
@@ -6,12 +7,7 @@ pub struct DriveVersion {
     pub structure: DriveStructureVersion,
     pub methods: DriveMethodVersions,
     pub grove_methods: DriveGroveMethodVersions,
-}
-
-impl DriveVersion {
-    pub fn latest() -> DriveVersion {
-        DriveVersion::default()
-    }
+    pub grove_version: GroveVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -20,8 +16,10 @@ pub struct DriveMethodVersions {
     pub initialization: DriveInitializationMethodVersions,
     pub credit_pools: DriveCreditPoolMethodVersions,
     pub protocol_upgrade: DriveProtocolUpgradeVersions,
+    pub prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions,
     pub balances: DriveBalancesMethodVersions,
     pub document: DriveDocumentMethodVersions,
+    pub vote: DriveVoteMethodVersions,
     pub contract: DriveContractMethodVersions,
     pub fees: DriveFeesMethodVersions,
     pub estimated_costs: DriveEstimatedCostsMethodVersions,
@@ -48,6 +46,30 @@ pub struct DrivePlatformStateMethodVersions {
 #[ferment_macro::export]
 pub struct DriveStateTransitionMethodVersions {
     pub operations: DriveStateTransitionOperationMethodVersions,
+    pub convert_to_high_level_operations:
+        DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions {
+    pub data_contract_create_transition: FeatureVersion,
+    pub data_contract_update_transition: FeatureVersion,
+    pub document_create_transition: FeatureVersion,
+    pub document_delete_transition: FeatureVersion,
+    pub document_purchase_transition: FeatureVersion,
+    pub document_replace_transition: FeatureVersion,
+    pub document_transfer_transition: FeatureVersion,
+    pub document_update_price_transition: FeatureVersion,
+    pub documents_batch_transition: FeatureVersion,
+    pub identity_create_transition: FeatureVersion,
+    pub identity_credit_transfer_transition: FeatureVersion,
+    pub identity_credit_withdrawal_transition: FeatureVersion,
+    pub identity_top_up_transition: FeatureVersion,
+    pub identity_update_transition: FeatureVersion,
+    pub masternode_vote_transition: FeatureVersion,
+    pub bump_identity_data_contract_nonce: FeatureVersion,
+    pub bump_identity_nonce: FeatureVersion,
+    pub partially_use_asset_lock: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -84,6 +106,7 @@ pub struct DriveVerifyMethodVersions {
     pub identity: DriveVerifyIdentityMethodVersions,
     pub single_document: DriveVerifySingleDocumentMethodVersions,
     pub system: DriveVerifySystemMethodVersions,
+    pub voting: DriveVerifyVoteMethodVersions,
     pub state_transition: DriveVerifyStateTransitionMethodVersions,
 }
 
@@ -119,7 +142,18 @@ pub struct DriveVerifyIdentityMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
-#[ferment_macro::export]
+pub struct DriveVerifyVoteMethodVersions {
+    pub verify_masternode_vote: FeatureVersion,
+    pub verify_start_at_contender_in_proof: FeatureVersion,
+    pub verify_vote_poll_votes_proof: FeatureVersion,
+    pub verify_identity_votes_given_proof: FeatureVersion,
+    pub verify_vote_poll_vote_state_proof: FeatureVersion,
+    pub verify_contests_proof: FeatureVersion,
+    pub verify_vote_polls_by_end_date_proof: FeatureVersion,
+    pub verify_specialized_balance: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct DriveVerifySystemMethodVersions {
     pub verify_epoch_infos: FeatureVersion,
     pub verify_elements: FeatureVersion,
@@ -150,7 +184,17 @@ pub struct DriveGroveMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
-#[ferment_macro::export]
+pub struct DrivePrefundedSpecializedMethodVersions {
+    pub fetch_single: FeatureVersion,
+    pub prove_single: FeatureVersion,
+    pub add_prefunded_specialized_balance: FeatureVersion,
+    pub add_prefunded_specialized_balance_operations: FeatureVersion,
+    pub deduct_from_prefunded_specialized_balance: FeatureVersion,
+    pub deduct_from_prefunded_specialized_balance_operations: FeatureVersion,
+    pub estimated_cost_for_prefunded_specialized_balance_update: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct DriveBalancesMethodVersions {
     pub add_to_system_credits: FeatureVersion,
     pub add_to_system_credits_operations: FeatureVersion,
@@ -270,10 +314,68 @@ pub struct DriveSystemEstimationCostsMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 #[ferment_macro::export]
+pub struct DriveVoteMethodVersions {
+    pub insert: DriveVoteInsertMethodVersions,
+    pub contested_resource_insert: DriveVoteContestedResourceInsertMethodVersions,
+    pub cleanup: DriveVoteCleanupMethodVersions,
+    pub setup: DriveVoteSetupMethodVersions,
+    pub storage_form: DriveVoteStorageFormMethodVersions,
+    pub fetch: DriveVoteFetchMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
+pub struct DriveVoteFetchMethodVersions {
+    pub fetch_identities_voting_for_contenders: FeatureVersion,
+    pub fetch_contested_document_vote_poll_stored_info: FeatureVersion,
+    pub fetch_identity_contested_resource_vote: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
+pub struct DriveVoteStorageFormMethodVersions {
+    pub resolve_with_contract: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
+pub struct DriveVoteSetupMethodVersions {
+    pub add_initial_vote_tree_main_structure_operations: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
+pub struct DriveVoteCleanupMethodVersions {
+    pub remove_specific_vote_references_given_by_identity: FeatureVersion,
+    pub remove_specific_votes_given_by_identity: FeatureVersion,
+    pub remove_contested_resource_vote_poll_end_date_query_operations: FeatureVersion,
+    pub remove_contested_resource_vote_poll_votes_operations: FeatureVersion,
+    pub remove_contested_resource_vote_poll_documents_operations: FeatureVersion,
+    pub remove_contested_resource_vote_poll_contenders_operations: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
+pub struct DriveVoteInsertMethodVersions {
+    pub register_identity_vote: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
+pub struct DriveVoteContestedResourceInsertMethodVersions {
+    pub register_contested_resource_identity_vote: FeatureVersion,
+    pub insert_stored_info_for_contested_resource_vote_poll: FeatureVersion,
+    pub register_identity_vote: FeatureVersion,
+    pub add_vote_poll_end_date_query_operations: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveDocumentMethodVersions {
     pub query: DriveDocumentQueryMethodVersions,
     pub delete: DriveDocumentDeleteMethodVersions,
     pub insert: DriveDocumentInsertMethodVersions,
+    pub insert_contested: DriveDocumentInsertContestedMethodVersions,
     pub update: DriveDocumentUpdateMethodVersions,
     pub estimation_costs: DriveDocumentEstimationCostsMethodVersions,
     pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
@@ -289,6 +391,7 @@ pub struct DriveDocumentQueryMethodVersions {
 #[ferment_macro::export]
 pub struct DriveDocumentEstimationCostsMethodVersions {
     pub add_estimation_costs_for_add_document_to_primary_storage: FeatureVersion,
+    pub add_estimation_costs_for_add_contested_document_to_primary_storage: FeatureVersion,
     pub stateless_delete_of_non_tree_for_costs: FeatureVersion,
 }
 
@@ -303,6 +406,19 @@ pub struct DriveDocumentInsertMethodVersions {
     pub add_indices_for_index_level_for_contract_operations: FeatureVersion,
     pub add_indices_for_top_index_level_for_contract_operations: FeatureVersion,
     pub add_reference_for_index_level_for_contract_operations: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
+pub struct DriveDocumentInsertContestedMethodVersions {
+    pub add_contested_document: FeatureVersion,
+    pub add_contested_document_for_contract: FeatureVersion,
+    pub add_contested_document_for_contract_apply_and_add_to_operations: FeatureVersion,
+    pub add_contested_document_for_contract_operations: FeatureVersion,
+    pub add_contested_document_to_primary_storage: FeatureVersion,
+    pub add_contested_indices_for_contract_operations: FeatureVersion,
+    pub add_contested_reference_and_vote_subtree_to_document_operations: FeatureVersion,
+    pub add_contested_vote_subtree_for_non_identities_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -359,6 +475,7 @@ pub struct DriveGroveBasicMethodVersions {
     pub grove_get_raw_value_u64_from_encoded_var_vec: FeatureVersion,
     pub grove_get: FeatureVersion,
     pub grove_get_path_query_serialized_results: FeatureVersion,
+    pub grove_get_path_query_serialized_or_sum_results: FeatureVersion,
     pub grove_get_path_query: FeatureVersion,
     pub grove_get_path_query_with_optional: FeatureVersion,
     pub grove_get_raw_path_query_with_optional: FeatureVersion,
@@ -378,6 +495,7 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_insert: FeatureVersion,
     pub batch_insert_if_not_exists: FeatureVersion,
     pub batch_insert_if_changed_value: FeatureVersion,
+    pub batch_replace: FeatureVersion,
     pub batch_delete: FeatureVersion,
     pub batch_remove_raw: FeatureVersion,
     pub batch_delete_up_tree_while_empty: FeatureVersion,
@@ -417,6 +535,7 @@ pub struct DriveCreditPoolMethodVersions {
 #[ferment_macro::export]
 pub struct DriveCreditPoolEpochsMethodVersions {
     pub get_epochs_infos: FeatureVersion,
+    pub get_epochs_protocol_versions: FeatureVersion,
     pub prove_epochs_infos: FeatureVersion,
     pub get_epoch_fee_multiplier: FeatureVersion,
     pub get_epoch_processing_credits_for_distribution: FeatureVersion,
@@ -590,9 +709,11 @@ pub struct DriveIdentityFetchFullIdentityMethodVersions {
 #[derive(Clone, Debug, Default)]
 #[ferment_macro::export]
 pub struct DriveIdentityFetchPartialIdentityMethodVersions {
+    pub fetch_identity_revision_with_keys: FeatureVersion,
     pub fetch_identity_balance_with_keys: FeatureVersion,
     pub fetch_identity_balance_with_keys_and_revision: FeatureVersion,
     pub fetch_identity_with_balance: FeatureVersion,
+    pub fetch_identity_keys: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -689,4 +810,7 @@ pub struct DriveIdentityUpdateMethodVersions {
 pub struct DriveEstimatedCostsMethodVersions {
     pub add_estimation_costs_for_levels_up_to_contract: FeatureVersion,
     pub add_estimation_costs_for_levels_up_to_contract_document_type_excluded: FeatureVersion,
+    pub add_estimation_costs_for_contested_document_tree_levels_up_to_contract: FeatureVersion,
+    pub add_estimation_costs_for_contested_document_tree_levels_up_to_contract_document_type_excluded:
+        FeatureVersion,
 }

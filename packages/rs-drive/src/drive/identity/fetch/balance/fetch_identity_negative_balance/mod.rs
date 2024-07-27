@@ -3,8 +3,8 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use dpp::balances::credits::Credits;
+use crate::fees::op::LowLevelDriveOperation;
+use dpp::fee::Credits;
 
 use dpp::version::PlatformVersion;
 

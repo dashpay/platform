@@ -1,7 +1,7 @@
 use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::PlatformVersion;
 use grovedb::Element::Item;
@@ -49,6 +49,7 @@ impl Drive {
         let path_query = PathQuery::new(unique_key_hashes, sized_query);
         self.grove_get_raw_path_query_with_optional(
             &path_query,
+            true,
             transaction,
             drive_operations,
             &platform_version.drive,

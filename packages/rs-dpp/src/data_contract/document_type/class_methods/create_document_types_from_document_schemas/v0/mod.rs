@@ -63,3 +63,41 @@ impl DocumentTypeV0 {
         Ok(contract_document_types)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
+    use crate::data_contract::errors::DataContractError;
+    use assert_matches::assert_matches;
+    use platform_value::Identifier;
+    use std::ops::Deref;
+
+    #[test]
+    pub fn should_not_allow_creating_document_types_with_empty_schema() {
+        let id = Identifier::random();
+
+        let result = DocumentType::create_document_types_from_document_schemas(
+            id,
+            Default::default(),
+            None,
+            false,
+            false,
+            false,
+            false,
+            &mut vec![],
+            PlatformVersion::latest(),
+        );
+
+        assert_matches!(result, Err(ProtocolError::ConsensusError(e)) => {
+            assert_matches!(e.deref(), ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::DocumentTypesAreMissingError(
+                    DocumentTypesAreMissingError { .. }
+                )
+            )));
+        });
+    }
+}

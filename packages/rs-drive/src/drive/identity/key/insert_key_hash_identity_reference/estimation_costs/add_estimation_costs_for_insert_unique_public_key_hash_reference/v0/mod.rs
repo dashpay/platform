@@ -1,11 +1,10 @@
-use crate::drive::defaults::{DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U32};
-
 use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::AllItems;
 
+use crate::util::type_constants::{DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U32};
 use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
 

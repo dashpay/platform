@@ -1,7 +1,8 @@
 use crate::data_contract::DataContract;
 use crate::document::Document;
 use crate::identity::{Identity, PartialIdentity};
-use platform_value::types::identifier::Identifier;
+use crate::voting::votes::Vote;
+use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 #[derive(Debug)]
@@ -12,4 +13,5 @@ pub enum StateTransitionProofResult {
     VerifiedPartialIdentity(PartialIdentity),
     VerifiedBalanceTransfer(PartialIdentity, PartialIdentity), //from/to
     VerifiedDocuments(BTreeMap<Identifier, Option<Document>>),
+    VerifiedMasternodeVote(Vote),
 }

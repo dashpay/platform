@@ -5,9 +5,6 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::fee_result::FeeResult;
-use dpp::util::hash::hash_single;
-use dpp::validation::ConsensusValidationResult;
-use std::time::Instant;
 
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::state_transition_container::v0::{
@@ -17,12 +14,18 @@ use crate::execution::types::state_transition_container::v0::{
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::metrics::state_transition_execution_histogram;
 use crate::platform_types::event_execution_result::EventExecutionResult;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::{
     StateTransitionExecutionResult, StateTransitionsProcessingResult,
 };
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::util::hash::hash_single;
+use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
+use std::time::Instant;
 
+#[derive(Debug)]
 struct StateTransitionAwareError<'t> {
     error: Error,
     raw_state_transition: &'t [u8],
@@ -110,11 +113,12 @@ where
                     .map(|validation_result| {
                         self.process_validation_result_v0(
                             raw_state_transition,
-                            state_transition_name,
+                            &state_transition_name,
                             validation_result,
                             block_info,
                             transaction,
                             platform_version,
+                            platform_ref.state.previous_fee_versions(),
                         )
                         .unwrap_or_else(error_to_internal_error_execution_result)
                     })
@@ -137,7 +141,11 @@ where
                         StateTransitionExecutionResult::InternalError(_) => 1,
                     };
 
-                    state_transition_execution_histogram(elapsed_time, state_transition_name, code);
+                    state_transition_execution_histogram(
+                        elapsed_time,
+                        &state_transition_name,
+                        code,
+                    );
 
                     execution_result
                 }
@@ -199,6 +207,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<StateTransitionExecutionResult, StateTransitionAwareError<'a>> {
         // State Transition is invalid
         if !validation_result.is_valid() {
@@ -213,6 +222,19 @@ where
                     .errors
                     // the first error must be present for an invalid result
                     .remove(0);
+
+                if tracing::enabled!(tracing::Level::DEBUG) {
+                    let st_hash = hex::encode(hash_single(raw_state_transition));
+
+                    tracing::debug!(
+                        error = ?first_consensus_error,
+                        st_hash,
+                        "Invalid {} state transition without identity ({}): {}",
+                        state_transition_name,
+                        st_hash,
+                        &first_consensus_error
+                    );
+                }
 
                 // We don't have execution event, so we can't pay for processing
                 return Ok(StateTransitionExecutionResult::UnpaidConsensusError(
@@ -239,6 +261,7 @@ where
                     block_info,
                     transaction,
                     platform_version,
+                    previous_fee_versions,
                 )
                 .map_err(|error| StateTransitionAwareError {
                     error,
@@ -330,6 +353,7 @@ where
                 block_info,
                 transaction,
                 platform_version,
+                previous_fee_versions,
             )
             .map_err(|error| StateTransitionAwareError {
                 error,

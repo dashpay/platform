@@ -24,8 +24,7 @@ pub use dpp::{
     document::Document,
     prelude::Revision,
 };
-use dpp::platform_value;
-pub use drive::query::DriveQuery;
+pub use drive::query::DriveDocumentQuery;
 pub use drive_proof_verifier::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use drive_proof_verifier::MockContextProvider;
@@ -35,5 +34,5 @@ pub use {
     document_query::DocumentQuery,
     fetch::Fetch,
     fetch_many::FetchMany,
-    query::{LimitQuery, Query, DEFAULT_EPOCH_QUERY_LIMIT},
+    query::{LimitQuery, Query, QueryStartInfo, DEFAULT_EPOCH_QUERY_LIMIT},
 };

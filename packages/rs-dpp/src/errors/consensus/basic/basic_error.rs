@@ -8,6 +8,7 @@ use crate::errors::consensus::basic::data_contract::data_contract_max_depth_exce
 #[cfg(feature = "json-schema-validation")]
 use crate::errors::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::errors::consensus::basic::data_contract::{
+    ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError,
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
     DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
     DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError,
@@ -24,13 +25,13 @@ use crate::errors::consensus::basic::decode::{
 };
 use crate::errors::consensus::basic::document::{
     DataContractNotPresentError, DocumentCreationNotAllowedError,
-    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
-    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
-    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
-    MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
+    DocumentFieldMaxSizeExceededError, DocumentTransitionsAreAbsentError,
+    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
+    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
+    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
+    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::errors::consensus::basic::identity::{
     DataContractBoundsNotPresentError,
@@ -59,9 +60,12 @@ use crate::errors::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
     StateTransitionMaxSizeExceededError,
 };
-use crate::errors::consensus::basic::{IncompatibleProtocolVersionError, UnsupportedProtocolVersionError};
+use crate::errors::consensus::basic::{
+    IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
+};
 use crate::errors::consensus::ConsensusError;
 
+use crate::errors::consensus::basic::overflow_error::OverflowError;
 use crate::errors::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::errors::consensus::basic::value_error::ValueError;
 #[cfg(feature = "json-schema-validation")]
@@ -71,7 +75,9 @@ use crate::errors::consensus::basic::{
 use crate::errors::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
 use crate::data_contract::errors::contract::DataContractError;
 
-#[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
+#[derive(
+    Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, PartialEq, Clone,
+)]
 #[ferment_macro::export]
 pub enum BasicError {
     /*
@@ -362,6 +368,9 @@ pub enum BasicError {
     MissingStateTransitionTypeError(MissingStateTransitionTypeError),
 
     #[error(transparent)]
+    DocumentFieldMaxSizeExceededError(DocumentFieldMaxSizeExceededError),
+
+    #[error(transparent)]
     StateTransitionMaxSizeExceededError(StateTransitionMaxSizeExceededError),
 
     #[error(transparent)]
@@ -375,6 +384,18 @@ pub enum BasicError {
 
     #[error(transparent)]
     IncompatibleDocumentTypeSchemaError(IncompatibleDocumentTypeSchemaError),
+
+    #[error(transparent)]
+    ContestedUniqueIndexOnMutableDocumentTypeError(ContestedUniqueIndexOnMutableDocumentTypeError),
+
+    #[error(transparent)]
+    ContestedUniqueIndexWithUniqueIndexError(ContestedUniqueIndexWithUniqueIndexError),
+
+    #[error(transparent)]
+    OverflowError(OverflowError),
+
+    #[error(transparent)]
+    UnsupportedFeatureError(UnsupportedFeatureError),
 }
 
 impl From<BasicError> for ConsensusError {

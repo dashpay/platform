@@ -7,7 +7,9 @@ use crate::errors::consensus::ConsensusError;
 use crate::data_contract::errors::contract::DataContractError;
 use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("Decoding error: {error}")]
 #[platform_serialize(unversioned)]
 #[ferment_macro::export]

@@ -1,104 +1,32 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Epochs Mod File.
 //!
 
-use crate::drive::credit_pools::paths::pools_path;
-use crate::drive::Drive;
-use crate::error::Error;
-use dpp::block::epoch::Epoch;
-use grovedb::TransactionArg;
-
+#[cfg(feature = "server")]
 pub mod credit_distribution_pools;
+#[cfg(feature = "server")]
 mod get_epochs_infos;
+#[cfg(feature = "server")]
+mod get_epochs_protocol_versions;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Epoch key constants module
+pub mod epoch_key_constants;
+#[cfg(any(feature = "server", feature = "verify"))]
+/// Epochs root tree key constants module
+pub mod epochs_root_tree_key_constants;
+#[cfg(feature = "server")]
+pub mod operations_factory;
+/// Paths module
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod paths;
+#[cfg(feature = "server")]
 pub mod proposers;
+#[cfg(feature = "server")]
 mod prove_epochs_infos;
+#[cfg(feature = "server")]
 pub mod start_block;
+#[cfg(feature = "server")]
 pub mod start_time;
 
-impl Drive {
-    /// Checks if an Epoch tree exists. Returns a bool.
-    /// Does not need to be versioned as it is very simple
-    pub fn has_epoch_tree_exists(
-        &self,
-        epoch_tree: &Epoch,
-        transaction: TransactionArg,
-    ) -> Result<bool, Error> {
-        self.grove
-            .has_raw(&pools_path(), &epoch_tree.key, transaction)
-            .unwrap()
-            .map_err(Error::GroveDB)
-    }
-}
-
 #[cfg(feature = "server")]
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-
-    mod has_epoch_tree_exists {
-        use super::*;
-
-        use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
-
-        #[test]
-        fn test_return_true_if_tree_exists() {
-            let drive = setup_drive_with_initial_state_structure();
-            let transaction = drive.grove.start_transaction();
-
-            let epoch_tree = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
-
-            let is_exist = drive
-                .has_epoch_tree_exists(&epoch_tree, Some(&transaction))
-                .expect("should check epoch tree existence");
-
-            assert!(is_exist);
-        }
-
-        #[test]
-        fn test_return_false_if_tree_doesnt_exist() {
-            // default will be 40 epochs per era
-            // 50 eras
-            // = 2000
-            let drive = setup_drive_with_initial_state_structure();
-            let transaction = drive.grove.start_transaction();
-
-            let epoch_tree = Epoch::new(2000 + 1).unwrap();
-
-            let is_exist = drive
-                .has_epoch_tree_exists(&epoch_tree, Some(&transaction))
-                .expect("should check epoch tree existence");
-
-            assert!(!is_exist);
-        }
-    }
-}
+mod has_epoch_tree_exists;

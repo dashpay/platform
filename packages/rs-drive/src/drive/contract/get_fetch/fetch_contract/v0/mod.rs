@@ -1,11 +1,11 @@
 use crate::drive::contract::{paths, DataContractFetchInfo};
 
-use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
+use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::DataContract;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
@@ -60,6 +60,7 @@ impl Drive {
                 &[0],
                 false,
                 transaction,
+                &platform_version.drive.grove_version,
             );
             (value, cost)
         } else {
@@ -68,6 +69,7 @@ impl Drive {
                 &[0],
                 false,
                 transaction,
+                &platform_version.drive.grove_version,
             );
             (value, cost)
         };
@@ -92,7 +94,8 @@ impl Drive {
                             Some(vec![drive_operation]),
                             epoch,
                             self.config.epochs_per_era,
-                            platform_version
+                            platform_version,
+                            None,
                         )
                     ))
                 } else {
@@ -122,6 +125,7 @@ impl Drive {
                     &[0],
                     false,
                     transaction,
+                    &platform_version.drive.grove_version,
                 );
 
                 cost.add_assign(secondary_cost);
@@ -146,7 +150,8 @@ impl Drive {
                                     Some(vec![drive_operation]),
                                     epoch,
                                     self.config.epochs_per_era,
-                                    platform_version
+                                    platform_version,
+                                    None,
                                 )
                             ))
                         } else {

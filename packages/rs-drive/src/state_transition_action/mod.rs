@@ -7,6 +7,8 @@ pub mod identity;
 
 /// system
 pub mod system;
+// TODO: Must crate only but we need to remove of use it first
+pub mod action_convert_to_operations;
 
 use crate::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
@@ -16,6 +18,7 @@ use crate::state_transition_action::identity::identity_credit_transfer::Identity
 use crate::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
 use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use crate::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
+use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::{
     BumpIdentityDataContractNonceAction, BumpIdentityDataContractNonceActionAccessorsV0,
 };
@@ -47,6 +50,8 @@ pub enum StateTransitionAction {
     IdentityUpdateAction(IdentityUpdateTransitionAction),
     /// identity credit transfer
     IdentityCreditTransferAction(IdentityCreditTransferTransitionAction),
+    /// masternode vote action
+    MasternodeVoteAction(MasternodeVoteTransitionAction),
     /// bump identity nonce action
     /// this can only come in this form from identity state transitions that do not use asset locks
     /// it will also only happen if the state validation fails
@@ -82,6 +87,9 @@ impl StateTransitionAction {
             }
             StateTransitionAction::PartiallyUseAssetLockAction(action) => {
                 action.user_fee_increase()
+            }
+            StateTransitionAction::MasternodeVoteAction(_) => {
+                UserFeeIncrease::default() // 0 (or none)
             }
         }
     }

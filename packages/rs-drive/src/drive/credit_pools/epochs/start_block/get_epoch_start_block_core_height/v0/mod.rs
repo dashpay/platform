@@ -4,10 +4,10 @@ use crate::error::Error;
 
 use dpp::block::epoch::Epoch;
 
+use crate::drive::credit_pools::epochs::epoch_key_constants::KEY_START_BLOCK_CORE_HEIGHT;
+use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use grovedb::{Element, TransactionArg};
-
-use crate::fee_pools::epochs::epoch_key_constants::KEY_START_BLOCK_CORE_HEIGHT;
-use crate::fee_pools::epochs::paths::EpochProposers;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Returns the core block height of the Epoch's start block
@@ -15,6 +15,7 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<u32, Error> {
         let element = self
             .grove
@@ -22,6 +23,7 @@ impl Drive {
                 &epoch_tree.get_path(),
                 KEY_START_BLOCK_CORE_HEIGHT.as_slice(),
                 transaction,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;

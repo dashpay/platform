@@ -6,7 +6,9 @@ use thiserror::Error;
 use crate::errors::consensus::ConsensusError;
 use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("Can't read protocol version from serialized object: {error}")]
 #[platform_serialize(unversioned)]
 #[ferment_macro::export]

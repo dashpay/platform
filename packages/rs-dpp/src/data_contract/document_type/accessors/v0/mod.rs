@@ -10,7 +10,7 @@ use crate::document::transfer::Transferable;
 use crate::identity::identity_public_key::SecurityLevel;
 use crate::nft::TradeMode;
 use indexmap::IndexMap;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub trait DocumentTypeV0Getters {
     /// Returns the name of the document type.
@@ -21,7 +21,10 @@ pub trait DocumentTypeV0Getters {
     fn schema_owned(self) -> Value;
 
     /// Returns the indices of the document type.
-    fn indices(&self) -> &Vec<Index>;
+    fn indexes(&self) -> &BTreeMap<String, Index>;
+
+    /// The contested index if one exists
+    fn find_contested_index(&self) -> Option<&Index>;
 
     /// Returns the index structure of the document type.
     fn index_structure(&self) -> &IndexLevel;
@@ -40,6 +43,10 @@ pub trait DocumentTypeV0Getters {
 
     /// Returns the required fields of the document type.
     fn required_fields(&self) -> &BTreeSet<String>;
+
+    /// Returns the transient fields of the document type.
+    /// Transient fields are fields that should be stripped from the document before storage.
+    fn transient_fields(&self) -> &BTreeSet<String>;
 
     /// Returns the documents keep history flag of the document type.
     fn documents_keep_history(&self) -> bool;

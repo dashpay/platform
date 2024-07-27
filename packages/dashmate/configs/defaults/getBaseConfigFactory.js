@@ -1,37 +1,12 @@
 import path from 'path';
-
-import DPNSContract from '@dashevo/dpns-contract/lib/systemIds.js';
-
-import DashPayContract from '@dashevo/dashpay-contract/lib/systemIds.js';
-
-import FeatureFlagsContract from '@dashevo/feature-flags-contract/lib/systemIds.js';
-
-import MasternodeRewardSharesContract
-  from '@dashevo/masternode-reward-shares-contract/lib/systemIds.js';
-
-import WithdrawalsContract from '@dashevo/withdrawals-contract/lib/systemIds.js';
-
 import semver from 'semver';
 
 import fs from 'fs';
-import {
-  NETWORK_TESTNET, PACKAGE_ROOT_DIR,
-} from '../../src/constants.js';
 import Config from '../../src/config/Config.js';
-
-const {
-  contractId: dpnsContractId,
-  ownerId: dpnsOwnerId,
-} = DPNSContract;
-
-const { contractId: dashpayContractId } = DashPayContract;
-
-const {
-  contractId: featureFlagsContractId,
-  ownerId: featureFlagsOwnerId,
-} = FeatureFlagsContract;
-const { contractId: masternodeRewardSharesContractId } = MasternodeRewardSharesContract;
-const { contractId: withdrawalsContractId } = WithdrawalsContract;
+import {
+  NETWORK_MAINNET,
+  PACKAGE_ROOT_DIR,
+} from '../../src/constants.js';
 
 const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
@@ -90,8 +65,45 @@ export default function getBaseConfigFactory(homeDir) {
         rpc: {
           host: '127.0.0.1',
           port: 9998,
-          user: 'dashrpc',
-          password: 'rpcpassword',
+          users: {
+            dashmate: {
+              password: 'rpcpassword',
+              whitelist: null,
+              lowPriority: false,
+            },
+            dapi: {
+              password: 'rpcpassword',
+              whitelist: [
+                'getbestblockhash', 'getblockhash', 'sendrawtransaction', 'getrawtransaction',
+                'getblockstats', 'getmerkleblocks', 'getrawtransactionmulti', 'getrawmempool',
+                'getblockcount', 'getbestchainlock', 'getblock', 'getblockheader', 'getblockheaders',
+                'protxdiff', 'getnetworkinfo', 'getblockchaininfo', 'mnsyncstatus', 'masternodestatus',
+              ],
+              lowPriority: true,
+            },
+            drive_consensus: {
+              password: 'rpcpassword',
+              whitelist: [
+                'getbestchainlock', 'getblockchaininfo', 'getrawtransaction', 'submitchainlock',
+                'verifychainlock', 'protxlistdiff', 'quorumlistextended', 'quoruminfo',
+                'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus', 'getblockheader', 'getblockhash',
+              ],
+              lowPriority: false,
+            },
+            drive_check_tx: {
+              password: 'rpcpassword',
+              whitelist: ['getrawtransaction'],
+              lowPriority: true,
+            },
+            tenderdash: {
+              password: 'rpcpassword',
+              whitelist: [
+                'quoruminfo', 'quorumverify', 'quorumplatformsign', 'masternodestatus', 'masternodelist',
+                'ping', 'getnetworkinfo',
+              ],
+              lowPriority: false,
+            },
+          },
           allowIps: ['127.0.0.1', '172.16.0.0/12', '192.168.0.0/16'],
         },
         spork: {
@@ -114,6 +126,12 @@ export default function getBaseConfigFactory(homeDir) {
           name: null,
           minimumDifficultyBlocks: 0,
           powTargetSpacing: 150,
+          llmq: {
+            chainLocks: 'llmq_devnet',
+            instantSend: 'llmq_devnet_dip0024',
+            platform: 'llmq_devnet_platform',
+            mnhf: 'llmq_devnet',
+          },
         },
         log: {
           file: {
@@ -245,24 +263,45 @@ export default function getBaseConfigFactory(homeDir) {
               retention: 60 * 3,
             },
             validatorSet: {
-              llmqType: 4,
+              quorum: {
+                llmqType: 4,
+                dkgInterval: 24,
+                activeSigners: 24,
+                rotation: false,
+              },
             },
             chainLock: {
-              llmqType: 2,
-              dkgInterval: 288,
-              llmqSize: 400,
+              quorum: {
+                llmqType: 2,
+                dkgInterval: 288,
+                activeSigners: 4,
+                rotation: false,
+              },
+            },
+            instantLock: {
+              quorum: {
+                llmqType: 5,
+                dkgInterval: 288,
+                activeSigners: 32,
+                rotation: true,
+              },
             },
             metrics: {
               enabled: false,
               host: '127.0.0.1',
               port: 29090,
             },
+            grovedbVisualizer: {
+              enabled: false,
+              host: '127.0.0.1',
+              port: 8083,
+            },
             epochTime: 788400,
           },
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:0.14.0-dev.6',
+              image: 'dashpay/tenderdash:1.1.0-dev.3',
             },
             p2p: {
               host: '0.0.0.0',
@@ -368,44 +407,7 @@ export default function getBaseConfigFactory(homeDir) {
             moniker: null,
           },
         },
-        dpns: {
-          contract: {
-            id: dpnsContractId,
-          },
-          ownerId: dpnsOwnerId,
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
-        dashpay: {
-          contract: {
-            id: dashpayContractId,
-          },
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
-        featureFlags: {
-          contract: {
-            id: featureFlagsContractId,
-          },
-          ownerId: featureFlagsOwnerId,
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
         sourcePath: null,
-        masternodeRewardShares: {
-          contract: {
-            id: masternodeRewardSharesContractId,
-          },
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
-        withdrawals: {
-          contract: {
-            id: withdrawalsContractId,
-          },
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
         enable: true,
       },
       dashmate: {
@@ -425,7 +427,7 @@ export default function getBaseConfigFactory(homeDir) {
         },
       },
       externalIp: null,
-      network: NETWORK_TESTNET,
+      network: NETWORK_MAINNET,
       environment: 'production',
     };
 

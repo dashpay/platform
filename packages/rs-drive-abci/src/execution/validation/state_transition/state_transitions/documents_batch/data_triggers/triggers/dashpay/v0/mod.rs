@@ -1,7 +1,6 @@
 //! The `dashpay_data_triggers` module contains data triggers specific to the DashPay data contract.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
@@ -11,12 +10,10 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use dpp::system_data_contracts::dashpay_contract::v1::document_types::contact_request::properties
-::{CORE_HEIGHT_CREATED_AT, TO_USER_ID};
+::{TO_USER_ID};
 use dpp::version::PlatformVersion;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
-
-const BLOCKS_SIZE_WINDOW: u32 = 8;
 
 /// Creates a data trigger for handling contact request documents.
 ///
@@ -50,82 +47,55 @@ pub(super) fn create_contact_request_data_trigger_v0(
     let is_dry_run = context.state_transition_execution_context.in_dry_run();
     let owner_id = context.owner_id;
 
-    let document_create_transition = match document_transition {
-        DocumentTransitionAction::CreateAction(d) => d,
-        _ => {
-            return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
-                format!(
-                    "the Document Transition {} isn't 'CREATE",
-                    document_transition
-                        .base()
-                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "expecting action to have a base"
-                        )))?
-                        .id()
-                ),
-            )))
-        }
+    let DocumentTransitionAction::CreateAction(document_create_transition) = document_transition
+    else {
+        return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
+            format!(
+                "the Document Transition {} isn't 'CREATE",
+                document_transition
+                    .base()
+                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "expecting action to have a base"
+                    )))?
+                    .id()
+            ),
+        )));
     };
-    let data = &document_create_transition.data();
 
-    let maybe_core_height_created_at: Option<u32> = data
-        .get_optional_integer(CORE_HEIGHT_CREATED_AT)
-        .map_err(ProtocolError::ValueError)?;
+    let data = document_create_transition.data();
+
     let to_user_id = data
         .get_identifier(TO_USER_ID)
         .map_err(ProtocolError::ValueError)?;
 
-    if !is_dry_run {
-        if owner_id == &to_user_id {
-            let err = DataTriggerConditionError::new(
-                data_contract.id(),
-                document_transition
-                    .base()
-                    .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "expecting action to have a base",
-                    )))?
-                    .id(),
-                format!("Identity {to_user_id} must not be equal to owner id"),
-            );
+    // You shouldn't create a contract request to yourself
+    if !is_dry_run && owner_id == &to_user_id {
+        let err = DataTriggerConditionError::new(
+            data_contract.id(),
+            document_transition
+                .base()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expecting action to have a base",
+                )))?
+                .id(),
+            format!("Identity {to_user_id} must not be equal to owner id"),
+        );
 
-            result.add_error(err);
+        result.add_error(err);
 
-            return Ok(result);
-        }
-
-        if let Some(core_height_created_at) = maybe_core_height_created_at {
-            let core_chain_locked_height = context.platform.state.last_committed_core_height();
-
-            let height_window_start = core_chain_locked_height.saturating_sub(BLOCKS_SIZE_WINDOW);
-            let height_window_end = core_chain_locked_height.saturating_add(BLOCKS_SIZE_WINDOW);
-
-            if core_height_created_at < height_window_start
-                || core_height_created_at > height_window_end
-            {
-                let err = DataTriggerConditionError::new(
-                    data_contract.id(),
-                    document_create_transition.base().id(),
-                    format!(
-                        "Core height {} is out of block height window from {} to {}",
-                        core_height_created_at, height_window_start, height_window_end
-                    ),
-                );
-
-                result.add_error(err);
-
-                return Ok(result);
-            }
-        }
+        return Ok(result);
     }
 
-    //  toUserId identity exits
-    let identity = context.platform.drive.fetch_identity_balance(
+    // TODO: Calculate fee operations
+
+    // Recipient identity must exist
+    let to_identity = context.platform.drive.fetch_identity_balance(
         to_user_id.to_buffer(),
         context.transaction,
         platform_version,
     )?;
 
-    if !is_dry_run && identity.is_none() {
+    if !is_dry_run && to_identity.is_none() {
         let err = DataTriggerConditionError::new(
             data_contract.id(),
             document_create_transition.base().id(),
@@ -149,7 +119,7 @@ mod test {
 
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
     use dpp::platform_value;
-    use dpp::platform_value::{Bytes32, platform_value};
+    use dpp::platform_value::{Bytes32};
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
     use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::dashpay::create_contact_request_data_trigger;
@@ -161,6 +131,7 @@ mod test {
     use dpp::version::DefaultForPlatformVersion;
     use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
     #[test]
     fn should_successfully_execute_on_dry_run() {
@@ -180,13 +151,12 @@ mod test {
             .current_platform_version()
             .expect("should return a platform version");
 
-        let mut contact_request_document = get_contact_request_document_fixture(
+        let contact_request_document = get_contact_request_document_fixture(
             None,
             0,
             None,
             state.current_protocol_version_in_consensus(),
         );
-        contact_request_document.set(CORE_HEIGHT_CREATED_AT, platform_value!(10u32));
         let owner_id = &contact_request_document.owner_id();
 
         let data_contract =
@@ -224,9 +194,9 @@ mod test {
         };
 
         let result = create_contact_request_data_trigger(
-            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, &BlockInfo::default(), |_identifier| {
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, None, document_create_transition, &BlockInfo::default(), |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
-            }).expect("expected to create action").into(),
+            }, platform_version).expect("expected to create action").0.into(),
             &data_trigger_context,
             platform_version,
         )
@@ -237,6 +207,7 @@ mod test {
 
     #[test]
     fn should_return_invalid_result_if_owner_id_equals_to_user_id() {
+        let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -254,9 +225,15 @@ mod test {
                     core_height: 42,
                     epoch: Default::default(),
                 },
-                app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                app_hash: platform
+                    .drive
+                    .grove
+                    .root_hash(None, &platform_version.drive.grove_version)
+                    .unwrap()
+                    .unwrap(),
                 quorum_hash: [0u8; 32],
                 block_id_hash: [0u8; 32],
+                proposer_pro_tx_hash: [0u8; 32],
                 signature: [0u8; 96],
                 round: 0,
             }
@@ -335,9 +312,9 @@ mod test {
         let _dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
         let result = create_contact_request_data_trigger(
-            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, &BlockInfo::default(), |_identifier| {
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, None, document_create_transition, &BlockInfo::default(), |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
-            }).expect("expected to create action").into(),
+            }, platform_version).expect("expected to create action").0.into(),
             &data_trigger_context,
             platform_version,
         )
@@ -355,6 +332,7 @@ mod test {
 
     #[test]
     fn should_return_invalid_result_if_id_not_exists() {
+        let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -372,9 +350,15 @@ mod test {
                     core_height: 42,
                     epoch: Default::default(),
                 },
-                app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+                app_hash: platform
+                    .drive
+                    .grove
+                    .root_hash(None, &platform_version.drive.grove_version)
+                    .unwrap()
+                    .unwrap(),
                 quorum_hash: [0u8; 32],
                 block_id_hash: [0u8; 32],
+                proposer_pro_tx_hash: [0u8; 32],
                 signature: [0u8; 96],
                 round: 0,
             }
@@ -441,9 +425,9 @@ mod test {
         let _dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
         let result = create_contact_request_data_trigger(
-            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, &BlockInfo::default(), |_identifier| {
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, None, document_create_transition, &BlockInfo::default(), |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
-            }).expect("expected to create action").into(),
+            }, platform_version).expect("expected to create action").0.into(),
             &data_trigger_context,
             platform_version,
         )
@@ -459,6 +443,4 @@ mod test {
             }
         ));
     }
-
-    // TODO! implement remaining tests
 }

@@ -105,6 +105,42 @@ export default {
       additionalProperties: false,
       required: ['enabled', 'host', 'port'],
     },
+    quorum: {
+      type: 'object',
+      properties: {
+        llmqType: {
+          type: 'integer',
+          enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107],
+        },
+        dkgInterval: {
+          type: 'integer',
+          minimum: 1,
+        },
+        activeSigners: {
+          type: 'integer',
+          minimum: 1,
+        },
+        rotation: {
+          type: 'boolean',
+        },
+      },
+      required: ['llmqType', 'dkgInterval', 'activeSigners', 'rotation'],
+      additionalProperties: false,
+    },
+    quorumName: {
+      type: 'string',
+      enum: [
+        'llmq_devnet',
+        'llmq_devnet_dip0024',
+        'llmq_devnet_platform',
+        'llmq_50_60',
+        'llmq_60_75',
+        'llmq_400_60',
+        'llmq_400_85',
+        'llmq_100_67',
+        'llmq_25_67',
+      ],
+    },
   },
   properties: {
     description: {
@@ -231,13 +267,35 @@ export default {
             port: {
               $ref: '#/definitions/port',
             },
-            user: {
-              type: 'string',
-              minLength: 1,
-            },
-            password: {
-              type: 'string',
-              minLength: 1,
+            users: {
+              type: 'object',
+              minProperties: 1,
+              propertyNames: {
+                type: 'string',
+                minLength: 1,
+              },
+              additionalProperties: {
+                type: 'object',
+                properties: {
+                  password: {
+                    type: 'string',
+                    minLength: 1,
+                  },
+                  whitelist: {
+                    type: ['null', 'array'],
+                    items: {
+                      type: 'string',
+                      minLength: 1,
+                    },
+                    minItems: 1,
+                  },
+                  lowPriority: {
+                    type: 'boolean',
+                  },
+                },
+                required: ['password', 'whitelist', 'lowPriority'],
+                additionalProperties: false,
+              },
             },
             allowIps: {
               type: 'array',
@@ -246,7 +304,7 @@ export default {
               },
             },
           },
-          required: ['host', 'port', 'user', 'password'],
+          required: ['host', 'port', 'users', 'allowIps'],
           additionalProperties: false,
         },
         spork: {
@@ -316,6 +374,25 @@ export default {
             powTargetSpacing: {
               type: 'integer',
               minimum: 1,
+            },
+            llmq: {
+              type: 'object',
+              properties: {
+                chainLocks: {
+                  $ref: '#/definitions/quorumName',
+                },
+                instantSend: {
+                  $ref: '#/definitions/quorumName',
+                },
+                platform: {
+                  $ref: '#/definitions/quorumName',
+                },
+                mnhf: {
+                  $ref: '#/definitions/quorumName',
+                },
+              },
+              required: ['chainLocks', 'instantSend', 'platform', 'mnhf'],
+              additionalProperties: false,
             },
           },
           additionalProperties: false,
@@ -766,34 +843,32 @@ export default {
                 validatorSet: {
                   type: 'object',
                   properties: {
-                    llmqType: {
-                      type: 'number',
-                      // https://github.com/dashpay/dashcore-lib/blob/843176fed9fc81feae43ccf319d99e2dd942fe1f/lib/constants/index.js#L50-L99
-                      enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107],
+                    quorum: {
+                      $ref: '#/definitions/quorum',
                     },
                   },
                   additionalProperties: false,
-                  required: ['llmqType'],
+                  required: ['quorum'],
                 },
                 chainLock: {
                   type: 'object',
                   properties: {
-                    llmqType: {
-                      type: 'number',
-                      // https://github.com/dashpay/dashcore-lib/blob/843176fed9fc81feae43ccf319d99e2dd942fe1f/lib/constants/index.js#L50-L99
-                      enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107],
-                    },
-                    llmqSize: {
-                      type: 'integer',
-                      minimum: 0,
-                    },
-                    dkgInterval: {
-                      type: 'integer',
-                      minimum: 0,
+                    quorum: {
+                      $ref: '#/definitions/quorum',
                     },
                   },
                   additionalProperties: false,
-                  required: ['llmqType', 'llmqSize', 'dkgInterval'],
+                  required: ['quorum'],
+                },
+                instantLock: {
+                  type: 'object',
+                  properties: {
+                    quorum: {
+                      $ref: '#/definitions/quorum',
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['quorum'],
                 },
                 epochTime: {
                   type: 'integer',
@@ -802,9 +877,12 @@ export default {
                 metrics: {
                   $ref: '#/definitions/enabledHostPort',
                 },
+                grovedbVisualizer: {
+                  $ref: '#/definitions/enabledHostPort',
+                },
               },
               additionalProperties: false,
-              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics'],
+              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics', 'grovedbVisualizer'],
             },
             tenderdash: {
               type: 'object',
@@ -1050,153 +1128,15 @@ export default {
           required: ['abci', 'tenderdash'],
           additionalProperties: false,
         },
-        dpns: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            ownerId: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
-        },
-        dashpay: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
-        },
-        featureFlags: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            ownerId: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
-        },
         sourcePath: {
           type: ['string', 'null'],
           minLength: 1,
-        },
-        masternodeRewardShares: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
-        },
-        withdrawals: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
         },
         enable: {
           type: 'boolean',
         },
       },
-      required: ['gateway', 'dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals', 'enable'],
+      required: ['gateway', 'dapi', 'drive', 'sourcePath', 'enable'],
       additionalProperties: false,
     },
     dashmate: {

@@ -1,14 +1,15 @@
-use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::batch::GroveDbOpBatch;
 
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
 use dpp::fee::epoch::CreditsPerEpoch;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{PathQuery, Query, TransactionArg};
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Adds operations to delete pending epoch refunds except epochs from provided collection
@@ -17,6 +18,7 @@ impl Drive {
         batch: &mut GroveDbOpBatch,
         refunds_per_epoch: &CreditsPerEpoch,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         // TODO: Replace with key iterator
         let mut query = Query::new();
@@ -32,6 +34,7 @@ impl Drive {
                 true,
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
+                &drive_version.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;
@@ -58,11 +61,11 @@ impl Drive {
 #[cfg(test)]
 mod tests {
 
-    use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-    use crate::drive::batch::GroveDbOpBatch;
     use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
     use crate::drive::Drive;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use crate::util::batch::GroveDbOpBatch;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::fee::epoch::CreditsPerEpoch;
 
@@ -97,6 +100,7 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
+                None,
             )
             .expect("should apply batch");
 

@@ -28,7 +28,7 @@ impl Drive {
         epoch_tree: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<f64, Error> {
+    ) -> Result<u64, Error> {
         match platform_version
             .drive
             .methods
@@ -36,7 +36,7 @@ impl Drive {
             .epochs
             .get_epoch_fee_multiplier
         {
-            0 => self.get_epoch_fee_multiplier_v0(epoch_tree, transaction),
+            0 => self.get_epoch_fee_multiplier_v0(epoch_tree, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_epoch_fee_multiplier".to_string(),
                 known_versions: vec![0],

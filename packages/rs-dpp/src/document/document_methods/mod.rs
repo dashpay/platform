@@ -52,6 +52,7 @@ pub trait DocumentMethodsV0 {
     fn is_equal_ignoring_time_based_fields(
         &self,
         rhs: &Self,
+        also_ignore_fields: Option<Vec<&str>>,
         platform_version: &PlatformVersion,
     ) -> Result<bool, ProtocolError>;
 }

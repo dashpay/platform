@@ -36,6 +36,34 @@ GPBObjCClassDeclaration(GetConsensusParamsResponse);
 GPBObjCClassDeclaration(GetConsensusParamsResponse_ConsensusParamsBlock);
 GPBObjCClassDeclaration(GetConsensusParamsResponse_ConsensusParamsEvidence);
 GPBObjCClassDeclaration(GetConsensusParamsResponse_GetConsensusParamsResponseV0);
+GPBObjCClassDeclaration(GetContestedResourceIdentityVotesRequest);
+GPBObjCClassDeclaration(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0);
+GPBObjCClassDeclaration(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo);
+GPBObjCClassDeclaration(GetContestedResourceIdentityVotesResponse);
+GPBObjCClassDeclaration(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0);
+GPBObjCClassDeclaration(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote);
+GPBObjCClassDeclaration(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes);
+GPBObjCClassDeclaration(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice);
+GPBObjCClassDeclaration(GetContestedResourceVoteStateRequest);
+GPBObjCClassDeclaration(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0);
+GPBObjCClassDeclaration(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo);
+GPBObjCClassDeclaration(GetContestedResourceVoteStateResponse);
+GPBObjCClassDeclaration(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0);
+GPBObjCClassDeclaration(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender);
+GPBObjCClassDeclaration(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders);
+GPBObjCClassDeclaration(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo);
+GPBObjCClassDeclaration(GetContestedResourceVotersForIdentityRequest);
+GPBObjCClassDeclaration(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0);
+GPBObjCClassDeclaration(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo);
+GPBObjCClassDeclaration(GetContestedResourceVotersForIdentityResponse);
+GPBObjCClassDeclaration(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0);
+GPBObjCClassDeclaration(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters);
+GPBObjCClassDeclaration(GetContestedResourcesRequest);
+GPBObjCClassDeclaration(GetContestedResourcesRequest_GetContestedResourcesRequestV0);
+GPBObjCClassDeclaration(GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo);
+GPBObjCClassDeclaration(GetContestedResourcesResponse);
+GPBObjCClassDeclaration(GetContestedResourcesResponse_GetContestedResourcesResponseV0);
+GPBObjCClassDeclaration(GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues);
 GPBObjCClassDeclaration(GetDataContractHistoryRequest);
 GPBObjCClassDeclaration(GetDataContractHistoryRequest_GetDataContractHistoryRequestV0);
 GPBObjCClassDeclaration(GetDataContractHistoryResponse);
@@ -105,11 +133,17 @@ GPBObjCClassDeclaration(GetPathElementsRequest_GetPathElementsRequestV0);
 GPBObjCClassDeclaration(GetPathElementsResponse);
 GPBObjCClassDeclaration(GetPathElementsResponse_GetPathElementsResponseV0);
 GPBObjCClassDeclaration(GetPathElementsResponse_GetPathElementsResponseV0_Elements);
+GPBObjCClassDeclaration(GetPrefundedSpecializedBalanceRequest);
+GPBObjCClassDeclaration(GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0);
+GPBObjCClassDeclaration(GetPrefundedSpecializedBalanceResponse);
+GPBObjCClassDeclaration(GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0);
 GPBObjCClassDeclaration(GetProofsRequest);
 GPBObjCClassDeclaration(GetProofsRequest_GetProofsRequestV0);
 GPBObjCClassDeclaration(GetProofsRequest_GetProofsRequestV0_ContractRequest);
 GPBObjCClassDeclaration(GetProofsRequest_GetProofsRequestV0_DocumentRequest);
 GPBObjCClassDeclaration(GetProofsRequest_GetProofsRequestV0_IdentityRequest);
+GPBObjCClassDeclaration(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest);
+GPBObjCClassDeclaration(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest);
 GPBObjCClassDeclaration(GetProofsResponse);
 GPBObjCClassDeclaration(GetProofsResponse_GetProofsResponseV0);
 GPBObjCClassDeclaration(GetProtocolVersionUpgradeStateRequest);
@@ -124,6 +158,14 @@ GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse);
 GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0);
 GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal);
 GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals);
+GPBObjCClassDeclaration(GetVotePollsByEndDateRequest);
+GPBObjCClassDeclaration(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0);
+GPBObjCClassDeclaration(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo);
+GPBObjCClassDeclaration(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo);
+GPBObjCClassDeclaration(GetVotePollsByEndDateResponse);
+GPBObjCClassDeclaration(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0);
+GPBObjCClassDeclaration(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp);
+GPBObjCClassDeclaration(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps);
 GPBObjCClassDeclaration(KeyRequestType);
 GPBObjCClassDeclaration(Proof);
 GPBObjCClassDeclaration(ResponseMetadata);
@@ -2993,12 +3035,14 @@ void GetProofsRequest_ClearVersionOneOfCase(GetProofsRequest *message) {
 @dynamic identitiesArray, identitiesArray_Count;
 @dynamic contractsArray, contractsArray_Count;
 @dynamic documentsArray, documentsArray_Count;
+@dynamic votesArray, votesArray_Count;
 
 typedef struct GetProofsRequest_GetProofsRequestV0__storage_ {
   uint32_t _has_storage_[1];
   NSMutableArray *identitiesArray;
   NSMutableArray *contractsArray;
   NSMutableArray *documentsArray;
+  NSMutableArray *votesArray;
 } GetProofsRequest_GetProofsRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -3034,6 +3078,15 @@ typedef struct GetProofsRequest_GetProofsRequestV0__storage_ {
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeMessage,
       },
+      {
+        .name = "votesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest),
+        .number = GetProofsRequest_GetProofsRequestV0_FieldNumber_VotesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetProofsRequest_GetProofsRequestV0__storage_, votesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
     };
     GPBDescriptor *localDescriptor =
         [GPBDescriptor allocDescriptorForClass:[GetProofsRequest_GetProofsRequestV0 class]
@@ -3062,9 +3115,11 @@ typedef struct GetProofsRequest_GetProofsRequestV0__storage_ {
 @dynamic documentType;
 @dynamic documentTypeKeepsHistory;
 @dynamic documentId;
+@dynamic documentContestedStatus;
 
 typedef struct GetProofsRequest_GetProofsRequestV0_DocumentRequest__storage_ {
   uint32_t _has_storage_[1];
+  GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus documentContestedStatus;
   NSData *contractId;
   NSString *documentType;
   NSData *documentId;
@@ -3112,6 +3167,15 @@ typedef struct GetProofsRequest_GetProofsRequestV0_DocumentRequest__storage_ {
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
+      {
+        .name = "documentContestedStatus",
+        .dataTypeSpecific.enumDescFunc = GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_EnumDescriptor,
+        .number = GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber_DocumentContestedStatus,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(GetProofsRequest_GetProofsRequestV0_DocumentRequest__storage_, documentContestedStatus),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
     };
     GPBDescriptor *localDescriptor =
         [GPBDescriptor allocDescriptorForClass:[GetProofsRequest_GetProofsRequestV0_DocumentRequest class]
@@ -3131,6 +3195,55 @@ typedef struct GetProofsRequest_GetProofsRequestV0_DocumentRequest__storage_ {
 }
 
 @end
+
+int32_t GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_RawValue(GetProofsRequest_GetProofsRequestV0_DocumentRequest *message) {
+  GPBDescriptor *descriptor = [GetProofsRequest_GetProofsRequestV0_DocumentRequest descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber_DocumentContestedStatus];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_RawValue(GetProofsRequest_GetProofsRequestV0_DocumentRequest *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetProofsRequest_GetProofsRequestV0_DocumentRequest descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetProofsRequest_GetProofsRequestV0_DocumentRequest_FieldNumber_DocumentContestedStatus];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - Enum GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus
+
+GPBEnumDescriptor *GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "NotContested\000MaybeContested\000Contested\000";
+    static const int32_t values[] = {
+        GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_NotContested,
+        GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_MaybeContested,
+        GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_Contested,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_NotContested:
+    case GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_MaybeContested:
+    case GetProofsRequest_GetProofsRequestV0_DocumentRequest_DocumentContestedStatus_Contested:
+      return YES;
+    default:
+      return NO;
+  }
+}
 
 #pragma mark - GetProofsRequest_GetProofsRequestV0_IdentityRequest
 
@@ -3276,6 +3389,154 @@ typedef struct GetProofsRequest_GetProofsRequestV0_ContractRequest__storage_ {
                                    storageSize:sizeof(GetProofsRequest_GetProofsRequestV0_ContractRequest__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProofsRequest_GetProofsRequestV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetProofsRequest_GetProofsRequestV0_VoteStatusRequest
+
+@implementation GetProofsRequest_GetProofsRequestV0_VoteStatusRequest
+
+@dynamic requestTypeOneOfCase;
+@dynamic contestedResourceVoteStatusRequest;
+
+typedef struct GetProofsRequest_GetProofsRequestV0_VoteStatusRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest *contestedResourceVoteStatusRequest;
+} GetProofsRequest_GetProofsRequestV0_VoteStatusRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contestedResourceVoteStatusRequest",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest),
+        .number = GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_FieldNumber_ContestedResourceVoteStatusRequest,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest__storage_, contestedResourceVoteStatusRequest),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetProofsRequest_GetProofsRequestV0_VoteStatusRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "requestType",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProofsRequest_GetProofsRequestV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ClearRequestTypeOneOfCase(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest *message) {
+  GPBDescriptor *descriptor = [GetProofsRequest_GetProofsRequestV0_VoteStatusRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest
+
+@implementation GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest
+
+@dynamic contractId;
+@dynamic documentTypeName;
+@dynamic indexName;
+@dynamic indexValuesArray, indexValuesArray_Count;
+@dynamic voterIdentifier;
+
+typedef struct GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *contractId;
+  NSString *documentTypeName;
+  NSString *indexName;
+  NSMutableArray *indexValuesArray;
+  NSData *voterIdentifier;
+} GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_ContractId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest__storage_, contractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "documentTypeName",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_DocumentTypeName,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest__storage_, documentTypeName),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "indexName",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_IndexName,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest__storage_, indexName),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "indexValuesArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_IndexValuesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest__storage_, indexValuesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "voterIdentifier",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest_FieldNumber_VoterIdentifier,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest__storage_, voterIdentifier),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest_ContestedResourceVoteStatusRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProofsRequest_GetProofsRequestV0_VoteStatusRequest)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -6762,6 +7023,2959 @@ typedef struct GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo__storage_
 
 @end
 
+#pragma mark - GetContestedResourcesRequest
+
+@implementation GetContestedResourcesRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContestedResourcesRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetContestedResourcesRequest_GetContestedResourcesRequestV0 *v0;
+} GetContestedResourcesRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourcesRequest_GetContestedResourcesRequestV0),
+        .number = GetContestedResourcesRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourcesRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourcesRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourcesRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContestedResourcesRequest_ClearVersionOneOfCase(GetContestedResourcesRequest *message) {
+  GPBDescriptor *descriptor = [GetContestedResourcesRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContestedResourcesRequest_GetContestedResourcesRequestV0
+
+@implementation GetContestedResourcesRequest_GetContestedResourcesRequestV0
+
+@dynamic contractId;
+@dynamic documentTypeName;
+@dynamic indexName;
+@dynamic startIndexValuesArray, startIndexValuesArray_Count;
+@dynamic endIndexValuesArray, endIndexValuesArray_Count;
+@dynamic hasStartAtValueInfo, startAtValueInfo;
+@dynamic hasCount, count;
+@dynamic orderAscending;
+@dynamic prove;
+
+typedef struct GetContestedResourcesRequest_GetContestedResourcesRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t count;
+  NSData *contractId;
+  NSString *documentTypeName;
+  NSString *indexName;
+  NSMutableArray *startIndexValuesArray;
+  NSMutableArray *endIndexValuesArray;
+  GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo *startAtValueInfo;
+} GetContestedResourcesRequest_GetContestedResourcesRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_ContractId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourcesRequest_GetContestedResourcesRequestV0__storage_, contractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "documentTypeName",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_DocumentTypeName,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContestedResourcesRequest_GetContestedResourcesRequestV0__storage_, documentTypeName),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "indexName",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_IndexName,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetContestedResourcesRequest_GetContestedResourcesRequestV0__storage_, indexName),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "startIndexValuesArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_StartIndexValuesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContestedResourcesRequest_GetContestedResourcesRequestV0__storage_, startIndexValuesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "endIndexValuesArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_EndIndexValuesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContestedResourcesRequest_GetContestedResourcesRequestV0__storage_, endIndexValuesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "startAtValueInfo",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo),
+        .number = GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_StartAtValueInfo,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetContestedResourcesRequest_GetContestedResourcesRequestV0__storage_, startAtValueInfo),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "count",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_Count,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetContestedResourcesRequest_GetContestedResourcesRequestV0__storage_, count),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "orderAscending",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_OrderAscending,
+        .hasIndex = 5,
+        .offset = 6,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourcesRequest_GetContestedResourcesRequestV0_FieldNumber_Prove,
+        .hasIndex = 7,
+        .offset = 8,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourcesRequest_GetContestedResourcesRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourcesRequest_GetContestedResourcesRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourcesRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo
+
+@implementation GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo
+
+@dynamic startValue;
+@dynamic startValueIncluded;
+
+typedef struct GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *startValue;
+} GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startValue",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo_FieldNumber_StartValue,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo__storage_, startValue),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "startValueIncluded",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo_FieldNumber_StartValueIncluded,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourcesRequest_GetContestedResourcesRequestV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContestedResourcesResponse
+
+@implementation GetContestedResourcesResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContestedResourcesResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetContestedResourcesResponse_GetContestedResourcesResponseV0 *v0;
+} GetContestedResourcesResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourcesResponse_GetContestedResourcesResponseV0),
+        .number = GetContestedResourcesResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourcesResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourcesResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourcesResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContestedResourcesResponse_ClearVersionOneOfCase(GetContestedResourcesResponse *message) {
+  GPBDescriptor *descriptor = [GetContestedResourcesResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContestedResourcesResponse_GetContestedResourcesResponseV0
+
+@implementation GetContestedResourcesResponse_GetContestedResourcesResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic contestedResourceValues;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetContestedResourcesResponse_GetContestedResourcesResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues *contestedResourceValues;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetContestedResourcesResponse_GetContestedResourcesResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contestedResourceValues",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues),
+        .number = GetContestedResourcesResponse_GetContestedResourcesResponseV0_FieldNumber_ContestedResourceValues,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourcesResponse_GetContestedResourcesResponseV0__storage_, contestedResourceValues),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetContestedResourcesResponse_GetContestedResourcesResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourcesResponse_GetContestedResourcesResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetContestedResourcesResponse_GetContestedResourcesResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourcesResponse_GetContestedResourcesResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourcesResponse_GetContestedResourcesResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourcesResponse_GetContestedResourcesResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourcesResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContestedResourcesResponse_GetContestedResourcesResponseV0_ClearResultOneOfCase(GetContestedResourcesResponse_GetContestedResourcesResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetContestedResourcesResponse_GetContestedResourcesResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues
+
+@implementation GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues
+
+@dynamic contestedResourceValuesArray, contestedResourceValuesArray_Count;
+
+typedef struct GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *contestedResourceValuesArray;
+} GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contestedResourceValuesArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues_FieldNumber_ContestedResourceValuesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues__storage_, contestedResourceValuesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourcesResponse_GetContestedResourcesResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetVotePollsByEndDateRequest
+
+@implementation GetVotePollsByEndDateRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetVotePollsByEndDateRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0 *v0;
+} GetVotePollsByEndDateRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0),
+        .number = GetVotePollsByEndDateRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVotePollsByEndDateRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVotePollsByEndDateRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetVotePollsByEndDateRequest_ClearVersionOneOfCase(GetVotePollsByEndDateRequest *message) {
+  GPBDescriptor *descriptor = [GetVotePollsByEndDateRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0
+
+@implementation GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0
+
+@dynamic hasStartTimeInfo, startTimeInfo;
+@dynamic hasEndTimeInfo, endTimeInfo;
+@dynamic hasLimit, limit;
+@dynamic hasOffset, offset;
+@dynamic ascending;
+@dynamic prove;
+
+typedef struct GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t limit;
+  uint32_t offset;
+  GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo *startTimeInfo;
+  GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo *endTimeInfo;
+} GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startTimeInfo",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo),
+        .number = GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_FieldNumber_StartTimeInfo,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0__storage_, startTimeInfo),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "endTimeInfo",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo),
+        .number = GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_FieldNumber_EndTimeInfo,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0__storage_, endTimeInfo),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "limit",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_FieldNumber_Limit,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0__storage_, limit),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "offset",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_FieldNumber_Offset,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0__storage_, offset),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "ascending",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_FieldNumber_Ascending,
+        .hasIndex = 4,
+        .offset = 5,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_FieldNumber_Prove,
+        .hasIndex = 6,
+        .offset = 7,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVotePollsByEndDateRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo
+
+@implementation GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo
+
+@dynamic startTimeMs;
+@dynamic startTimeIncluded;
+
+typedef struct GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo__storage_ {
+  uint32_t _has_storage_[1];
+  uint64_t startTimeMs;
+} GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startTimeMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo_FieldNumber_StartTimeMs,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo__storage_, startTimeMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "startTimeIncluded",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo_FieldNumber_StartTimeIncluded,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo
+
+@implementation GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo
+
+@dynamic endTimeMs;
+@dynamic endTimeIncluded;
+
+typedef struct GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo__storage_ {
+  uint32_t _has_storage_[1];
+  uint64_t endTimeMs;
+} GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "endTimeMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo_FieldNumber_EndTimeMs,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo__storage_, endTimeMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "endTimeIncluded",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo_FieldNumber_EndTimeIncluded,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetVotePollsByEndDateResponse
+
+@implementation GetVotePollsByEndDateResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetVotePollsByEndDateResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0 *v0;
+} GetVotePollsByEndDateResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0),
+        .number = GetVotePollsByEndDateResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVotePollsByEndDateResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVotePollsByEndDateResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetVotePollsByEndDateResponse_ClearVersionOneOfCase(GetVotePollsByEndDateResponse *message) {
+  GPBDescriptor *descriptor = [GetVotePollsByEndDateResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0
+
+@implementation GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic votePollsByTimestamps;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps *votePollsByTimestamps;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "votePollsByTimestamps",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps),
+        .number = GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_FieldNumber_VotePollsByTimestamps,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0__storage_, votePollsByTimestamps),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVotePollsByEndDateResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_ClearResultOneOfCase(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp
+
+@implementation GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp
+
+@dynamic timestamp;
+@dynamic serializedVotePollsArray, serializedVotePollsArray_Count;
+
+typedef struct GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *serializedVotePollsArray;
+  uint64_t timestamp;
+} GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "timestamp",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp_FieldNumber_Timestamp,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp__storage_, timestamp),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "serializedVotePollsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp_FieldNumber_SerializedVotePollsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp__storage_, serializedVotePollsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps
+
+@implementation GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps
+
+@dynamic votePollsByTimestampsArray, votePollsByTimestampsArray_Count;
+@dynamic finishedResults;
+
+typedef struct GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *votePollsByTimestampsArray;
+} GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "votePollsByTimestampsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp),
+        .number = GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps_FieldNumber_VotePollsByTimestampsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps__storage_, votePollsByTimestampsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "finishedResults",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps_FieldNumber_FinishedResults,
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContestedResourceVoteStateRequest
+
+@implementation GetContestedResourceVoteStateRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContestedResourceVoteStateRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0 *v0;
+} GetContestedResourceVoteStateRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0),
+        .number = GetContestedResourceVoteStateRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVoteStateRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVoteStateRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContestedResourceVoteStateRequest_ClearVersionOneOfCase(GetContestedResourceVoteStateRequest *message) {
+  GPBDescriptor *descriptor = [GetContestedResourceVoteStateRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0
+
+@implementation GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0
+
+@dynamic contractId;
+@dynamic documentTypeName;
+@dynamic indexName;
+@dynamic indexValuesArray, indexValuesArray_Count;
+@dynamic resultType;
+@dynamic allowIncludeLockedAndAbstainingVoteTally;
+@dynamic hasStartAtIdentifierInfo, startAtIdentifierInfo;
+@dynamic hasCount, count;
+@dynamic prove;
+
+typedef struct GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType resultType;
+  uint32_t count;
+  NSData *contractId;
+  NSString *documentTypeName;
+  NSString *indexName;
+  NSMutableArray *indexValuesArray;
+  GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo *startAtIdentifierInfo;
+} GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_ContractId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0__storage_, contractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "documentTypeName",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_DocumentTypeName,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0__storage_, documentTypeName),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "indexName",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_IndexName,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0__storage_, indexName),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "indexValuesArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_IndexValuesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0__storage_, indexValuesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "resultType",
+        .dataTypeSpecific.enumDescFunc = GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_EnumDescriptor,
+        .number = GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_ResultType,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0__storage_, resultType),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "allowIncludeLockedAndAbstainingVoteTally",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_AllowIncludeLockedAndAbstainingVoteTally,
+        .hasIndex = 4,
+        .offset = 5,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "startAtIdentifierInfo",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo),
+        .number = GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_StartAtIdentifierInfo,
+        .hasIndex = 6,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0__storage_, startAtIdentifierInfo),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "count",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_Count,
+        .hasIndex = 7,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0__storage_, count),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_Prove,
+        .hasIndex = 8,
+        .offset = 9,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceVoteStateRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_RawValue(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0 *message) {
+  GPBDescriptor *descriptor = [GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0 descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_ResultType];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_RawValue(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0 *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0 descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_FieldNumber_ResultType];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - Enum GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType
+
+GPBEnumDescriptor *GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "Documents\000VoteTally\000DocumentsAndVoteTall"
+        "y\000";
+    static const int32_t values[] = {
+        GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_Documents,
+        GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_VoteTally,
+        GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_DocumentsAndVoteTally,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_Documents:
+    case GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_VoteTally:
+    case GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType_DocumentsAndVoteTally:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+#pragma mark - GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo
+
+@implementation GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo
+
+@dynamic startIdentifier;
+@dynamic startIdentifierIncluded;
+
+typedef struct GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *startIdentifier;
+} GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startIdentifier",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo_FieldNumber_StartIdentifier,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo__storage_, startIdentifier),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "startIdentifierIncluded",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo_FieldNumber_StartIdentifierIncluded,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_StartAtIdentifierInfo__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContestedResourceVoteStateResponse
+
+@implementation GetContestedResourceVoteStateResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContestedResourceVoteStateResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0 *v0;
+} GetContestedResourceVoteStateResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0),
+        .number = GetContestedResourceVoteStateResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVoteStateResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVoteStateResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContestedResourceVoteStateResponse_ClearVersionOneOfCase(GetContestedResourceVoteStateResponse *message) {
+  GPBDescriptor *descriptor = [GetContestedResourceVoteStateResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0
+
+@implementation GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic contestedResourceContenders;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders *contestedResourceContenders;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contestedResourceContenders",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders),
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FieldNumber_ContestedResourceContenders,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0__storage_, contestedResourceContenders),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceVoteStateResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ClearResultOneOfCase(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo
+
+@implementation GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo
+
+@dynamic finishedVoteOutcome;
+@dynamic hasWonByIdentityId, wonByIdentityId;
+@dynamic finishedAtBlockHeight;
+@dynamic finishedAtCoreBlockHeight;
+@dynamic finishedAtBlockTimeMs;
+@dynamic finishedAtEpoch;
+
+typedef struct GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo__storage_ {
+  uint32_t _has_storage_[1];
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome finishedVoteOutcome;
+  uint32_t finishedAtCoreBlockHeight;
+  uint32_t finishedAtEpoch;
+  NSData *wonByIdentityId;
+  uint64_t finishedAtBlockHeight;
+  uint64_t finishedAtBlockTimeMs;
+} GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "finishedVoteOutcome",
+        .dataTypeSpecific.enumDescFunc = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_EnumDescriptor,
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedVoteOutcome,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo__storage_, finishedVoteOutcome),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "wonByIdentityId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_WonByIdentityId,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo__storage_, wonByIdentityId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "finishedAtBlockHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedAtBlockHeight,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo__storage_, finishedAtBlockHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "finishedAtCoreBlockHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedAtCoreBlockHeight,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo__storage_, finishedAtCoreBlockHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "finishedAtBlockTimeMs",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedAtBlockTimeMs,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo__storage_, finishedAtBlockTimeMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "finishedAtEpoch",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedAtEpoch,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo__storage_, finishedAtEpoch),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_RawValue(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo *message) {
+  GPBDescriptor *descriptor = [GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedVoteOutcome];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_RawValue(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FieldNumber_FinishedVoteOutcome];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - Enum GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome
+
+GPBEnumDescriptor *GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "TowardsIdentity\000Locked\000NoPreviousWinner\000";
+    static const int32_t values[] = {
+        GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_TowardsIdentity,
+        GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_Locked,
+        GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_NoPreviousWinner,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_TowardsIdentity:
+    case GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_Locked:
+    case GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo_FinishedVoteOutcome_NoPreviousWinner:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+#pragma mark - GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders
+
+@implementation GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders
+
+@dynamic contendersArray, contendersArray_Count;
+@dynamic hasAbstainVoteTally, abstainVoteTally;
+@dynamic hasLockVoteTally, lockVoteTally;
+@dynamic hasFinishedVoteInfo, finishedVoteInfo;
+
+typedef struct GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t abstainVoteTally;
+  uint32_t lockVoteTally;
+  NSMutableArray *contendersArray;
+  GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo *finishedVoteInfo;
+} GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contendersArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender),
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders_FieldNumber_ContendersArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders__storage_, contendersArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "abstainVoteTally",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders_FieldNumber_AbstainVoteTally,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders__storage_, abstainVoteTally),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "lockVoteTally",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders_FieldNumber_LockVoteTally,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders__storage_, lockVoteTally),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "finishedVoteInfo",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_FinishedVoteInfo),
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders_FieldNumber_FinishedVoteInfo,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders__storage_, finishedVoteInfo),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_ContestedResourceContenders__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender
+
+@implementation GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender
+
+@dynamic identifier;
+@dynamic hasVoteCount, voteCount;
+@dynamic hasDocument, document;
+
+typedef struct GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t voteCount;
+  NSData *identifier;
+  NSData *document;
+} GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identifier",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender_FieldNumber_Identifier,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender__storage_, identifier),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "voteCount",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender_FieldNumber_VoteCount,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender__storage_, voteCount),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "document",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender_FieldNumber_Document,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender__storage_, document),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0_Contender__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceVoteStateResponse_GetContestedResourceVoteStateResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContestedResourceVotersForIdentityRequest
+
+@implementation GetContestedResourceVotersForIdentityRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContestedResourceVotersForIdentityRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0 *v0;
+} GetContestedResourceVotersForIdentityRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0),
+        .number = GetContestedResourceVotersForIdentityRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVotersForIdentityRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVotersForIdentityRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContestedResourceVotersForIdentityRequest_ClearVersionOneOfCase(GetContestedResourceVotersForIdentityRequest *message) {
+  GPBDescriptor *descriptor = [GetContestedResourceVotersForIdentityRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0
+
+@implementation GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0
+
+@dynamic contractId;
+@dynamic documentTypeName;
+@dynamic indexName;
+@dynamic indexValuesArray, indexValuesArray_Count;
+@dynamic contestantId;
+@dynamic hasStartAtIdentifierInfo, startAtIdentifierInfo;
+@dynamic hasCount, count;
+@dynamic orderAscending;
+@dynamic prove;
+
+typedef struct GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t count;
+  NSData *contractId;
+  NSString *documentTypeName;
+  NSString *indexName;
+  NSMutableArray *indexValuesArray;
+  NSData *contestantId;
+  GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo *startAtIdentifierInfo;
+} GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_ContractId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0__storage_, contractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "documentTypeName",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_DocumentTypeName,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0__storage_, documentTypeName),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "indexName",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_IndexName,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0__storage_, indexName),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "indexValuesArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_IndexValuesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0__storage_, indexValuesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "contestantId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_ContestantId,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0__storage_, contestantId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "startAtIdentifierInfo",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo),
+        .number = GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_StartAtIdentifierInfo,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0__storage_, startAtIdentifierInfo),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "count",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_Count,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0__storage_, count),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "orderAscending",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_OrderAscending,
+        .hasIndex = 6,
+        .offset = 7,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_FieldNumber_Prove,
+        .hasIndex = 8,
+        .offset = 9,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceVotersForIdentityRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo
+
+@implementation GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo
+
+@dynamic startIdentifier;
+@dynamic startIdentifierIncluded;
+
+typedef struct GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *startIdentifier;
+} GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startIdentifier",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo_FieldNumber_StartIdentifier,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo__storage_, startIdentifier),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "startIdentifierIncluded",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo_FieldNumber_StartIdentifierIncluded,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0_StartAtIdentifierInfo__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceVotersForIdentityRequest_GetContestedResourceVotersForIdentityRequestV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContestedResourceVotersForIdentityResponse
+
+@implementation GetContestedResourceVotersForIdentityResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContestedResourceVotersForIdentityResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0 *v0;
+} GetContestedResourceVotersForIdentityResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0),
+        .number = GetContestedResourceVotersForIdentityResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVotersForIdentityResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVotersForIdentityResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContestedResourceVotersForIdentityResponse_ClearVersionOneOfCase(GetContestedResourceVotersForIdentityResponse *message) {
+  GPBDescriptor *descriptor = [GetContestedResourceVotersForIdentityResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0
+
+@implementation GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic contestedResourceVoters;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters *contestedResourceVoters;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contestedResourceVoters",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters),
+        .number = GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_FieldNumber_ContestedResourceVoters,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0__storage_, contestedResourceVoters),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceVotersForIdentityResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ClearResultOneOfCase(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters
+
+@implementation GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters
+
+@dynamic votersArray, votersArray_Count;
+@dynamic finishedResults;
+
+typedef struct GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *votersArray;
+} GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "votersArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters_FieldNumber_VotersArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters__storage_, votersArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "finishedResults",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters_FieldNumber_FinishedResults,
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0_ContestedResourceVoters__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceVotersForIdentityResponse_GetContestedResourceVotersForIdentityResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContestedResourceIdentityVotesRequest
+
+@implementation GetContestedResourceIdentityVotesRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContestedResourceIdentityVotesRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0 *v0;
+} GetContestedResourceIdentityVotesRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0),
+        .number = GetContestedResourceIdentityVotesRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceIdentityVotesRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceIdentityVotesRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContestedResourceIdentityVotesRequest_ClearVersionOneOfCase(GetContestedResourceIdentityVotesRequest *message) {
+  GPBDescriptor *descriptor = [GetContestedResourceIdentityVotesRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0
+
+@implementation GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0
+
+@dynamic identityId;
+@dynamic hasLimit, limit;
+@dynamic hasOffset, offset;
+@dynamic orderAscending;
+@dynamic hasStartAtVotePollIdInfo, startAtVotePollIdInfo;
+@dynamic prove;
+
+typedef struct GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *identityId;
+  GPBUInt32Value *limit;
+  GPBUInt32Value *offset;
+  GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo *startAtVotePollIdInfo;
+} GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identityId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_FieldNumber_IdentityId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0__storage_, identityId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "limit",
+        .dataTypeSpecific.clazz = GPBObjCClass(GPBUInt32Value),
+        .number = GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_FieldNumber_Limit,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0__storage_, limit),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "offset",
+        .dataTypeSpecific.clazz = GPBObjCClass(GPBUInt32Value),
+        .number = GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_FieldNumber_Offset,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0__storage_, offset),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "orderAscending",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_FieldNumber_OrderAscending,
+        .hasIndex = 3,
+        .offset = 4,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "startAtVotePollIdInfo",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo),
+        .number = GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_FieldNumber_StartAtVotePollIdInfo,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0__storage_, startAtVotePollIdInfo),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_FieldNumber_Prove,
+        .hasIndex = 6,
+        .offset = 7,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceIdentityVotesRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo
+
+@implementation GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo
+
+@dynamic startAtPollIdentifier;
+@dynamic startPollIdentifierIncluded;
+
+typedef struct GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *startAtPollIdentifier;
+} GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startAtPollIdentifier",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo_FieldNumber_StartAtPollIdentifier,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo__storage_, startAtPollIdentifier),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "startPollIdentifierIncluded",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo_FieldNumber_StartPollIdentifierIncluded,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0_StartAtVotePollIdInfo__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceIdentityVotesRequest_GetContestedResourceIdentityVotesRequestV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContestedResourceIdentityVotesResponse
+
+@implementation GetContestedResourceIdentityVotesResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetContestedResourceIdentityVotesResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0 *v0;
+} GetContestedResourceIdentityVotesResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0),
+        .number = GetContestedResourceIdentityVotesResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceIdentityVotesResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceIdentityVotesResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContestedResourceIdentityVotesResponse_ClearVersionOneOfCase(GetContestedResourceIdentityVotesResponse *message) {
+  GPBDescriptor *descriptor = [GetContestedResourceIdentityVotesResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0
+
+@implementation GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic votes;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes *votes;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "votes",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes),
+        .number = GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_FieldNumber_Votes,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0__storage_, votes),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceIdentityVotesResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ClearResultOneOfCase(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes
+
+@implementation GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes
+
+@dynamic contestedResourceIdentityVotesArray, contestedResourceIdentityVotesArray_Count;
+@dynamic finishedResults;
+
+typedef struct GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *contestedResourceIdentityVotesArray;
+} GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contestedResourceIdentityVotesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote),
+        .number = GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes_FieldNumber_ContestedResourceIdentityVotesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes__storage_, contestedResourceIdentityVotesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "finishedResults",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes_FieldNumber_FinishedResults,
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVotes__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice
+
+@implementation GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice
+
+@dynamic voteChoiceType;
+@dynamic hasIdentityId, identityId;
+
+typedef struct GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice__storage_ {
+  uint32_t _has_storage_[1];
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType voteChoiceType;
+  NSData *identityId;
+} GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "voteChoiceType",
+        .dataTypeSpecific.enumDescFunc = GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_EnumDescriptor,
+        .number = GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_FieldNumber_VoteChoiceType,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice__storage_, voteChoiceType),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "identityId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_FieldNumber_IdentityId,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice__storage_, identityId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_RawValue(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice *message) {
+  GPBDescriptor *descriptor = [GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_FieldNumber_VoteChoiceType];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_RawValue(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_FieldNumber_VoteChoiceType];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - Enum GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType
+
+GPBEnumDescriptor *GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "TowardsIdentity\000Abstain\000Lock\000";
+    static const int32_t values[] = {
+        GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_TowardsIdentity,
+        GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_Abstain,
+        GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_Lock,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_TowardsIdentity:
+    case GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_Abstain:
+    case GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice_VoteChoiceType_Lock:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+#pragma mark - GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote
+
+@implementation GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote
+
+@dynamic contractId;
+@dynamic documentTypeName;
+@dynamic serializedIndexStorageValuesArray, serializedIndexStorageValuesArray_Count;
+@dynamic hasVoteChoice, voteChoice;
+
+typedef struct GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *contractId;
+  NSString *documentTypeName;
+  NSMutableArray *serializedIndexStorageValuesArray;
+  GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice *voteChoice;
+} GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote_FieldNumber_ContractId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote__storage_, contractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "documentTypeName",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote_FieldNumber_DocumentTypeName,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote__storage_, documentTypeName),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "serializedIndexStorageValuesArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote_FieldNumber_SerializedIndexStorageValuesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote__storage_, serializedIndexStorageValuesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "voteChoice",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ResourceVoteChoice),
+        .number = GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote_FieldNumber_VoteChoice,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote__storage_, voteChoice),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0_ContestedResourceIdentityVote__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetContestedResourceIdentityVotesResponse_GetContestedResourceIdentityVotesResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetPrefundedSpecializedBalanceRequest
+
+@implementation GetPrefundedSpecializedBalanceRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetPrefundedSpecializedBalanceRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0 *v0;
+} GetPrefundedSpecializedBalanceRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0),
+        .number = GetPrefundedSpecializedBalanceRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetPrefundedSpecializedBalanceRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetPrefundedSpecializedBalanceRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetPrefundedSpecializedBalanceRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetPrefundedSpecializedBalanceRequest_ClearVersionOneOfCase(GetPrefundedSpecializedBalanceRequest *message) {
+  GPBDescriptor *descriptor = [GetPrefundedSpecializedBalanceRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0
+
+@implementation GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0
+
+@dynamic id_p;
+@dynamic prove;
+
+typedef struct GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *id_p;
+} GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "id_p",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0_FieldNumber_Id_p,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0__storage_, id_p),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0_FieldNumber_Prove,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetPrefundedSpecializedBalanceRequest_GetPrefundedSpecializedBalanceRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetPrefundedSpecializedBalanceRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetPrefundedSpecializedBalanceResponse
+
+@implementation GetPrefundedSpecializedBalanceResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetPrefundedSpecializedBalanceResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0 *v0;
+} GetPrefundedSpecializedBalanceResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0),
+        .number = GetPrefundedSpecializedBalanceResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetPrefundedSpecializedBalanceResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetPrefundedSpecializedBalanceResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetPrefundedSpecializedBalanceResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetPrefundedSpecializedBalanceResponse_ClearVersionOneOfCase(GetPrefundedSpecializedBalanceResponse *message) {
+  GPBDescriptor *descriptor = [GetPrefundedSpecializedBalanceResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0
+
+@implementation GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic balance;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  Proof *proof;
+  ResponseMetadata *metadata;
+  uint64_t balance;
+} GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "balance",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_FieldNumber_Balance,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0__storage_, balance),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetPrefundedSpecializedBalanceResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_ClearResultOneOfCase(GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
 #pragma mark - GetPathElementsRequest
 
 @implementation GetPathElementsRequest

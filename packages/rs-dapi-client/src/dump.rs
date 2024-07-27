@@ -2,7 +2,11 @@
 
 use dapi_grpc::mock::Mockable;
 
-use crate::{mock::Key, transport::TransportRequest, DapiClient};
+use crate::{
+    mock::{Key, MockResult},
+    transport::TransportRequest,
+    DapiClient,
+};
 use std::{any::type_name, path::PathBuf};
 
 /// Data format of dumps created with [DapiClient::dump_dir].
@@ -17,19 +21,20 @@ pub struct DumpData<T: TransportRequest> {
 }
 impl<T: TransportRequest> DumpData<T> {
     /// Return deserialized request
-    pub fn deserialize(&self) -> (T, T::Response) {
+    pub fn deserialize(&self) -> (T, MockResult<T>) {
         let req = T::mock_deserialize(&self.serialized_request).unwrap_or_else(|| {
             panic!(
                 "unable to deserialize mock data of type {}",
                 type_name::<T>()
             )
         });
-        let resp = T::Response::mock_deserialize(&self.serialized_response).unwrap_or_else(|| {
-            panic!(
-                "unable to deserialize mock data of type {}",
-                type_name::<T::Response>()
-            )
-        });
+        let resp =
+            <MockResult<T>>::mock_deserialize(&self.serialized_response).unwrap_or_else(|| {
+                panic!(
+                    "unable to deserialize mock data of type {}",
+                    type_name::<T::Response>()
+                )
+            });
 
         (req, resp)
     }
@@ -82,7 +87,7 @@ where
 
 impl<T: TransportRequest> DumpData<T> {
     /// Create new dump data.
-    pub fn new(request: &T, response: &T::Response) -> Self {
+    pub fn new(request: &T, response: &MockResult<T>) -> Self {
         let request = request
             .mock_serialize()
             .expect("unable to serialize request");
@@ -107,19 +112,16 @@ impl<T: TransportRequest> DumpData<T> {
     /// Filename consists of:
     ///
     /// * [DapiClient::DUMP_FILE_PREFIX]
-    /// * current timestamp
     /// * basename of the type of request, like `GetIdentityRequest`
     /// * unique identifier (hash) of the request
     pub fn filename(&self) -> Result<String, std::io::Error> {
-        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
         let key = Key::try_new(&self.serialized_request)?;
         // get request type without underscores (which we use as a file name separator)
         let request_type = Self::request_type().replace('_', "-");
 
         let file = format!(
-            "{}_{}_{}_{}.json",
+            "{}_{}_{}.json",
             DapiClient::DUMP_FILE_PREFIX,
-            now,
             request_type,
             key
         );
@@ -184,11 +186,11 @@ impl DapiClient {
     /// Any errors are logged on `warn` level and ignored.
     pub(crate) fn dump_request_response<R: TransportRequest>(
         request: &R,
-        response: &R::Response,
+        response: &MockResult<R>,
         dump_dir: Option<PathBuf>,
     ) where
         R: Mockable,
-        R::Response: Mockable,
+        <R as TransportRequest>::Response: Mockable,
     {
         let path = match dump_dir {
             Some(p) => p,

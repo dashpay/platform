@@ -1,5 +1,6 @@
 pub mod data_contract_not_present_error;
 pub mod document_creation_not_allowed_error;
+pub mod document_field_max_size_exceeded_error;
 pub mod document_transitions_are_absent_error;
 pub mod duplicate_document_transitions_with_ids_error;
 pub mod duplicate_document_transitions_with_indices_error;
@@ -17,6 +18,7 @@ pub mod missing_positions_in_document_type_properties_error;
 
 pub use data_contract_not_present_error::DataContractNotPresentError;
 pub use document_creation_not_allowed_error::DocumentCreationNotAllowedError;
+pub use document_field_max_size_exceeded_error::DocumentFieldMaxSizeExceededError;
 pub use document_transitions_are_absent_error::DocumentTransitionsAreAbsentError;
 pub use duplicate_document_transitions_with_ids_error::DuplicateDocumentTransitionsWithIdsError;
 pub use duplicate_document_transitions_with_indices_error::DuplicateDocumentTransitionsWithIndicesError;

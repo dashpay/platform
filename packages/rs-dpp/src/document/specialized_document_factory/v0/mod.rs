@@ -525,8 +525,8 @@ impl SpecializedDocumentFactoryV0 {
         documents
             .into_iter()
             .map(|(document, document_type)| {
-                if !document_type.documents_mutable() {
-                    return Err(DocumentError::TryingToDeleteImmutableDocument {
+                if !document_type.documents_can_be_deleted() {
+                    return Err(DocumentError::TryingToDeleteIndelibleDocument {
                         document: Box::new(document),
                     }
                     .into());

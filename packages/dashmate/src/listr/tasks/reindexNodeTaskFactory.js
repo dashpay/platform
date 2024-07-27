@@ -115,8 +115,8 @@ export default function reindexNodeTaskFactory(
           // Wait until Core is started
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
-            user: config.get('core.rpc.user'),
-            pass: config.get('core.rpc.password'),
+            user: 'dashmate',
+            pass: config.get('core.rpc.users.dashmate.password'),
             host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 

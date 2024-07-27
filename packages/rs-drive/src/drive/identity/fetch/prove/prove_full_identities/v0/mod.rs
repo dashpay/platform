@@ -1,6 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 
@@ -13,20 +13,14 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let query = Self::full_identities_query(identity_ids)?;
-        self.grove_get_proved_path_query(
-            &query,
-            false,
-            transaction,
-            &mut drive_operations,
-            drive_version,
-        )
+        let query = Self::full_identities_query(identity_ids, &drive_version.grove_version)?;
+        self.grove_get_proved_path_query(&query, transaction, &mut drive_operations, drive_version)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
 
     use dpp::identity::accessors::IdentityGettersV0;
@@ -73,6 +67,7 @@ mod tests {
                 .copied()
                 .collect::<Vec<[u8; 32]>>()
                 .borrow(),
+            &platform_version.drive.grove_version,
         )
         .expect("expected to get query");
 
@@ -85,6 +80,7 @@ mod tests {
                 true,
                 QueryResultType::QueryPathKeyElementTrioResultType,
                 None,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .expect("expected to run the path query");
@@ -102,8 +98,12 @@ mod tests {
             )
             .expect("should fetch an identity");
 
-        let (_hash, proof) = GroveDb::verify_query(fetched_identities.as_slice(), &path_query)
-            .expect("expected to verify query");
+        let (_hash, proof) = GroveDb::verify_query(
+            fetched_identities.as_slice(),
+            &path_query,
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to verify query");
 
         // We want to get a proof on the balance, the revision and 5 keys
         assert_eq!(proof.len(), 14);
@@ -140,6 +140,7 @@ mod tests {
                 .copied()
                 .collect::<Vec<[u8; 32]>>()
                 .borrow(),
+            &platform_version.drive.grove_version,
         )
         .expect("expected to get query");
 
@@ -254,6 +255,7 @@ mod tests {
                 true,
                 QueryResultType::QueryPathKeyElementTrioResultType,
                 None,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .expect("expected to run the path query");
@@ -271,8 +273,12 @@ mod tests {
             )
             .expect("should fetch an identity");
 
-        let (_hash, proof) = GroveDb::verify_query(fetched_identities.as_slice(), &path_query)
-            .expect("expected to verify query");
+        let (_hash, proof) = GroveDb::verify_query(
+            fetched_identities.as_slice(),
+            &path_query,
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to verify query");
 
         // We want to get a proof on the balance, the revision and 5 keys
         assert_eq!(proof.len(), 70);

@@ -14,6 +14,7 @@ import generateRandomString from '../../../util/generateRandomString.js';
  * @param {resolveDockerHostIp} resolveDockerHostIp
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
  * @param {HomeDir} homeDir
+ * @param {DockerCompose} dockerCompose
  */
 export default function setupLocalPresetTaskFactory(
   configFile,
@@ -23,6 +24,7 @@ export default function setupLocalPresetTaskFactory(
   resolveDockerHostIp,
   generateHDPrivateKeys,
   homeDir,
+  dockerCompose,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -30,6 +32,10 @@ export default function setupLocalPresetTaskFactory(
    */
   function setupLocalPresetTask() {
     return new Listr([
+      {
+        title: 'System requirements',
+        task: async () => dockerCompose.throwErrorIfNotInstalled(),
+      },
       {
         title: 'Set the number of nodes',
         enabled: (ctx) => ctx.nodeCount === undefined,
@@ -91,7 +97,7 @@ export default function setupLocalPresetTaskFactory(
       },
       {
         title: 'Create local group configs',
-        task: async (ctx, task) => {
+        task: async (ctx) => {
           ctx.configGroup = new Array(ctx.nodeCount)
             .fill(undefined)
             .map((value, i) => `local_${i + 1}`)
@@ -109,63 +115,6 @@ export default function setupLocalPresetTaskFactory(
 
           const hostDockerInternalIp = await resolveDockerHostIp();
 
-          const network = ctx.configGroup[0].get('network');
-
-          const {
-            hdPrivateKey: dpnsPrivateKey,
-            derivedPrivateKeys: [
-              dpnsDerivedMasterPrivateKey,
-              dpnsDerivedSecondPrivateKey,
-            ],
-          } = await generateHDPrivateKeys(network, [0, 1]);
-
-          const {
-            hdPrivateKey: featureFlagsPrivateKey,
-            derivedPrivateKeys: [
-              featureFlagsDerivedMasterPrivateKey,
-              featureFlagsDerivedSecondPrivateKey,
-            ],
-          } = await generateHDPrivateKeys(network, [0, 1]);
-
-          const {
-            hdPrivateKey: dashpayPrivateKey,
-            derivedPrivateKeys: [
-              dashpayDerivedMasterPrivateKey,
-              dashpayDerivedSecondPrivateKey,
-            ],
-          } = await generateHDPrivateKeys(network, [0, 1]);
-
-          const {
-            hdPrivateKey: withdrawalsPrivateKey,
-            derivedPrivateKeys: [
-              withdrawalsDerivedMasterPrivateKey,
-              withdrawalsDerivedSecondPrivateKey,
-            ],
-          } = await generateHDPrivateKeys(network, [0, 1]);
-
-          const {
-            hdPrivateKey: masternodeRewardSharesPrivateKey,
-            derivedPrivateKeys: [
-              masternodeRewardSharesDerivedMasterPrivateKey,
-              masternodeRewardSharesDerivedSecondPrivateKey,
-            ],
-          } = await generateHDPrivateKeys(network, [0, 1]);
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `DPNS Private Key: ${dpnsPrivateKey.toString()}`;
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Feature Flags Private Key: ${featureFlagsPrivateKey.toString()}`;
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Dashpay Private Key: ${dashpayPrivateKey.toString()}`;
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Masternode Reward Shares Private Key: ${masternodeRewardSharesPrivateKey.toString()}`;
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Withdrawals Private Key: ${withdrawalsPrivateKey.toString()}`;
-
           const subTasks = ctx.configGroup.map((config, i) => (
             {
               title: `Create ${config.getName()} config`,
@@ -175,8 +124,12 @@ export default function setupLocalPresetTaskFactory(
                 config.set('group', 'local');
                 config.set('core.p2p.port', config.get('core.p2p.port') + (i * 100));
                 config.set('core.rpc.port', config.get('core.rpc.port') + (i * 100));
-                config.set('core.rpc.user', generateRandomString(8));
-                config.set('core.rpc.password', generateRandomString(12));
+
+                Object.values(config.get('core.rpc.users')).forEach((options) => {
+                  // eslint-disable-next-line no-param-reassign
+                  options.password = generateRandomString(12);
+                });
+
                 config.set('externalIp', hostDockerInternalIp);
 
                 const subnet = config.get('docker.network.subnet')
@@ -222,6 +175,7 @@ export default function setupLocalPresetTaskFactory(
                   config.set('platform.drive.tenderdash.node.id', id);
                   config.set('platform.drive.tenderdash.node.key', key);
 
+                  config.set('platform.drive.abci.grovedbVisualizer.port', config.get('platform.drive.abci.grovedbVisualizer.port') + (i * 100));
                   config.set('platform.drive.abci.tokioConsole.port', config.get('platform.drive.abci.tokioConsole.port') + (i * 100));
                   config.set('platform.drive.abci.metrics.port', config.get('platform.drive.abci.metrics.port') + (i * 100));
                   config.set('platform.gateway.admin.port', config.get('platform.gateway.admin.port') + (i * 100));
@@ -245,39 +199,6 @@ export default function setupLocalPresetTaskFactory(
                     // TODO: Shall we use trace?
                     config.set('platform.drive.tenderdash.log.level', 'debug');
                   }
-
-                  config.set('platform.dpns.masterPublicKey', dpnsDerivedMasterPrivateKey.privateKey.toPublicKey()
-                    .toString());
-                  config.set('platform.dpns.secondPublicKey', dpnsDerivedSecondPrivateKey.privateKey.toPublicKey()
-                    .toString());
-
-                  config.set('platform.featureFlags.masterPublicKey', featureFlagsDerivedMasterPrivateKey.privateKey.toPublicKey()
-                    .toString());
-                  config.set('platform.featureFlags.secondPublicKey', featureFlagsDerivedSecondPrivateKey.privateKey.toPublicKey()
-                    .toString());
-
-                  config.set('platform.dashpay.masterPublicKey', dashpayDerivedMasterPrivateKey.privateKey.toPublicKey()
-                    .toString());
-                  config.set('platform.dashpay.secondPublicKey', dashpayDerivedSecondPrivateKey.privateKey.toPublicKey()
-                    .toString());
-
-                  config.set('platform.withdrawals.masterPublicKey', withdrawalsDerivedMasterPrivateKey.privateKey.toPublicKey()
-                    .toString());
-                  config.set('platform.withdrawals.secondPublicKey', withdrawalsDerivedSecondPrivateKey.privateKey.toPublicKey()
-                    .toString());
-
-                  config.set(
-                    'platform.masternodeRewardShares.masterPublicKey',
-                    masternodeRewardSharesDerivedMasterPrivateKey.privateKey
-                      .toPublicKey()
-                      .toString(),
-                  );
-                  config.set(
-                    'platform.masternodeRewardShares.secondPublicKey',
-                    masternodeRewardSharesDerivedSecondPrivateKey.privateKey
-                      .toPublicKey()
-                      .toString(),
-                  );
                 }
               },
               options: {

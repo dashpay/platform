@@ -1,4 +1,12 @@
+use dash_sdk::{mock::Mockable, platform::Query, Sdk};
 use dpp::{data_contract::DataContractFactory, prelude::Identifier};
+use hex::ToHex;
+use rs_dapi_client::transport::TransportRequest;
+
+use super::config::Config;
+
+/// Test DPNS name for testing of the Sdk; at least 3 identities should request this name to be reserved
+pub(crate) const TEST_DPNS_NAME: &str = "testname";
 
 /// Create a mock document type for testing of mock API
 pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
@@ -72,11 +80,32 @@ pub fn mock_data_contract(
 pub fn setup_logs() {
     tracing_subscriber::fmt::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(
-            "info,dash_sdk=trace,h2=info",
+            "info,dash_sdk=trace,dash_sdk::platform::fetch=debug,drive_proof_verifier=debug,main=debug,h2=info",
         ))
         .pretty()
         .with_ansi(true)
         .with_writer(std::io::stdout)
         .try_init()
         .ok();
+}
+
+/// Configure test case generated with [::test_case] crate.
+///
+/// This function is intended to use with multiple test cases in a single function.
+/// As a test case shares function body, we need to generate unique name for each of them to isolate generated
+/// test vectors. It is done by hashing query and using it as a suffix for test case name.
+///
+/// ## Returns
+///
+/// Returns unique name of test case (generated from `name_prefix` and hash of query) and configured SDK.
+pub(crate) async fn setup_sdk_for_test_case<T: TransportRequest + Mockable, Q: Query<T>>(
+    cfg: Config,
+    query: Q,
+    name_prefix: &str,
+) -> (String, Sdk) {
+    let key = rs_dapi_client::mock::Key::new(&query.query(true).expect("valid query"));
+    let test_case_id = format!("{}_{}", name_prefix, key.encode_hex::<String>());
+
+    // create new sdk to ensure that test cases don't interfere with each other
+    (test_case_id.clone(), cfg.setup_api(&test_case_id).await)
 }

@@ -1,6 +1,7 @@
 /// transformer
 pub mod transformer;
 
+use dpp::data_contract::document_type::DocumentTypeRef;
 use std::sync::Arc;
 
 use dpp::identifier::Identifier;
@@ -27,6 +28,9 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     /// The document Id
     fn id(&self) -> Identifier;
 
+    /// The document type
+    fn document_type(&self) -> Result<DocumentTypeRef, ProtocolError>;
+
     /// Is a field required on the document type?
     fn document_type_field_is_required(&self, field: &str) -> Result<bool, ProtocolError>;
 
@@ -36,6 +40,9 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     fn document_type_name_owned(self) -> String;
     /// Data contract ID generated from the data contract's `owner_id` and `entropy`
     fn data_contract_id(&self) -> Identifier;
+
+    /// A reference to the data contract fetch info that does not clone the Arc
+    fn data_contract_fetch_info_ref(&self) -> &Arc<DataContractFetchInfo>;
     /// Data contract
     fn data_contract_fetch_info(&self) -> Arc<DataContractFetchInfo>;
     /// Identity contract nonce

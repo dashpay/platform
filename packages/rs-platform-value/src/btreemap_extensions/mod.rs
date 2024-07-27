@@ -21,6 +21,7 @@ pub use btreemap_mut_value_extensions::BTreeMutValueMapHelper;
 pub use btreemap_path_extensions::BTreeValueMapPathHelper;
 pub use btreemap_path_insertion_extensions::BTreeValueMapInsertionPathHelper;
 pub use btreemap_removal_extensions::BTreeValueRemoveFromMapHelper;
+pub use btreemap_removal_extensions::BTreeValueRemoveTupleFromMapHelper;
 pub use btreemap_removal_inner_value_extensions::BTreeValueRemoveInnerValueFromMapHelper;
 
 pub trait BTreeValueMapHelper {

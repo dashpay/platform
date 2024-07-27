@@ -10,10 +10,11 @@ use drive::grovedb::Transaction;
 use crate::platform_types::cleaned_abci_messages::request_init_chain_cleaned_params;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
-use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
+use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::proto::serializers::timestamp::FromMilis;
 
 impl<C> Platform<C>
 where
@@ -31,28 +32,40 @@ where
                 request,
             )?;
 
-        // We get core height early, as this also verifies v20 fork
-        let core_height =
-            self.initial_core_height(request.initial_core_height, platform_version)?;
+        // Wait until we have an initial core height to start the chain
+        let (core_height, genesis_time) = loop {
+            match self.initial_core_height_and_time(request.initial_core_height, platform_version) {
+                Ok(height) => break height,
+                Err(e) => match e {
+                    Error::Execution(ExecutionError::InitializationForkNotActive(_))
+                    | Error::Execution(ExecutionError::InitializationHeightIsNotLocked {
+                        ..
+                    })
+                    | Error::Execution(ExecutionError::InitializationGenesisTimeInFuture {
+                        ..
+                    }) => {
+                        tracing::warn!(
+                            error = ?e,
+                            "Failed to obtain deterministic initial core height to start the chain. Retrying in 30 seconds.",
+                        );
 
-        let genesis_time = request.genesis_time;
-
-        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
-            self.config.abci.keys.clone().into();
+                        // We need to wait for the fork to be active
+                        std::thread::sleep(std::time::Duration::from_secs(30));
+                    }
+                    e => return Err(e),
+                },
+            }
+        };
 
         // Create genesis drive state
-        self.create_genesis_state(
-            genesis_time,
-            system_identity_public_keys_v0.into(),
-            Some(transaction),
-            platform_version,
-        )?;
+        self.create_genesis_state(genesis_time, Some(transaction), platform_version)?;
 
         // Create platform execution state
         let mut initial_platform_state = PlatformState::default_with_protocol_versions(
             request.initial_protocol_version,
             request.initial_protocol_version,
-        );
+            &self.config,
+        )?;
 
         let genesis_block_info = BlockInfo {
             height: request.initial_height,
@@ -102,7 +115,7 @@ where
 
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
-                platform_state_fingerprint = hex::encode(initial_platform_state.fingerprint()),
+                platform_state_fingerprint = hex::encode(initial_platform_state.fingerprint()?),
                 "platform runtime state",
             );
         }
@@ -112,16 +125,17 @@ where
         let app_hash = self
             .drive
             .grove
-            .root_hash(Some(transaction))
+            .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
             .map_err(GroveDB)?;
 
         Ok(ResponseInitChain {
-            consensus_params: None, //todo
+            consensus_params: None,
             app_hash: app_hash.to_vec(),
             validator_set_update: Some(validator_set),
             next_core_chain_lock_update: None,
             initial_core_height: core_height, // we send back the core height when the fork happens
+            genesis_time: Some(Timestamp::from_milis(genesis_time)),
         })
     }
 }

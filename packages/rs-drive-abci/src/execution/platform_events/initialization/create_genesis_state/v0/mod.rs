@@ -1,69 +1,29 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
 use dpp::platform_value::{platform_value, BinaryData};
 use dpp::ProtocolError;
 
-use drive::dpp::identity::{Identity, KeyType, Purpose, SecurityLevel, TimestampMillis};
+use drive::dpp::identity::TimestampMillis;
 
-use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0Getters;
-use crate::platform_types::system_identity_public_keys::SystemIdentityPublicKeys;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::DocumentV0;
-use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::identity::IdentityV0;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::SystemDataContract;
-use drive::drive::batch::{
-    DataContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
-};
+use drive::util::batch::{DataContractOperationType, DocumentOperationType, DriveOperation};
 
-use drive::drive::object_size_info::{
-    DataContractInfo, DocumentInfo, DocumentTypeInfo, OwnedDocumentInfo,
+use dpp::system_data_contracts::dpns_contract::{
+    DPNS_DASH_TLD_DOCUMENT_ID, DPNS_DASH_TLD_PREORDER_SALT,
 };
 use drive::query::TransactionArg;
+use drive::util::object_size_info::{
+    DataContractInfo, DocumentInfo, DocumentTypeInfo, OwnedDocumentInfo,
+};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-
-const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
-    215, 242, 197, 63, 70, 169, 23, 171, 110, 91, 57, 162, 215, 188, 38, 11, 100, 146, 137, 69, 55,
-    68, 209, 224, 212, 242, 106, 141, 142, 255, 55, 207,
-];
-const DPNS_DASH_TLD_PREORDER_SALT: [u8; 32] = [
-    224, 181, 8, 197, 163, 104, 37, 162, 6, 105, 58, 31, 65, 74, 161, 62, 219, 236, 244, 60, 65,
-    227, 199, 153, 234, 158, 115, 123, 79, 154, 162, 38,
-];
 
 impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
@@ -71,7 +31,6 @@ impl<C> Platform<C> {
     pub(super) fn create_genesis_state_v0(
         &self,
         genesis_time: TimestampMillis,
-        system_identity_public_keys: SystemIdentityPublicKeys,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -86,100 +45,37 @@ impl<C> Platform<C> {
 
         let system_data_contracts = &self.drive.cache.system_data_contracts;
 
-        let dpns_data_contract = system_data_contracts.load_dpns();
-
         let system_data_contract_types = BTreeMap::from_iter([
-            (
-                SystemDataContract::DPNS,
-                (
-                    system_data_contracts.load_dpns(),
-                    system_identity_public_keys.dpns_contract_owner(),
-                ),
-            ),
+            (SystemDataContract::DPNS, system_data_contracts.load_dpns()),
             (
                 SystemDataContract::Withdrawals,
-                (
-                    system_data_contracts.load_withdrawals(),
-                    system_identity_public_keys.withdrawals_contract_owner(),
-                ),
+                system_data_contracts.load_withdrawals(),
             ),
-            // TODO: Do we still need feature flags to change consensus params like timeouts and so on?
-            // (
-            //     SystemDataContract::FeatureFlags,
-            //     (
-            //         load_system_data_contract(
-            //             SystemDataContract::FeatureFlags,
-            //             platform_version.protocol_version,
-            //         )?,
-            //         system_identity_public_keys.feature_flags_contract_owner(),
-            //     ),
-            // ),
             (
                 SystemDataContract::Dashpay,
-                (
-                    system_data_contracts.load_dashpay(),
-                    system_identity_public_keys.dashpay_contract_owner(),
-                ),
+                system_data_contracts.load_dashpay(),
             ),
             (
                 SystemDataContract::MasternodeRewards,
-                (
-                    system_data_contracts.load_masternode_reward_shares(),
-                    system_identity_public_keys.masternode_reward_shares_contract_owner(),
-                ),
+                system_data_contracts.load_masternode_reward_shares(),
             ),
         ]);
 
-        for (data_contract, identity_public_keys_set) in system_data_contract_types.values() {
-            let public_keys = [
-                (
-                    0,
-                    IdentityPublicKeyV0 {
-                        id: 0,
-                        purpose: Purpose::AUTHENTICATION,
-                        security_level: SecurityLevel::MASTER,
-                        contract_bounds: None,
-                        key_type: KeyType::ECDSA_SECP256K1,
-                        read_only: false,
-                        data: identity_public_keys_set.master.clone().into(),
-                        disabled_at: None,
-                    }
-                    .into(),
-                ),
-                (
-                    1,
-                    IdentityPublicKeyV0 {
-                        id: 1,
-                        purpose: Purpose::AUTHENTICATION,
-                        security_level: SecurityLevel::HIGH,
-                        contract_bounds: None,
-                        key_type: KeyType::ECDSA_SECP256K1,
-                        read_only: false,
-                        data: identity_public_keys_set.high.clone().into(),
-                        disabled_at: None,
-                    }
-                    .into(),
-                ),
-            ];
-
-            let identity = IdentityV0 {
-                id: data_contract.owner_id(),
-                public_keys: BTreeMap::from(public_keys),
-                balance: 0,
-                revision: 0,
-            }
-            .into();
-
+        for data_contract in system_data_contract_types.values() {
             self.register_system_data_contract_operations(
                 data_contract,
                 &mut operations,
                 platform_version,
             )?;
-
-            self.register_system_identity_operations(identity, &mut operations);
         }
 
-        self.register_dpns_top_level_domain_operations(&dpns_data_contract, &mut operations)?;
+        let dpns_contract = system_data_contracts.load_dpns();
+
+        self.register_dpns_top_level_domain_operations(
+            &dpns_contract,
+            genesis_time,
+            &mut operations,
+        )?;
 
         let block_info = BlockInfo::default_with_time(genesis_time);
 
@@ -189,6 +85,7 @@ impl<C> Platform<C> {
             &block_info,
             transaction,
             platform_version,
+            None, // No previous_fee_versions needed for genesis state creation
         )?;
 
         Ok(())
@@ -212,22 +109,10 @@ impl<C> Platform<C> {
         Ok(())
     }
 
-    fn register_system_identity_operations(
-        &self,
-        identity: Identity,
-        operations: &mut Vec<DriveOperation>,
-    ) {
-        operations.push(DriveOperation::IdentityOperation(
-            IdentityOperationType::AddNewIdentity {
-                identity,
-                is_masternode_identity: false,
-            },
-        ))
-    }
-
     fn register_dpns_top_level_domain_operations<'a>(
         &'a self,
         contract: &'a DataContract,
+        genesis_time: TimestampMillis,
         operations: &mut Vec<DriveOperation<'a>>,
     ) -> Result<(), Error> {
         let domain = "dash";
@@ -255,9 +140,9 @@ impl<C> Platform<C> {
             properties: document_stub_properties,
             owner_id: contract.owner_id(),
             revision: None,
-            created_at: None,
-            updated_at: None,
-            transferred_at: None,
+            created_at: Some(genesis_time),
+            updated_at: Some(genesis_time),
+            transferred_at: Some(genesis_time),
             created_at_block_height: None,
             updated_at_block_height: None,
             transferred_at_block_height: None,
@@ -290,10 +175,12 @@ mod tests {
     mod create_genesis_state {
         use crate::config::PlatformConfig;
         use crate::test::helpers::setup::TestPlatformBuilder;
-        use drive::drive::config::DriveConfig;
+        use drive::config::DriveConfig;
+        use platform_version::version::PlatformVersion;
 
         #[test]
         pub fn should_create_genesis_state_deterministically() {
+            let platform_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .with_config(PlatformConfig {
                     drive: DriveConfig {
@@ -308,16 +195,13 @@ mod tests {
             let root_hash = platform
                 .drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should obtain root hash");
 
             assert_eq!(
-                root_hash,
-                [
-                    162, 81, 50, 217, 246, 11, 77, 233, 231, 192, 228, 176, 197, 102, 24, 18, 160,
-                    5, 182, 75, 119, 174, 75, 155, 86, 92, 88, 197, 201, 60, 60, 157
-                ]
+                hex::encode(root_hash),
+                "adfd53ece823697cec9b1afc71a0fac7fab41bf87ef98903f12a70c7efc896fc"
             )
         }
     }

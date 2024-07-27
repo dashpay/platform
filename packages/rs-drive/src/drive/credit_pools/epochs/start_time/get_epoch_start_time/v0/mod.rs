@@ -1,11 +1,11 @@
+use crate::drive::credit_pools::epochs::epoch_key_constants::KEY_START_TIME;
+use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use grovedb::{Element, TransactionArg};
-
-use crate::fee_pools::epochs::epoch_key_constants::KEY_START_TIME;
-use crate::fee_pools::epochs::paths::EpochProposers;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Returns the start time of the given Epoch.
@@ -13,6 +13,7 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<u64, Error> {
         let element = self
             .grove
@@ -20,6 +21,7 @@ impl Drive {
                 &epoch_tree.get_path(),
                 KEY_START_TIME.as_slice(),
                 transaction,
+                &platform_version.drive.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;
@@ -44,7 +46,7 @@ impl Drive {
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 
     use super::*;
 
@@ -105,6 +107,7 @@ mod tests {
                     Element::empty_tree(),
                     None,
                     Some(&transaction),
+                    &platform_version.drive.grove_version,
                 )
                 .unwrap()
                 .expect("should insert invalid data");
@@ -134,6 +137,7 @@ mod tests {
                     Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                     None,
                     Some(&transaction),
+                    &platform_version.drive.grove_version,
                 )
                 .unwrap()
                 .expect("should insert invalid data");

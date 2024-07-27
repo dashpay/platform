@@ -8,7 +8,7 @@ use crate::drive::Drive;
 use crate::error::document::DocumentError;
 
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
