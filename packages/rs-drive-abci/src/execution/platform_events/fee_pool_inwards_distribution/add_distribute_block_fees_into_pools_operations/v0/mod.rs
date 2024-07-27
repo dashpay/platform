@@ -105,6 +105,7 @@ mod tests {
             1,
             1,
             1,
+            platform_version.protocol_version,
             &mut inner_batch,
         );
 
@@ -177,6 +178,7 @@ mod tests {
             1,
             1,
             1,
+            platform_version.protocol_version,
             &mut batch,
         );
 
