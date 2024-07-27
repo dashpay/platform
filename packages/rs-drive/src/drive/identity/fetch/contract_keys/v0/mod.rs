@@ -2,10 +2,10 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use dpp::identity::Purpose;
-use dpp::prelude::Identifier;
+use dpp::identity::identity_public_key::Purpose;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::TransactionArg;
+use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 

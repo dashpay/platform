@@ -12,7 +12,7 @@ use {
         },
         query::{Query, QueryItem},
     },
-    dpp::identity::identity_public_key::{KeyID, Purpose},
+    dpp::identity::identity_public_key::{KeyID, Purpose, accessors::v0::IdentityPublicKeyGettersV0},
     grovedb::{PathQuery, SizedQuery},
     integer_encoding::VarInt,
     std::{collections::BTreeMap, ops::RangeFull},
@@ -24,7 +24,7 @@ use {
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
     dpp::{
         fee::Credits,
-        identity::{IdentityPublicKey, SecurityLevel},
+        identity::{IdentityPublicKey, identity_public_key::SecurityLevel},
         serialization::PlatformDeserializable,
     },
     grovedb::{
@@ -34,6 +34,7 @@ use {
         Element,
         Element::Item,
     },
+    platform_version::version::PlatformVersion,
     std::collections::HashSet,
 };
 

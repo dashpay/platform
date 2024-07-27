@@ -2,6 +2,7 @@ use bincode::{Decode, Encode};
 
 pub mod v1;
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
+#[ferment_macro::export]
 pub struct VoteResolutionFundFees {
     /// This is the amount that will be deducted from an identity and used to pay for voting
     pub contested_document_vote_resolution_fund_required_amount: u64,

@@ -10,13 +10,14 @@ use thiserror::Error;
 )]
 #[error("Overflow error")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct OverflowError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    message: String,
+    pub message: String,
 }
 
 impl OverflowError {

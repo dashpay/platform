@@ -9,9 +9,9 @@ use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{DirectQueryType, QueryType};
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::prelude::DataContract;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;

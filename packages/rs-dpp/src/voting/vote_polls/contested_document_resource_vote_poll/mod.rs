@@ -16,6 +16,7 @@ use std::fmt;
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_serialize(limit = 100000)]
+#[ferment_macro::export]
 pub struct ContestedDocumentResourceVotePoll {
     pub contract_id: Identifier,
     pub document_type_name: String,

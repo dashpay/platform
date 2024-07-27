@@ -12,7 +12,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 
 use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;

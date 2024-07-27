@@ -1,6 +1,6 @@
 use crate::state_transition_action::contract::data_contract_update::v0::DataContractUpdateTransitionActionV0;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
-use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::operations::ProtocolValidationOperation;
 use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;

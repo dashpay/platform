@@ -51,6 +51,7 @@ pub struct DriveStateTransitionMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions {
     pub data_contract_create_transition: FeatureVersion,
     pub data_contract_update_transition: FeatureVersion,
@@ -142,6 +143,7 @@ pub struct DriveVerifyIdentityMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveVerifyVoteMethodVersions {
     pub verify_masternode_vote: FeatureVersion,
     pub verify_start_at_contender_in_proof: FeatureVersion,
@@ -154,6 +156,7 @@ pub struct DriveVerifyVoteMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveVerifySystemMethodVersions {
     pub verify_epoch_infos: FeatureVersion,
     pub verify_elements: FeatureVersion,
@@ -184,6 +187,7 @@ pub struct DriveGroveMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DrivePrefundedSpecializedMethodVersions {
     pub fetch_single: FeatureVersion,
     pub prove_single: FeatureVersion,
@@ -195,6 +199,7 @@ pub struct DrivePrefundedSpecializedMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveBalancesMethodVersions {
     pub add_to_system_credits: FeatureVersion,
     pub add_to_system_credits_operations: FeatureVersion,

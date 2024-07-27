@@ -18,12 +18,12 @@ use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::document::DocumentV0Getters;
-use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::AllReference;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use platform_version::version::drive_versions::DriveVersion;
 use std::collections::HashMap;
 
 impl Drive {

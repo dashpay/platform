@@ -4,7 +4,7 @@ use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::balances::credits::Credits;
-use dpp::identity::SecurityLevel;
+use dpp::identity::identity_public_key::SecurityLevel;
 use dpp::platform_value::Identifier;
 use dpp::prelude::UserFeeIncrease;
 use dpp::ProtocolError;

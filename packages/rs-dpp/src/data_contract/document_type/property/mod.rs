@@ -31,12 +31,14 @@ pub struct DocumentProperty {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize)]
+#[ferment_macro::export]
 pub struct StringPropertySizes {
     pub min_length: Option<u16>,
     pub max_length: Option<u16>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize)]
+#[ferment_macro::export]
 pub struct ByteArrayPropertySizes {
     pub min_size: Option<u16>,
     pub max_size: Option<u16>,

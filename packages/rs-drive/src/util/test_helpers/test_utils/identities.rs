@@ -12,7 +12,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
+use dpp::identity::{Identity, IdentityPublicKey, v0::IdentityV0};
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use rand::rngs::StdRng;

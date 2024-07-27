@@ -14,7 +14,7 @@ pub mod document_transfer_transition_action;
 /// document_update_price_transition_action
 pub mod document_update_price_transition_action;
 
-pub use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+pub use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 
 use derive_more::From;
 

@@ -78,6 +78,7 @@ pub mod prelude {
     pub type TimestampMillis = u64;
     #[ferment_macro::export]
     pub type TimestampIncluded = bool;
+    #[ferment_macro::export]
     pub type Revision = u64;
     #[ferment_macro::export]
     pub type IdentityNonce = u64;

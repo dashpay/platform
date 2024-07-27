@@ -6,11 +6,11 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
-use dpp::version::drive_versions::DriveVersion;
 
 use grovedb::batch::KeyInfoPath;
 
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use platform_version::version::drive_versions::DriveVersion;
 use std::collections::HashMap;
 
 impl Drive {

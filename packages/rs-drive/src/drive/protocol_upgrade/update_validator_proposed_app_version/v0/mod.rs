@@ -10,7 +10,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 
 use crate::error::cache::CacheError;
 use grovedb::{Element, TransactionArg};

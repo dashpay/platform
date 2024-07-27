@@ -5,7 +5,7 @@ use std::ops::RangeFull;
 
 use crate::error::query::QuerySyntaxError;
 use crate::query::QueryItem;
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 
 impl Drive {

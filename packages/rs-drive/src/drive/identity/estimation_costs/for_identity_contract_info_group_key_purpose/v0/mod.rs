@@ -7,7 +7,7 @@ use grovedb::EstimatedLayerSizes::AllReference;
 
 use crate::drive::identity::estimation_costs::KEY_REFERENCE_SIZE;
 use crate::drive::identity::identity_contract_info_group_path_key_purpose_vec;
-use dpp::identity::Purpose;
+use dpp::identity::identity_public_key::Purpose;
 use std::collections::HashMap;
 
 impl Drive {

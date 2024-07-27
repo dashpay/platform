@@ -1,5 +1,5 @@
-pub use identity_already_exists_error::*;
-pub use identity_insufficient_balance_error::*;
+pub use identity_already_exists_error::IdentityAlreadyExistsError;
+pub use identity_insufficient_balance_error::IdentityInsufficientBalanceError;
 
 pub mod duplicated_identity_public_key_id_state_error;
 pub mod duplicated_identity_public_key_state_error;

@@ -1,5 +1,5 @@
 use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::{
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::action_type::{
     DocumentTransitionActionType, TransitionActionTypeGetter,
 };
 

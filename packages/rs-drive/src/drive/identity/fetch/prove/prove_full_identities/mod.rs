@@ -4,7 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 
 impl Drive {

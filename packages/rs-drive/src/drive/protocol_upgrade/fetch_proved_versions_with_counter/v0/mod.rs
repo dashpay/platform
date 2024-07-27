@@ -3,7 +3,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 
 use crate::query::QueryItem;
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 use grovedb::{PathQuery, Query, TransactionArg};
 use std::ops::RangeFull;
 

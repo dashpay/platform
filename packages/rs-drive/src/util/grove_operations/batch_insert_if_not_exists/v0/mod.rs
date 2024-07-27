@@ -10,7 +10,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
 use crate::util::object_size_info::PathKeyElementInfo;
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 use grovedb::{GroveDb, TransactionArg};
 
 impl Drive {

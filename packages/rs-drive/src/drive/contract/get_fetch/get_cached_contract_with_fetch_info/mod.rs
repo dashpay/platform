@@ -4,9 +4,9 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use std::sync::Arc;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Returns the contract fetch info with the given ID if it's in cache.

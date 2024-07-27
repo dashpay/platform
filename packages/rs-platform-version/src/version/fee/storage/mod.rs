@@ -3,6 +3,7 @@ use bincode::{Decode, Encode};
 pub mod v1;
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
+#[ferment_macro::export]
 pub struct FeeStorageVersion {
     pub storage_disk_usage_credit_per_byte: u64,
     pub storage_processing_credit_per_byte: u64,

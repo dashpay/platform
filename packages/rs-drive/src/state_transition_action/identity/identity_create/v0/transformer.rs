@@ -1,7 +1,7 @@
 use crate::state_transition_action::identity::identity_create::v0::IdentityCreateTransitionActionV0;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
-use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::platform_value::Bytes36;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 

@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
 use crate::query::GroveError;
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 use grovedb::batch::{KeyInfoPath, OpsByLevelPath};
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use grovedb_costs::OperationCost;

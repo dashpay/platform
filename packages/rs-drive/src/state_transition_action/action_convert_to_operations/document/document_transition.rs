@@ -4,7 +4,7 @@ use crate::state_transition_action::action_convert_to_operations::DriveHighLevel
 use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use crate::util::batch::DriveOperation;
 use dpp::block::epoch::Epoch;
-use dpp::prelude::Identifier;
+use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentTransitionAction {

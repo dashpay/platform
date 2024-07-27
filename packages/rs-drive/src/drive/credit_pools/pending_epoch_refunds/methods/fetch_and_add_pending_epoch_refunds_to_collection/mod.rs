@@ -4,8 +4,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::fee::epoch::CreditsPerEpoch;
-use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Fetches pending epoch refunds and adds them to specified collection based on the drive version

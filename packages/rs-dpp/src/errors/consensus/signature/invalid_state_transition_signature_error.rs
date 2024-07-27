@@ -21,7 +21,7 @@ use thiserror::Error;
 #[platform_serialize(unversioned)]
 #[ferment_macro::export]
 pub struct InvalidStateTransitionSignatureError {
-    message: String,
+    pub message: String,
 }
 
 /*

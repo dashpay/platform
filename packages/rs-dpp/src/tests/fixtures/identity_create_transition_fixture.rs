@@ -4,7 +4,6 @@ use platform_value::{platform_value, Value};
 
 use crate::identity::identity_public_key::{KeyType, Purpose, SecurityLevel};
 use crate::tests::fixtures::raw_instant_asset_lock_proof_fixture;
-use crate::version;
 use platform_value::string_encoding::{decode, Encoding};
 use platform_version::version::LATEST_VERSION;
 //3bufpwQjL5qsvuP4fmCKgXJrKG852DDMYfi9J6XKqPAT

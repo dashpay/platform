@@ -33,6 +33,7 @@ pub mod random_index;
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
 #[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[ferment_macro::export]
 pub enum ContestedIndexResolution {
     MasternodeVote = 0,
 }
@@ -53,8 +54,9 @@ impl TryFrom<u8> for ContestedIndexResolution {
 
 #[repr(u8)]
 #[derive(Debug)]
+#[ferment_macro::export]
 pub enum ContestedIndexFieldMatch {
-    Regex(regex::Regex),
+    Regex(Regex),
     PositiveIntegerMatch(u128),
 }
 
@@ -193,7 +195,7 @@ impl Clone for ContestedIndexFieldMatch {
     fn clone(&self) -> Self {
         match self {
             ContestedIndexFieldMatch::Regex(regex) => {
-                ContestedIndexFieldMatch::Regex(regex::Regex::new(regex.as_str()).unwrap())
+                ContestedIndexFieldMatch::Regex(Regex::new(regex.as_str()).unwrap())
             }
             ContestedIndexFieldMatch::PositiveIntegerMatch(int) => {
                 ContestedIndexFieldMatch::PositiveIntegerMatch(*int)
@@ -241,6 +243,7 @@ impl ContestedIndexFieldMatch {
 
 #[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
 #[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[ferment_macro::export]
 pub struct ContestedIndexInformation {
     pub field_matches: BTreeMap<String, ContestedIndexFieldMatch>,
     pub resolution: ContestedIndexResolution,

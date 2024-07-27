@@ -8,7 +8,7 @@ use grovedb::EstimatedLayerSizes::AllItems;
 use crate::drive::identity::identity_query_keys_security_level_tree_path_vec;
 
 use crate::drive::identity::estimation_costs::KEY_REFERENCE_SIZE;
-use dpp::identity::SecurityLevel;
+use dpp::identity::identity_public_key::SecurityLevel;
 
 use std::collections::HashMap;
 

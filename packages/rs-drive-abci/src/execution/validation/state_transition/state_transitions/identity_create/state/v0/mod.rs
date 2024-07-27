@@ -3,20 +3,20 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::balances::credits::CREDITS_PER_DUFF;
-use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnoughBalanceError;
-use dpp::consensus::signature::{BasicECDSAError, SignatureError};
+use dpp::errors::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnoughBalanceError;
+use dpp::errors::consensus::signature::{BasicECDSAError, SignatureError};
 
-use dpp::consensus::state::identity::IdentityAlreadyExistsError;
+use dpp::errors::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{signer, ScriptBuf, Txid};
 use dpp::identity::KeyType;
 
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::ProtocolError;
 
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::state_transition::StateTransitionLike;
 

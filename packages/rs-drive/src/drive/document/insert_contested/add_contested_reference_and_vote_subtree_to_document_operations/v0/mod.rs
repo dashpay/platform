@@ -15,13 +15,13 @@ use crate::util::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyEl
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::{DEFAULT_HASH_SIZE_U8, U8_SIZE_U32, U8_SIZE_U8};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, Mix};
 use grovedb::EstimatedSumTrees::AllSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use platform_version::version::drive_versions::DriveVersion;
 use std::collections::HashMap;
 
 impl Drive {

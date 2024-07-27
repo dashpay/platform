@@ -5,7 +5,7 @@ use crate::error::Error;
 
 use crate::query::QueryItem;
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{PathQuery, Query, TransactionArg};
 use integer_encoding::VarInt;

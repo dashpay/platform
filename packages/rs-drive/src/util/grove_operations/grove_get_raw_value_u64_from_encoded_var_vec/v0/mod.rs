@@ -3,7 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
-use dpp::version::drive_versions::DriveVersion;
+use platform_version::version::drive_versions::DriveVersion;
 use grovedb::{Element, TransactionArg};
 use grovedb_path::SubtreePath;
 use integer_encoding::VarInt;

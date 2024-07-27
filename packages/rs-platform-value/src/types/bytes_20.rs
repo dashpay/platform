@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy, Encode, Decode)]
+#[ferment_macro::export]
 pub struct Bytes20(pub [u8; 20]);
 
 impl AsRef<[u8]> for Bytes20 {

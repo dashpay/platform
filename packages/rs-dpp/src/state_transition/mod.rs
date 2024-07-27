@@ -109,7 +109,7 @@ use crate::state_transition::state_transitions::identity::identity_update_transi
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
 
-use crate::state_transition::identity::masternode_vote_transition::MasternodeVoteTransition;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;

@@ -11,7 +11,7 @@ use crate::drive::votes::paths::{
 use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::query::QueryItem;
 use crate::util::grove_operations::BatchDeleteApplyType;
-use dpp::prelude::Identifier;
+use platform_value::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};

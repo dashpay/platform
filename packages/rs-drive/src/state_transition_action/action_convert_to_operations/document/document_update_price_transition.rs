@@ -7,7 +7,7 @@ use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo, OwnedDoc
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 
-use dpp::prelude::Identifier;
+use platform_value::Identifier;
 use std::borrow::Cow;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::{DocumentUpdatePriceTransitionAction, DocumentUpdatePriceTransitionActionAccessorsV0};

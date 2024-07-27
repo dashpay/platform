@@ -8,8 +8,8 @@ use dpp::errors::consensus::ConsensusError;
 use dpp::balances::credits::Credits;
 use dpp::platform_value::Bytes32;
 use dpp::serialization::Signable;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
 
 impl PartiallyUseAssetLockAction {
     /// try from identity create transition

@@ -17,6 +17,7 @@ use platform_version::version::PlatformVersion;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use crate::ProtocolError;
 
 /// Reads a JSON file and converts it to serde_value.
 #[cfg(feature = "data-contract-json-conversion")]

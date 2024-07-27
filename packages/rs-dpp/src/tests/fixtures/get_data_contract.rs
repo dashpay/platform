@@ -4,6 +4,7 @@ use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::{
     data_contract::DataContractFactory, tests::utils::generate_random_identifier_struct,
 };
+use crate::prelude::IdentityNonce;
 
 pub fn get_data_contract_fixture(
     owner_id: Option<Identifier>,

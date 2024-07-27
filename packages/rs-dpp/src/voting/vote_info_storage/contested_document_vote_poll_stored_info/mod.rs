@@ -1,4 +1,4 @@
-mod v0;
+pub mod v0;
 
 use crate::block::block_info::BlockInfo;
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
@@ -58,6 +58,7 @@ impl ContestedDocumentVotePollStatus {
     Debug, PartialEq, Eq, Clone, From, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub enum ContestedDocumentVotePollStoredInfo {
     /// V0.
     V0(ContestedDocumentVotePollStoredInfoV0),

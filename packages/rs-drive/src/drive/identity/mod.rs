@@ -19,7 +19,7 @@ use dpp::identity::{KeyID, identity_public_key::SecurityLevel};
 pub mod withdrawals;
 
 #[cfg(feature = "server")]
-use dpp::identity::Purpose::AUTHENTICATION;
+use dpp::identity::identity_public_key::Purpose::AUTHENTICATION;
 #[cfg(feature = "server")]
 use integer_encoding::VarInt;
 

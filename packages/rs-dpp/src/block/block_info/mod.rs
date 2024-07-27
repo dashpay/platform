@@ -16,6 +16,7 @@ pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
 // @immutable
 /// Block information
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+#[ferment_macro::export]
 pub struct BlockInfo {
     /// Block time in milliseconds
     pub time_ms: TimestampMillis,

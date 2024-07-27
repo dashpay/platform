@@ -34,6 +34,7 @@ pub struct FinalizedContenderWithSerializedDocument {
 /// This struct holds the identity ID of the contender, the serialized document,
 /// and the vote tally.
 #[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
+#[ferment_macro::export]
 pub struct FinalizedResourceVoteChoicesWithVoterInfo {
     /// The resource vote choice.
     pub resource_vote_choice: ResourceVoteChoice,

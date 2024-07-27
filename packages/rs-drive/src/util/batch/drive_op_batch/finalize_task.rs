@@ -1,6 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use dpp::prelude::Identifier;
+use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
 pub enum DriveOperationFinalizeTask {

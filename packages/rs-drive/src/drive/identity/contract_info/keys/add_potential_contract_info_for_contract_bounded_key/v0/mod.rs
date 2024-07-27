@@ -20,7 +20,7 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{IdentityPublicKey, Purpose};
+use dpp::identity::identity_public_key::{IdentityPublicKey, Purpose};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::{SiblingReference, UpstreamRootHeightReference};

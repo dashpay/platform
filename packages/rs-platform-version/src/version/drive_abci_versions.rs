@@ -43,6 +43,7 @@ pub struct DriveAbciQueryIdentityVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciQueryVotingVersions {
     pub vote_polls_by_end_date_query: FeatureVersionBounds,
     pub contested_resource_vote_state: FeatureVersionBounds,
@@ -52,6 +53,7 @@ pub struct DriveAbciQueryVotingVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciQueryDataContractVersions {
     pub data_contract: FeatureVersionBounds,
     pub data_contract_history: FeatureVersionBounds,
@@ -111,6 +113,7 @@ pub struct DriveAbciValidationVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+#[ferment_macro::export]
 pub struct DriveAbciValidationConstants {
     pub maximum_vote_polls_to_process: u16,
     pub maximum_contenders_to_consider: u16,

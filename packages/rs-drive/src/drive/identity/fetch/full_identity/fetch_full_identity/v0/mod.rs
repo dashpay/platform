@@ -5,7 +5,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
-use dpp::identity::{Identity, IdentityV0};
+use dpp::identity::{Identity, v0::IdentityV0};
 
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;

@@ -5,7 +5,7 @@ use grovedb::TransactionArg;
 use std::sync::Arc;
 
 use dpp::ProtocolError;
-use dpp::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;

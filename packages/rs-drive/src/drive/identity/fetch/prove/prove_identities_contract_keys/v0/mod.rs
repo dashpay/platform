@@ -1,8 +1,8 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use dpp::identity::Purpose;
-use dpp::version::drive_versions::DriveVersion;
+use dpp::identity::identity_public_key::Purpose;
+use platform_version::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
