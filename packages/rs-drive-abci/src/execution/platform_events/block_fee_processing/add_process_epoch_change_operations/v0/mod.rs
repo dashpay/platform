@@ -112,7 +112,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             return Err(Error::Drive(error::drive::DriveError::NotSupported("the fee_multiplier_permille must be set in fees if using add_process_epoch_change_operations_v0").into()));
         };
 
-        // it is important to set the current protocol version because we might have skipped 
+        // it is important to set the current protocol version because we might have skipped
         // protocol versions if we skip over epochs.
         current_epoch.add_init_current_operations(
             fee_multiplier, // TODO (feature) use a data contract to choose the fee multiplier

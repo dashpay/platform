@@ -546,7 +546,14 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            epoch.add_init_current_operations(1000, 2, 5, 3, platform_version.protocol_version, &mut batch);
+            epoch.add_init_current_operations(
+                1000,
+                2,
+                5,
+                3,
+                platform_version.protocol_version,
+                &mut batch,
+            );
 
             // Apply init current
             drive
