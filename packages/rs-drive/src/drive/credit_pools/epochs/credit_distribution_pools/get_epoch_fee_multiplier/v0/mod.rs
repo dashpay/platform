@@ -120,7 +120,14 @@ mod tests {
             .add_init_empty_operations(&mut batch)
             .expect("should add empty epoch operations");
 
-        epoch.add_init_current_operations(multiplier, 1, 1, 1, &mut batch);
+        epoch.add_init_current_operations(
+            multiplier,
+            1,
+            1,
+            1,
+            platform_version.protocol_version,
+            &mut batch,
+        );
 
         drive
             .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
