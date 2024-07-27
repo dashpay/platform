@@ -1,5 +1,5 @@
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::errors::consensus::basic::BasicError;
+use crate::errors::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -11,14 +11,15 @@ use thiserror::Error;
 )]
 #[error("feature {feature_name} is not supported in version {current_protocol_version}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct UnsupportedFeatureError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    feature_name: String,
-    current_protocol_version: u32,
+    pub feature_name: String,
+    pub current_protocol_version: u32,
 }
 
 impl UnsupportedFeatureError {

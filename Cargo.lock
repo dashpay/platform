@@ -1596,6 +1596,7 @@ dependencies = [
  "hex",
  "platform-serialization",
  "platform-serialization-derive",
+ "platform-value",
  "serde",
  "serde_json",
  "tenderdash-abci",
@@ -3520,6 +3521,7 @@ name = "platform-version"
 version = "1.0.0-rc.2"
 dependencies = [
  "bincode",
+ "ferment-macro",
  "grovedb-version",
  "once_cell",
  "thiserror",
