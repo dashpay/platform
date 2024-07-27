@@ -9,9 +9,12 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+use dpp::bincode;
+use dpp::bincode::error::DecodeError;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use drive::grovedb::operations::proof::GroveDBProof;
 use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::MockContextProvider;
@@ -802,4 +805,33 @@ impl SdkBuilder {
 
         Ok(sdk)
     }
+}
+
+pub fn prettify_proof(proof: &Proof) -> String {
+    let config = bincode::config::standard()
+        .with_big_endian()
+        .with_no_limit();
+    let grovedb_proof: Result<GroveDBProof, DecodeError> =
+        bincode::decode_from_slice(&proof.grovedb_proof, config).map(|(a, _)| a);
+
+    let grovedb_proof_string = match grovedb_proof {
+        Ok(proof) => format!("{}", proof),
+        Err(_) => "Invalid GroveDBProof".to_string(),
+    };
+    format!(
+        "Proof {{
+            grovedb_proof: {},
+            quorum_hash: 0x{},
+            signature: 0x{},
+            round: {},
+            block_id_hash: 0x{},
+            quorum_type: {},
+        }}",
+        grovedb_proof_string,
+        hex::encode(&proof.quorum_hash),
+        hex::encode(&proof.signature),
+        proof.round,
+        hex::encode(&proof.block_id_hash),
+        proof.quorum_type,
+    )
 }

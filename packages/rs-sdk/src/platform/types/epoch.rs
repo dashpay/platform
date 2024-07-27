@@ -17,7 +17,9 @@ pub trait ExtendedEpochInfoEx: Sized {
     /// Fetch current (the latest) epoch from Platform with metadata.
     async fn fetch_current_with_metadata(sdk: &Sdk) -> Result<(Self, ResponseMetadata), Error>;
     /// Fetch current (the latest) epoch from Platform with metadata and proof.
-    async fn fetch_current_with_metadata_and_proof(sdk: &Sdk) -> Result<(Self, ResponseMetadata, Proof), Error>;
+    async fn fetch_current_with_metadata_and_proof(
+        sdk: &Sdk,
+    ) -> Result<(Self, ResponseMetadata, Proof), Error>;
 }
 
 #[async_trait]
@@ -42,7 +44,9 @@ impl ExtendedEpochInfoEx for ExtendedEpochInfo {
         Ok((epoch.ok_or(Error::EpochNotFound)?, metadata))
     }
 
-    async fn fetch_current_with_metadata_and_proof(sdk: &Sdk) -> Result<(Self, ResponseMetadata, Proof), Error> {
+    async fn fetch_current_with_metadata_and_proof(
+        sdk: &Sdk,
+    ) -> Result<(Self, ResponseMetadata, Proof), Error> {
         let query = LimitQuery {
             query: EpochQuery {
                 start: None,
@@ -52,7 +56,8 @@ impl ExtendedEpochInfoEx for ExtendedEpochInfo {
             start_info: None,
         };
 
-        let (epoch, metadata, proof) = Self::fetch_with_metadata_and_proof(sdk, query, None).await?;
+        let (epoch, metadata, proof) =
+            Self::fetch_with_metadata_and_proof(sdk, query, None).await?;
 
         Ok((epoch.ok_or(Error::EpochNotFound)?, metadata, proof))
     }
