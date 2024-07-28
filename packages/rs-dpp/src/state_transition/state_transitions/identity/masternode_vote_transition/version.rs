@@ -1,4 +1,4 @@
-use crate::state_transition::identity::masternode_vote_transition::MasternodeVoteTransition;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::FeatureVersioned;
 use crate::version::FeatureVersion;
 

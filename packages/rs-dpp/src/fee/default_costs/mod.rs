@@ -33,7 +33,7 @@
 //!
 
 use crate::block::epoch::{Epoch, EpochIndex};
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 use platform_version::version::fee::FeeVersion;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;

@@ -1,7 +1,7 @@
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::{Document, DocumentV0Getters};
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 use crate::version::PlatformVersion;
 
 impl DocumentTypeV0 {

@@ -6,7 +6,7 @@
 //! defined in this module.
 
 use dpp::data_contract::{DataContract, document_type::DocumentType};
-use dpp::fee::Credits;
+use dpp::balances::credits::Credits;
 use dpp::identity::identity_public_key::IdentityPublicKey;
 use dpp::prelude::{IdentityNonce, TimestampMillis};
 pub use dpp::version::ProtocolVersionVoteCount;

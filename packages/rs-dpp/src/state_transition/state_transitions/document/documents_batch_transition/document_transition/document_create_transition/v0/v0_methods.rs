@@ -3,7 +3,7 @@ use crate::state_transition::state_transitions::document::documents_batch_transi
 
 use platform_value::Value;
 
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 use std::collections::BTreeMap;
 
 pub trait DocumentCreateTransitionV0Methods {

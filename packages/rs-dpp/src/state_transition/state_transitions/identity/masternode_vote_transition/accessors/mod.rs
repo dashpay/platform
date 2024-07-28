@@ -1,7 +1,7 @@
 mod v0;
 
 use crate::prelude::IdentityNonce;
-use crate::state_transition::identity::masternode_vote_transition::MasternodeVoteTransition;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use crate::voting::votes::Vote;
 use platform_value::Identifier;
 pub use v0::*;

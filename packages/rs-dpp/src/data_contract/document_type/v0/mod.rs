@@ -75,39 +75,3 @@ impl DocumentTypeV0 {
         self.data_contract_id = new_id;
     }
 }
-
-
-pub struct TestCCCStruct {
-    pub security_level_requirement: u32,
-    #[cfg(feature = "validation")]
-    pub json_schema_validator: u32,
-}
-
-#[doc = "FFI-representation of the [`dpp::data_contract::document_type::v0::DocumentTypeV0`]"]
-#[repr(C)]
-#[derive(Clone)]
-pub struct dpp_data_contract_document_type_v0_TestCCCStruct {
-    pub security_level_requirement: u32,
-    # [cfg (feature = "validation")]
-    pub json_schema_validator: u32
-}
-impl ferment_interfaces::FFIConversion<TestCCCStruct> for dpp_data_contract_document_type_v0_TestCCCStruct {
-    unsafe fn ffi_from_const(ffi: *const dpp_data_contract_document_type_v0_TestCCCStruct) -> TestCCCStruct
-    {
-        let ffi_ref = &*ffi;
-        TestCCCStruct {
-            security_level_requirement: ffi_ref.security_level_requirement,
-            #[cfg(feature = "validation")]
-            json_schema_validator: ffi_ref.json_schema_validator,
-        }
-    }
-    unsafe fn ffi_to_const(obj: TestCCCStruct) -> *const dpp_data_contract_document_type_v0_TestCCCStruct {
-        ferment_interfaces::boxed(
-            dpp_data_contract_document_type_v0_TestCCCStruct {
-                security_level_requirement: obj.security_level_requirement,
-                #[cfg(feature = "validation")]
-                json_schema_validator: obj.json_schema_validator,
-            },
-        )
-    }
-}

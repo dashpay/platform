@@ -4,8 +4,8 @@ use platform_value::BinaryData;
 
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType, StateTransitionType::MasternodeVote};
-use crate::state_transition::identity::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
-use crate::state_transition::identity::masternode_vote_transition::MasternodeVoteTransition;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use crate::version::FeatureVersion;
 use platform_value::Identifier;
 

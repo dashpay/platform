@@ -20,7 +20,7 @@ pub mod v0;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use platform_version::version::PlatformVersion;
 use crate::voting::vote_polls::VotePoll;

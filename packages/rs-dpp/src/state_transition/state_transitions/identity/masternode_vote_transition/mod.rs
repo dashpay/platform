@@ -10,9 +10,9 @@ pub mod v0;
 mod value_conversion;
 mod version;
 
-use crate::state_transition::identity::masternode_vote_transition::fields::property_names::PRO_TX_HASH;
-use crate::state_transition::identity::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
-use crate::state_transition::identity::masternode_vote_transition::v0::MasternodeVoteTransitionV0Signable;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::fields::property_names::PRO_TX_HASH;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::v0::MasternodeVoteTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
@@ -49,6 +49,7 @@ pub type MasternodeVoteTransitionLatest = MasternodeVoteTransitionV0;
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.masternode_vote_state_transition"
 )]
+#[ferment_macro::export]
 pub enum MasternodeVoteTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(MasternodeVoteTransitionV0),

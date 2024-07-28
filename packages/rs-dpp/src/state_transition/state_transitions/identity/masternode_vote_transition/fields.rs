@@ -1,6 +1,6 @@
 use crate::state_transition::state_transitions;
 
-use crate::state_transition::identity::masternode_vote_transition::fields::property_names::PRO_TX_HASH;
+use crate::state_transition::state_transitions::identity::masternode_vote_transition::fields::property_names::PRO_TX_HASH;
 pub use state_transitions::common_fields::property_names::{
     SIGNATURE, SIGNATURE_PUBLIC_KEY_ID, STATE_TRANSITION_PROTOCOL_VERSION, TRANSITION_TYPE,
 };

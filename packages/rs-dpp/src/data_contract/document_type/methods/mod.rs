@@ -22,7 +22,7 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
 
-use crate::fee::Credits;
+use crate::balances::credits::Credits;
 use crate::voting::vote_polls::VotePoll;
 use platform_value::{Identifier, Value};
 

@@ -15,6 +15,7 @@ pub mod v0;
     serde(tag = "$version")
 )]
 #[platform_serialize(limit = 15000, unversioned)]
+#[ferment_macro::export]
 pub enum ResourceVote {
     #[cfg_attr(feature = "vote-serde-conversion", serde(rename = "0"))]
     V0(ResourceVoteV0),

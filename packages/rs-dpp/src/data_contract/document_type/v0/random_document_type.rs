@@ -98,7 +98,7 @@ impl RandomDocumentTypeParameters {
     }
 }
 
-use crate::data_contract::document_type::array::ArrayItemType;
+use crate::data_contract::document_type::property::ArrayItemType;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 #[cfg(feature = "validation")]
@@ -106,9 +106,9 @@ use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::document_type::{
     v0::DocumentTypeV0, DocumentProperty, DocumentPropertyType, DocumentType, Index,
 };
-use crate::data_contract::document_type::{ByteArrayPropertySizes, StringPropertySizes};
+use crate::data_contract::document_type::property::{ByteArrayPropertySizes, StringPropertySizes};
 use crate::document::transfer::Transferable;
-use crate::identity::SecurityLevel;
+use crate::identity::identity_public_key::SecurityLevel;
 use crate::nft::TradeMode;
 use platform_version::version::PlatformVersion;
 use crate::errors::ProtocolError;
