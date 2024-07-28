@@ -140,7 +140,7 @@ impl Config {
     ///
     /// ## Feature flags
     ///
-    /// * `offline-testing` is not set - connect to the platform and generate
+    /// * `offline-testing` is not set - connect to Platform and generate
     /// new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk

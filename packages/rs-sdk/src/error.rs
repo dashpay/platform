@@ -47,7 +47,7 @@ pub enum Error {
     #[error("Required {0} not found: {1}")]
     MissingDependency(String, String),
     /// Epoch not found; we must have at least one epoch
-    #[error("No epoch found on the Platform; it should never happen")]
+    #[error("No epoch found on Platform; it should never happen")]
     EpochNotFound,
     /// SDK operation timeout reached error
     #[error("SDK operation timeout {} secs reached: {1}", .0.as_secs())]
