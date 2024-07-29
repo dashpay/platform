@@ -1,6 +1,7 @@
 import { Listr } from 'listr2';
 import fs from 'fs';
 import path from 'path';
+import chalk from 'chalk';
 import {
   NETWORK_TESTNET,
 } from '../../../../constants.js';
@@ -74,7 +75,11 @@ function validateCoreDataDirectoryPathFactory(config) {
  * @param {generateEnvs} generateEnvs
  * @return {importCoreDataTask}
  */
-export default function importCoreDataTaskFactory(docker, dockerPull, generateEnvs) {
+export default function importCoreDataTaskFactory(
+  docker,
+  dockerPull,
+  generateEnvs,
+) {
   /**
    * @typedef {function} importCoreDataTask
    * @returns {Listr}
@@ -135,6 +140,12 @@ export default function importCoreDataTaskFactory(docker, dockerPull, generateEn
           // eslint-disable-next-line prefer-destructuring
           ctx.importedExternalIp = configFileContent.match(/^externalip=([^ \n]+)/m)?.[1];
 
+          // We need to reindex Core if there weren't all required indexed enabled before
+          ctx.isReindexRequired = !configFileContent.match(/^txindex=1/)
+            || !configFileContent.match(/^addressindex=1/)
+            || !configFileContent.match(/^timestampindex=1/)
+            || !configFileContent.match(/^spentindex=1/);
+
           // Copy data directory to docker a volume
 
           // Create a volume
@@ -193,11 +204,21 @@ export default function importCoreDataTaskFactory(docker, dockerPull, generateEn
             throw new Error('Cannot copy data dir to volume');
           }
 
-          // TODO: Wording needs to be updated
+          let header;
+          if (ctx.isReindexRequired) {
+            header = chalk`  {bold You existing Core node doesn't have indexes required to run ${ctx.nodeTypeName}.
+  Reindex of the Core data will be needed after you finish the node setup.}
+
+  Please stop your existing Dash Core node before reindexing.
+  Also, disable any automatic startup services (e.g., cron, systemd) for the existing Dash Core installation.\n`;
+          } else {
+            header = `  Please stop your existing Dash Core node before starting the new dashmate-based
+    node ("dashmate start"). Also, disable any automatic startup services (e.g., cron, systemd) for the existing Dash Core installation.\n`;
+          }
+
           await task.prompt({
             type: 'confirm',
-            header: `  Please stop your existing Dash Core node before starting the new dashmate-based
-    node ("dashmate start"). Also, disable any automatic startup services (e.g., cron, systemd) for the existing Dash Core installation.\n`,
+            header,
             message: 'Press any key to continue...',
             default: ' ',
             separator: () => '',
