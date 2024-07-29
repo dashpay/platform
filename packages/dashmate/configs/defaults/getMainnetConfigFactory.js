@@ -68,7 +68,7 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
             txRecvRateLimit: 120,
           },
           genesis: {
-            chain_id: 'dash-mainnet-1',
+            chain_id: 'dash-1',
             validator_quorum_type: 4,
           },
         },
