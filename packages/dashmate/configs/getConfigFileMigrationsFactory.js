@@ -23,6 +23,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
   function getConfigFileMigrations() {
     const base = defaultConfigs.get('base');
     const testnet = defaultConfigs.get('testnet');
+    const mainnet = defaultConfigs.get('mainnet');
 
     /**
      * @param {string} name
@@ -730,6 +731,26 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             // Update tenderdash image
             options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
             options.core.rpc.users.drive_consensus.whitelist = base.get('core.rpc.users.drive_consensus.whitelist');
+          });
+        return configFile;
+      },
+      '1.0.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (name === 'base') {
+              options.platform.drive.tenderdash.mempool = base.get('platform.drive.tenderdash.mempool');
+              options.platform.drive.tenderdash.genesis = base.get('platform.drive.tenderdash.gensis');
+            }
+
+            if (options.network === NETWORK_MAINNET) {
+              options.platform.drive.tenderdash.p2p = mainnet.get('platform.drive.tenderdash.p2p');
+              options.platform.drive.tenderdash.mempool = mainnet.get('platform.drive.tenderdash.mempool');
+              options.platform.drive.tenderdash.genesis = mainnet.get('platform.drive.tenderdash.genesis');
+
+              if (options.platform.drive.tenderdash.node.id !== null) {
+                options.platform.enable = true;
+              }
+            }
           });
         return configFile;
       },
