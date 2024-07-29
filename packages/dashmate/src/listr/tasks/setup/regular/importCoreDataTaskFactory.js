@@ -206,7 +206,7 @@ export default function importCoreDataTaskFactory(
 
           let header;
           if (ctx.isReindexRequired) {
-            header = chalk`{bold You existing Core node doesn't have indexes required to run ${ctx.nodeTypeName}.
+            header = chalk`  {bold You existing Core node doesn't have indexes required to run ${ctx.nodeTypeName}.
   Reindex of the Core data will be needed after you finish the node setup.}
 
   Please stop your existing Dash Core node before reindexing.
