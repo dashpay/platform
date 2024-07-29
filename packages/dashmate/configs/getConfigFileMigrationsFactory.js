@@ -740,9 +740,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (name === 'base') {
               options.platform.drive.tenderdash.mempool = base.get('platform.drive.tenderdash.mempool');
               options.platform.drive.tenderdash.genesis = base.get('platform.drive.tenderdash.genesis');
-            }
-
-            if (options.network === NETWORK_MAINNET) {
+            } else if (options.network === NETWORK_MAINNET) {
               options.platform.drive.tenderdash.p2p = mainnet.get('platform.drive.tenderdash.p2p');
               options.platform.drive.tenderdash.mempool = mainnet.get('platform.drive.tenderdash.mempool');
               options.platform.drive.tenderdash.genesis = mainnet.get('platform.drive.tenderdash.genesis');
