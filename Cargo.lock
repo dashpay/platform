@@ -1285,7 +1285,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_repr",
- "serde_with",
+ "serde_with 2.3.3",
 ]
 
 [[package]]
@@ -2054,8 +2054,9 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "grovedb"
-version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=4d14ae374d58a1b04a4dc63b1435e1781ccff1d1#4d14ae374d58a1b04a4dc63b1435e1781ccff1d1"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e611dc8cdecac92dcce9689ff85084ef0082516f6be36e957ed3beaa62bdc342"
 dependencies = [
  "axum 0.7.5",
  "bincode",
@@ -2087,8 +2088,9 @@ dependencies = [
 
 [[package]]
 name = "grovedb-costs"
-version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=4d14ae374d58a1b04a4dc63b1435e1781ccff1d1#4d14ae374d58a1b04a4dc63b1435e1781ccff1d1"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63a4e637e5034ab3a9ad0c3b062725296bbab5fc3390939113079832922c4f6f"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2097,8 +2099,9 @@ dependencies = [
 
 [[package]]
 name = "grovedb-merk"
-version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=4d14ae374d58a1b04a4dc63b1435e1781ccff1d1#4d14ae374d58a1b04a4dc63b1435e1781ccff1d1"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "725053727bb275ca85ea67d8ada3e331a284f4468726cc766556eeca15e4f328"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2121,13 +2124,15 @@ dependencies = [
 
 [[package]]
 name = "grovedb-path"
-version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=4d14ae374d58a1b04a4dc63b1435e1781ccff1d1#4d14ae374d58a1b04a4dc63b1435e1781ccff1d1"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fd729e9fadda3f464de90a4330f147a12591ead8df249f6bc99c1ba73a141aa"
 
 [[package]]
 name = "grovedb-storage"
-version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=4d14ae374d58a1b04a4dc63b1435e1781ccff1d1#4d14ae374d58a1b04a4dc63b1435e1781ccff1d1"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4e8f57daa8232c5f0e35a8dfa5c1a13c22af7a87c8171154de10a2ac228781a"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2145,9 +2150,9 @@ dependencies = [
 
 [[package]]
 name = "grovedb-version"
-version = "1.0.0-rc.2"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c7d7fcdd5b7873364d38ef0e9144871c11a2124f0192fc6afd6254a93f90273"
+checksum = "5ccd8dff97c56a1ba1337eb054ca4da338db5ec06ce896cb97827076ce10d323"
 dependencies = [
  "thiserror",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2155,8 +2160,9 @@ dependencies = [
 
 [[package]]
 name = "grovedb-visualize"
-version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=4d14ae374d58a1b04a4dc63b1435e1781ccff1d1#4d14ae374d58a1b04a4dc63b1435e1781ccff1d1"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2ed487d564133a6975c6937ce1a69d2831c041c619cedbf776e292e0d9e6b11"
 dependencies = [
  "hex",
  "itertools 0.12.1",
@@ -2164,10 +2170,12 @@ dependencies = [
 
 [[package]]
 name = "grovedbg-types"
-version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=4d14ae374d58a1b04a4dc63b1435e1781ccff1d1#4d14ae374d58a1b04a4dc63b1435e1781ccff1d1"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce4d345770f58e11e3f674106889d6aa28241c20cb652dd07c3101356b2b2fdd"
 dependencies = [
  "serde",
+ "serde_with 3.9.0",
 ]
 
 [[package]]
@@ -4456,12 +4464,13 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.120"
+version = "1.0.121"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e0d21c9a8cae1235ad58a00c11cb40d4b1e5c784f1ef2c537876ed6ffd8b7c5"
+checksum = "4ab380d7d9f22ef3f21ad3e6c1ebe8e4fc7a2000ccba2e4d71fc96f15b2cb609"
 dependencies = [
  "indexmap 2.2.6",
  "itoa",
+ "memchr",
  "ryu",
  "serde",
 ]
@@ -4520,7 +4529,25 @@ dependencies = [
  "indexmap 1.9.3",
  "serde",
  "serde_json",
- "serde_with_macros",
+ "serde_with_macros 2.3.3",
+ "time",
+]
+
+[[package]]
+name = "serde_with"
+version = "3.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69cecfa94848272156ea67b2b1a53f20fc7bc638c4a46d2f8abde08f05f4b857"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "hex",
+ "indexmap 1.9.3",
+ "indexmap 2.2.6",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "serde_with_macros 3.9.0",
  "time",
 ]
 
@@ -4529,6 +4556,18 @@ name = "serde_with_macros"
 version = "2.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "881b6f881b17d13214e5d494c939ebab463d01264ce1811e9d4ac3a882e7695f"
+dependencies = [
+ "darling",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.72",
+]
+
+[[package]]
+name = "serde_with_macros"
+version = "3.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8fee4991ef4f274617a51ad4af30519438dacb2f56ac773b08a1922ff743350"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -5104,9 +5143,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.39.1"
+version = "1.39.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d040ac2b29ab03b09d4129c2f5bbd012a3ac2f79d38ff506a4bf8dd34b0eac8a"
+checksum = "daa4fb1bc778bd6f04cbfc4bb2d06a7396a8f299dc33ea1900cedaa316f467b1"
 dependencies = [
  "backtrace",
  "bytes",
@@ -5610,9 +5649,9 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "version_check"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "versioned-feature-core"
