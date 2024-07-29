@@ -109,11 +109,11 @@ export default function setupRegularPresetTaskFactory(
         task: async (ctx, task) => {
           let header;
           if (ctx.isHP) {
-            header = `  If your HP masternode is already registered, we will import your masternode
-  operator and platform node keys to configure an HP masternode. Please make
+            header = `  If your Evo masternode is already registered, we will import your masternode
+  operator and platform node keys to configure an Evo masternode. Please make
   sure your IP address has not changed, otherwise you will need to create a
   provider update service transaction.\n
-  If you are registering a new HP masternode, dashmate will provide more
+  If you are registering a new Evo masternode, dashmate will provide more
   information and help you to generate the necessary keys.\n`;
           } else {
             header = `  If your masternode is already registered, we will import your masternode
