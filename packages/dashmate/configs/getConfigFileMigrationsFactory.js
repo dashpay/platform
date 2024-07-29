@@ -739,7 +739,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([name, options]) => {
             if (name === 'base') {
               options.platform.drive.tenderdash.mempool = base.get('platform.drive.tenderdash.mempool');
-              options.platform.drive.tenderdash.genesis = base.get('platform.drive.tenderdash.gensis');
+              options.platform.drive.tenderdash.genesis = base.get('platform.drive.tenderdash.genesis');
             }
 
             if (options.network === NETWORK_MAINNET) {
