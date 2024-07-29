@@ -48,8 +48,6 @@ export default function setupRegularPresetTaskFactory(
       {
         title: 'Node type',
         task: async (ctx, task) => {
-          let nodeTypeName;
-
           if (!ctx.nodeType) {
             ctx.nodeTypeName = await task.prompt([
               {
@@ -75,7 +73,7 @@ export default function setupRegularPresetTaskFactory(
             ]);
 
             ctx.nodeType = getNodeTypeByName(ctx.nodeTypeName);
-            ctx.isHP = isNodeTypeNameHighPerformance(nodeTypeName);
+            ctx.isHP = isNodeTypeNameHighPerformance(ctx.nodeTypeName);
           } else {
             ctx.nodeTypeName = getNodeTypeNameByType(ctx.nodeType);
           }
