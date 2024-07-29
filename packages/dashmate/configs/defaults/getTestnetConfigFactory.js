@@ -95,12 +95,6 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
               ],
               port: 36656,
             },
-            mempool: {
-              timeoutCheckTx: '1s',
-              txEnqueueTimeout: '10ms',
-              txSendRateLimit: 10,
-              txRecvRateLimit: 12,
-            },
             rpc: {
               port: 36657,
               timeoutBroadcastTx: '1s',

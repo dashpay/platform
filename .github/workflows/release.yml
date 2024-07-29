@@ -137,7 +137,7 @@ jobs:
       image_name: drive
       target: drive-abci
 
-  release-drive-dapi:
+  release-dapi-image:
     name: Release DAPI image
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
