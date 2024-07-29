@@ -1,3 +1,28 @@
+## [1.0.0](https://github.com/dashpay/platform/compare/v1.0.0-rc.2...v1.0.0) (2024-07-29)
+
+
+### Features
+
+* sdk to return proofs if requested ([#2014](https://github.com/dashpay/platform/issues/2014))
+
+
+### Bug Fixes
+
+* **dashmate:** imported node is not starting ([#2009](https://github.com/dashpay/platform/issues/2009))
+* **dashmate:** remove `dash-cli` from protx registration instructions ([#2018](https://github.com/dashpay/platform/issues/2018))
+* epoch protocol version setting ([#2013](https://github.com/dashpay/platform/issues/2013))
+
+
+### Build System
+
+* update tenderdash to 1.1.0 ([#2017](https://github.com/dashpay/platform/issues/2017))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** configure mainnet ([#2016](https://github.com/dashpay/platform/issues/2016))
+* update to GroveDB Version 1.0.0 ([#2015](https://github.com/dashpay/platform/issues/2015))
+
 ## [1.0.0-rc.2](https://github.com/dashpay/platform/compare/v1.0.0-rc.1...v1.0.0-rc.2) (2024-07-25)
 
 
