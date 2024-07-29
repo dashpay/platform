@@ -5,7 +5,6 @@ import chalk from 'chalk';
 import {
   NODE_TYPE_MASTERNODE,
   NODE_TYPE_FULLNODE,
-  PRESET_MAINNET,
 } from '../../../constants.js';
 
 import {
