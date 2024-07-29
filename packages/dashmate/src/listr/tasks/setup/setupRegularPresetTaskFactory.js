@@ -156,11 +156,20 @@ export default function setupRegularPresetTaskFactory(
           configFile.setConfig(ctx.config);
           configFile.setDefaultConfigName(ctx.preset);
 
+          let startInstructions = '';
+          if (ctx.isReindexRequired) {
+            startInstructions = chalk`You existing Core node doesn't have indexes required to run ${ctx.nodeTypeName}
+            Please run {bold.cyanBright dashmate core reindex} to reindex your node.
+            The node will be started automatically after reindex is complete.`;
+          } else {
+            startInstructions = chalk`You can now run {bold.cyanBright dashmate start} to start your node, followed by
+            {bold.cyanBright dashmate status} for a node health status overview.`;
+          }
+
           // eslint-disable-next-line no-param-reassign
           task.output = chalk`Node configuration completed successfully!
 
-            You can now run {bold.cyanBright dashmate start} to start your node, followed by
-            {bold.cyanBright dashmate status} for a node health status overview.
+            ${startInstructions}
 
             Run {bold.cyanBright dashmate --help} or {bold.cyanBright dashmate <command> --help} for quick help on how
             to use dashmate to manage your node.\n`;
