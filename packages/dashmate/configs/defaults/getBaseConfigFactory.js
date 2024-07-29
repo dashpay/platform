@@ -54,7 +54,7 @@ export default function getBaseConfigFactory(homeDir) {
           port: 3001,
         },
         docker: {
-          image: 'dashpay/dashd:20',
+          image: 'dashpay/dashd:21',
           commandArgs: [],
         },
         p2p: {

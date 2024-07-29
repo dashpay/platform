@@ -752,6 +752,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             // Update tenderdash image
             options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.core.docker.image = base.get('core.docker.image');
           });
         return configFile;
       },
