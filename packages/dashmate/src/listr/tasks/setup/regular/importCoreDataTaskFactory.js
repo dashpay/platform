@@ -113,15 +113,19 @@ export default function importCoreDataTaskFactory(
           // Read configuration from dashd.conf
           const configPath = path.join(coreDataPath, 'dash.conf');
           const configFileContent = fs.readFileSync(configPath, 'utf8');
-          const masternodeOperatorPrivateKey = configFileContent.match(/^masternodeblsprivkey=([^ \n]+)/m)?.[1];
 
-          if (masternodeOperatorPrivateKey) {
-            ctx.config.set('core.masternode.operator.privateKey', masternodeOperatorPrivateKey);
-            // txindex is enabled by default for masternodes
-            ctx.isReindexRequired = false;
-          } else {
-            // We need to reindex Core if there weren't all required indexed enabled before
-            ctx.isReindexRequired = !configFileContent.match(/^txindex=1/);
+          // Config file should contain masternodeblsprivkey in case of masternode
+          if (ctx.config.get('core.masternode.enable')) {
+            const masternodeOperatorPrivateKey = configFileContent.match(/^masternodeblsprivkey=([^ \n]+)/m)?.[1];
+
+            if (masternodeOperatorPrivateKey) {
+              ctx.config.set('core.masternode.operator.privateKey', masternodeOperatorPrivateKey);
+              // txindex is enabled by default for masternodes
+              ctx.isReindexRequired = false;
+            } else {
+              // We need to reindex Core if there weren't all required indexed enabled before
+              ctx.isReindexRequired = !configFileContent.match(/^txindex=1/);
+            }
           }
 
           const host = configFileContent.match(/^bind=([^ \n]+)/m)?.[1];
