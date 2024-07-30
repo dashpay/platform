@@ -140,7 +140,7 @@ export default function getBaseConfigFactory(homeDir) {
           },
         },
         logIps: 0,
-        indexes: true,
+        indexes: [],
       },
       platform: {
         gateway: {

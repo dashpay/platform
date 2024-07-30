@@ -55,13 +55,6 @@ function validateCoreDataDirectoryPathFactory(config) {
       return 'dash.conf should be configured for mainnet';
     }
 
-    // Config file should contain masternodeblsprivkey in case of masternode
-    if (config.get('core.masternode.enable')) {
-      if (!configFileContent.includes('masternodeblsprivkey=')) {
-        return 'dash.conf should contain masternodeblsprivkey';
-      }
-    }
-
     return true;
   }
 
@@ -124,6 +117,11 @@ export default function importCoreDataTaskFactory(
 
           if (masternodeOperatorPrivateKey) {
             ctx.config.set('core.masternode.operator.privateKey', masternodeOperatorPrivateKey);
+            // txindex is enabled by default for masternodes
+            ctx.isReindexRequired = false;
+          } else {
+            // We need to reindex Core if there weren't all required indexed enabled before
+            ctx.isReindexRequired = !configFileContent.match(/^txindex=1/);
           }
 
           const host = configFileContent.match(/^bind=([^ \n]+)/m)?.[1];
@@ -139,12 +137,6 @@ export default function importCoreDataTaskFactory(
 
           // eslint-disable-next-line prefer-destructuring
           ctx.importedExternalIp = configFileContent.match(/^externalip=([^ \n]+)/m)?.[1];
-
-          // We need to reindex Core if there weren't all required indexed enabled before
-          ctx.isReindexRequired = !configFileContent.match(/^txindex=1/)
-            || !configFileContent.match(/^addressindex=1/)
-            || !configFileContent.match(/^timestampindex=1/)
-            || !configFileContent.match(/^spentindex=1/);
 
           // Copy data directory to docker a volume
 

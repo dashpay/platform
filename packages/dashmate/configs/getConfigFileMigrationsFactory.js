@@ -756,6 +756,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.0.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.indexes = [];
+          });
+        return configFile;
+      },
     };
   }
 
