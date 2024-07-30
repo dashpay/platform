@@ -161,7 +161,7 @@ export default function setupLocalPresetTaskFactory(
                   config.set('core.miner.enable', true);
 
                   // We need them to register masternodes
-                  config.set('core.indexes', ['tx', 'address']);
+                  config.set('core.indexes', ['tx', 'address', 'timestamp', 'spent']);
 
                   // Disable platform for the seed node
                   config.set('platform.enable', false);
