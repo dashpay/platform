@@ -8506,6 +8506,7 @@ const RAW_RUNTIME_STATE =
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["systeminformation", "npm:5.22.11"],\
           ["table", "npm:6.8.1"],\
+          ["tar", "npm:6.2.1"],\
           ["wrap-ansi", "npm:7.0.0"]\
         ],\
         "linkType": "SOFT"\
