@@ -270,7 +270,7 @@ export default function getPlatformScopeFactory(
       const { mnRRSoftFork } = coreInfo;
 
       if (mnRRSoftFork.active) {
-        scope.platformActivation = `Activated (at height ${mnRRSoftFork.bip9.since})`;
+        scope.platformActivation = `Activated (at height ${mnRRSoftFork.height})`;
       } else {
         const startTime = mnRRSoftFork.bip9.start_time;
 
