@@ -88,7 +88,7 @@ In some cases, you must also additionally reset platform data:
 ```bash
 $ dashmate stop
 $ npm install -g dashmate
-$ dashmate reset --platform-only --hard
+$ dashmate reset --platform --hard
 $ dashmate update
 $ dashmate setup
 $ dashmate start
@@ -283,14 +283,18 @@ The `reset` command removes all data corresponding to the specified config and a
 
 ```
 USAGE
-  $ dashmate reset [-v] [--config <value>] [-h] [-f] [-p]
+  $ dashmate reset [--config <value>] [-v] [-h] [-f] [-p] [--keep-data]
 
 FLAGS
-  -f, --force          skip running services check
-  -h, --hard           reset config as well as data
-  -p, --platform-only  reset platform data only
-  -v, --verbose        use verbose mode for output
-  --config=<value>     configuration name to use
+  -f, --force           skip running services check
+  -h, --hard            reset config as well as services and data
+  -p, --platform        reset platform services and data only
+  -v, --verbose         use verbose mode for output
+      --config=<value>  configuration name to use
+      --keep-data       keep data
+
+DESCRIPTION
+  Reset node data
 ```
 
 To reset a node:
@@ -446,7 +450,7 @@ USAGE
 
 FLAGS
   -f, --force          reset even running node
-  -p, --platform-only  reset platform data only
+  -p, --platform  reset platform data only
   -v, --verbose        use verbose mode for output
   --group=<value>      group name to use
   --hard               reset config as well as data

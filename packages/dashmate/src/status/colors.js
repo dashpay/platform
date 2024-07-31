@@ -34,6 +34,7 @@ export default {
         return chalk.green;
       case ServiceStatusEnum.syncing:
       case ServiceStatusEnum.wait_for_core:
+      case ServiceStatusEnum.wait_for_activation:
         return chalk.yellow;
       default:
         return chalk.red;
@@ -73,4 +74,5 @@ export default {
     }
     return chalk.red;
   },
+  platformActivation: (string) => (string.startsWith('Activated') ? chalk.green : chalk.yellow),
 };
