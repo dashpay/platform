@@ -1,16 +1,13 @@
-import { Flags } from '@oclif/core';
 import process from 'process';
 import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import getMetrics from '../util/getMetrics.js';
 import Report from '../doctor/report.js';
 
-export default class RestartCommand extends ConfigBaseCommand {
-  static description = 'Restart node';
+export default class DoctorCommand extends ConfigBaseCommand {
+  static description = 'Generate a report about masternode';
 
   static flags = {
     ...ConfigBaseCommand.flags,
-    platform: Flags.boolean({ char: 'p', description: 'restart only platform', default: false }),
-    safe: Flags.boolean({ char: 's', description: 'wait for dkg before stop', default: false }),
   };
 
   /**
