@@ -1,6 +1,6 @@
-//! Query trait representing criteria for fetching data from the platform.
+//! Query trait representing criteria for fetching data from Platform.
 //!
-//! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
+//! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from Platform.
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
 use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0;
@@ -31,14 +31,14 @@ use std::fmt::Debug;
 use crate::{error::Error, platform::document_query::DocumentQuery};
 
 use super::types::epoch::EpochQuery;
-/// Default limit of epoch records returned by the platform.
+/// Default limit of epoch records returned by Platform.
 pub const DEFAULT_EPOCH_QUERY_LIMIT: u32 = 100;
-/// Default limit of epoch records returned by the platform.
+/// Default limit of epoch records returned by Platform.
 pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 /// Trait implemented by objects that can be used as queries.
 ///
-/// [Query] trait is used to specify criteria for fetching data from the platform.
-/// It can be used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
+/// [Query] trait is used to specify criteria for fetching data from Platform.
+/// It can be used to specify individual objects as well as search criteria for fetching multiple objects from Platform.
 ///
 /// Some examples of queries include:
 ///
@@ -189,7 +189,7 @@ pub struct QueryStartInfo {
 
 /// Wrapper around query that allows to specify limit.
 ///
-/// A query that can be used specify limit when fetching multiple objects from the platform
+/// A query that can be used specify limit when fetching multiple objects from Platform
 /// using [`FetchMany`](crate::platform::FetchMany) trait.
 ///
 /// ## Example

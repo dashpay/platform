@@ -2,6 +2,8 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::prelude::{CoreBlockHeight, TimestampMillis};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 impl<C> Platform<C>
 where
@@ -23,10 +25,10 @@ where
     /// * `requested` core height is before mn_rr fork
     /// * `requested` core height is after current best chain lock
     ///
-    pub(in crate::execution::platform_events) fn initial_core_height_v0(
+    pub(in crate::execution::platform_events) fn initial_core_height_and_time_v0(
         &self,
         requested: Option<u32>,
-    ) -> Result<u32, Error> {
+    ) -> Result<(CoreBlockHeight, TimestampMillis), Error> {
         let fork_info = self.core_rpc.get_fork_info("mn_rr")?.ok_or(
             ExecutionError::InitializationForkNotActive("fork is not yet known".to_string()),
         )?;
@@ -41,37 +43,49 @@ where
             tracing::debug!(?fork_info, "core fork mn_rr is active");
         };
         // We expect height to present if the fork is active
-        let mn_rr_fork = fork_info.height.unwrap();
+        let mn_rr_fork_height = fork_info.height.unwrap();
 
-        if let Some(requested) = requested {
-            let best = self.core_rpc.get_best_chain_lock()?.block_height;
-
-            tracing::trace!(
+        let initial_height = if let Some(requested) = requested {
+            tracing::debug!(
                 requested,
-                mn_rr_fork,
-                best,
-                "selecting initial core lock height"
+                mn_rr_fork_height,
+                "initial core lock height is set in genesis"
             );
-            // TODO in my opinion, the condition should be:
-            //
-            // `mn_rr_fork <= requested && requested <= best`
-            //
-            // but it results in 1440 <=  1243 <= 1545
-            //
-            // So, fork_info.since differs? is it non-deterministic?
-            if requested <= best {
-                Ok(requested)
-            } else {
-                Err(ExecutionError::InitializationBadCoreLockedHeight {
-                    requested,
-                    best,
-                    mn_rr_fork,
-                }
-                .into())
-            }
+
+            requested
         } else {
-            tracing::trace!(mn_rr_fork, "used fork height as initial core lock height");
-            Ok(mn_rr_fork)
+            tracing::debug!(mn_rr_fork_height, "used fork height as initial core height");
+
+            mn_rr_fork_height
+        };
+
+        // Make sure initial height is chain locked
+        let chain_lock_height = self.core_rpc.get_best_chain_lock()?.block_height;
+
+        if initial_height <= chain_lock_height {
+            let block_time = self.core_rpc.get_block_time_from_height(initial_height)?;
+
+            let current_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards") // Copilot rocks :))
+                .as_millis() as TimestampMillis;
+
+            if block_time > current_time {
+                return Err(ExecutionError::InitializationGenesisTimeInFuture {
+                    initial_height,
+                    genesis_time: block_time,
+                    current_time,
+                }
+                .into());
+            }
+
+            Ok((initial_height, block_time))
+        } else {
+            Err(ExecutionError::InitializationHeightIsNotLocked {
+                initial_height,
+                chain_lock_height,
+            }
+            .into())
         }
     }
 }

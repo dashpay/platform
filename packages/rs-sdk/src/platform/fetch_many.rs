@@ -1,9 +1,9 @@
-//! Fetch multiple objects from the Platform.
+//! Fetch multiple objects from Platform.
 //!
-//! This module provides a trait to fetch multiple objects from the platform.
+//! This module provides a trait to fetch multiple objects from Platform.
 //!
 //! ## Traits
-//! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from the platform.
+//! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
 use crate::{
     error::Error,
     mock::MockResponse,
@@ -39,9 +39,9 @@ use std::collections::BTreeMap;
 
 use super::LimitQuery;
 
-/// Fetch multiple objects from the Platform.
+/// Fetch multiple objects from Platform.
 ///
-/// To fetch multiple objects from the platform, you need to define some query (criteria that fetched objects must match)
+/// To fetch multiple objects from Platform, you need to define some query (criteria that fetched objects must match)
 /// and use [FetchMany::fetch_many()] for your object type.
 ///
 /// You can also use convenience methods:
@@ -88,7 +88,7 @@ where
         > + Send
         + Default,
 {
-    /// Type of request used to fetch multiple objects from the platform.
+    /// Type of request used to fetch multiple objects from Platform.
     ///
     /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
@@ -156,7 +156,7 @@ where
         Ok(object)
     }
 
-    /// Fetch multiple objects from the Platform by their identifiers.
+    /// Fetch multiple objects from Platform by their identifiers.
     ///
     /// Convenience method to fetch multiple objects by their identifiers.
     /// See [FetchMany] and [FetchMany::fetch_many()] for more detailed documentation.
@@ -180,7 +180,7 @@ where
         Self::fetch_many(sdk, ids).await
     }
 
-    /// Fetch multiple objects from the Platform with limit.
+    /// Fetch multiple objects from Platform with limit.
     ///
     /// Fetches up to `limit` objects matching the `query`.    
     /// See [FetchMany] and [FetchMany::fetch_many()] for more detailed documentation.
@@ -208,7 +208,7 @@ where
     }
 }
 
-/// Fetch documents from the Platform.
+/// Fetch documents from Platform.
 ///
 /// Returns [Documents](dpp::document::Document) indexed by their [Identifier](dpp::prelude::Identifier).
 ///

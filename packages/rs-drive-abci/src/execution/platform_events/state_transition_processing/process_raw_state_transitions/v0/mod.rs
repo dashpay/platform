@@ -113,7 +113,7 @@ where
                     .map(|validation_result| {
                         self.process_validation_result_v0(
                             raw_state_transition,
-                            state_transition_name,
+                            &state_transition_name,
                             validation_result,
                             block_info,
                             transaction,
@@ -141,7 +141,11 @@ where
                         StateTransitionExecutionResult::InternalError(_) => 1,
                     };
 
-                    state_transition_execution_histogram(elapsed_time, state_transition_name, code);
+                    state_transition_execution_histogram(
+                        elapsed_time,
+                        &state_transition_name,
+                        code,
+                    );
 
                     execution_result
                 }

@@ -79,6 +79,13 @@ pub trait DocumentV0Setters: DocumentV0Getters {
         }
     }
 
+    /// Removes the value under the given path.
+    /// The path supports syntax from the `lodash` JS library. Example: "root.people[0].name".
+    /// If parents are not present, they will be automatically created.
+    fn remove(&mut self, path: &str) -> Option<Value> {
+        self.properties_mut().remove(path)
+    }
+
     /// Sets a `u8` value for the specified property name.
     fn set_u8(&mut self, property_name: &str, value: u8) {
         self.properties_mut()

@@ -44,27 +44,30 @@ impl Drive {
     ///   - The layer might potentially have max elements.
     ///   - Each item in this layer has a size of 36, which represents the size of an outpoint.
     ///
-    /// # Notes
-    ///
-    /// The todo comment suggests that there may be inaccuracies in the current function logic. Ensure to verify
-    /// the correctness of the provided logic and assumptions before relying on this function in production.
     pub(crate) fn add_estimation_costs_for_adding_asset_lock_v0(
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
-        //todo: verify (this is wrong)
+        //                                                      DataContract_Documents 64
+        //                                 /                                                                         \
+        //                       Identities 32                                                                        Balances 96
+        //             /                            \                                              /                                               \
+        //   Token_Balances 16                    Pools 48                    WithdrawalTransactions 80                                        Votes  112
+        //       /      \                           /                                      /                                                    /                          \
+        //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40       -> SpentAssetLockTransactions 72  <-                           Misc 104                          Versions 120
+
         // we have constructed the top layer so contract/documents tree are at the top
-        // since balance will be on layer 2, updating will mean we will update 1 sum tree
-        // and 1 normal tree, hence we should give an equal weight to both
+        // since SpentAssetLockTransactions will be on layer 3, updating will mean we will update 1 sum tree
+        // and 2 normal tree, hence we should give an equal weight to both
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
                 is_sum_tree: false,
-                estimated_layer_count: EstimatedLevel(1, false),
+                estimated_layer_count: EstimatedLevel(3, false),
                 estimated_layer_sizes: AllSubtrees(
-                    1,
+                    12, // 32 + 1 + 1 / 3
                     SomeSumTrees {
                         sum_trees_weight: 1,
-                        non_sum_trees_weight: 1,
+                        non_sum_trees_weight: 2,
                     },
                     None,
                 ),

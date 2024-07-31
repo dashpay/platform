@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED: bool = false;
 /// Boolean if GroveDB has_raw in enabled by default
 pub const DEFAULT_GROVE_HAS_RAW_ENABLED: bool = true;
+/// Boolean if verification of GroveDB should be run on startup
+pub const DEFAULT_VERIFY_GROVE_ON_STARTUP: bool = false;
 /// The default default query limit
 pub const DEFAULT_QUERY_LIMIT: u16 = 100;
 /// The default max query limit
@@ -30,6 +32,13 @@ pub struct DriveConfig {
     /// Boolean if has_raw is enabled
     #[cfg_attr(feature = "serde", serde(default = "default_has_raw_enabled"))]
     pub has_raw_enabled: bool,
+
+    /// Boolean if GroveDB verification should happen on startup
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "default_grove_verify_on_startup_enabled")
+    )]
+    pub grovedb_verify_on_startup: bool,
 
     /// The default returned count if no limit is set
     #[cfg_attr(
@@ -146,6 +155,10 @@ fn default_has_raw_enabled() -> bool {
     DEFAULT_GROVE_HAS_RAW_ENABLED
 }
 
+fn default_grove_verify_on_startup_enabled() -> bool {
+    DEFAULT_VERIFY_GROVE_ON_STARTUP
+}
+
 fn default_default_query_limit() -> u16 {
     DEFAULT_QUERY_LIMIT
 }
@@ -162,7 +175,8 @@ fn default_data_contracts_cache_size() -> u64 {
     DEFAULT_DATA_CONTRACTS_CACHE_SIZE
 }
 
-fn default_grovedb_visualizer_address() -> std::net::SocketAddr {
+/// The default grovedb visualizer_address
+pub fn default_grovedb_visualizer_address() -> std::net::SocketAddr {
     "127.0.0.1:8083".parse().unwrap()
 }
 
@@ -172,6 +186,7 @@ impl Default for DriveConfig {
             batching_consistency_verification:
                 DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED,
             has_raw_enabled: DEFAULT_GROVE_HAS_RAW_ENABLED,
+            grovedb_verify_on_startup: DEFAULT_VERIFY_GROVE_ON_STARTUP,
             default_query_limit: DEFAULT_QUERY_LIMIT,
             epochs_per_era: DEFAULT_EPOCHS_PER_ERA,
             max_query_limit: DEFAULT_MAX_QUERY_LIMIT,

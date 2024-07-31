@@ -1,3 +1,123 @@
+### [1.0.2](https://github.com/dashpay/platform/compare/v1.0.1...v1.0.2) (2024-07-31)
+
+
+### Features
+
+* **dashmate:** a flag to keep data on reset ([#2026](https://github.com/dashpay/platform/issues/2026))
+
+
+### Bug Fixes
+
+* **dashmate:** status command shows tenderdash error before activation ([#2028](https://github.com/dashpay/platform/issues/2028))
+* **dashmate:** unnecessary core indexes are required ([#2025](https://github.com/dashpay/platform/issues/2025))
+
+### [1.0.1](https://github.com/dashpay/platform/compare/v1.0.0...v1.0.1) (2024-07-29)
+
+
+### Miscellaneous Chores
+
+* bump dash-spv version to 2.0.0
+
+## [1.0.0](https://github.com/dashpay/platform/compare/v1.0.0-rc.2...v1.0.0) (2024-07-29)
+
+
+### Features
+
+* sdk to return proofs if requested ([#2014](https://github.com/dashpay/platform/issues/2014))
+
+
+### Bug Fixes
+
+* **dashmate:** imported node is not starting ([#2009](https://github.com/dashpay/platform/issues/2009))
+* **dashmate:** remove `dash-cli` from protx registration instructions ([#2018](https://github.com/dashpay/platform/issues/2018))
+* epoch protocol version setting ([#2013](https://github.com/dashpay/platform/issues/2013))
+
+
+### Build System
+
+* update tenderdash to 1.1.0 ([#2017](https://github.com/dashpay/platform/issues/2017))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** configure mainnet ([#2016](https://github.com/dashpay/platform/issues/2016))
+* update to GroveDB Version 1.0.0 ([#2015](https://github.com/dashpay/platform/issues/2015))
+
+## [1.0.0-rc.2](https://github.com/dashpay/platform/compare/v1.0.0-rc.1...v1.0.0-rc.2) (2024-07-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** genesis state from core block time (#2003)
+
+### Features
+
+* specify transition names within documents batch ([#2007](https://github.com/dashpay/platform/issues/2007))
+
+
+### Bug Fixes
+
+* dpns js sdk fix for identity record rename ([#2001](https://github.com/dashpay/platform/issues/2001))
+* **platform:** core info is lost between genesis and first block ([#2004](https://github.com/dashpay/platform/issues/2004))
+* **platform:** genesis state from core block time ([#2003](https://github.com/dashpay/platform/issues/2003))
+* sdk should ignore transient fields when verifying proofs ([#2000](https://github.com/dashpay/platform/issues/2000))
+* **strategy-tests:** document delete transitions were not selecting identity correctly
+* two error messages had typos ([#2005](https://github.com/dashpay/platform/issues/2005))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update genesis config to the latest testnet ([#1998](https://github.com/dashpay/platform/issues/1998))
+
+
+### Build System
+
+* update to tenderdash 1.1.0-dev.3, rs-tenderdash-abci 1.1.0-dev.1 ([#2008](https://github.com/dashpay/platform/issues/2008))
+
+## [1.0.0-rc.1](https://github.com/dashpay/platform/compare/v1.0.0-beta.4...v1.0.0-rc.1) (2024-07-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** system data contracts should not have an owner (#1992)
+* **platform:** transient properties (#1990)
+* **platform:** document types should not have a contested unique index with a unique index  (#1984)
+* **platform:** add hyphen to match for contested documents on Dashpay (#1982)
+
+### Features
+
+* **drive:** added config for grovedb verify on startup ([#1975](https://github.com/dashpay/platform/issues/1975))
+* **platform:** system data contracts should not have an owner ([#1992](https://github.com/dashpay/platform/issues/1992))
+* **platform:** transient properties ([#1990](https://github.com/dashpay/platform/issues/1990))
+* use all eligible identities and slightly more robust checking
+
+
+### Bug Fixes
+
+* **dapi:** can't parse masternode list diff ([#1988](https://github.com/dashpay/platform/issues/1988))
+* **drive:** unknown mn_rr fork height ([#1994](https://github.com/dashpay/platform/issues/1994))
+* improve efficiency of identity random sampling
+* only clone the eligible identities
+* **platform:** add hyphen to match for contested documents on Dashpay ([#1982](https://github.com/dashpay/platform/issues/1982))
+* **platform:** document types should not have a contested unique index with a unique index  ([#1984](https://github.com/dashpay/platform/issues/1984))
+* select random identities for strategy documents
+* spent asset lock estimated fees, and misc ([#1993](https://github.com/dashpay/platform/issues/1993))
+* **strategy-tests:** key ids for new identities with extra keys were not calculated properly ([#1991](https://github.com/dashpay/platform/issues/1991))
+* **strategy-tests:** transfer keys were being disabled ([#1995](https://github.com/dashpay/platform/issues/1995))
+* voting test
+
+
+### Miscellaneous Chores
+
+* chose capable identities for random documents
+* **dapi:** enable logger for reconnectable stream ([#1986](https://github.com/dashpay/platform/issues/1986))
+
+
+### Build System
+
+* update tenderdash to 1.1.0-dev.1 ([#1985](https://github.com/dashpay/platform/issues/1985))
+* update tenderdash to 1.1.0-dev.2 ([#1996](https://github.com/dashpay/platform/issues/1996))
+
 ## [1.0.0-beta.4](https://github.com/dashpay/platform/compare/v1.0.0-beta.3...v1.0.0-beta.4) (2024-07-19)
 
 

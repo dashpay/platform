@@ -1,12 +1,12 @@
 /* eslint-disable no-param-reassign */
 import fs from 'fs';
-import path from 'path';
 import lodash from 'lodash';
+import path from 'path';
 
 import {
   NETWORK_LOCAL,
-  NETWORK_TESTNET,
   NETWORK_MAINNET,
+  NETWORK_TESTNET,
   SSL_PROVIDERS,
 } from '../src/constants.js';
 
@@ -23,6 +23,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
   function getConfigFileMigrations() {
     const base = defaultConfigs.get('base');
     const testnet = defaultConfigs.get('testnet');
+    const mainnet = defaultConfigs.get('mainnet');
 
     /**
      * @param {string} name
@@ -225,7 +226,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+              options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
             }
           });
         return configFile;
@@ -247,7 +248,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+              options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
               options.platform.drive.tenderdash.genesis
                 .initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
             }
@@ -345,7 +346,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               if (name !== base.getName()) {
                 options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
                 options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 14000;
-                options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+                options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
               }
             }
           });
@@ -361,7 +362,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.network === NETWORK_TESTNET && name !== base.getName()) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
               options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 1400;
-              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+              options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
             }
           });
 
@@ -373,7 +374,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.network === NETWORK_TESTNET && name !== base.getName()) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
               options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 1400;
-              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+              options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
             }
           });
 
@@ -700,6 +701,67 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
             }
+          });
+        return configFile;
+      },
+      '1.0.0-rc.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            delete options.platform.dpns;
+            delete options.platform.dashpay;
+            delete options.platform.featureFlags;
+            delete options.platform.masternodeRewardShares;
+            delete options.platform.withdrawals;
+
+            // Update tenderdash image
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+
+            // Replace quorumsign with qurumplatformsign in Core RPC Tenderdash auth whitelist
+            options.core.rpc.users.tenderdash.whitelist = base.get('core.rpc.users.tenderdash.whitelist');
+          });
+        return configFile;
+      },
+      '1.0.0-rc.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+            }
+
+            // Update tenderdash image
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.core.rpc.users.drive_consensus.whitelist = base.get('core.rpc.users.drive_consensus.whitelist');
+          });
+        return configFile;
+      },
+      '1.0.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (name === 'base') {
+              options.platform.drive.tenderdash.mempool = base.get('platform.drive.tenderdash.mempool');
+              options.platform.drive.tenderdash.genesis = base.get('platform.drive.tenderdash.genesis');
+            } else if (options.network === NETWORK_MAINNET) {
+              options.platform.drive.tenderdash.p2p = mainnet.get('platform.drive.tenderdash.p2p');
+              options.platform.drive.tenderdash.mempool = mainnet.get('platform.drive.tenderdash.mempool');
+              options.platform.drive.tenderdash.genesis = mainnet.get('platform.drive.tenderdash.genesis');
+
+              if (options.platform.drive.tenderdash.node.id !== null) {
+                options.platform.enable = true;
+              }
+            }
+
+            // Update tenderdash image
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.core.docker.image = base.get('core.docker.image');
+          });
+        return configFile;
+      },
+      '1.0.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.indexes = [];
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
           });
         return configFile;
       },

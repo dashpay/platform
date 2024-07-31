@@ -6,7 +6,8 @@ use dashcore_rpc::dashcore_rpc_json::{
 };
 use dashcore_rpc::json::GetRawTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
-use dpp::dashcore::InstantLock;
+use dpp::dashcore::{Header, InstantLock};
+use dpp::prelude::TimestampMillis;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -21,6 +22,12 @@ pub type CoreHeight = u32;
 pub trait CoreRPCLike {
     /// Get block hash by height
     fn get_block_hash(&self, height: CoreHeight) -> Result<BlockHash, Error>;
+
+    /// Get block hash by height
+    fn get_block_header(&self, block_hash: &BlockHash) -> Result<Header, Error>;
+
+    /// Get block time of a chain locked core height
+    fn get_block_time_from_height(&self, height: CoreHeight) -> Result<TimestampMillis, Error>;
 
     /// Get the best chain lock
     fn get_best_chain_lock(&self) -> Result<ChainLock, Error>;
@@ -210,6 +217,17 @@ impl DefaultCoreRPC {
 impl CoreRPCLike for DefaultCoreRPC {
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
         retry!(self.inner.get_block_hash(height))
+    }
+
+    fn get_block_header(&self, block_hash: &BlockHash) -> Result<Header, Error> {
+        retry!(self.inner.get_block_header(block_hash))
+    }
+
+    fn get_block_time_from_height(&self, height: CoreHeight) -> Result<TimestampMillis, Error> {
+        let block_hash = self.get_block_hash(height)?;
+        let block_header = self.get_block_header(&block_hash)?;
+        let block_time = block_header.time as u64 * 1000;
+        Ok(block_time)
     }
 
     fn get_best_chain_lock(&self) -> Result<ChainLock, Error> {

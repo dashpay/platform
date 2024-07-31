@@ -9,7 +9,7 @@ import { Platform } from '../../Platform';
 export async function resolveByRecord(this: Platform, record: string, value: any): Promise<any> {
   await this.initialize();
 
-  if (record === 'dashUniqueIdentityId' || record === 'dashAliasIdentityId') {
+  if (record === 'identity') {
     value = Identifier.from(value);
   }
 

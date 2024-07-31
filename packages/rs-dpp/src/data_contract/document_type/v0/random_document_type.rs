@@ -196,6 +196,7 @@ impl DocumentTypeV0 {
             DocumentProperty {
                 property_type: document_type,
                 required,
+                transient: false,
             }
         };
 
@@ -432,6 +433,7 @@ impl DocumentTypeV0 {
             identifier_paths,
             binary_paths,
             required_fields,
+            transient_fields: Default::default(),
             documents_keep_history,
             documents_mutable,
             documents_can_be_deleted,
@@ -520,6 +522,7 @@ impl DocumentTypeV0 {
             DocumentProperty {
                 property_type: document_type,
                 required,
+                transient: false,
             }
         };
 
@@ -605,6 +608,7 @@ impl DocumentTypeV0 {
             identifier_paths,
             binary_paths,
             required_fields,
+            transient_fields: Default::default(),
             documents_keep_history,
             documents_mutable,
             documents_can_be_deleted,

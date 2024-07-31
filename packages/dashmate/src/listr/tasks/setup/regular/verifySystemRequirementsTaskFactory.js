@@ -140,6 +140,21 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
             }
           }
 
+          let message = '';
+          if (ctx.isHP) {
+            message = `Dash Platform requires more resources than the current system provides.
+    Evonode rewards are paid based on block production, and resource-limited
+    nodes may not be able to produce blocks quickly enough to receive reward
+    payments. Upgrading system resources is recommended before proceeding.
+
+    {bold This node may not receive Dash Platform reward payments due to its resource limitations.}`;
+          } else {
+            message = `Limited system resources may impact the performance of the node.
+    The node might not provide required services to the network in time and will get PoSe banned.
+    PoSe banned node aren't receiving masternode rewards.
+    Upgrading system resources is recommended before proceeding.`;
+          }
+
           if (warnings.length > 0) {
             const warningsText = warnings.map((warning) => `    - ${warning}`).join('\n');
 
@@ -147,12 +162,7 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
 
 {red ${warningsText}}
 
-    Dash Platform requires more resources than the current system provides.
-    Evonode rewards are paid based on block production, and resource-limited
-    nodes may not be able to produce blocks quickly enough to receive reward
-    payments. Upgrading system resources is recommended before proceeding.
-
-    {bold This server may not receive Dash Platform reward payments due to its resource limitations.}\n`;
+    ${message}\n`;
 
             // This option is used for tests
             if (ctx.acceptUnmetSystemRequirements) {
@@ -170,6 +180,9 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
 
               if (!proceed) {
                 throw new Error('System requirements have not been met');
+              } else {
+                // eslint-disable-next-line no-param-reassign
+                task.output = chalk`{yellow System requirements have not been met.}`;
               }
             }
           }

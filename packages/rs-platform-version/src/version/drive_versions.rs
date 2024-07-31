@@ -733,4 +733,6 @@ pub struct DriveEstimatedCostsMethodVersions {
     pub add_estimation_costs_for_levels_up_to_contract: FeatureVersion,
     pub add_estimation_costs_for_levels_up_to_contract_document_type_excluded: FeatureVersion,
     pub add_estimation_costs_for_contested_document_tree_levels_up_to_contract: FeatureVersion,
+    pub add_estimation_costs_for_contested_document_tree_levels_up_to_contract_document_type_excluded:
+        FeatureVersion,
 }

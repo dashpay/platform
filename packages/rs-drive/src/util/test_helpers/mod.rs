@@ -35,7 +35,7 @@ pub mod setup;
 pub mod test_utils;
 
 #[cfg(feature = "fixtures-and-mocks")]
-/// Serializes to CBOR and applies to Drive a JSON contract from the file system.
+/// Applies to Drive a JSON contract from the file system.
 pub fn setup_contract(
     drive: &Drive,
     path: &str,

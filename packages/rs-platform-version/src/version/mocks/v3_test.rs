@@ -315,6 +315,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 add_estimation_costs_for_levels_up_to_contract: 0,
                 add_estimation_costs_for_levels_up_to_contract_document_type_excluded: 0,
                 add_estimation_costs_for_contested_document_tree_levels_up_to_contract: 0,
+                add_estimation_costs_for_contested_document_tree_levels_up_to_contract_document_type_excluded: 0,
             },
             asset_lock: DriveAssetLockMethodVersions {
                 add_asset_lock_outpoint: 0,
@@ -599,7 +600,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 finalize_block_proposal: 0,
             },
             initialization: DriveAbciInitializationMethodVersions {
-                initial_core_height: 0,
+                initial_core_height_and_time: 0,
                 create_genesis_state: 0,
             },
             core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions {

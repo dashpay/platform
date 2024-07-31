@@ -21,27 +21,19 @@
           "fieldMatches": [
             {
               "field": "normalizedLabel",
-              "regexPattern": "^[a-zA-Z01]{3,19}$"
+              "regexPattern": "^[a-zA-Z01-]{3,19}$"
             }
           ],
           "resolution": 0,
-          "description": "If the normalized label part of this index is less than 20 characters (all alphabet a-z and 0 and 1) then this index is non unique while contest resolution takes place."
+          "description": "If the normalized label part of this index is less than 20 characters (all alphabet a-z, A-Z, 0, 1, and -) then a masternode vote contest takes place to give out the name"
         }
       },
       {
-        "name": "dashIdentityId",
+        "name": "identityId",
+        "nullSearchable": false,
         "properties": [
           {
-            "records.dashUniqueIdentityId": "asc"
-          }
-        ],
-        "unique": true
-      },
-      {
-        "name": "dashAlias",
-        "properties": [
-          {
-            "records.dashAliasIdentityId": "asc"
+            "records.identity": "asc"
           }
         ]
       }
@@ -91,32 +83,19 @@
       "records": {
         "type": "object",
         "properties": {
-          "dashUniqueIdentityId": {
-            "type": "array",
-            "byteArray": true,
-            "minItems": 32,
-            "maxItems": 32,
-            "position": 0,
-            "contentMediaType": "application/x.dash.dpp.identifier",
-            "description": "Identity ID to be used to create the primary name the Identity",
-            "$comment": "Must be equal to the document owner"
-          },
-          "dashAliasIdentityId": {
+          "identity": {
             "type": "array",
             "byteArray": true,
             "minItems": 32,
             "maxItems": 32,
             "position": 1,
             "contentMediaType": "application/x.dash.dpp.identifier",
-            "description": "Identity ID to be used to create alias names for the Identity",
-            "$comment": "Must be equal to the document owner"
+            "description": "Identifier name record that refers to an Identity"
           }
         },
         "minProperties": 1,
-        "maxProperties": 1,
         "position": 5,
-        "additionalProperties": false,
-        "$comment": "Constraint with max and min properties ensure that only one identity record is used - either a `dashUniqueIdentityId` or a `dashAliasIdentityId`"
+        "additionalProperties": false
       },
       "subdomainRules": {
         "type": "object",
@@ -144,6 +123,9 @@
       "preorderSalt",
       "records",
       "subdomainRules"
+    ],
+    "transient": [
+      "preorderSalt"
     ],
     "additionalProperties": false,
     "$comment": "In order to register a domain you need to create a preorder. The preorder step is needed to prevent man-in-the-middle attacks. normalizedLabel + '.' + normalizedParentDomain must not be longer than 253 chars length as defined by RFC 1035. Domain documents are immutable: modification and deletion are restricted"

@@ -8,7 +8,7 @@ use dapi_grpc::platform::v0::get_documents_request::Version::V0;
 use dapi_grpc::platform::v0::{
     self as platform_proto,
     get_documents_request::{get_documents_request_v0::Start, GetDocumentsRequestV0},
-    GetDocumentsRequest, ResponseMetadata,
+    GetDocumentsRequest, Proof, ResponseMetadata,
 };
 use dpp::{
     data_contract::{
@@ -162,21 +162,25 @@ impl FromProof<DocumentQuery> for Document {
         response: O,
         version: &dpp::version::PlatformVersion,
         provider: &'a dyn drive_proof_verifier::ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), drive_proof_verifier::Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
     {
         let request: Self::Request = request.into();
 
-        let (documents, metadata): (Option<Documents>, ResponseMetadata) =
+        let (documents, metadata, proof): (Option<Documents>, ResponseMetadata, Proof) =
             <Documents as FromProof<Self::Request>>::maybe_from_proof_with_metadata(
                 request, response, version, provider,
             )?;
 
         match documents {
-            None => Ok((None, metadata)),
+            None => Ok((None, metadata, proof)),
             Some(docs) => match docs.len() {
-                0 | 1 => Ok((docs.into_iter().next().and_then(|(_, v)| v), metadata)),
+                0 | 1 => Ok((
+                    docs.into_iter().next().and_then(|(_, v)| v),
+                    metadata,
+                    proof,
+                )),
                 n => Err(drive_proof_verifier::Error::ResponseDecodeError {
                     error: format!("expected 1 element, got {}", n),
                 }),
@@ -193,7 +197,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         response: O,
         version: &dpp::version::PlatformVersion,
         provider: &'a dyn drive_proof_verifier::ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata), drive_proof_verifier::Error>
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
     {

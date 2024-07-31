@@ -11,10 +11,7 @@ pub const ID_BYTES: [u8; 32] = [
     68, 99, 238, 176, 31, 247, 33, 149, 144, 149, 140,
 ];
 
-pub const OWNER_ID_BYTES: [u8; 32] = [
-    159, 101, 165, 10, 103, 89, 107, 118, 134, 35, 62, 205, 14, 245, 130, 168, 86, 190, 41, 247,
-    139, 113, 170, 202, 91, 69, 135, 242, 242, 219, 97, 152,
-];
+pub const OWNER_ID_BYTES: [u8; 32] = [0; 32];
 
 pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
 pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));

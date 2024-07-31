@@ -5,7 +5,7 @@ use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::{AllReference, AllSubtrees};
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
-use dpp::data_contract::document_type::IndexType;
+use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
@@ -30,8 +30,9 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
-        index_type: IndexType,
+        index_type: IndexLevelTypeInfo,
         any_fields_null: bool,
+        all_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -42,13 +43,19 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        if all_fields_null && !index_type.should_insert_with_all_null {
+            return Ok(());
+        }
         let mut key_info_path = index_path_info.convert_to_key_info_path();
 
         let document_type = document_and_contract_info.document_type;
 
         // unique indexes will be stored under key "0"
         // non unique indices should have a tree at key "0" that has all elements based off of primary key
-        if index_type == NonUniqueIndex || index_type == ContestedResourceIndex || any_fields_null {
+        if index_type.index_type == NonUniqueIndex
+            || index_type.index_type == ContestedResourceIndex
+            || any_fields_null
+        {
             key_info_path.push(KnownKey(vec![0]));
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info

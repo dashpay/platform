@@ -26,6 +26,7 @@ impl Drive {
         index_path_info: PathInfo<0>,
         index_level: &IndexLevel,
         mut any_fields_null: bool,
+        mut all_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -42,6 +43,7 @@ impl Drive {
                 index_path_info.clone(),
                 index_type,
                 any_fields_null,
+                all_fields_null,
                 previous_batch_operations,
                 storage_flags,
                 estimated_costs_only_with_layer_info,
@@ -165,16 +167,18 @@ impl Drive {
             )?;
 
             any_fields_null |= document_index_field.is_empty();
+            all_fields_null &= document_index_field.is_empty();
 
             // we push the actual value of the index path
             sub_level_index_path_info.push(document_index_field)?;
             // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
             // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
-            self.add_indices_for_index_level_for_contract_operations(
+            self.add_indices_for_index_level_for_contract_operations_v0(
                 document_and_contract_info,
                 sub_level_index_path_info,
                 sub_level,
                 any_fields_null,
+                all_fields_null,
                 previous_batch_operations,
                 storage_flags,
                 estimated_costs_only_with_layer_info,

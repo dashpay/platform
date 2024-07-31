@@ -1,38 +1,12 @@
 import path from 'path';
-
-import DPNSContract from '@dashevo/dpns-contract/lib/systemIds.js';
-
-import DashPayContract from '@dashevo/dashpay-contract/lib/systemIds.js';
-
-import FeatureFlagsContract from '@dashevo/feature-flags-contract/lib/systemIds.js';
-
-import MasternodeRewardSharesContract
-  from '@dashevo/masternode-reward-shares-contract/lib/systemIds.js';
-
-import WithdrawalsContract from '@dashevo/withdrawals-contract/lib/systemIds.js';
-
 import semver from 'semver';
 
 import fs from 'fs';
+import Config from '../../src/config/Config.js';
 import {
   NETWORK_MAINNET,
   PACKAGE_ROOT_DIR,
 } from '../../src/constants.js';
-import Config from '../../src/config/Config.js';
-
-const {
-  contractId: dpnsContractId,
-  ownerId: dpnsOwnerId,
-} = DPNSContract;
-
-const { contractId: dashpayContractId } = DashPayContract;
-
-const {
-  contractId: featureFlagsContractId,
-  ownerId: featureFlagsOwnerId,
-} = FeatureFlagsContract;
-const { contractId: masternodeRewardSharesContractId } = MasternodeRewardSharesContract;
-const { contractId: withdrawalsContractId } = WithdrawalsContract;
 
 const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
@@ -42,7 +16,7 @@ const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'pack
  */
 export default function getBaseConfigFactory(homeDir) {
   const prereleaseTag = semver.prerelease(version) === null ? '' : `-${semver.prerelease(version)[0]}`;
-  const dockerImageVersion = `${semver.major(version)}.${semver.minor(version)}${prereleaseTag}`;
+  const dockerImageVersion = `${semver.major(version)}${prereleaseTag}`;
 
   /**
    * @typedef {function} getBaseConfig
@@ -80,7 +54,7 @@ export default function getBaseConfigFactory(homeDir) {
           port: 3001,
         },
         docker: {
-          image: 'dashpay/dashd:20',
+          image: 'dashpay/dashd:21',
           commandArgs: [],
         },
         p2p: {
@@ -112,7 +86,7 @@ export default function getBaseConfigFactory(homeDir) {
               whitelist: [
                 'getbestchainlock', 'getblockchaininfo', 'getrawtransaction', 'submitchainlock',
                 'verifychainlock', 'protxlistdiff', 'quorumlistextended', 'quoruminfo',
-                'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus',
+                'getassetunlockstatuses', 'sendrawtransaction', 'mnsyncstatus', 'getblockheader', 'getblockhash',
               ],
               lowPriority: false,
             },
@@ -124,7 +98,7 @@ export default function getBaseConfigFactory(homeDir) {
             tenderdash: {
               password: 'rpcpassword',
               whitelist: [
-                'quoruminfo', 'quorumverify', 'quorumsign', 'masternodestatus', 'masternodelist',
+                'quoruminfo', 'quorumverify', 'quorumplatformsign', 'masternodestatus', 'masternodelist',
                 'ping', 'getnetworkinfo',
               ],
               lowPriority: false,
@@ -166,7 +140,7 @@ export default function getBaseConfigFactory(homeDir) {
           },
         },
         logIps: 0,
-        indexes: true,
+        indexes: [],
       },
       platform: {
         gateway: {
@@ -327,7 +301,7 @@ export default function getBaseConfigFactory(homeDir) {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.0.0',
+              image: 'dashpay/tenderdash:1.1.0',
             },
             p2p: {
               host: '0.0.0.0',
@@ -358,10 +332,10 @@ export default function getBaseConfigFactory(homeDir) {
               cacheSize: 15000,
               size: 5000,
               maxTxsBytes: 1073741824,
-              timeoutCheckTx: '0',
-              txEnqueueTimeout: '0',
-              txSendRateLimit: 0,
-              txRecvRateLimit: 0,
+              timeoutCheckTx: '1s',
+              txEnqueueTimeout: '10ms',
+              txSendRateLimit: 10,
+              txRecvRateLimit: 12,
               maxConcurrentCheckTx: 250,
             },
             consensus: {
@@ -414,8 +388,8 @@ export default function getBaseConfigFactory(homeDir) {
                   app_version: '1',
                 },
                 timeout: {
-                  propose: '30000000000',
-                  propose_delta: '1000000000',
+                  propose: '40000000000',
+                  propose_delta: '5000000000',
                   vote: '2000000000',
                   vote_delta: '500000000',
                   commit: '1000000000',
@@ -423,7 +397,7 @@ export default function getBaseConfigFactory(homeDir) {
                 },
                 synchrony: {
                   message_delay: '32000000000',
-                  precision: '500000000',
+                  precision: '1000000000',
                 },
                 abci: {
                   recheck_tx: true,
@@ -433,44 +407,7 @@ export default function getBaseConfigFactory(homeDir) {
             moniker: null,
           },
         },
-        dpns: {
-          contract: {
-            id: dpnsContractId,
-          },
-          ownerId: dpnsOwnerId,
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
-        dashpay: {
-          contract: {
-            id: dashpayContractId,
-          },
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
-        featureFlags: {
-          contract: {
-            id: featureFlagsContractId,
-          },
-          ownerId: featureFlagsOwnerId,
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
         sourcePath: null,
-        masternodeRewardShares: {
-          contract: {
-            id: masternodeRewardSharesContractId,
-          },
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
-        withdrawals: {
-          contract: {
-            id: withdrawalsContractId,
-          },
-          masterPublicKey: null,
-          secondPublicKey: null,
-        },
         enable: true,
       },
       dashmate: {

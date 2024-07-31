@@ -29,11 +29,6 @@ export default function startNodeTaskFactory(
    * @return {Object}
    */
   function startNodeTask(config) {
-    // Check external IP is set
-    if (config.get('core.masternode.enable')) {
-      config.get('externalIp', true);
-    }
-
     const isMinerEnabled = config.get('core.miner.enable');
 
     if (isMinerEnabled === true && config.get('network') !== NETWORK_LOCAL) {

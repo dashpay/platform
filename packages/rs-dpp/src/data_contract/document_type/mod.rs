@@ -7,6 +7,7 @@ pub mod methods;
 pub use index::*;
 mod index_level;
 pub use index_level::IndexLevel;
+pub use index_level::IndexLevelTypeInfo;
 pub use index_level::IndexType;
 
 #[cfg(feature = "random-documents")]
@@ -42,9 +43,11 @@ mod property_names {
     pub const REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY: &str =
         "requiresIdentityDecryptionBoundedKey";
     pub const INDICES: &str = "indices";
+    pub const NULL_SEARCHABLE: &str = "nullSearchable";
     pub const PROPERTIES: &str = "properties";
     pub const POSITION: &str = "position";
     pub const REQUIRED: &str = "required";
+    pub const TRANSIENT: &str = "transient";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";
     pub const CREATED_AT: &str = "$createdAt";

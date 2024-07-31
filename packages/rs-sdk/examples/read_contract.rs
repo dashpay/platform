@@ -48,7 +48,7 @@ async fn main() {
     // Convert bytes to identifier object that can be used as a Query
     let id = Identifier::from_bytes(&DATA_CONTRACT_ID_BYTES).expect("parse data contract id");
 
-    // Fetch identity from the Platform
+    // Fetch identity from Platform
     let contract: Option<DataContract> =
         DataContract::fetch(&sdk, id).await.expect("fetch identity");
 

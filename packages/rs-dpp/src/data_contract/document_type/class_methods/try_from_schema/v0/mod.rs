@@ -23,6 +23,8 @@ use std::convert::TryInto;
 
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumentTypeError;
+#[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
 #[cfg(any(test, feature = "validation"))]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 #[cfg(feature = "validation")]
@@ -50,6 +52,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
+
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
 const SYSTEM_PROPERTIES: [&str; 11] = [
@@ -248,6 +251,13 @@ impl DocumentTypeV0 {
             property_names::REQUIRED,
         );
 
+        let transient_fields = Value::inner_recursive_optional_array_of_strings(
+            schema_map,
+            "".to_string(),
+            property_names::PROPERTIES,
+            property_names::TRANSIENT,
+        );
+
         // Based on the property name, determine the type
         for (property_key, property_value) in property_values {
             // TODO: It's very inefficient. It must be done in one iteration and flattened properties
@@ -255,6 +265,7 @@ impl DocumentTypeV0 {
             insert_values(
                 &mut flattened_document_properties,
                 &required_fields,
+                &transient_fields,
                 None,
                 property_key.clone(),
                 property_value,
@@ -265,6 +276,7 @@ impl DocumentTypeV0 {
             insert_values_nested(
                 &mut document_properties,
                 &required_fields,
+                &transient_fields,
                 property_key,
                 property_value,
                 &root_schema,
@@ -281,6 +293,12 @@ impl DocumentTypeV0 {
         let mut index_names: HashSet<String> = HashSet::new();
         #[cfg(feature = "validation")]
         let mut unique_indices_count = 0;
+
+        #[cfg(feature = "validation")]
+        let mut last_non_contested_unique_index_name: Option<String> = None;
+
+        #[cfg(feature = "validation")]
+        let mut last_contested_unique_index_name: Option<String> = None;
 
         #[cfg(feature = "validation")]
         let mut contested_indices_count = 0;
@@ -330,6 +348,23 @@ impl DocumentTypeV0 {
                                         .into(),
                                     )));
                                 }
+
+                                if let Some(last_contested_unique_index_name) =
+                                    last_contested_unique_index_name.as_ref()
+                                {
+                                    return Err(ProtocolError::ConsensusError(Box::new(
+                                        ContestedUniqueIndexWithUniqueIndexError::new(
+                                            name.to_string(),
+                                            last_contested_unique_index_name.clone(),
+                                            index.name,
+                                        )
+                                        .into(),
+                                    )));
+                                }
+
+                                if index.contested_index.is_none() {
+                                    last_non_contested_unique_index_name = Some(index.name.clone());
+                                }
                             }
 
                             if index.contested_index.is_some() {
@@ -355,6 +390,19 @@ impl DocumentTypeV0 {
                                     )));
                                 }
 
+                                if let Some(last_unique_index_name) =
+                                    last_non_contested_unique_index_name.as_ref()
+                                {
+                                    return Err(ProtocolError::ConsensusError(Box::new(
+                                        ContestedUniqueIndexWithUniqueIndexError::new(
+                                            name.to_string(),
+                                            index.name,
+                                            last_unique_index_name.clone(),
+                                        )
+                                        .into(),
+                                    )));
+                                }
+
                                 if documents_mutable {
                                     return Err(ProtocolError::ConsensusError(Box::new(
                                         ContestedUniqueIndexOnMutableDocumentTypeError::new(
@@ -364,6 +412,8 @@ impl DocumentTypeV0 {
                                         .into(),
                                     )));
                                 }
+
+                                last_contested_unique_index_name = Some(index.name.clone());
                             }
 
                             // Index names must be unique for the document type
@@ -517,6 +567,7 @@ impl DocumentTypeV0 {
             identifier_paths,
             binary_paths,
             required_fields,
+            transient_fields,
             documents_keep_history,
             documents_mutable,
             documents_can_be_deleted,
@@ -536,6 +587,7 @@ impl DocumentTypeV0 {
 fn insert_values(
     document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,
+    known_transient: &BTreeSet<String>,
     prefix: Option<String>,
     property_key: String,
     property_value: &Value,
@@ -561,6 +613,7 @@ fn insert_values(
         let type_value = inner_properties.get_str(property_names::TYPE)?;
 
         let is_required = known_required.contains(&prefixed_property_key);
+        let is_transient = known_transient.contains(&prefixed_property_key);
         let field_type: DocumentPropertyType;
 
         match type_value {
@@ -604,6 +657,7 @@ fn insert_values(
                     DocumentProperty {
                         property_type: field_type,
                         required: is_required,
+                        transient: is_transient,
                     },
                 );
             }
@@ -645,6 +699,7 @@ fn insert_values(
                     DocumentProperty {
                         property_type: field_type,
                         required: is_required,
+                        transient: is_transient,
                     },
                 );
             }
@@ -657,6 +712,7 @@ fn insert_values(
                     DocumentProperty {
                         property_type: field_type,
                         required: is_required,
+                        transient: is_transient,
                     },
                 );
             }
@@ -668,6 +724,7 @@ fn insert_values(
 fn insert_values_nested(
     document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,
+    known_transient: &BTreeSet<String>,
     property_key: String,
     property_value: &Value,
     root_schema: &Value,
@@ -683,6 +740,8 @@ fn insert_values_nested(
     let type_value = inner_properties.get_str(property_names::TYPE)?;
 
     let is_required = known_required.contains(&property_key);
+
+    let is_transient = known_transient.contains(&property_key);
 
     let field_type = match type_value {
         "integer" => DocumentPropertyType::I64,
@@ -759,6 +818,17 @@ fn insert_values_nested(
                     })
                     .collect();
 
+                let stripped_transient: BTreeSet<String> = known_transient
+                    .iter()
+                    .filter_map(|key| {
+                        if key.starts_with(&property_key) && key.len() > property_key.len() {
+                            Some(key[property_key.len() + 1..].to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
                 for (object_property_key, object_property_value) in properties.iter() {
                     let object_property_string = object_property_key
                         .as_text()
@@ -770,6 +840,7 @@ fn insert_values_nested(
                     insert_values_nested(
                         &mut nested_properties,
                         &stripped_required,
+                        &stripped_transient,
                         object_property_string,
                         object_property_value,
                         root_schema,
@@ -781,6 +852,7 @@ fn insert_values_nested(
                 DocumentProperty {
                     property_type: DocumentPropertyType::Object(nested_properties),
                     required: is_required,
+                    transient: is_transient,
                 },
             );
             return Ok(());
@@ -793,6 +865,7 @@ fn insert_values_nested(
         DocumentProperty {
             property_type: field_type,
             required: is_required,
+            transient: is_transient,
         },
     );
 

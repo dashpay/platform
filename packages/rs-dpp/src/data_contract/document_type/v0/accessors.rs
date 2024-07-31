@@ -61,6 +61,9 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
     fn required_fields(&self) -> &BTreeSet<String> {
         &self.required_fields
     }
+    fn transient_fields(&self) -> &BTreeSet<String> {
+        &self.transient_fields
+    }
 
     fn documents_keep_history(&self) -> bool {
         self.documents_keep_history

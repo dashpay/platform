@@ -24,6 +24,7 @@ impl Drive {
         index_path_info: PathInfo<0>,
         index_level: &IndexLevel,
         any_fields_null: bool,
+        all_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -46,6 +47,7 @@ impl Drive {
                 index_path_info,
                 index_level,
                 any_fields_null,
+                all_fields_null,
                 previous_batch_operations,
                 storage_flags,
                 estimated_costs_only_with_layer_info,

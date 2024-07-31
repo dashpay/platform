@@ -242,7 +242,7 @@ pub struct DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciInitializationMethodVersions {
-    pub initial_core_height: FeatureVersion,
+    pub initial_core_height_and_time: FeatureVersion,
     pub create_genesis_state: FeatureVersion,
 }
 

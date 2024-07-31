@@ -88,7 +88,7 @@ async fn contested_resource_identity_votes_ok() {
     // Note: we hardcode default protxhash for offline testing in github actions
     let protx = cfg.existing_protxhash().unwrap_or_else(|_| {
         ProTxHash::from_byte_array(
-            hex::decode("eddaa22953d348b86f2044e6582a383ba9fb90cec4ef8c7f0f231e248bd00916")
+            hex::decode("74e26f433328be4b833b8958c04c51615e03853378e0d56fbe5ecf24977f884b")
                 .expect("valid hex-encoded protx hash")
                 .try_into()
                 .expect("valid protx hash length"),

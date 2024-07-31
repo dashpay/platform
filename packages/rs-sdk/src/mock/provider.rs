@@ -1,4 +1,4 @@
-//! Example ContextProvider that uses the Core gRPC API to fetch data from the platform.
+//! Example ContextProvider that uses the Core gRPC API to fetch data from Platform.
 
 use crate::core_client::CoreClient;
 use crate::platform::Fetch;
@@ -12,7 +12,7 @@ use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-/// Context provider that uses the Core gRPC API to fetch data from the platform.
+/// Context provider that uses the Core gRPC API to fetch data from Platform.
 ///
 /// Example [ContextProvider] used by the Sdk for testing purposes.
 pub struct GrpcContextProvider {
@@ -40,7 +40,7 @@ pub struct GrpcContextProvider {
 
     /// Directory where to store dumped data.
     ///
-    /// This is used to store data that is fetched from the platform and can be used for testing purposes.
+    /// This is used to store data that is fetched from Platform and can be used for testing purposes.
     #[cfg(feature = "mocks")]
     pub dump_dir: Option<std::path::PathBuf>,
 }
@@ -83,7 +83,7 @@ impl GrpcContextProvider {
     }
     /// Set the directory where to store dumped data.
     ///
-    /// When set, the context provider will store data fetched from the platform into this directory.
+    /// When set, the context provider will store data fetched from Platform into this directory.
     #[cfg(feature = "mocks")]
     pub fn set_dump_dir(&mut self, dump_dir: Option<std::path::PathBuf>) {
         self.dump_dir = dump_dir;
@@ -216,7 +216,7 @@ impl ContextProvider for GrpcContextProvider {
 
 /// Thread-safe cache of various objects inside the SDK.
 ///
-/// This is used to cache objects that are expensive to fetch from the platform, like data contracts.
+/// This is used to cache objects that are expensive to fetch from Platform, like data contracts.
 pub struct Cache<K: Hash + Eq, V> {
     // We use a Mutex to allow access to the cache when we don't have mutable &self
     // And we use Arc to allow multiple threads to access the cache without having to clone it

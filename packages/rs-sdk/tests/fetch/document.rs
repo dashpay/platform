@@ -211,12 +211,12 @@ async fn document_list_bug_value_text_decode_base58_PLAN_653() {
     let query = DocumentQuery::new(Arc::clone(&contract), &cfg.existing_document_type_name)
         .expect("create SdkDocumentQuery")
         .with_where(WhereClause {
-            field: "records.dashUniqueIdentityId".to_string(),
+            field: "records.identity".to_string(),
             operator: drive::query::WhereOperator::Equal,
             value: dpp::platform_value::Value::Text("l".into()),
         })
         .with_order_by(OrderClause {
-            field: "records.dashUniqueIdentityId".to_string(),
+            field: "records.identity".to_string(),
             ascending: true,
         });
 

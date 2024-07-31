@@ -26,6 +26,7 @@ pub mod array;
 pub struct DocumentProperty {
     pub property_type: DocumentPropertyType,
     pub required: bool,
+    pub transient: bool,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize)]

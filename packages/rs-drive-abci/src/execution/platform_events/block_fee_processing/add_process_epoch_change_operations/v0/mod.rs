@@ -112,16 +112,20 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             return Err(Error::Drive(error::drive::DriveError::NotSupported("the fee_multiplier_permille must be set in fees if using add_process_epoch_change_operations_v0").into()));
         };
 
-        //todo: version
+        // it is important to set the current protocol version because we might have skipped
+        // protocol versions if we skip over epochs.
         current_epoch.add_init_current_operations(
             fee_multiplier, // TODO (feature) use a data contract to choose the fee multiplier
             block_info.height(),
             block_info.core_chain_locked_height(),
             block_info.block_time_ms(),
+            block_execution_context
+                .block_platform_state()
+                .current_protocol_version_in_consensus(),
             &mut inner_batch,
         );
 
-        // Update next epoch protocol version
+        // Update next epoch protocol version so it can be queryable
         let next_epoch = Epoch::new(epoch_info.current_epoch_index() + 1)?;
         inner_batch.push(
             next_epoch.update_protocol_version_operation(

@@ -116,8 +116,7 @@ mod tests {
                     ("normalizedParentDomainName".into(), "dash".into()),
                     (
                         "records".into(),
-                        BTreeMap::from([("dashUniqueIdentityId", Value::from(identity1_id))])
-                            .into(),
+                        BTreeMap::from([("identity", Value::from(identity1_id))]).into(),
                     ),
                 ]),
                 Some(start_identities.first().unwrap().0.id()),
@@ -137,7 +136,7 @@ mod tests {
                     (
                         "records".into(),
                         BTreeMap::from([(
-                            "dashUniqueIdentityId",
+                            "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
                         .into(),
@@ -292,35 +291,13 @@ mod tests {
         let second_contender = contenders.last().unwrap();
 
         assert_eq!(
-            first_contender.document,
-            Some(vec![
-                0, 23, 127, 36, 121, 9, 10, 2, 134, 166, 125, 106, 31, 103, 181, 99, 181, 21, 24,
-                237, 214, 238, 160, 70, 24, 41, 247, 214, 48, 253, 101, 112, 141, 41, 18, 75, 231,
-                232, 111, 151, 233, 89, 137, 74, 103, 169, 204, 7, 140, 62, 1, 6, 212, 191, 207,
-                191, 52, 188, 64, 58, 79, 9, 153, 37, 180, 1, 0, 7, 0, 0, 1, 135, 105, 8, 149, 152,
-                0, 0, 1, 135, 105, 8, 149, 152, 0, 0, 1, 135, 105, 8, 149, 152, 0, 7, 113, 117, 97,
-                110, 116, 117, 109, 7, 113, 117, 97, 110, 116, 117, 109, 0, 4, 100, 97, 115, 104,
-                97, 228, 155, 126, 30, 18, 134, 198, 154, 239, 219, 139, 51, 36, 53, 36, 212, 198,
-                180, 139, 46, 87, 130, 184, 52, 174, 119, 176, 192, 51, 239, 245, 34, 1, 41, 18,
-                75, 231, 232, 111, 151, 233, 89, 137, 74, 103, 169, 204, 7, 140, 62, 1, 6, 212,
-                191, 207, 191, 52, 188, 64, 58, 79, 9, 153, 37, 180, 0, 1, 1
-            ])
+            first_contender.document.as_ref().map(hex::encode),
+            Some("00177f2479090a0286a67d6a1f67b563b51518edd6eea0461829f7d630fd65708d29124be7e86f97e959894a67a9cc078c3e0106d4bfcfbf34bc403a4f099925b401000700000187690895980000018769089598000001876908959800077175616e74756d077175616e74756d00046461736800210129124be7e86f97e959894a67a9cc078c3e0106d4bfcfbf34bc403a4f099925b40101".to_string())
         );
 
         assert_eq!(
-            second_contender.document,
-            Some(vec![
-                0, 73, 14, 33, 37, 147, 161, 211, 204, 106, 225, 123, 241, 7, 171, 156, 180, 101,
-                23, 94, 120, 119, 252, 247, 208, 133, 237, 47, 206, 39, 190, 17, 214, 139, 137, 72,
-                166, 128, 21, 1, 187, 224, 67, 30, 61, 153, 77, 207, 113, 207, 90, 42, 9, 57, 254,
-                81, 176, 230, 0, 7, 97, 153, 171, 164, 251, 1, 0, 7, 0, 0, 1, 135, 105, 8, 149,
-                152, 0, 0, 1, 135, 105, 8, 149, 152, 0, 0, 1, 135, 105, 8, 149, 152, 0, 7, 113,
-                117, 97, 110, 116, 117, 109, 7, 113, 117, 97, 110, 116, 117, 109, 0, 4, 100, 97,
-                115, 104, 148, 190, 52, 134, 51, 240, 205, 206, 235, 85, 72, 228, 129, 105, 99,
-                173, 158, 47, 240, 100, 50, 213, 109, 127, 82, 26, 217, 2, 184, 229, 172, 129, 34,
-                1, 139, 137, 72, 166, 128, 21, 1, 187, 224, 67, 30, 61, 153, 77, 207, 113, 207, 90,
-                42, 9, 57, 254, 81, 176, 230, 0, 7, 97, 153, 171, 164, 251, 0, 1, 0
-            ])
+            second_contender.document.as_ref().map(hex::encode),
+            Some("00490e212593a1d3cc6ae17bf107ab9cb465175e7877fcf7d085ed2fce27be11d68b8948a6801501bbe0431e3d994dcf71cf5a2a0939fe51b0e600076199aba4fb01000700000187690895980000018769089598000001876908959800077175616e74756d077175616e74756d0004646173680021018b8948a6801501bbe0431e3d994dcf71cf5a2a0939fe51b0e600076199aba4fb0100".to_string())
         );
 
         assert_eq!(first_contender.identifier, identity2_id.to_vec());
@@ -415,8 +392,7 @@ mod tests {
                     ("normalizedParentDomainName".into(), "dash".into()),
                     (
                         "records".into(),
-                        BTreeMap::from([("dashUniqueIdentityId", Value::from(identity1_id))])
-                            .into(),
+                        BTreeMap::from([("identity", Value::from(identity1_id))]).into(),
                     ),
                 ]),
                 Some(start_identities.first().unwrap().0.id()),
@@ -436,7 +412,7 @@ mod tests {
                     (
                         "records".into(),
                         BTreeMap::from([(
-                            "dashUniqueIdentityId",
+                            "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
                         .into(),
@@ -772,8 +748,7 @@ mod tests {
                     ("normalizedParentDomainName".into(), "dash".into()),
                     (
                         "records".into(),
-                        BTreeMap::from([("dashUniqueIdentityId", Value::from(identity1_id))])
-                            .into(),
+                        BTreeMap::from([("identity", Value::from(identity1_id))]).into(),
                     ),
                 ]),
                 Some(start_identities.first().unwrap().0.id()),
@@ -793,7 +768,7 @@ mod tests {
                     (
                         "records".into(),
                         BTreeMap::from([(
-                            "dashUniqueIdentityId",
+                            "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
                         .into(),
@@ -1141,8 +1116,7 @@ mod tests {
                     ("normalizedParentDomainName".into(), "dash".into()),
                     (
                         "records".into(),
-                        BTreeMap::from([("dashUniqueIdentityId", Value::from(identity1_id))])
-                            .into(),
+                        BTreeMap::from([("identity", Value::from(identity1_id))]).into(),
                     ),
                 ]),
                 Some(start_identities.first().unwrap().0.id()),
@@ -1162,7 +1136,7 @@ mod tests {
                     (
                         "records".into(),
                         BTreeMap::from([(
-                            "dashUniqueIdentityId",
+                            "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
                         .into(),

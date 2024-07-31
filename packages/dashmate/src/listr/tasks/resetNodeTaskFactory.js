@@ -52,57 +52,75 @@ export default function resetNodeTaskFactory(
       {
         title: 'Remove all services and associated data',
         enabled: (ctx) => !ctx.isPlatformOnlyReset,
-        task: async () => dockerCompose.down(config),
+        task: async (ctx, task) => {
+          if (ctx.keepData) {
+            // eslint-disable-next-line no-param-reassign
+            task.title = 'Remove all services and keep associated data';
+          }
+
+          const options = {
+            removeVolumes: !ctx.keepData,
+          };
+
+          return dockerCompose.down(config, options);
+        },
       },
       {
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
-        task: async () => {
+        task: async (ctx, task) => {
+          if (ctx.keepData) {
+            // eslint-disable-next-line no-param-reassign
+            task.title = 'Remove platform services and keep associated data';
+          }
+
           await dockerCompose.rm(config, { profiles: ['platform'] });
 
           // Remove volumes
-          const { COMPOSE_PROJECT_NAME: composeProjectName } = generateEnvs(config);
+          if (ctx.keepData) {
+            const { COMPOSE_PROJECT_NAME: composeProjectName } = generateEnvs(config);
 
-          const projectVolumeNames = await dockerCompose.getVolumeNames(
-            config,
-            { profiles: ['platform'] },
-          );
+            const projectVolumeNames = await dockerCompose.getVolumeNames(
+              config,
+              { profiles: ['platform'] },
+            );
 
-          await Promise.all(
-            projectVolumeNames
-              .map((volumeName) => `${composeProjectName}_${volumeName}`)
-              .map(async (volumeName) => {
-                const volume = await docker.getVolume(volumeName);
+            await Promise.all(
+              projectVolumeNames
+                .map((volumeName) => `${composeProjectName}_${volumeName}`)
+                .map(async (volumeName) => {
+                  const volume = await docker.getVolume(volumeName);
 
-                let isRetry;
-                do {
-                  isRetry = false;
+                  let isRetry;
+                  do {
+                    isRetry = false;
 
-                  try {
-                    await volume.remove({ force: true });
-                  } catch (e) {
-                    // volume is in use
-                    if (e.statusCode === 409) {
-                      await wait(1000);
+                    try {
+                      await volume.remove({ force: true });
+                    } catch (e) {
+                      // volume is in use
+                      if (e.statusCode === 409) {
+                        await wait(1000);
 
-                      // Remove containers
-                      await dockerCompose.rm(config, { profiles: ['platform'] });
+                        // Remove containers
+                        await dockerCompose.rm(config, { profiles: ['platform'] });
 
-                      isRetry = true;
+                        isRetry = true;
 
-                      continue;
+                        continue;
+                      }
+
+                      // volume does not exist
+                      if (e.statusCode === 404) {
+                        break;
+                      }
+
+                      throw e;
                     }
-
-                    // volume does not exist
-                    if (e.statusCode === 404) {
-                      break;
-                    }
-
-                    throw e;
-                  }
-                } while (isRetry);
-              }),
-          );
+                  } while (isRetry);
+                }),
+            );
+          }
         },
       },
       {
