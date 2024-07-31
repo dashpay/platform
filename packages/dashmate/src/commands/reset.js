@@ -9,10 +9,11 @@ export default class ResetCommand extends ConfigBaseCommand {
 
   static flags = {
     ...ConfigBaseCommand.flags,
-    hard: Flags.boolean({ char: 'h', description: 'reset config as well as data', default: false }),
+    hard: Flags.boolean({ char: 'h', description: 'reset config as well as services and data', default: false }),
     force: Flags.boolean({ char: 'f', description: 'skip running services check', default: false }),
     platform: Flags.boolean({ char: 'p', description: 'reset platform services and data only', default: false }),
     verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
+    'keep-data': Flags.boolean({ description: 'keep data', default: false }),
   };
 
   /**
@@ -30,6 +31,7 @@ export default class ResetCommand extends ConfigBaseCommand {
       hard: isHardReset,
       force: isForce,
       platform: isPlatformOnlyReset,
+      'keep-data': keepData,
     },
     config,
     resetNodeTask,
@@ -58,6 +60,7 @@ export default class ResetCommand extends ConfigBaseCommand {
         isPlatformOnlyReset,
         isForce,
         isVerbose,
+        keepData,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

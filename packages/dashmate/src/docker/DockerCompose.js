@@ -414,15 +414,23 @@ export default class DockerCompose {
    * Down docker compose
    *
    * @param {Config} config
+   * @param {Object} [options]
+   * @param {Object} [options.removeVolumes=false]
    * @return {Promise<void>}
    */
-  async down(config) {
+  async down(config, options = {}) {
     await this.throwErrorIfNotInstalled();
+
+    const commandOptions = ['--remove-orphans'];
+
+    if (options.removeVolumes) {
+      commandOptions.push('-v');
+    }
 
     try {
       await dockerCompose.down({
         ...this.#createOptions(config),
-        commandOptions: ['-v', '--remove-orphans'],
+        commandOptions,
       });
     } catch (e) {
       throw new DockerComposeError(e);
