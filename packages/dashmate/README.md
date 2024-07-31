@@ -357,8 +357,6 @@ FLAGS
 
 DESCRIPTION
   Generate a report about masternode
-
-
 ```
 
 ### Full node
