@@ -1,9 +1,8 @@
 import { Flags } from '@oclif/core';
+import process from 'process';
 import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import getMetrics from '../util/getMetrics.js';
 import Report from '../doctor/report.js';
-import getDockerContainerInfo from '../util/getDockerContainerInfo.js';
-import process from 'process';
 
 export default class RestartCommand extends ConfigBaseCommand {
   static description = 'Restart node';
@@ -52,26 +51,19 @@ export default class RestartCommand extends ConfigBaseCommand {
     const report = new Report();
 
     // OS INFO
+    console.log('Collecting Operating System Info');
     const osInfo = await getOperatingSystemInfo();
     report.setOSInfo(osInfo);
 
-    // CORE PART ----
-
-    // Docker Info
-    const coreDockerInfo = await getDockerContainerInfo(config, 'core', dockerCompose);
-    report.setData('core', 'dockerInfo', coreDockerInfo);
-
     // CORE: bestchainlock, quorums, blockchaininfo, peers, masternode status
+    console.log('Collecting Core data');
     const coreCalls = [
       rpcClient.getBestChainLock(),
       rpcClient.quorum('list'),
       rpcClient.getBlockchainInfo(),
       rpcClient.getPeerInfo(),
+      rpcClient.masternode('status'),
     ];
-
-    if (config.get('core.masternode.enable')) {
-      coreCalls.push(rpcClient.masternode('status'));
-    }
 
     const [
       getBestChainLock,
@@ -87,6 +79,7 @@ export default class RestartCommand extends ConfigBaseCommand {
     report.setData('core', 'peerInfo', getPeerInfo);
     report.setData('core', 'masternodeStatus', masternodeStatus);
 
+    console.log('Collecting Tenderdash data');
     // TENDERDASH: status, genesis, peers, metrics, abci_info, dump_consensus_state
     const [
       status,
@@ -108,39 +101,52 @@ export default class RestartCommand extends ConfigBaseCommand {
     report.setData('drive_tenderdash', 'abciInfo', abciInfo);
     report.setData('drive_tenderdash', 'consensusState', consensusState);
 
-    if (config.get('platform.drive.tenderdash.metrics.enabled')) {
-      const tenderdashMetrics = await getMetrics(config.get('platform.drive.tenderdash.metrics.host'), config.get('platform.drive.tenderdash.metrics.port'));
+    console.log('Collecting Drive & Tenderdash metrics');
+    const [tenderdashMetrics, driveMetrics] = (await Promise.allSettled(
+      [
+        getMetrics(
+          config.get('platform.drive.tenderdash.metrics.host'),
+          config.get('platform.drive.tenderdash.metrics.port'),
+        ),
+        getMetrics(
+          config.get('platform.drive.abci.metrics.host'),
+          config.get('platform.drive.abci.metrics.port'),
+        ),
+      ],
+    )).map((e) => e.value || e.reason);
 
-      report.setData('drive_tenderdash', 'metrics', tenderdashMetrics);
-    }
-
-    if (config.get('platform.drive.abci.metrics.enabled')) {
-      const driveMetrics = await getMetrics(config.get('platform.drive.abci.metrics.host'), config.get('platform.drive.abci.metrics.port'));
-
-      report.setData('drive_abci', 'metrics', driveMetrics);
-    }
+    report.setData('drive_tenderdash', 'metrics', tenderdashMetrics);
+    report.setData('drive_abci', 'metrics', driveMetrics);
 
     const services = await getServiceList(config);
 
-    for (const service of services) {
-      const info = await dockerCompose.inspectService(config, service.name);
+    console.log(`Collecting logs from ${services.map((e) => e.name)}`);
 
-      const { exitCode, err: stdErr, out: stdOut } = await dockerCompose.logs(
-        config,
-        [service.name],
-      );
+    await Promise.all(
+      services.map(async (service) => {
+        const [inspect, logs] = await Promise.all([
+          dockerCompose.inspectService(config, service.name),
+          dockerCompose.logs(config, [service.name]),
+        ]);
 
-      const dockerInfo = {
-        exitCode, status: info.State.Status, stdOut, stdErr,
-      };
+        const dockerInfo = {
+          image: service.image,
+          name: service.name,
+          title: service.title,
+          status: inspect.State.Status,
+          exitCode: logs.exitCode,
+          stdOut: logs.out,
+          stdErr: logs.err,
+        };
 
-      report.setData(service.name, 'dockerInfo', dockerInfo);
-    }
+        report.setData(service.name, 'dockerInfo', dockerInfo);
+      }),
+    );
 
     const archivePath = process.cwd();
 
     await report.archive(archivePath);
 
-    console.log(`Archive with all logs created in the current working dir (${archivePath}/dashmate-report-${report.id}.tar)`)
+    console.log(`Archive with all logs created in the current working dir (${archivePath}/dashmate-report-${report.id}.tar)`);
   }
 }

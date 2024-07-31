@@ -26,9 +26,7 @@ export default class Report {
     };
   }
 
-  #writeReportFile(service, filename, data) {
-    const tempDir = os.tmpdir();
-    const reportDir = path.join(tempDir, `dashmate-report-${this.id}`);
+  #writeReportFile(reportDir, service, filename, data) {
     const serviceDir = path.join(reportDir, service ?? '');
 
     let buffer;
@@ -54,28 +52,27 @@ export default class Report {
   }
 
   async archive(folderPath) {
-    this.#writeReportFile(null, 'osInfo', this.osInfo);
-
     const tempDir = os.tmpdir();
     const reportDir = path.join(tempDir, `dashmate-report-${this.id}`);
 
+    this.#writeReportFile(reportDir, null, 'osInfo', this.osInfo);
+
     for (const service of Object.keys(this.services)) {
       for (const dataKey of Object.keys(this.services[service])) {
-        let data = this.services[service][dataKey];
+        const data = this.services[service][dataKey];
 
         if (data) {
           if (dataKey === 'dockerInfo') {
-            const {
-              exitCode, status, stdOut, stdErr,
-            } = data;
+            const { stdOut, stdErr } = data;
 
-            this.#writeReportFile(service, 'stdOut', stdOut);
-            this.#writeReportFile(service, 'stdErr', stdErr);
+            this.#writeReportFile(reportDir, service, 'stdOut', stdOut);
+            this.#writeReportFile(reportDir, service, 'stdErr', stdErr);
 
-            data = { exitCode, status };
+            data.stdOut = undefined;
+            data.stdErr = undefined;
           }
 
-          this.#writeReportFile(service, dataKey, data);
+          this.#writeReportFile(reportDir, service, dataKey, data);
         }
       }
     }
