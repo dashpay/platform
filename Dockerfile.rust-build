@@ -1,0 +1,29 @@
+# Use the official Rust image based on Debian Bullseye 1.76-bullseye
+FROM rust@sha256:607b5e64b8d51f78ac5a37984e64f6493e9a7f90b605fa068be86ff035f48141
+
+# Install necessary packages
+RUN apt-get update && apt-get install -y \
+    clang \
+    cmake \
+    git \
+    wget \
+    bash \
+    unzip \
+    && if [[ "$TARGETARCH" == "arm64" ]] ; then apt-get install -y gcc-aarch64-linux-gnu; fi \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Rust target
+RUN if [[ "$TARGETARCH" == "arm64" ]] ; then RUST_TARGET=aarch64-unknown-linux-gnu; else RUST_TARGET=x86_64-unknown-linux-gnu; fi; \
+    rustup target add ${RUST_TARGET}
+
+# Install protoc - protobuf compiler
+ARG PROTOC_VERSION="25.2"
+RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
+    curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip \
+        -o /tmp/protoc.zip && \
+    unzip -qd /opt/protoc /tmp/protoc.zip && \
+    rm /tmp/protoc.zip && \
+    ln -s /opt/protoc/bin/protoc /usr/bin/
+
+# Set the working directory inside the container
+WORKDIR /app

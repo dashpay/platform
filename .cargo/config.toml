@@ -18,15 +18,18 @@ linker = "x86_64-linux-gnu-gcc"
 opt-level = 3
 debug = false
 debug-assertions = false
+# TODO: I don't think it's a good idea
 overflow-checks = false
 lto = true
+# TODO: I don't think it's a good idea
 panic = 'abort'
 codegen-units = 1
 incremental = false
-rustflags = [
-    "-C", "relocation-model=pic",
-    "-C", "strip=debuginfo"
-]
+strip = "debuginfo"
+# TODO: Not supported in Rust 1.76
+#rustflags = [
+#    "-C", "relocation-model=pic",
+#]
 
 
 [build]
