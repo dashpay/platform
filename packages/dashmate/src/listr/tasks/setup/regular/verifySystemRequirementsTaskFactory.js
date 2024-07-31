@@ -10,7 +10,11 @@ import si from 'systeminformation';
  * @param {DockerCompose} dockerCompose
  * @return {verifySystemRequirementsTask}
  */
-export default function verifySystemRequirementsTaskFactory(docker, dockerCompose) {
+export default function verifySystemRequirementsTaskFactory(
+  docker,
+  dockerCompose,
+  getOperatingSystemInfo,
+) {
   /**
    * @typedef {function} verifySystemRequirementsTask
    * @returns {Listr}
@@ -29,16 +33,9 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
 
           const warnings = [];
 
-          // Get system info
-          let systemInfo;
-          try {
-            systemInfo = await docker.info();
-          } catch (e) {
-            if (process.env.DEBUG) {
-              // eslint-disable-next-line no-console
-              console.warn(`Can't get docker info: ${e}`);
-            }
-          }
+          const {
+            systemInfo, hostCpu, swap, diskInfo,
+          } = await getOperatingSystemInfo();
 
           if (systemInfo) {
             if (Number.isInteger(systemInfo.NCPU)) {
@@ -67,16 +64,6 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
           }
 
           // Check CPU frequency
-          let hostCpu;
-          try {
-            hostCpu = await si.cpu();
-          } catch {
-            if (process.env.DEBUG) {
-              // eslint-disable-next-line no-console
-              console.warn('Can\'t get CPU info');
-            }
-          }
-
           if (hostCpu) {
             if (hostCpu.speed === 0) {
               if (process.env.DEBUG) {
@@ -89,16 +76,6 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
           }
 
           // Check swap information
-          let swap;
-          try {
-            swap = await si.mem();
-          } catch (e) {
-            if (process.env.DEBUG) {
-              // eslint-disable-next-line no-console
-              console.warn(`Can't get swap info: ${e}`);
-            }
-          }
-
           if (swap) {
             const swapTotalGb = (swap.swaptotal / (1024 ** 3)); // Convert bytes to GB
 
@@ -108,30 +85,6 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
           }
 
           // Get disk usage info
-          let diskInfo;
-
-          if (systemInfo) {
-            try {
-              diskInfo = await diskusage.check(systemInfo.DockerRootDir);
-            } catch (e) {
-              if (process.env.DEBUG) {
-                // eslint-disable-next-line no-console
-                console.warn(`Can't get disk usage for '${systemInfo.DockerRootDir}': ${e}`);
-              }
-            }
-          }
-
-          if (!diskInfo) {
-            try {
-              diskInfo = await diskusage.check(os.platform() === 'win32' ? 'c:' : '/');
-            } catch (e) {
-              if (process.env.DEBUG) {
-                // eslint-disable-next-line no-console
-                console.warn(`Can't get disk usage for root directory: ${e}`);
-              }
-            }
-          }
-
           if (diskInfo) {
             const availableDiskSpace = diskInfo.available / (1024 ** 3); // Convert to GB
 
