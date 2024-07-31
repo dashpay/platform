@@ -66,7 +66,7 @@ describe('getPlatformScopeFactory', () => {
       mockRpcClient.getBlockchainInfo.returns({
         result: {
           softforks: {
-            mn_rr: { active: true, bip9: { since: 1337 } },
+            mn_rr: { active: true, height: 1337 },
           },
         },
       });
@@ -140,7 +140,7 @@ describe('getPlatformScopeFactory', () => {
       mockRpcClient.getBlockchainInfo.returns({
         result: {
           softforks: {
-            mn_rr: { active: true, bip9: { since: 1337 } },
+            mn_rr: { active: true, height: 1337 },
           },
         },
       });
@@ -262,7 +262,7 @@ describe('getPlatformScopeFactory', () => {
       mockRpcClient.getBlockchainInfo.returns({
         result: {
           softforks: {
-            mn_rr: { active: true, bip9: { since: 1337 } },
+            mn_rr: { active: true, height: 1337 },
           },
         },
       });
@@ -311,7 +311,7 @@ describe('getPlatformScopeFactory', () => {
       mockRpcClient.getBlockchainInfo.returns({
         result: {
           softforks: {
-            mn_rr: { active: true, bip9: { since: 1337 } },
+            mn_rr: { active: true, height: 1337 },
           },
         },
       });
@@ -367,7 +367,7 @@ describe('getPlatformScopeFactory', () => {
       mockRpcClient.getBlockchainInfo.returns({
         result: {
           softforks: {
-            mn_rr: { active: true, bip9: { since: 1337 } },
+            mn_rr: { active: true, height: 1337 },
           },
         },
       });
@@ -445,7 +445,7 @@ describe('getPlatformScopeFactory', () => {
       mockRpcClient.getBlockchainInfo.returns({
         result: {
           softforks: {
-            mn_rr: { active: true, bip9: { since: 1337 } },
+            mn_rr: { active: true, height: 1337 },
           },
         },
       });

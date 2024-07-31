@@ -276,7 +276,7 @@ export default function getPlatformScopeFactory(
 
         const diff = (new Date().getTime() - startTime) / 1000;
 
-        scope.platformActivation = `Waiting for activation (approximately in ${prettyMs(diff, {compact: true})})`;
+        scope.platformActivation = `Waiting for activation (approximately in ${prettyMs(diff, { compact: true })})`;
       }
 
       const [tenderdash, drive] = await Promise.all([
