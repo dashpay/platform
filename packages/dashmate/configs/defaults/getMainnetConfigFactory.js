@@ -27,7 +27,6 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
         },
       },
       core: {
-        indexes: false,
         log: {
           file: {
             path: homeDir.joinPath('logs', 'mainnet', 'core.log'),

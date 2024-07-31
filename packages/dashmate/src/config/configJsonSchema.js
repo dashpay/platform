@@ -433,7 +433,14 @@ export default {
           enum: [0, 1],
         },
         indexes: {
-          type: 'boolean',
+          type: ['array'],
+          uniqueItems: true,
+          items: {
+            type: 'string',
+            enum: ['address', 'tx', 'timestamp', 'spent'],
+          },
+          description: 'List of core indexes to enable. `platform.enable`, '
+            + ' `core.masternode.enable`, and `core.insight.enabled` add indexes dynamically',
         },
       },
       required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet', 'log',
