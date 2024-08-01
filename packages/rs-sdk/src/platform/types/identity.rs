@@ -6,15 +6,8 @@ use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentit
 use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityContractNonceRequestV0;
 use dapi_grpc::platform::v0::get_identity_nonce_request::GetIdentityNonceRequestV0;
 use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
-use dapi_grpc::platform::v0::{
-    get_identity_balance_and_revision_request, get_identity_balance_request,
-    get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
-    get_identity_nonce_request, get_identity_request, GetIdentityBalanceAndRevisionRequest,
-    GetIdentityBalanceRequest, GetIdentityByPublicKeyHashRequest, GetIdentityContractNonceRequest,
-    GetIdentityNonceRequest, GetIdentityRequest, ResponseMetadata,
-};
+use dapi_grpc::platform::v0::{get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_nonce_request, get_identity_request, GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceRequest, GetIdentityByPublicKeyHashRequest, GetIdentityContractNonceRequest, GetIdentityNonceRequest, GetIdentityRequest, ResponseMetadata};
 use dpp::prelude::Identity;
-
 use crate::delegate_enum;
 use crate::{
     platform::{proto, Query},

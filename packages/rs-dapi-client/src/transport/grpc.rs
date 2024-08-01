@@ -333,6 +333,25 @@ impl_transport_request_grpc!(
     get_prefunded_specialized_balance
 );
 
+// rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetPathElementsRequest,
+    platform_proto::GetPathElementsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_path_elements
+);
+
+// rpc getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTotalCreditsInPlatformRequest,
+    platform_proto::GetTotalCreditsInPlatformResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_total_credits_in_platform
+);
+
+
 // Link to each core gRPC request what client and method to use:
 
 impl_transport_request_grpc!(

@@ -145,6 +145,7 @@ pub struct DriveVerifyVoteMethodVersions {
 pub struct DriveVerifySystemMethodVersions {
     pub verify_epoch_infos: FeatureVersion,
     pub verify_elements: FeatureVersion,
+    pub verify_total_credits_in_system: FeatureVersion,
     pub verify_upgrade_state: FeatureVersion,
     pub verify_upgrade_vote_status: FeatureVersion,
 }

@@ -5,13 +5,7 @@ use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
 use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0;
 use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
-use dapi_grpc::platform::v0::{
-    self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
-    AllKeys, GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
-    GetContestedResourcesRequest, GetEpochsInfoRequest, GetIdentityKeysRequest,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
-    KeyRequestType,
-};
+use dapi_grpc::platform::v0::{self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0, AllKeys, GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest, GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest, KeyRequestType, GetPathElementsRequest, get_path_elements_request, GetTotalCreditsInPlatformRequest, get_total_credits_in_platform_request};
 use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetPrefundedSpecializedBalanceRequest,
     GetVotePollsByEndDateRequest,
@@ -27,7 +21,11 @@ use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use drive_proof_verifier::from_request::TryFromRequest;
 use rs_dapi_client::transport::TransportRequest;
 use std::fmt::Debug;
-
+use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
+use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
+use drive::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
+use drive::drive::RootTree;
+use drive_proof_verifier::types::{KeysInPath, TotalCreditsOnPlatform};
 use crate::{error::Error, platform::document_query::DocumentQuery};
 
 use super::types::epoch::EpochQuery;
@@ -542,5 +540,38 @@ impl Query<GetContestedResourceIdentityVotesRequest> for LimitQuery<VoteQuery> {
             },
         }
         .into())
+    }
+}
+
+
+impl Query<GetPathElementsRequest> for KeysInPath {
+    fn query(self, prove: bool) -> Result<GetPathElementsRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        let request: GetPathElementsRequest = GetPathElementsRequest {
+            version: Some(get_path_elements_request::Version::V0(
+                GetPathElementsRequestV0 { path: self.path, keys: self.keys, prove },
+            )),
+        };
+
+        Ok(request)
+    }
+}
+
+impl Query<GetTotalCreditsInPlatformRequest> for TotalCreditsOnPlatform {
+    fn query(self, prove: bool) -> Result<GetTotalCreditsInPlatformRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        let request: GetTotalCreditsInPlatformRequest = GetTotalCreditsInPlatformRequest {
+            version: Some(get_total_credits_in_platform_request::Version::V0(
+                GetTotalCreditsInPlatformRequestV0{ prove },
+            )),
+        };
+
+        Ok(request)
     }
 }

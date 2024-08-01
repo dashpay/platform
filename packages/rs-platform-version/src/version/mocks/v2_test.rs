@@ -323,6 +323,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 system: DriveVerifySystemMethodVersions {
                     verify_epoch_infos: 0,
                     verify_elements: 0,
+                    verify_total_credits_in_system: 0,
                     verify_upgrade_state: 0,
                     verify_upgrade_vote_status: 0,
                 },
@@ -958,6 +959,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 path_elements: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                total_credits_in_platform: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,

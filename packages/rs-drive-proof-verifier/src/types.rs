@@ -24,7 +24,7 @@ use dpp::{
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
 };
-use drive::grovedb::Element;
+use drive::grovedb::{Element, Query, SizedQuery};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "mocks")]
@@ -34,6 +34,10 @@ use {
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
+use drive::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
+use drive::drive::RootTree;
+use drive::grovedb::query_result_type::Path;
+use drive::query::PathQuery;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
@@ -156,6 +160,34 @@ pub type Elements = RetrievedObjects<Vec<u8>, Element>;
 
 /// Identity balance.
 pub type IdentityBalance = u64;
+
+/// Keys in a Path
+#[derive(Debug, Clone)]
+pub struct KeysInPath {
+    /// The path of the keys
+    pub path: Path,
+    /// The keys
+    pub keys: Vec<Vec<u8>>,
+}
+
+/// The total credits on Platform.
+#[derive(Debug, derive_more::From, Clone, Copy)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct TotalCreditsOnPlatform(pub Credits);
+
+/// The item of an element fetch request
+#[derive(Debug, derive_more::From, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct ElementFetchRequestItem(pub Element);
+
 /// Identity balance and revision of the identity.
 pub type IdentityBalanceAndRevision = (u64, Revision);
 

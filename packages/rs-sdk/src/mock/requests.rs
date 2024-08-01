@@ -14,10 +14,7 @@ use dpp::{
     },
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
-use drive_proof_verifier::types::{
-    Contenders, ContestedResources, IdentityBalanceAndRevision, MasternodeProtocolVote,
-    PrefundedSpecializedBalance, VotePollsGroupedByTimestamp, Voters,
-};
+use drive_proof_verifier::types::{Contenders, ContestedResources, ElementFetchRequestItem, IdentityBalanceAndRevision, MasternodeProtocolVote, PrefundedSpecializedBalance, TotalCreditsOnPlatform, VotePollsGroupedByTimestamp, Voters};
 use std::collections::BTreeMap;
 
 static BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
@@ -209,11 +206,14 @@ impl MockResponse for ProTxHash {
     }
 }
 
+
+
 impl_mock_response!(Identity);
 impl_mock_response!(IdentityPublicKey);
 impl_mock_response!(Identifier);
 impl_mock_response!(MasternodeProtocolVote);
 impl_mock_response!(ResourceVote);
+impl_mock_response!(u8);
 impl_mock_response!(u16);
 impl_mock_response!(u32);
 impl_mock_response!(u64);
@@ -225,3 +225,5 @@ impl_mock_response!(Contenders);
 impl_mock_response!(Voters);
 impl_mock_response!(VotePollsGroupedByTimestamp);
 impl_mock_response!(PrefundedSpecializedBalance);
+impl_mock_response!(TotalCreditsOnPlatform);
+impl_mock_response!(ElementFetchRequestItem);

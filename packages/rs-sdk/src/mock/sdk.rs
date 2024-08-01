@@ -184,6 +184,14 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetPrefundedSpecializedBalanceRequest>(filename)
                         .await?
                 }
+                "GetPathElementsRequest" => {
+                    self.load_expectation::<proto::GetPathElementsRequest>(filename)
+                        .await?
+                }
+                "GetTotalCreditsInPlatformRequest" => {
+                    self.load_expectation::<proto::GetTotalCreditsInPlatformRequest>(filename)
+                        .await?
+                }
                 _ => {
                     return Err(Error::Config(format!(
                         "unknown request type {} in {}",
