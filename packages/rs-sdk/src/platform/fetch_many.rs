@@ -33,7 +33,7 @@ use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
 
-use super::{Fetch, LimitQuery};
+use super::LimitQuery;
 
 /// Fetch multiple objects from Platform.
 ///

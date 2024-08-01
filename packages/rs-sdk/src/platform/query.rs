@@ -23,8 +23,6 @@ use rs_dapi_client::transport::TransportRequest;
 use std::fmt::Debug;
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
-use drive::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
-use drive::drive::RootTree;
 use drive_proof_verifier::types::{KeysInPath, TotalCreditsOnPlatform};
 use crate::{error::Error, platform::document_query::DocumentQuery};
 
