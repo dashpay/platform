@@ -176,6 +176,15 @@ pub struct KeysInPath {
 )]
 pub struct TotalCreditsOnPlatform(pub Credits);
 
+/// A query with no parameters
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct NoParamQuery;
+
 /// The item of an element fetch request
 #[derive(Debug, derive_more::From, Clone)]
 #[cfg_attr(

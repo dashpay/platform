@@ -7,7 +7,8 @@ use dapi_grpc::platform::{
 };
 use dash_sdk::{
     platform::{
-        types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery, DEFAULT_EPOCH_QUERY_LIMIT,
+        fetch_current_no_parameters::FetchCurrent, Fetch, FetchMany, LimitQuery,
+        DEFAULT_EPOCH_QUERY_LIMIT,
     },
     Sdk,
 };

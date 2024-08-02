@@ -29,7 +29,7 @@ use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuer
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use drive_proof_verifier::from_request::TryFromRequest;
-use drive_proof_verifier::types::{KeysInPath, TotalCreditsOnPlatform};
+use drive_proof_verifier::types::{KeysInPath, NoParamQuery};
 use rs_dapi_client::transport::TransportRequest;
 use std::fmt::Debug;
 
@@ -568,7 +568,7 @@ impl Query<GetPathElementsRequest> for KeysInPath {
     }
 }
 
-impl Query<GetTotalCreditsInPlatformRequest> for TotalCreditsOnPlatform {
+impl Query<GetTotalCreditsInPlatformRequest> for NoParamQuery {
     fn query(self, prove: bool) -> Result<GetTotalCreditsInPlatformRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");

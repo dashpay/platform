@@ -9,6 +9,7 @@ pub mod block_info_from_metadata;
 mod delegate;
 mod document_query;
 mod fetch;
+pub mod fetch_current_no_parameters;
 mod fetch_many;
 mod identities_contract_keys_query;
 mod query;

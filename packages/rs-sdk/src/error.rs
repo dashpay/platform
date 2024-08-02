@@ -46,6 +46,9 @@ pub enum Error {
     /// Dependency not found, for example data contract for a document not found
     #[error("Required {0} not found: {1}")]
     MissingDependency(String, String),
+    /// Total credits in Platform are not found; we must always have credits in Platform
+    #[error("Total credits in Platform are not found; it should never happen")]
+    TotalCreditsNotFound,
     /// Epoch not found; we must have at least one epoch
     #[error("No epoch found on Platform; it should never happen")]
     EpochNotFound,
