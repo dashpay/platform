@@ -1108,7 +1108,12 @@ impl<'a> WhereClause {
                     )));
                 };
 
-                let property_type = Self::find_property_type(document_type, &field_name)?;
+                let property_type = match field_name.as_str() {
+                    "$id" | "$ownerId" => Cow::Owned(DocumentPropertyType::Identifier),
+                    "$createdAt" | "$updatedAt" => Cow::Owned(DocumentPropertyType::Date),
+                    "$revision" => Cow::Owned(DocumentPropertyType::U64),
+                    _ => Self::find_property_type(document_type, &field_name)?,
+                };
 
                 let mut in_values: Vec<Value> = Vec::new();
                 for value in list {
@@ -1230,7 +1235,12 @@ impl<'a> WhereClause {
                         panic!("unreachable: confirmed it's identifier variant");
                     };
 
-                    let property_type = Self::find_property_type(document_type, &field_name)?;
+                    let property_type = match field_name.as_str() {
+                        "$id" | "$ownerId" => Cow::Owned(DocumentPropertyType::Identifier),
+                        "$createdAt" | "$updatedAt" => Cow::Owned(DocumentPropertyType::Date),
+                        "$revision" => Cow::Owned(DocumentPropertyType::U64),
+                        _ => Self::find_property_type(document_type, &field_name)?,
+                    };
 
                     let transformed_value = if let ast::Expr::Value(value) = value_expr {
                         let platform_value = sql_value_to_platform_value(value.clone()).ok_or({
