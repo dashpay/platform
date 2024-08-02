@@ -1,11 +1,21 @@
 //! Query trait representing criteria for fetching data from Platform.
 //!
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from Platform.
+use crate::{error::Error, platform::document_query::DocumentQuery};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
 use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0;
 use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
-use dapi_grpc::platform::v0::{self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0, AllKeys, GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest, GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest, KeyRequestType, GetPathElementsRequest, get_path_elements_request, GetTotalCreditsInPlatformRequest, get_total_credits_in_platform_request};
+use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
+use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
+use dapi_grpc::platform::v0::{
+    self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
+    get_path_elements_request, get_total_credits_in_platform_request, AllKeys,
+    GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourcesRequest, GetEpochsInfoRequest, GetIdentityKeysRequest,
+    GetPathElementsRequest, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetTotalCreditsInPlatformRequest, KeyRequestType,
+};
 use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetPrefundedSpecializedBalanceRequest,
     GetVotePollsByEndDateRequest,
@@ -19,12 +29,9 @@ use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuer
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use drive_proof_verifier::from_request::TryFromRequest;
+use drive_proof_verifier::types::{KeysInPath, TotalCreditsOnPlatform};
 use rs_dapi_client::transport::TransportRequest;
 use std::fmt::Debug;
-use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
-use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
-use drive_proof_verifier::types::{KeysInPath, TotalCreditsOnPlatform};
-use crate::{error::Error, platform::document_query::DocumentQuery};
 
 use super::types::epoch::EpochQuery;
 /// Default limit of epoch records returned by Platform.
@@ -541,7 +548,6 @@ impl Query<GetContestedResourceIdentityVotesRequest> for LimitQuery<VoteQuery> {
     }
 }
 
-
 impl Query<GetPathElementsRequest> for KeysInPath {
     fn query(self, prove: bool) -> Result<GetPathElementsRequest, Error> {
         if !prove {
@@ -550,7 +556,11 @@ impl Query<GetPathElementsRequest> for KeysInPath {
 
         let request: GetPathElementsRequest = GetPathElementsRequest {
             version: Some(get_path_elements_request::Version::V0(
-                GetPathElementsRequestV0 { path: self.path, keys: self.keys, prove },
+                GetPathElementsRequestV0 {
+                    path: self.path,
+                    keys: self.keys,
+                    prove,
+                },
             )),
         };
 
@@ -566,7 +576,7 @@ impl Query<GetTotalCreditsInPlatformRequest> for TotalCreditsOnPlatform {
 
         let request: GetTotalCreditsInPlatformRequest = GetTotalCreditsInPlatformRequest {
             version: Some(get_total_credits_in_platform_request::Version::V0(
-                GetTotalCreditsInPlatformRequestV0{ prove },
+                GetTotalCreditsInPlatformRequestV0 { prove },
             )),
         };
 

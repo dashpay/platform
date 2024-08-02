@@ -98,7 +98,7 @@ impl CheckTxCoreRpcConfig {
 }
 
 /// Configuration for Dash Core related things
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CoreConfig {
     /// Core RPC config for consensus
@@ -107,6 +107,21 @@ pub struct CoreConfig {
     /// Core RPC config for check tx
     #[serde(flatten)]
     pub check_tx_rpc: CheckTxCoreRpcConfig,
+
+    /// The reward multiplier of core
+    /// This is 1 for mainnet
+    /// This is often 10 for other networks
+    pub reward_multiplier: u16,
+}
+
+impl Default for CoreConfig {
+    fn default() -> Self {
+        Self {
+            reward_multiplier: 1,
+            consensus_rpc: Default::default(),
+            check_tx_rpc: Default::default(),
+        }
+    }
 }
 
 /// Configuration of the execution part of Dash Platform.

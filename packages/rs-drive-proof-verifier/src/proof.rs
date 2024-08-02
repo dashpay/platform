@@ -1,5 +1,6 @@
 use crate::from_request::TryFromRequest;
 use crate::provider::DataContractProvider;
+use crate::verify::verify_tenderdash_proof;
 use crate::{types, types::*, ContextProvider, Error};
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
@@ -51,8 +52,6 @@ use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
-use drive::drive::balances::total_credits_on_platform_path_query;
-use crate::verify::verify_tenderdash_proof;
 
 /// Parse and verify the received proof and retrieve the requested object, if any.
 ///
@@ -1611,7 +1610,6 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
 }
 
 impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsOnPlatform {
-
     type Request = platform::GetTotalCreditsInPlatformRequest;
     type Response = platform::GetTotalCreditsInPlatformResponse;
 
@@ -1628,18 +1626,24 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsOnPla
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-        
+
         let (root_hash, credits) = Drive::verify_total_credits_in_system(
-                &proof.grovedb_proof,
-                platform_version,
-            )
-            .map_err(|e| Error::DriveError {
-                error: e.to_string(),
-            })?;
+            &proof.grovedb_proof,
+            1, //todo: we need to set this based on network
+            mtd.core_chain_locked_height,
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((Some(TotalCreditsOnPlatform(credits)), mtd.clone(), proof.clone()))
+        Ok((
+            Some(TotalCreditsOnPlatform(credits)),
+            mtd.clone(),
+            proof.clone(),
+        ))
     }
 }
 

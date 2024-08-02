@@ -24,9 +24,10 @@ use dpp::{
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
 };
-use drive::grovedb::{Element, Query, SizedQuery};
+use drive::grovedb::Element;
 use std::collections::{BTreeMap, BTreeSet};
 
+use drive::grovedb::query_result_type::Path;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
@@ -34,10 +35,6 @@ use {
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
-use drive::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
-use drive::drive::RootTree;
-use drive::grovedb::query_result_type::Path;
-use drive::query::PathQuery;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///

@@ -65,7 +65,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             self.add_process_epoch_change_operations(
                 block_execution_context,
                 &block_fees,
-                transaction,
+                Some(transaction),
                 &mut batch,
                 platform_version,
             )?

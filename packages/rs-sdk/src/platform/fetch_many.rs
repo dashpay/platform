@@ -28,7 +28,11 @@ use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, voting::votes::resource_vote::ResourceVote,
 };
 use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
-use drive_proof_verifier::types::{Contenders, ContestedResource, ContestedResources, DataContracts, ExtendedEpochInfos, IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes, ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters};
+use drive_proof_verifier::types::{
+    Contenders, ContestedResource, ContestedResources, DataContracts, ExtendedEpochInfos,
+    IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes, ProtocolVersionUpgrades,
+    ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
+};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;

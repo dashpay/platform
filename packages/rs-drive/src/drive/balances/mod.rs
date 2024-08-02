@@ -17,10 +17,10 @@ mod remove_from_system_credits_operations;
 #[cfg(feature = "server")]
 mod calculate_total_credits_balance;
 
-use grovedb::{PathQuery, SizedQuery};
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::RootTree;
 use crate::query::Query;
+use grovedb::{PathQuery, SizedQuery};
 
 /// Storage fee pool key
 #[cfg(any(feature = "server", feature = "verify"))]

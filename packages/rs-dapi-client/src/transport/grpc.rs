@@ -351,7 +351,6 @@ impl_transport_request_grpc!(
     get_total_credits_in_platform
 );
 
-
 // Link to each core gRPC request what client and method to use:
 
 impl_transport_request_grpc!(

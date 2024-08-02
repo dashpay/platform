@@ -9,7 +9,29 @@ use crate::rpc::core::DefaultCoreRPC;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
-use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest, GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest, GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse, GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse, GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse};
+use dapi_grpc::platform::v0::{
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
+    GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
+    GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
+    GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
+    GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
+    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
+    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
+    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
+    GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
+    GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
+    GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
+    GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
+    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse,
+    GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+};
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
 use std::fmt::Debug;
@@ -512,13 +534,16 @@ impl PlatformService for QueryService {
         .await
     }
 
-    async fn get_total_credits_in_platform(&self, request: Request<GetTotalCreditsInPlatformRequest>) -> Result<Response<GetTotalCreditsInPlatformResponse>, Status> {
+    async fn get_total_credits_in_platform(
+        &self,
+        request: Request<GetTotalCreditsInPlatformRequest>,
+    ) -> Result<Response<GetTotalCreditsInPlatformResponse>, Status> {
         self.handle_blocking_query(
             request,
             Platform::<DefaultCoreRPC>::query_total_credits_in_platform,
             "get_total_credits_in_platform",
         )
-            .await
+        .await
     }
 }
 

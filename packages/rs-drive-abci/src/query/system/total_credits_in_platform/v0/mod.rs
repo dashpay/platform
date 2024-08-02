@@ -1,15 +1,27 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
-use dapi_grpc::platform::v0::get_total_credits_in_platform_response::{get_total_credits_in_platform_response_v0, GetTotalCreditsInPlatformResponseV0};
+use dapi_grpc::platform::v0::get_total_credits_in_platform_response::{
+    get_total_credits_in_platform_response_v0, GetTotalCreditsInPlatformResponseV0,
+};
+use dpp::block::epoch::Epoch;
 use dpp::check_validation_result_with_data;
-
-use crate::platform_types::platform_state::PlatformState;
+use dpp::core_subsidy::epoch_core_reward_credits_for_distribution::epoch_core_reward_credits_for_distribution;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::balances::{total_credits_on_platform_path_query, TOTAL_SYSTEM_CREDITS_STORAGE_KEY};
+use drive::drive::balances::{
+    total_credits_on_platform_path_query, TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
+};
+use drive::drive::credit_pools::epochs::epoch_key_constants::KEY_START_BLOCK_CORE_HEIGHT;
+use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_UNPAID_EPOCH_INDEX;
+use drive::drive::credit_pools::epochs::paths::EpochProposers;
 use drive::drive::system::misc_path;
+use drive::drive::RootTree;
+use drive::error::proof::ProofError;
+use drive::grovedb::{PathQuery, Query, SizedQuery};
 use drive::util::grove_operations::DirectQueryType;
 
 impl<C> Platform<C> {
@@ -19,15 +31,49 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetTotalCreditsInPlatformResponseV0>, Error> {
-        let path_query = total_credits_on_platform_path_query();
-
         let response = if prove {
+            let mut total_credits_on_platform_path_query = total_credits_on_platform_path_query();
+
+            total_credits_on_platform_path_query.query.limit = None;
+
+            let unpaid_epoch = self.drive.get_unpaid_epoch_index(None, platform_version)?;
+
+            // we also need the path_query for the start_core_height of this unpaid epoch
+            let unpaid_epoch_index_path_query = PathQuery {
+                path: vec![vec![RootTree::Pools as u8]],
+                query: SizedQuery {
+                    query: Query::new_single_key(KEY_UNPAID_EPOCH_INDEX.to_vec()),
+                    limit: None,
+                    offset: None,
+                },
+            };
+
+            let epoch = Epoch::new(unpaid_epoch)?;
+
+            let start_core_height_query = PathQuery {
+                path: epoch.get_path_vec(),
+                query: SizedQuery {
+                    query: Query::new_single_key(KEY_START_BLOCK_CORE_HEIGHT.to_vec()),
+                    limit: None,
+                    offset: None,
+                },
+            };
+
+            let path_query = PathQuery::merge(
+                vec![
+                    &total_credits_on_platform_path_query,
+                    &unpaid_epoch_index_path_query,
+                    &start_core_height_query,
+                ],
+                &platform_version.drive.grove_version,
+            )?;
+
             let proof = check_validation_result_with_data!(self.drive.grove_get_proved_path_query(
-            &path_query,
-            None,
-            &mut vec![],
-            &platform_version.drive,
-        ));
+                &path_query,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            ));
 
             GetTotalCreditsInPlatformResponseV0 {
                 result: Some(get_total_credits_in_platform_response_v0::Result::Proof(
@@ -37,7 +83,8 @@ impl<C> Platform<C> {
             }
         } else {
             let path_holding_total_credits = misc_path();
-            let total_credits_in_platform = self.drive
+            let total_credits_in_platform = self
+                .drive
                 .grove_get_raw_value_u64_from_encoded_var_vec(
                     (&path_holding_total_credits).into(),
                     TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
@@ -45,10 +92,33 @@ impl<C> Platform<C> {
                     None,
                     &mut vec![],
                     &platform_version.drive,
-                )?.unwrap_or_default(); // 0  would mean we haven't initialized yet
+                )?
+                .unwrap_or_default(); // 0  would mean we haven't initialized yet
+
+            let unpaid_epoch_index = self.drive.get_unpaid_epoch_index(None, platform_version)?;
+
+            let unpaid_epoch = Epoch::new(unpaid_epoch_index)?;
+
+            let start_block_core_height = self.drive.get_epoch_start_block_core_height(
+                &unpaid_epoch,
+                None,
+                platform_version,
+            )?;
+
+            let reward_credits_accumulated_during_current_epoch =
+                epoch_core_reward_credits_for_distribution(
+                    start_block_core_height,
+                    platform_state.last_committed_core_height(),
+                    self.config.core.reward_multiplier,
+                    platform_version,
+                )?;
+
+            let total_credits_with_rewards = total_credits_in_platform.checked_add(reward_credits_accumulated_during_current_epoch).ok_or(drive::error::Error::Proof(ProofError::CorruptedProof("overflow while adding platform credits with reward credits accumulated during current epoch".to_string())))?;
 
             GetTotalCreditsInPlatformResponseV0 {
-                result: Some(get_total_credits_in_platform_response_v0::Result::Credits(total_credits_in_platform)),
+                result: Some(get_total_credits_in_platform_response_v0::Result::Credits(
+                    total_credits_with_rewards,
+                )),
                 metadata: Some(self.response_metadata_v0(platform_state)),
             }
         };
@@ -61,23 +131,53 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::setup_platform;
-    #[test]
-    fn test_query_total_system_credits() {
-        let (platform, state, version) = setup_platform(false);
+    use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
+    use dpp::block::epoch::EpochIndex;
+    use dpp::prelude::CoreBlockHeight;
+    use drive::drive::Drive;
 
-        let platform_version = PlatformVersion::latest();
+    fn test_query_total_system_credits(
+        epoch_index: EpochIndex,
+        epoch_core_start_height: CoreBlockHeight,
+        current_core_height: CoreBlockHeight,
+    ) {
+        let (platform, _state, platform_version) = setup_platform(true);
 
         platform
             .drive
             .add_to_system_credits(100, None, platform_version)
             .expect("expected to insert identity");
 
-        let request = GetTotalCreditsInPlatformRequestV0 {
-            prove: false,
-        };
+        if epoch_index > 0 {
+            fast_forward_to_block(
+                &platform,
+                5000,
+                100,
+                epoch_core_start_height,
+                epoch_index - 1,
+                true,
+            );
+        } else {
+            fast_forward_to_block(&platform, 0, 1, epoch_core_start_height, 0, true);
+        }
+
+        if current_core_height > epoch_core_start_height {
+            fast_forward_to_block(
+                &platform,
+                15000,
+                200,
+                current_core_height,
+                epoch_index,
+                false,
+            );
+        }
+
+        let request = GetTotalCreditsInPlatformRequestV0 { prove: false };
+
+        let state = platform.state.load();
 
         let response = platform
-            .query_total_credits_in_platform_v0(request, &state, version)
+            .query_total_credits_in_platform_v0(request, &state, platform_version)
             .expect("expected query to succeed");
 
         let response_data = response.into_data().expect("expected data");
@@ -88,6 +188,106 @@ mod tests {
             panic!("expected credits")
         };
 
-        assert_eq!(credits, 100);
+        let rewards = epoch_core_reward_credits_for_distribution(
+            epoch_core_start_height,
+            current_core_height,
+            1,
+            platform_version,
+        )
+        .expect("expected to get rewards");
+
+        assert_eq!(credits, 100 + rewards);
+    }
+
+    fn test_proved_query_total_system_credits(
+        epoch_index: EpochIndex,
+        epoch_core_start_height: CoreBlockHeight,
+        current_core_height: CoreBlockHeight,
+    ) {
+        let (platform, _state, platform_version) = setup_platform(true);
+
+        platform
+            .drive
+            .add_to_system_credits(100, None, platform_version)
+            .expect("expected to insert identity");
+
+        if epoch_index > 0 {
+            fast_forward_to_block(
+                &platform,
+                5000,
+                100,
+                epoch_core_start_height,
+                epoch_index - 1,
+                true,
+            );
+        } else {
+            fast_forward_to_block(&platform, 0, 1, epoch_core_start_height, 0, true);
+        }
+
+        if current_core_height > epoch_core_start_height {
+            fast_forward_to_block(
+                &platform,
+                15000,
+                200,
+                current_core_height,
+                epoch_index,
+                false,
+            );
+        }
+
+        let request = GetTotalCreditsInPlatformRequestV0 { prove: true };
+
+        let state = platform.state.load();
+
+        let response = platform
+            .query_total_credits_in_platform_v0(request, &state, platform_version)
+            .expect("expected query to succeed");
+
+        let response_data = response.into_data().expect("expected data");
+
+        let get_total_credits_in_platform_response_v0::Result::Proof(proof) =
+            response_data.result.expect("expected a result")
+        else {
+            panic!("expected proof")
+        };
+
+        let (_, credits) = Drive::verify_total_credits_in_system(
+            &proof.grovedb_proof,
+            1, //todo: we need to set this based on network
+            current_core_height,
+            platform_version,
+        )
+        .expect("expected to verify total credits in platform");
+
+        let rewards = epoch_core_reward_credits_for_distribution(
+            epoch_core_start_height,
+            current_core_height,
+            1,
+            platform_version,
+        )
+        .expect("expected to get rewards");
+
+        assert_eq!(credits, 100 + rewards);
+    }
+
+    #[test]
+    fn test_query_total_system_credits_at_genesis() {
+        // let's say the genesis is 1500
+        test_query_total_system_credits(0, 1500, 1500);
+        test_proved_query_total_system_credits(0, 1500, 1500);
+    }
+
+    #[test]
+    fn test_query_total_system_credits_on_first_epoch_not_genesis() {
+        // let's say the genesis is 1500, we are height 1550
+        test_query_total_system_credits(0, 1500, 1550);
+        test_proved_query_total_system_credits(0, 1500, 1550);
+    }
+
+    #[test]
+    fn test_query_total_system_credits_not_genesis_epoch() {
+        // let's say the genesis is 1500, we are height 2500
+        test_query_total_system_credits(1, 2000, 2500);
+        test_proved_query_total_system_credits(1, 2000, 2500);
     }
 }
