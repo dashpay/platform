@@ -139,6 +139,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetPrefundedSpecializedBalanceRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetPrefundedSpecializedBalanceResponse.FromString,
                 )
+        self.getTotalCreditsInPlatform = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getTotalCreditsInPlatform',
+                request_serializer=platform__pb2.GetTotalCreditsInPlatformRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetTotalCreditsInPlatformResponse.FromString,
+                )
         self.getPathElements = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getPathElements',
                 request_serializer=platform__pb2.GetPathElementsRequest.SerializeToString,
@@ -304,6 +309,12 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getTotalCreditsInPlatform(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getPathElements(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -437,6 +448,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getPrefundedSpecializedBalance,
                     request_deserializer=platform__pb2.GetPrefundedSpecializedBalanceRequest.FromString,
                     response_serializer=platform__pb2.GetPrefundedSpecializedBalanceResponse.SerializeToString,
+            ),
+            'getTotalCreditsInPlatform': grpc.unary_unary_rpc_method_handler(
+                    servicer.getTotalCreditsInPlatform,
+                    request_deserializer=platform__pb2.GetTotalCreditsInPlatformRequest.FromString,
+                    response_serializer=platform__pb2.GetTotalCreditsInPlatformResponse.SerializeToString,
             ),
             'getPathElements': grpc.unary_unary_rpc_method_handler(
                     servicer.getPathElements,
@@ -875,6 +891,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getPrefundedSpecializedBalance',
             platform__pb2.GetPrefundedSpecializedBalanceRequest.SerializeToString,
             platform__pb2.GetPrefundedSpecializedBalanceResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getTotalCreditsInPlatform(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getTotalCreditsInPlatform',
+            platform__pb2.GetTotalCreditsInPlatformRequest.SerializeToString,
+            platform__pb2.GetTotalCreditsInPlatformResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
