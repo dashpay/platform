@@ -2658,6 +2658,7 @@ dependencies = [
 [[package]]
 name = "jsonschema"
 version = "0.18.0"
+source = "git+https://github.com/fominok/jsonschema-rs?branch=no-simd-feature#080735cf4f1bc4ff50e618b85680e270c60d0ea8"
 dependencies = [
  "ahash 0.8.11",
  "anyhow",

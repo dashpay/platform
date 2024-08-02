@@ -35,7 +35,7 @@ getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
 itertools = { version = "0.12.1" }
-jsonschema = { git = "https://github.com/dashpay/jsonschema-rs", branch = "configure_regexp", default-features = false, features = [
+jsonschema = { git = "https://github.com/fominok/jsonschema-rs", branch = "no-simd-feature", default-features = false, features = [
   "draft202012",
 ], optional = true }
 lazy_static = { version = "1.4" }
