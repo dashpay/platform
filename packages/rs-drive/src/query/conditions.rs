@@ -1083,7 +1083,7 @@ impl<'a> WhereClause {
         })
     }
 
-    // Build where clauses from operations
+    /// Build where clauses from operations
     pub(crate) fn build_where_clauses_from_operations(
         binary_operation: &ast::Expr,
         document_type: &DocumentType,
