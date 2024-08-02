@@ -1048,7 +1048,41 @@ impl<'a> WhereClause {
         Ok(query)
     }
 
-    /// Build where clauses from operations
+    /// Recursively find the property type for a given nested field name.
+    fn find_property_type(
+        document_type: &'a DocumentType,
+        field_name: &str,
+    ) -> Result<Cow<'a, DocumentPropertyType>, Error> {
+        let parts = field_name.split('.');
+
+        let mut current_properties = document_type.properties();
+        let mut current_property_type = None;
+
+        for part in parts {
+            let property = current_properties.get(part).ok_or_else(|| {
+                Error::Query(QuerySyntaxError::InvalidSQL(format!(
+                    "Invalid query: property named {} not in document type",
+                    part
+                )))
+            })?;
+
+            current_property_type = Some(&property.property_type);
+
+            if let DocumentPropertyType::Object(nested_properties) = &property.property_type {
+                current_properties = nested_properties;
+            } else {
+                break;
+            }
+        }
+
+        current_property_type.map(Cow::Borrowed).ok_or_else(|| {
+            Error::Query(QuerySyntaxError::InvalidSQL(format!(
+                "Invalid query: property named {} not in document type",
+                field_name
+            )))
+        })
+    }
+
     pub(crate) fn build_where_clauses_from_operations(
         binary_operation: &ast::Expr,
         document_type: &DocumentType,
@@ -1074,20 +1108,7 @@ impl<'a> WhereClause {
                     )));
                 };
 
-                let property_type = match field_name.as_str() {
-                    "$id" | "$ownerId" => Cow::Owned(DocumentPropertyType::Identifier),
-                    "$createdAt" | "$updatedAt" => Cow::Owned(DocumentPropertyType::Date),
-                    "$revision" => Cow::Owned(DocumentPropertyType::U64),
-                    property_name => {
-                        let Some(property) = document_type.properties().get(property_name) else {
-                            return Err(Error::Query(QuerySyntaxError::InvalidInClause(
-                                "Invalid query: in clause property not in document type"
-                                    .to_string(),
-                            )));
-                        };
-                        Cow::Borrowed(&property.property_type)
-                    }
-                };
+                let property_type = Self::find_property_type(document_type, &field_name)?;
 
                 let mut in_values: Vec<Value> = Vec::new();
                 for value in list {
@@ -1209,21 +1230,7 @@ impl<'a> WhereClause {
                         panic!("unreachable: confirmed it's identifier variant");
                     };
 
-                    let property_type = match field_name.as_str() {
-                        "$id" | "$ownerId" => Cow::Owned(DocumentPropertyType::Identifier),
-                        "$createdAt" | "$updatedAt" => Cow::Owned(DocumentPropertyType::Date),
-                        "$revision" => Cow::Owned(DocumentPropertyType::U64),
-                        property_name => {
-                            let Some(property) = document_type.properties().get(property_name)
-                            else {
-                                return Err(Error::Query(QuerySyntaxError::InvalidSQL(format!(
-                                    "Invalid query: property named {} not in document type",
-                                    field_name.as_str()
-                                ))));
-                            };
-                            Cow::Borrowed(&property.property_type)
-                        }
-                    };
+                    let property_type = Self::find_property_type(document_type, &field_name)?;
 
                     let transformed_value = if let ast::Expr::Value(value) = value_expr {
                         let platform_value = sql_value_to_platform_value(value.clone()).ok_or({
