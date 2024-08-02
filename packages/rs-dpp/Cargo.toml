@@ -76,7 +76,7 @@ assert_matches = "1.5.0"
 once_cell = "1.7"
 
 [features]
-default = ["platform-value", "state-transitions"]
+default = ["platform-value", "state-transitions", "simd"]
 all_features = [
   "json-object",
   "platform-value",
@@ -277,3 +277,4 @@ extended-document = [
 
 factories = []
 client = ["factories", "state-transitions"]
+simd = ["jsonschema/simd"]
