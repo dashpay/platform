@@ -7,7 +7,7 @@ use dashcore::Network;
 /// STARTS AT 5 Dash
 /// Take 60% for Masternodes
 /// Take 37.5% of that for Platform
-const CORE_GENESIS_BLOCK_SUBSIDY: Credits = 117000000000;
+const CORE_GENESIS_BLOCK_SUBSIDY: Credits = 112500000000;
 
 pub trait NetworkCoreSubsidy {
     fn core_subsidy_halving_interval(&self) -> u32;
