@@ -32,11 +32,11 @@ use std::path::PathBuf;
 
 use crate::logging::LogConfigs;
 use crate::{abci::config::AbciConfig, error::Error};
+use dpp::dashcore::Network;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use drive::config::DriveConfig;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use dpp::dashcore::Network;
 
 /// Configuration for Dash Core RPC client used in consensus logic
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]

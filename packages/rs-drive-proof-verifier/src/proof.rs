@@ -27,6 +27,7 @@ use dapi_grpc::platform::{
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::{EpochIndex, MAX_EPOCH};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Network, ProTxHash};
 use dpp::document::{Document, DocumentV0Getters};
@@ -52,7 +53,6 @@ use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
-use dpp::core_subsidy::NetworkCoreSubsidy;
 
 /// Parse and verify the received proof and retrieve the requested object, if any.
 ///
@@ -193,8 +193,13 @@ pub trait FromProof<Req> {
     where
         Self: Sized + 'a,
     {
-        let (main_item, response_metadata, _) =
-            Self::maybe_from_proof_with_metadata(request, response, network, platform_version, provider)?;
+        let (main_item, response_metadata, _) = Self::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network,
+            platform_version,
+            provider,
+        )?;
         Ok((main_item.ok_or(Error::NotFound)?, response_metadata))
     }
 
@@ -228,8 +233,13 @@ pub trait FromProof<Req> {
     where
         Self: Sized + 'a,
     {
-        let (main_item, response_metadata, proof) =
-            Self::maybe_from_proof_with_metadata(request, response, network, platform_version, provider)?;
+        let (main_item, response_metadata, proof) = Self::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network,
+            platform_version,
+            provider,
+        )?;
         Ok((main_item.ok_or(Error::NotFound)?, response_metadata, proof))
     }
 }

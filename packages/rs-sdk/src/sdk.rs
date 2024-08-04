@@ -11,6 +11,7 @@ use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
+use dpp::dashcore::Network;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -39,7 +40,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
-use dpp::dashcore::Network;
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
@@ -208,10 +208,14 @@ impl Sdk {
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
         match self.inner {
-            SdkInstance::Dapi { .. } => {
-                O::maybe_from_proof_with_metadata(request, response, self.network, self.version(), &provider)
-                    .map(|(a, b, _)| (a, b))
-            }
+            SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
+                request,
+                response,
+                self.network,
+                self.version(),
+                &provider,
+            )
+            .map(|(a, b, _)| (a, b)),
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
                 let guard = mock.lock().await;
@@ -244,9 +248,13 @@ impl Sdk {
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
         match self.inner {
-            SdkInstance::Dapi { .. } => {
-                O::maybe_from_proof_with_metadata(request, response, self.network, self.version(), &provider)
-            }
+            SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
+                request,
+                response,
+                self.network,
+                self.version(),
+                &provider,
+            ),
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
                 let guard = mock.lock().await;
@@ -548,7 +556,7 @@ pub struct SdkBuilder {
     /// If `None`, a mock client will be created.
     addresses: Option<AddressList>,
     settings: RequestSettings,
-    
+
     network: Network,
 
     core_ip: String,

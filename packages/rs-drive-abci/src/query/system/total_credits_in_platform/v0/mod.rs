@@ -130,10 +130,10 @@ impl<C> Platform<C> {
 
 #[cfg(test)]
 mod tests {
-    use dashcore_rpc::dashcore::Network;
     use super::*;
     use crate::query::tests::setup_platform;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
+    use dashcore_rpc::dashcore::Network;
     use dpp::block::epoch::EpochIndex;
     use dpp::prelude::CoreBlockHeight;
     use drive::drive::Drive;
@@ -252,7 +252,7 @@ mod tests {
         else {
             panic!("expected proof")
         };
-        
+
         let network = Network::Testnet;
 
         let core_subsidy_halving_interval = network.core_subsidy_halving_interval();

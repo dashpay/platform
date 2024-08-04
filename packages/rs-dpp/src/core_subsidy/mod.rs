@@ -1,7 +1,7 @@
 pub mod epoch_core_reward_credits_for_distribution;
 
-use dashcore::Network;
 use crate::fee::Credits;
+use dashcore::Network;
 
 /// ORIGINAL CORE BLOCK DISTRIBUTION
 /// STARTS AT 5 Dash

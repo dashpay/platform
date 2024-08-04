@@ -10,6 +10,8 @@ use dapi_grpc::platform::v0::{
     get_documents_request::{get_documents_request_v0::Start, GetDocumentsRequestV0},
     GetDocumentsRequest, Proof, ResponseMetadata,
 };
+use dpp::dashcore::Network;
+use dpp::version::PlatformVersion;
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters, document_type::accessors::DocumentTypeV0Getters,
@@ -19,10 +21,8 @@ use dpp::{
     prelude::{DataContract, Identifier},
     ProtocolError,
 };
-use dpp::dashcore::Network;
-use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
-use drive_proof_verifier::{types::Documents, FromProof, ContextProvider};
+use drive_proof_verifier::{types::Documents, ContextProvider, FromProof};
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
 };
@@ -173,8 +173,11 @@ impl FromProof<DocumentQuery> for Document {
 
         let (documents, metadata, proof): (Option<Documents>, ResponseMetadata, Proof) =
             <Documents as FromProof<Self::Request>>::maybe_from_proof_with_metadata(
-                request, response,
-                network, platform_version, provider,
+                request,
+                response,
+                network,
+                platform_version,
+                provider,
             )?;
 
         match documents {
