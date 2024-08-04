@@ -19,8 +19,10 @@ use dpp::{
     prelude::{DataContract, Identifier},
     ProtocolError,
 };
+use dpp::dashcore::Network;
+use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
-use drive_proof_verifier::{types::Documents, FromProof};
+use drive_proof_verifier::{types::Documents, FromProof, ContextProvider};
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
 };
@@ -160,8 +162,9 @@ impl FromProof<DocumentQuery> for Document {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        version: &dpp::version::PlatformVersion,
-        provider: &'a dyn drive_proof_verifier::ContextProvider,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
@@ -170,7 +173,8 @@ impl FromProof<DocumentQuery> for Document {
 
         let (documents, metadata, proof): (Option<Documents>, ResponseMetadata, Proof) =
             <Documents as FromProof<Self::Request>>::maybe_from_proof_with_metadata(
-                request, response, version, provider,
+                request, response,
+                network, platform_version, provider,
             )?;
 
         match documents {
@@ -195,8 +199,9 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        version: &dpp::version::PlatformVersion,
-        provider: &'a dyn drive_proof_verifier::ContextProvider,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
@@ -212,7 +217,8 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         <drive_proof_verifier::types::Documents as FromProof<DriveDocumentQuery>>::maybe_from_proof_with_metadata(
             drive_query,
             response,
-            version,
+            network,
+            platform_version,
             provider,
         )
     }

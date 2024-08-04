@@ -31,7 +31,7 @@ impl Drive {
     /// - The platform version is unknown.
     pub fn verify_total_credits_in_system(
         proof: &[u8],
-        core_distribution_multiplier: u16,
+        core_subsidy_halving_interval: u32,
         current_core_height: CoreBlockHeight,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Credits), Error> {
@@ -44,7 +44,7 @@ impl Drive {
         {
             0 => Drive::verify_total_credits_in_system_v0(
                 proof,
-                core_distribution_multiplier,
+                core_subsidy_halving_interval,
                 current_core_height,
                 platform_version,
             ),

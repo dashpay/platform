@@ -16,7 +16,7 @@ use rs_dapi_client::{
 };
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-
+use dpp::dashcore::Network;
 use crate::{
     platform::{types::identity::IdentityRequest, DocumentQuery, Fetch, FetchMany, Query},
     Error,
@@ -397,7 +397,7 @@ impl MockDashPlatformSdk {
                     .ok_or(ContextProviderError::InvalidQuorum(
                         "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
                     ))?;
-                O::maybe_from_proof_with_metadata(request, response, version, provider)?
+                O::maybe_from_proof_with_metadata(request, response, Network::Regtest, version, provider)?
             }
         };
 

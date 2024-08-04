@@ -3,6 +3,7 @@ use crate::execution::types::proposer_payouts;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
 use dpp::core_subsidy::epoch_core_reward_credits_for_distribution::epoch_core_reward_credits_for_distribution;
+use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::version::PlatformVersion;
 use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
 use drive::drive::credit_pools::operations::update_unpaid_epoch_index_operation;
@@ -43,7 +44,7 @@ impl<C> Platform<C> {
         let core_block_rewards = epoch_core_reward_credits_for_distribution(
             unpaid_epoch.start_block_core_height,
             unpaid_epoch.next_epoch_start_block_core_height,
-            self.config.core.reward_multiplier,
+            self.config.network.core_subsidy_halving_interval(),
             platform_version,
         )?;
 

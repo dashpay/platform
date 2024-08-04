@@ -36,6 +36,7 @@ use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use drive::config::DriveConfig;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use dpp::dashcore::Network;
 
 /// Configuration for Dash Core RPC client used in consensus logic
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -107,17 +108,11 @@ pub struct CoreConfig {
     /// Core RPC config for check tx
     #[serde(flatten)]
     pub check_tx_rpc: CheckTxCoreRpcConfig,
-
-    /// The reward multiplier of core
-    /// This is 1 for mainnet
-    /// This is often 10 for other networks
-    pub reward_multiplier: u16,
 }
 
 impl Default for CoreConfig {
     fn default() -> Self {
         Self {
-            reward_multiplier: 1,
             consensus_rpc: Default::default(),
             check_tx_rpc: Default::default(),
         }
@@ -177,6 +172,8 @@ where
 // NOTE: in renames, we use lower_snake_case, because uppercase does not work; see
 // https://github.com/softprops/envy/issues/61 and https://github.com/softprops/envy/pull/69
 pub struct PlatformConfig {
+    /// The network type
+    pub network: Network,
     /// Drive configuration
     #[serde(flatten)]
     pub drive: DriveConfig,
@@ -636,6 +633,7 @@ impl Default for PlatformConfig {
 impl PlatformConfig {
     pub fn default_local() -> Self {
         Self {
+            network: Network::Regtest,
             validator_set: ValidatorSetConfig {
                 quorum_type: QuorumType::LlmqTestPlatform,
                 quorum_size: 3,
@@ -677,6 +675,7 @@ impl PlatformConfig {
 
     pub fn default_testnet() -> Self {
         Self {
+            network: Network::Testnet,
             validator_set: ValidatorSetConfig {
                 quorum_type: QuorumType::Llmq25_67,
                 quorum_size: 25,
@@ -718,6 +717,7 @@ impl PlatformConfig {
 
     pub fn default_mainnet() -> Self {
         Self {
+            network: Network::Dash,
             validator_set: ValidatorSetConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 100,

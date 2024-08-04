@@ -40,7 +40,7 @@ impl Drive {
     #[inline(always)]
     pub(crate) fn verify_total_credits_in_system_v0(
         proof: &[u8],
-        core_distribution_multiplier: u16,
+        core_subsidy_halving_interval: u32,
         current_core_height: CoreBlockHeight,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Credits), Error> {
@@ -183,7 +183,7 @@ impl Drive {
             epoch_core_reward_credits_for_distribution(
                 start_core_height,
                 current_core_height,
-                core_distribution_multiplier,
+                core_subsidy_halving_interval,
                 platform_version,
             )?;
 

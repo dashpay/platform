@@ -18,7 +18,7 @@ use platform_version::version::PlatformVersion;
 pub fn epoch_core_reward_credits_for_distribution(
     epoch_start_block_core_height: u32,
     next_epoch_start_block_core_height: u32,
-    distribution_multiplier: u16,
+    core_subsidy_halving_interval: u32,
     platform_version: &PlatformVersion,
 ) -> Result<Credits, ProtocolError> {
     match platform_version
@@ -26,11 +26,11 @@ pub fn epoch_core_reward_credits_for_distribution(
         .methods
         .epoch_core_reward_credits_for_distribution
     {
-        0 => epoch_core_reward_credits_for_distribution_v0(
+        0 => Ok(epoch_core_reward_credits_for_distribution_v0(
             epoch_start_block_core_height,
             next_epoch_start_block_core_height,
-            distribution_multiplier,
-        ),
+            core_subsidy_halving_interval,
+        )),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "epoch_core_reward_credits_for_distribution".to_string(),
             known_versions: vec![0],

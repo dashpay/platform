@@ -1,8 +1,7 @@
 use crate::block::epoch::EpochIndex;
 use crate::fee::Credits;
 
-use crate::core_subsidy::{CORE_GENESIS_BLOCK_SUBSIDY, CORE_SUBSIDY_HALVING_INTERVAL};
-use crate::ProtocolError;
+use crate::core_subsidy::CORE_GENESIS_BLOCK_SUBSIDY;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
@@ -23,8 +22,8 @@ lazy_static! {
 pub(super) fn epoch_core_reward_credits_for_distribution_v0(
     epoch_start_block_core_height: u32,
     next_epoch_start_block_core_height: u32,
-    distribution_multiplier: u16,
-) -> Result<Credits, ProtocolError> {
+    core_subsidy_halving_interval: u32,
+) -> Credits {
     // Core is halving block rewards every year so we need to pay
     // core block rewards according to halving ratio for the all years during
     // the platform epoch payout period (unpaid epoch)
@@ -32,9 +31,9 @@ pub(super) fn epoch_core_reward_credits_for_distribution_v0(
     // Calculate start and end years for the platform epoch payout period
     // according to start and end core block heights
     let start_core_reward_year =
-        (epoch_start_block_core_height / CORE_SUBSIDY_HALVING_INTERVAL) as EpochIndex;
+        (epoch_start_block_core_height / core_subsidy_halving_interval) as EpochIndex;
     let end_core_reward_year =
-        (next_epoch_start_block_core_height / CORE_SUBSIDY_HALVING_INTERVAL) as EpochIndex;
+        (next_epoch_start_block_core_height / core_subsidy_halving_interval) as EpochIndex;
 
     let mut total_core_rewards = 0;
 
@@ -45,13 +44,13 @@ pub(super) fn epoch_core_reward_credits_for_distribution_v0(
         let core_reward_year_start_block = if core_reward_year == end_core_reward_year {
             next_epoch_start_block_core_height
         } else {
-            (core_reward_year + 1) as u32 * CORE_SUBSIDY_HALVING_INTERVAL
+            (core_reward_year + 1) as u32 * core_subsidy_halving_interval
         };
 
         let core_reward_year_end_block = if core_reward_year == start_core_reward_year {
             epoch_start_block_core_height
         } else {
-            core_reward_year as u32 * CORE_SUBSIDY_HALVING_INTERVAL
+            core_reward_year as u32 * core_subsidy_halving_interval
         };
 
         let block_count = core_reward_year_start_block - core_reward_year_end_block;
@@ -67,8 +66,4 @@ pub(super) fn epoch_core_reward_credits_for_distribution_v0(
     }
 
     total_core_rewards
-        .checked_mul(distribution_multiplier as u64)
-        .ok_or(ProtocolError::Overflow(
-            "overflow in total core reward calculation",
-        ))
 }

@@ -10,6 +10,7 @@ use dapi_grpc::platform::v0::get_total_credits_in_platform_response::{
 use dpp::block::epoch::Epoch;
 use dpp::check_validation_result_with_data;
 use dpp::core_subsidy::epoch_core_reward_credits_for_distribution::epoch_core_reward_credits_for_distribution;
+use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::balances::{
@@ -109,7 +110,7 @@ impl<C> Platform<C> {
                 epoch_core_reward_credits_for_distribution(
                     start_block_core_height,
                     platform_state.last_committed_core_height(),
-                    self.config.core.reward_multiplier,
+                    self.config.network.core_subsidy_halving_interval(),
                     platform_version,
                 )?;
 
@@ -129,6 +130,7 @@ impl<C> Platform<C> {
 
 #[cfg(test)]
 mod tests {
+    use dashcore_rpc::dashcore::Network;
     use super::*;
     use crate::query::tests::setup_platform;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
@@ -250,10 +252,14 @@ mod tests {
         else {
             panic!("expected proof")
         };
+        
+        let network = Network::Testnet;
+
+        let core_subsidy_halving_interval = network.core_subsidy_halving_interval();
 
         let (_, credits) = Drive::verify_total_credits_in_system(
             &proof.grovedb_proof,
-            1, //todo: we need to set this based on network
+            core_subsidy_halving_interval,
             current_core_height,
             platform_version,
         )

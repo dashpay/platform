@@ -39,6 +39,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
+use dpp::dashcore::Network;
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
@@ -80,6 +81,8 @@ pub type LastQueryTimestamp = u64;
 /// See tests/ for examples of using the SDK.
 #[derive(Clone)]
 pub struct Sdk {
+    /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)  
+    pub network: Network,
     inner: SdkInstance,
     /// Use proofs when retrieving data from Platform.
     ///
@@ -206,7 +209,7 @@ impl Sdk {
 
         match self.inner {
             SdkInstance::Dapi { .. } => {
-                O::maybe_from_proof_with_metadata(request, response, self.version(), &provider)
+                O::maybe_from_proof_with_metadata(request, response, self.network, self.version(), &provider)
                     .map(|(a, b, _)| (a, b))
             }
             #[cfg(feature = "mocks")]
@@ -242,7 +245,7 @@ impl Sdk {
 
         match self.inner {
             SdkInstance::Dapi { .. } => {
-                O::maybe_from_proof_with_metadata(request, response, self.version(), &provider)
+                O::maybe_from_proof_with_metadata(request, response, self.network, self.version(), &provider)
             }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
@@ -545,6 +548,8 @@ pub struct SdkBuilder {
     /// If `None`, a mock client will be created.
     addresses: Option<AddressList>,
     settings: RequestSettings,
+    
+    network: Network,
 
     core_ip: String,
     core_port: u16,
@@ -582,6 +587,7 @@ impl Default for SdkBuilder {
         Self {
             addresses: None,
             settings: RequestSettings::default(),
+            network: Network::Dash,
             core_ip: "".to_string(),
             core_port: 0,
             core_password: "".to_string(),
@@ -641,6 +647,14 @@ impl SdkBuilder {
         unimplemented!(
             "Mainnet address list not implemented yet. Use new() and provide address list."
         )
+    }
+
+    /// Configure network type.
+    ///
+    /// Defaults to Network::Dash which is mainnet.
+    pub fn with_network(mut self, network: Network) -> Self {
+        self.network = network;
+        self
     }
 
     /// Configure request settings.
@@ -741,6 +755,7 @@ impl SdkBuilder {
 
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
+                    network: self.network,
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
                     context_provider: self.context_provider.map(Arc::new),
@@ -787,6 +802,7 @@ impl SdkBuilder {
                 let  context_provider = self.context_provider.unwrap_or(Box::new(MockContextProvider::new()));
 
                 Sdk {
+                    network: self.network,
                     inner:SdkInstance::Mock {
                         mock:Arc::new(Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs))),
                         dapi,
