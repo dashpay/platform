@@ -10,7 +10,7 @@ lazy_static! {
     /// Yearly decline of production by ~7.1% per year, projected ~18M coins max by year 2050+.
     pub static ref CORE_HALVING_DISTRIBUTION: HashMap<u16, Credits> = {
         let mut distribution = CORE_GENESIS_BLOCK_SUBSIDY;
-        (0..100).map(|i| {
+        (0..200).map(|i| {
             let old_distribution = distribution;
             distribution -= distribution / 14;
             (i, old_distribution)
@@ -20,20 +20,30 @@ lazy_static! {
 
 /// Gets the amount of core reward fees to be distributed for the Epoch.
 pub(super) fn epoch_core_reward_credits_for_distribution_v0(
-    epoch_start_block_core_height: u32,
-    next_epoch_start_block_core_height: u32,
+    from_start_block_core_height: u32,
+    to_end_block_core_height_included: u32,
     core_subsidy_halving_interval: u32,
 ) -> Credits {
     // Core is halving block rewards every year so we need to pay
     // core block rewards according to halving ratio for the all years during
     // the platform epoch payout period (unpaid epoch)
 
+    // In Core there is an off by 1 compared to what we would expect, for if the halving interval is 1000
+    // We would see a new reward year on block 1001.
+
+    let previous_from_start_block_core_height = from_start_block_core_height.saturating_sub(1);
+
+    let previous_to_end_block_core_height = to_end_block_core_height_included.saturating_sub(1);
+
     // Calculate start and end years for the platform epoch payout period
     // according to start and end core block heights
+
+    // 1000 would be on core year 0, as we would have 1000 - 1/1000 => 0, this is correct
     let start_core_reward_year =
-        (epoch_start_block_core_height / core_subsidy_halving_interval) as EpochIndex;
+        (previous_from_start_block_core_height / core_subsidy_halving_interval) as EpochIndex;
+    // 2000 would be on core year 1, as we would have 2000 - 1/1000 => 1, this is correct
     let end_core_reward_year =
-        (next_epoch_start_block_core_height / core_subsidy_halving_interval) as EpochIndex;
+        (previous_to_end_block_core_height / core_subsidy_halving_interval) as EpochIndex;
 
     let mut total_core_rewards = 0;
 
@@ -41,19 +51,23 @@ pub(super) fn epoch_core_reward_credits_for_distribution_v0(
     for core_reward_year in start_core_reward_year..=end_core_reward_year {
         // Calculate the block count per core reward year
 
-        let core_reward_year_start_block = if core_reward_year == end_core_reward_year {
-            next_epoch_start_block_core_height
-        } else {
-            (core_reward_year + 1) as u32 * core_subsidy_halving_interval
-        };
-
-        let core_reward_year_end_block = if core_reward_year == start_core_reward_year {
-            epoch_start_block_core_height
+        // If we are on the end core reward year
+        // We use the previous_from_start_block_core_height
+        // For example if we are calculating 2000 to 2001
+        // We should have one block on start core year and one block on end core year
+        let core_reward_year_start_block = if core_reward_year == start_core_reward_year {
+            previous_from_start_block_core_height
         } else {
             core_reward_year as u32 * core_subsidy_halving_interval
         };
 
-        let block_count = core_reward_year_start_block - core_reward_year_end_block;
+        let core_reward_year_end_block = if core_reward_year == end_core_reward_year {
+            to_end_block_core_height_included
+        } else {
+            (core_reward_year + 1) as u32 * core_subsidy_halving_interval
+        };
+
+        let block_count = core_reward_year_end_block - core_reward_year_start_block;
 
         // Fetch the core block distribution for the corresponding epoch from the distribution table
         // Default to 0 if the core reward year is more than 100 years in the future
@@ -66,4 +80,93 @@ pub(super) fn epoch_core_reward_credits_for_distribution_v0(
     }
 
     total_core_rewards
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_epoch_core_reward_credits_for_distribution_simple_case_at_first_core_epoch() {
+        let core_subsidy_halving_interval = 150;
+        let from_start_block_core_height = 1;
+        let to_end_block_core_height_included = 150;
+        let expected_reward = 117000000000 * 150; // Since all blocks are in the first epoch
+
+        let result = epoch_core_reward_credits_for_distribution_v0(
+            from_start_block_core_height,
+            to_end_block_core_height_included,
+            core_subsidy_halving_interval,
+        );
+
+        assert_eq!(result, expected_reward);
+    }
+
+    #[test]
+    fn test_epoch_core_reward_credits_for_distribution_simple_case_at_eighth_core_epoch() {
+        let core_subsidy_halving_interval = 150;
+        let from_start_block_core_height = 1201;
+        let to_end_block_core_height_included = 1350;
+        let expected_reward = CORE_HALVING_DISTRIBUTION[&8] * 150; // 1200 / 150 = 8
+
+        let result = epoch_core_reward_credits_for_distribution_v0(
+            from_start_block_core_height,
+            to_end_block_core_height_included,
+            core_subsidy_halving_interval,
+        );
+
+        assert_eq!(result, expected_reward);
+    }
+
+    #[test]
+    fn test_epoch_core_reward_credits_for_distribution_across_two_epochs() {
+        let core_subsidy_halving_interval = 150;
+        let from_start_block_core_height = 149;
+        let to_end_block_core_height_included = 151;
+        let halved_subsidy = CORE_GENESIS_BLOCK_SUBSIDY - CORE_GENESIS_BLOCK_SUBSIDY / 14;
+        let expected_reward = (CORE_GENESIS_BLOCK_SUBSIDY * 2) + halved_subsidy;
+
+        let result = epoch_core_reward_credits_for_distribution_v0(
+            from_start_block_core_height,
+            to_end_block_core_height_included,
+            core_subsidy_halving_interval,
+        );
+
+        assert_eq!(result, expected_reward);
+    }
+
+    #[test]
+    fn test_epoch_core_reward_credits_for_distribution_across_three_epochs() {
+        let core_subsidy_halving_interval = 150;
+        let from_start_block_core_height = 149;
+        let to_end_block_core_height_included = 301;
+        let halved_subsidy = CORE_GENESIS_BLOCK_SUBSIDY - CORE_GENESIS_BLOCK_SUBSIDY / 14;
+        let next_halved_subsidy = halved_subsidy - halved_subsidy / 14;
+        let expected_reward =
+            (CORE_GENESIS_BLOCK_SUBSIDY * 2) + halved_subsidy * 150 + next_halved_subsidy;
+
+        let result = epoch_core_reward_credits_for_distribution_v0(
+            from_start_block_core_height,
+            to_end_block_core_height_included,
+            core_subsidy_halving_interval,
+        );
+
+        assert_eq!(result, expected_reward);
+    }
+
+    #[test]
+    fn test_epoch_core_reward_credits_for_distribution_inner_epoch() {
+        let core_subsidy_halving_interval = 150;
+        let from_start_block_core_height = 1303;
+        let to_end_block_core_height_included = 1305;
+        let expected_reward = CORE_HALVING_DISTRIBUTION[&8] * 3; // 1200 / 150 = 8
+
+        let result = epoch_core_reward_credits_for_distribution_v0(
+            from_start_block_core_height,
+            to_end_block_core_height_included,
+            core_subsidy_halving_interval,
+        );
+
+        assert_eq!(result, expected_reward);
+    }
 }
