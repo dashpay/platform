@@ -169,4 +169,19 @@ mod tests {
 
         assert_eq!(result, expected_reward);
     }
+
+    #[test]
+    fn test_epoch_core_reward_credits_for_distribution_long_test() {
+        let core_subsidy_halving_interval = 150;
+        let from_start_block_core_height = 1320;
+        let to_end_block_core_height_included = 1320;
+
+        let result = epoch_core_reward_credits_for_distribution_v0(
+            from_start_block_core_height,
+            to_end_block_core_height_included,
+            core_subsidy_halving_interval,
+        );
+
+        assert_eq!(result, 22566703215);
+    }
 }
