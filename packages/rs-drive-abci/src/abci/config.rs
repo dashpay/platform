@@ -1,6 +1,7 @@
 //! Configuration of ABCI Application server
 
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 // We allow changes in the ABCI configuration, but there should be a social process
 // involved in making this change.
@@ -40,7 +41,7 @@ pub struct AbciConfig {
     ///
     /// Note that consensus params sent at a height H will be applied at height H+1.
     #[serde(default)]
-    pub consensus_params_dir: String,
+    pub consensus_params_path: Option<PathBuf>,
 }
 
 impl AbciConfig {
@@ -61,7 +62,7 @@ impl Default for AbciConfig {
             genesis_core_height: AbciConfig::default_genesis_core_height(),
             chain_id: "chain_id".to_string(),
             log: Default::default(),
-            consensus_params_dir: Default::default(),
+            consensus_params_path: None,
         }
     }
 }

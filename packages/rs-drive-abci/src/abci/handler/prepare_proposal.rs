@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
@@ -178,12 +178,14 @@ where
             }),
     );
 
-    // TODO: move to a better place :)
-    let consensus_param_updates = get_consensus_params_update(
-        &app.platform().config.abci.consensus_params_dir,
-        request.height,
-    )
-    .map_err(|e| Error::Abci(AbciError::InvalidConsensusParams(e.to_string())))?;
+    // Get consensus param updates if there are any for this height
+    let consensus_param_updates =
+        if let Some(path) = app.platform().config.abci.consensus_params_path.as_ref() {
+            get_consensus_params_update(&path, request.height)
+                .map_err(|e| Error::Abci(AbciError::InvalidConsensusParams(e.to_string())))?
+        } else {
+            None
+        };
 
     let response = proto::ResponsePrepareProposal {
         tx_results,
@@ -249,35 +251,31 @@ where
 ///
 // TODO: Move this to correct place
 pub(super) fn get_consensus_params_update(
-    consensus_params_dir: &str,
+    consensus_params_dir: &Path,
     height: i64,
-) -> Result<OptionConsensusParams>, std::io::Error> {
-    if consensus_params_dir.is_empty() {
-        return Ok(None);
-    }
-    let mut file_path = PathBuf::from(consensus_params_dir);
+) -> Result<Option<ConsensusParams>, std::io::Error> {
+    let mut file_path = consensus_params_dir.to_path_buf();
     file_path.push(format!("{}.json", height));
 
     // check if file exists
-    if !std::path::Path::new(&file_path).exists() {
+    if !file_path.exists() {
         return Ok(None);
     }
 
     let rdr = std::fs::File::open(file_path)?;
+
     serde_json::from_reader(rdr).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
 }
 
 #[cfg(test)]
-mod test {
-    use std::path::PathBuf;
-
+mod tests {
     #[test]
     fn test_get_consensus_params_update() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let consensus_params_dir = temp_dir.path().to_str().unwrap().to_string();
+        let consensus_params_path = temp_dir.path().to_path_buf();
 
         let height = 123456;
-        let mut file_path = PathBuf::from(&consensus_params_dir);
+        let mut file_path = consensus_params_path.clone();
         file_path.push(format!("{}.json", height));
 
         let consensus_params = r#"{
@@ -315,7 +313,7 @@ mod test {
 
         std::fs::write(&file_path, consensus_params).unwrap();
 
-        let result = super::get_consensus_params_update(&consensus_params_dir, height).unwrap();
+        let result = super::get_consensus_params_update(&consensus_params_path, height).unwrap();
         println!("{:?}", result);
         assert_eq!(result.unwrap().block.unwrap().max_bytes, 2097152);
     }

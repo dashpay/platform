@@ -259,17 +259,21 @@ where
         .map(|execution_result| execution_result.try_into_platform_versioned(platform_version))
         .collect::<Result<_, _>>()?;
 
+    // Get consensus param updates if there are any for this height
+    let consensus_param_updates =
+        if let Some(path) = app.platform().config.abci.consensus_params_path.as_ref() {
+            get_consensus_params_update(path, request.height)
+                .map_err(|e| Error::Abci(AbciError::InvalidConsensusParams(e.to_string())))?
+        } else {
+            None
+        };
+
     let response = proto::ResponseProcessProposal {
         app_hash: app_hash.to_vec(),
         tx_results,
         status: proto::response_process_proposal::ProposalStatus::Accept.into(),
         validator_set_update,
-        // TODO: Implement consensus param updates
-        consensus_param_updates: get_consensus_params_update(
-            &app.platform().config.abci.consensus_params_dir,
-            request.height,
-        )
-        .map_err(|e| Error::Abci(AbciError::InvalidConsensusParams(e.to_string())))?,
+        consensus_param_updates,
         events: Vec::new(),
     };
 
