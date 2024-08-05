@@ -1,14 +1,14 @@
-use bincode::{Decode, Encode};
-use dashcore_rpc::json::QuorumType;
-use std::path::PathBuf;
-
 use crate::logging::LogConfigs;
 use crate::{abci::config::AbciConfig, error::Error};
+use bincode::{Decode, Encode};
+use dashcore_rpc::json::QuorumType;
 use dpp::dashcore::Network;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use drive::config::DriveConfig;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::path::PathBuf;
+use std::str::FromStr;
 
 /// Configuration for Dash Core RPC client used in consensus logic
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -145,7 +145,10 @@ where
 // https://github.com/softprops/envy/issues/61 and https://github.com/softprops/envy/pull/69
 pub struct PlatformConfig {
     /// The network type
-    #[serde(default = "PlatformConfig::default_network")]
+    #[serde(
+        default = "PlatformConfig::default_network",
+        deserialize_with = "from_str_to_network_with_aliases"
+    )]
     pub network: Network,
     /// Drive configuration
     #[serde(flatten)]
@@ -222,6 +225,14 @@ pub struct PlatformConfig {
     /// Number of seconds to store task information if there is no clients connected
     #[serde(default = "PlatformConfig::default_tokio_console_retention_secs")]
     pub tokio_console_retention_secs: u64,
+}
+
+fn from_str_to_network_with_aliases(network_name: &str) -> Network {
+    match network_name {
+        "mainnet" => Network::Dash,
+        "local" => Network::Regtest,
+        _ => Network::from_str(network_name).expect("failed to parse network name"),
+    }
 }
 
 /// A config suitable for a quorum configuration
@@ -556,6 +567,7 @@ impl PlatformConfig {
 
     fn default_network() -> Network {
         Network::Regtest //todo: Do not leave this as regtest
+                         // TODO: Yes, must be mainnet
     }
 
     fn default_tokio_console_address() -> String {
