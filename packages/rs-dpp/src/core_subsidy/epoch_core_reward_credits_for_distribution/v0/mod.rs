@@ -91,7 +91,7 @@ mod tests {
         let core_subsidy_halving_interval = 150;
         let from_start_block_core_height = 1;
         let to_end_block_core_height_included = 150;
-        let expected_reward = 117000000000 * 150; // Since all blocks are in the first epoch
+        let expected_reward = CORE_GENESIS_BLOCK_SUBSIDY * 150; // Since all blocks are in the first epoch
 
         let result = epoch_core_reward_credits_for_distribution_v0(
             from_start_block_core_height,
