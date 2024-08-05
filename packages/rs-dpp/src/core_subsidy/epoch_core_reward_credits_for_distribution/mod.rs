@@ -9,15 +9,17 @@ use platform_version::version::PlatformVersion;
 ///
 /// # Arguments
 ///
-/// * `epoch_start_block_core_height` - The height of the core block at the start of the epoch.
-/// * `next_epoch_start_block_core_height` - The height of the core block at the start of the next epoch.
+/// * `from_start_block_core_height` - The height of the core block at the start of the epoch.
+/// * `to_end_block_core_height_included` - The height of the core block at the start of the next epoch.
+/// * `core_subsidy_halving_interval` - The halving interval set by the Core network.
+/// * `platform_version` - The platform version.
 ///
 /// # Returns
 ///
 /// * `Result<Credits, Error>` - If the operation is successful, it returns `Ok(Credits)`. If there is an error, it returns `Error`.
 pub fn epoch_core_reward_credits_for_distribution(
-    epoch_start_block_core_height: u32,
-    next_epoch_start_block_core_height: u32,
+    from_start_block_core_height: u32,
+    to_end_block_core_height_included: u32,
     core_subsidy_halving_interval: u32,
     platform_version: &PlatformVersion,
 ) -> Result<Credits, ProtocolError> {
@@ -27,8 +29,8 @@ pub fn epoch_core_reward_credits_for_distribution(
         .epoch_core_reward_credits_for_distribution
     {
         0 => Ok(epoch_core_reward_credits_for_distribution_v0(
-            epoch_start_block_core_height,
-            next_epoch_start_block_core_height,
+            from_start_block_core_height,
+            to_end_block_core_height_included,
             core_subsidy_halving_interval,
         )),
         version => Err(ProtocolError::UnknownVersionMismatch {
