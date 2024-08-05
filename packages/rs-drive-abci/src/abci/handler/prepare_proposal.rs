@@ -181,7 +181,7 @@ where
     // Get consensus param updates if there are any for this height
     let consensus_param_updates =
         if let Some(path) = app.platform().config.abci.consensus_params_path.as_ref() {
-            get_consensus_params_update(&path, request.height)
+            get_consensus_params_update(path, request.height)
                 .map_err(|e| Error::Abci(AbciError::InvalidConsensusParams(e.to_string())))?
         } else {
             None
