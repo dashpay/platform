@@ -41,6 +41,7 @@ impl Drive {
     pub(crate) fn verify_total_credits_in_system_v0(
         proof: &[u8],
         core_subsidy_halving_interval: u32,
+        request_activation_core_height: impl Fn() -> Result<CoreBlockHeight, Error>,
         current_core_height: CoreBlockHeight,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Credits), Error> {
@@ -125,59 +126,63 @@ impl Drive {
             ))
         })?);
 
-        let epoch = Epoch::new(epoch_index).map_err(|_| {
-            Error::Proof(ProofError::CorruptedProof(
-                "Epoch index out of bounds".to_string(),
-            ))
-        })?;
+        let start_core_height = if epoch_index == 0 {
+            request_activation_core_height()?
+        } else {
+            let epoch = Epoch::new(epoch_index).map_err(|_| {
+                Error::Proof(ProofError::CorruptedProof(
+                    "Epoch index out of bounds".to_string(),
+                ))
+            })?;
 
-        let start_core_height_query = PathQuery {
-            path: epoch.get_path_vec(),
-            query: SizedQuery {
-                query: Query::new_single_key(KEY_START_BLOCK_CORE_HEIGHT.to_vec()),
-                limit: None,
-                offset: None,
-            },
+            let start_core_height_query = PathQuery {
+                path: epoch.get_path_vec(),
+                query: SizedQuery {
+                    query: Query::new_single_key(KEY_START_BLOCK_CORE_HEIGHT.to_vec()),
+                    limit: None,
+                    offset: None,
+                },
+            };
+
+            let (_, mut proved_path_key_values) = GroveDb::verify_subset_query(
+                proof,
+                &start_core_height_query,
+                &platform_version.drive.grove_version,
+            )?;
+
+            let Some(proved_path_key_value) = proved_path_key_values.pop() else {
+                return Err(Error::Proof(ProofError::IncorrectProof(
+                    "We can not find the start core height of the unpaid epoch".to_string(),
+                )));
+            };
+
+            if proved_path_key_value.0 != start_core_height_query.path {
+                return Err(Error::Proof(ProofError::CorruptedProof(
+                    "The result of this proof is not what we asked for (start core height path)"
+                        .to_string(),
+                )));
+            }
+
+            if proved_path_key_value.1 != KEY_START_BLOCK_CORE_HEIGHT.to_vec() {
+                return Err(Error::Proof(ProofError::CorruptedProof(
+                    "The result of this proof is not what we asked for (start core height key)"
+                        .to_string(),
+                )));
+            }
+
+            let Some(Element::Item(bytes, _)) = proved_path_key_value.2 else {
+                return Err(Error::Proof(ProofError::CorruptedProof(
+                    "We are expecting an item for the start core height of the unpaid epoch"
+                        .to_string(),
+                )));
+            };
+
+            u32::from_be_bytes(bytes.as_slice().try_into().map_err(|_| {
+                Error::Proof(ProofError::CorruptedProof(
+                    "start core height invalid length".to_string(),
+                ))
+            })?)
         };
-
-        let (_, mut proved_path_key_values) = GroveDb::verify_subset_query(
-            proof,
-            &start_core_height_query,
-            &platform_version.drive.grove_version,
-        )?;
-
-        let Some(proved_path_key_value) = proved_path_key_values.pop() else {
-            return Err(Error::Proof(ProofError::IncorrectProof(
-                "We can not find the start core height of the unpaid epoch".to_string(),
-            )));
-        };
-
-        if proved_path_key_value.0 != start_core_height_query.path {
-            return Err(Error::Proof(ProofError::CorruptedProof(
-                "The result of this proof is not what we asked for (start core height path)"
-                    .to_string(),
-            )));
-        }
-
-        if proved_path_key_value.1 != KEY_START_BLOCK_CORE_HEIGHT.to_vec() {
-            return Err(Error::Proof(ProofError::CorruptedProof(
-                "The result of this proof is not what we asked for (start core height key)"
-                    .to_string(),
-            )));
-        }
-
-        let Some(Element::Item(bytes, _)) = proved_path_key_value.2 else {
-            return Err(Error::Proof(ProofError::CorruptedProof(
-                "We are expecting an item for the start core height of the unpaid epoch"
-                    .to_string(),
-            )));
-        };
-
-        let start_core_height = u32::from_be_bytes(bytes.as_slice().try_into().map_err(|_| {
-            Error::Proof(ProofError::CorruptedProof(
-                "start core height invalid length".to_string(),
-            ))
-        })?);
 
         let reward_credits_accumulated_during_current_epoch =
             epoch_core_reward_credits_for_distribution(

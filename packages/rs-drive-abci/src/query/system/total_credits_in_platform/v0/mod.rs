@@ -260,6 +260,7 @@ mod tests {
         let (_, credits) = Drive::verify_total_credits_in_system(
             &proof.grovedb_proof,
             core_subsidy_halving_interval,
+            || Ok(0),
             current_core_height,
             platform_version,
         )

@@ -1670,6 +1670,11 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsOnPla
         let (root_hash, credits) = Drive::verify_total_credits_in_system(
             &proof.grovedb_proof,
             core_subsidy_halving_interval,
+            || {
+                provider.get_platform_activation_height().map_err(|e| {
+                    drive::error::Error::Proof(ProofError::MissingContextRequirement(e.to_string()))
+                })
+            },
             mtd.core_chain_locked_height,
             platform_version,
         )

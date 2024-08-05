@@ -32,6 +32,7 @@ impl Drive {
     pub fn verify_total_credits_in_system(
         proof: &[u8],
         core_subsidy_halving_interval: u32,
+        request_activation_core_height: impl Fn() -> Result<CoreBlockHeight, Error>,
         current_core_height: CoreBlockHeight,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Credits), Error> {
@@ -45,6 +46,7 @@ impl Drive {
             0 => Drive::verify_total_credits_in_system_v0(
                 proof,
                 core_subsidy_halving_interval,
+                request_activation_core_height,
                 current_core_height,
                 platform_version,
             ),
