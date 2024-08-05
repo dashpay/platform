@@ -48,6 +48,7 @@ services:
     restart: unless-stopped
     volumes:
       - drive_abci_data:/var/lib/dash/rs-drive-abci/db
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/consensus-params:/var/lib/dash/rs-drive-abci/consensus-params
     environment:
       - CHAIN_ID=${PLATFORM_DRIVE_TENDERDASH_GENESIS_CHAIN_ID:-devnet}
       - CORE_CONSENSUS_JSON_RPC_USERNAME=drive_consensus
@@ -72,6 +73,7 @@ services:
       - INSTANT_LOCK_QUORUM_ACTIVE_SIGNERS=${PLATFORM_DRIVE_ABCI_INSTANT_LOCK_QUORUM_ACTIVE_SIGNERS:?err}
       - INSTANT_LOCK_QUORUM_ROTATION=${PLATFORM_DRIVE_ABCI_INSTANT_LOCK_QUORUM_ROTATION:?err}
       - DB_PATH=/var/lib/dash/rs-drive-abci/db
+      - CONSENSUS_PARAMS_PATH=/var/lib/dash/rs-drive-abci/consensus-params
       - ABCI_CONSENSUS_BIND_ADDRESS=tcp://0.0.0.0:26658
       - GRPC_BIND_ADDRESS=0.0.0.0:26670
       - PROMETHEUS_BIND_ADDRESS=${PLATFORM_DRIVE_ABCI_METRICS_URL}

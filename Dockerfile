@@ -240,9 +240,11 @@ RUN apk add --no-cache libgcc libstdc++
 
 ENV DB_PATH=/var/lib/dash/rs-drive-abci/db
 ENV REJECTIONS_PATH=/var/log/dash/rejected
+ENV CONSENSUS_PARAMS_PATH=/var/lib/dash/rs-drive-abci/consensus-params
 
 RUN mkdir -p /var/log/dash \
-    /var/lib/dash/rs-drive-abci/db \
+    ${DB_PATH} \
+    ${CONSENSUS_PARAMS_PATH} \
     ${REJECTIONS_PATH}
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
@@ -250,6 +252,7 @@ COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.mainnet /var/
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db
+VOLUME /var/lib/dash/rs-drive-abci/consensus-params
 VOLUME /var/log/dash
 
 # Double-check that we don't have missing deps
@@ -268,8 +271,6 @@ RUN addgroup -g $USER_GID $USERNAME && \
 USER $USERNAME
 
 ENV RUST_BACKTRACE=1
-ENV CONSENSUS_PARAMS_DIR=${DB_PATH}/consensus-params
-RUN mkdir -p "${CONSENSUS_PARAMS_DIR}"
 
 WORKDIR /var/lib/dash/rs-drive-abci
 ENTRYPOINT ["/usr/bin/drive-abci"]
