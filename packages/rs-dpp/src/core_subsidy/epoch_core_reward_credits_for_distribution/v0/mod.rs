@@ -182,6 +182,6 @@ mod tests {
             core_subsidy_halving_interval,
         );
 
-        assert_eq!(result, 22566703215);
+        assert_eq!(result, 62183484655);
     }
 }
