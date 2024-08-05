@@ -227,11 +227,17 @@ pub struct PlatformConfig {
     pub tokio_console_retention_secs: u64,
 }
 
-fn from_str_to_network_with_aliases(network_name: &str) -> Network {
-    match network_name {
-        "mainnet" => Network::Dash,
-        "local" => Network::Regtest,
-        _ => Network::from_str(network_name).expect("failed to parse network name"),
+fn from_str_to_network_with_aliases<'de, D>(deserializer: D) -> Result<Network, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let network_name = String::deserialize(deserializer)?;
+
+    match network_name.as_str() {
+        "mainnet" => Ok(Network::Dash),
+        "local" => Ok(Network::Regtest),
+        _ => Network::from_str(network_name.as_str())
+            .map_err(|e| serde::de::Error::custom(format!("can't parse network name: {e}"))),
     }
 }
 
