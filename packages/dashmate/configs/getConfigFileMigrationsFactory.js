@@ -765,6 +765,15 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.0.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (name === 'local') {
+              options.platform.drive.abci.epochTime = 1200;
+            }
+          });
+        return configFile;
+      },
     };
   }
 
