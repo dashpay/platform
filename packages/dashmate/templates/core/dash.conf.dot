@@ -43,11 +43,15 @@ externalip={{=it.externalIp}}
 whitelist={{=it.externalIp}}
 {{?}}
 
-{{? it.core.indexes }}# Indices
+{{? it.core.insight.enabled }}
 txindex=1
 addressindex=1
 timestampindex=1
 spentindex=1
+{{??}}
+{{~it.core.indexes :index}}
+{{= index + 'index=1' }}
+{{~}}
 {{?}}
 
 # ZeroMQ notifications
