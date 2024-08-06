@@ -1,3 +1,16 @@
+### [1.0.2](https://github.com/dashpay/platform/compare/v1.0.1...v1.0.2) (2024-07-31)
+
+
+### Features
+
+* **dashmate:** a flag to keep data on reset ([#2026](https://github.com/dashpay/platform/issues/2026))
+
+
+### Bug Fixes
+
+* **dashmate:** status command shows tenderdash error before activation ([#2028](https://github.com/dashpay/platform/issues/2028))
+* **dashmate:** unnecessary core indexes are required ([#2025](https://github.com/dashpay/platform/issues/2025))
+
 ### [1.0.1](https://github.com/dashpay/platform/compare/v1.0.0...v1.0.1) (2024-07-29)
 
 
