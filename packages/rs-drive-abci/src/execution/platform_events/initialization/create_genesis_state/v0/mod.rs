@@ -24,20 +24,24 @@ use drive::util::object_size_info::{
 };
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use dpp::prelude::CoreBlockHeight;
 
 impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
     #[inline(always)]
     pub(super) fn create_genesis_state_v0(
         &self,
+        genesis_core_height: CoreBlockHeight,
         genesis_time: TimestampMillis,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         //versioned call
         self.drive
-            .create_initial_state_structure(transaction, platform_version)
-            .map_err(Error::Drive)?;
+            .create_initial_state_structure(transaction, platform_version)?;
+
+        self.drive
+            .store_genesis_core_height(genesis_core_height, transaction, platform_version)?;
 
         let mut operations = vec![];
 

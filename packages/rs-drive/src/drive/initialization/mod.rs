@@ -1,6 +1,7 @@
 //! Drive Initialization
 
 mod v0;
+mod store_genesis_core_height;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
