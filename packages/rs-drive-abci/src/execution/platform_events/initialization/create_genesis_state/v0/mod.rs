@@ -15,6 +15,7 @@ use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::SystemDataContract;
 use drive::util::batch::{DataContractOperationType, DocumentOperationType, DriveOperation};
 
+use dpp::prelude::CoreBlockHeight;
 use dpp::system_data_contracts::dpns_contract::{
     DPNS_DASH_TLD_DOCUMENT_ID, DPNS_DASH_TLD_PREORDER_SALT,
 };
@@ -24,7 +25,6 @@ use drive::util::object_size_info::{
 };
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use dpp::prelude::CoreBlockHeight;
 
 impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents

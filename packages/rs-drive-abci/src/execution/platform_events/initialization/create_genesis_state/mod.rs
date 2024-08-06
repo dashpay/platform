@@ -23,7 +23,12 @@ impl<C> Platform<C> {
             .initialization
             .create_genesis_state
         {
-            0 => self.create_genesis_state_v0(genesis_core_height, genesis_time, transaction, platform_version),
+            0 => self.create_genesis_state_v0(
+                genesis_core_height,
+                genesis_time,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "create_genesis_state".to_string(),
                 known_versions: vec![0],
