@@ -4,7 +4,7 @@ import getMetrics from '../util/getMetrics.js';
 import Report from '../doctor/report.js';
 
 export default class DoctorCommand extends ConfigBaseCommand {
-  static description = 'Generate a report about masternode';
+  static description = 'Dashmate node diagnostic.  Bring your node to a doctor';
 
   static flags = {
     ...ConfigBaseCommand.flags,
