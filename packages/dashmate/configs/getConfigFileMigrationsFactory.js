@@ -765,6 +765,15 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.0.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_MAINNET && name !== 'base') {
+              options.platform.drive.tenderdash.p2p.seeds = mainnet.get('platform.drive.tenderdash.p2p.seeds');
+            }
+          });
+        return configFile;
+      },
     };
   }
 
