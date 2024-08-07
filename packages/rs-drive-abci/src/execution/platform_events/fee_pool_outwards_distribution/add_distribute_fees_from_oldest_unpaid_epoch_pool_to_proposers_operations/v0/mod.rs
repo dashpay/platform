@@ -151,7 +151,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
-            .set_initial_state_structure();
+            .set_genesis_state_with_activation_info(0, 1);
         let transaction = platform.drive.grove.start_transaction();
 
         // Create masternode reward shares contract

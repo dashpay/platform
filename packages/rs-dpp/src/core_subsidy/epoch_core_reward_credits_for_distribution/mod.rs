@@ -28,11 +28,11 @@ pub fn epoch_core_reward_credits_for_distribution(
         .methods
         .epoch_core_reward_credits_for_distribution
     {
-        0 => Ok(epoch_core_reward_credits_for_distribution_v0(
+        0 => epoch_core_reward_credits_for_distribution_v0(
             from_start_block_core_height,
             to_end_block_core_height_included,
             core_subsidy_halving_interval,
-        )),
+        ),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "epoch_core_reward_credits_for_distribution".to_string(),
             known_versions: vec![0],

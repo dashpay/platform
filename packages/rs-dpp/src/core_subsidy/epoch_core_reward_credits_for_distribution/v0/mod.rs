@@ -2,6 +2,7 @@ use crate::block::epoch::EpochIndex;
 use crate::fee::Credits;
 
 use crate::core_subsidy::CORE_GENESIS_BLOCK_SUBSIDY;
+use crate::ProtocolError;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
@@ -23,7 +24,13 @@ pub(super) fn epoch_core_reward_credits_for_distribution_v0(
     from_start_block_core_height: u32,
     to_end_block_core_height_included: u32,
     core_subsidy_halving_interval: u32,
-) -> Credits {
+) -> Result<Credits, ProtocolError> {
+    if from_start_block_core_height > to_end_block_core_height_included {
+        return Err(ProtocolError::CorruptedCodeExecution(format!(
+            "from start block {} must be before or equal to end block core height {}",
+            from_start_block_core_height, to_end_block_core_height_included
+        )));
+    }
     // Core is halving block rewards every year so we need to pay
     // core block rewards according to halving ratio for the all years during
     // the platform epoch payout period (unpaid epoch)
@@ -79,7 +86,7 @@ pub(super) fn epoch_core_reward_credits_for_distribution_v0(
         total_core_rewards += block_count as Credits * *core_block_distribution_ratio;
     }
 
-    total_core_rewards
+    Ok(total_core_rewards)
 }
 
 #[cfg(test)]
@@ -97,7 +104,8 @@ mod tests {
             from_start_block_core_height,
             to_end_block_core_height_included,
             core_subsidy_halving_interval,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, expected_reward);
     }
@@ -113,7 +121,8 @@ mod tests {
             from_start_block_core_height,
             to_end_block_core_height_included,
             core_subsidy_halving_interval,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, expected_reward);
     }
@@ -130,7 +139,8 @@ mod tests {
             from_start_block_core_height,
             to_end_block_core_height_included,
             core_subsidy_halving_interval,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, expected_reward);
     }
@@ -149,7 +159,8 @@ mod tests {
             from_start_block_core_height,
             to_end_block_core_height_included,
             core_subsidy_halving_interval,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, expected_reward);
     }
@@ -165,7 +176,8 @@ mod tests {
             from_start_block_core_height,
             to_end_block_core_height_included,
             core_subsidy_halving_interval,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, expected_reward);
     }
@@ -180,7 +192,8 @@ mod tests {
             from_start_block_core_height,
             to_end_block_core_height_included,
             core_subsidy_halving_interval,
-        );
+        )
+        .unwrap();
 
         assert_eq!(result, 62183484655);
     }
