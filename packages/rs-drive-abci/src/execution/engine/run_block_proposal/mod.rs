@@ -1,5 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::metrics::HistogramTiming;
 use crate::platform_types::epoch_info::v0::EpochInfoV0Methods;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -9,7 +10,6 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use crate::metrics::HistogramTiming;
 
 mod v0;
 

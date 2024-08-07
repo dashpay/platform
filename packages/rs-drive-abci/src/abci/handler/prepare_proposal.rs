@@ -103,9 +103,13 @@ where
         .expect("transaction must be started");
 
     // Running the proposal executes all the state transitions for the block
-    let mut run_result =
-        app.platform()
-            .run_block_proposal(block_proposal, true, &platform_state, transaction, &timer)?;
+    let mut run_result = app.platform().run_block_proposal(
+        block_proposal,
+        true,
+        &platform_state,
+        transaction,
+        &timer,
+    )?;
 
     if !run_result.is_valid() {
         // This is a system error, because we are proposing

@@ -43,7 +43,7 @@ impl TryIntoPlatformVersioned<ExecTxResult> for StateTransitionExecutionResult {
             StateTransitionExecutionResult::NotExecuted(message) => ExecTxResult {
                 gas_used: 0,
                 ..Default::default()
-            }
+            },
         };
 
         Ok(response)

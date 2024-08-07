@@ -2,6 +2,7 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::metrics::HistogramTiming;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
@@ -9,7 +10,6 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use crate::metrics::HistogramTiming;
 
 impl<C> Platform<C>
 where

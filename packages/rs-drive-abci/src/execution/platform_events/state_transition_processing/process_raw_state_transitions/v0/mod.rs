@@ -12,7 +12,7 @@ use crate::execution::types::state_transition_container::v0::{
     SuccessfullyDecodedStateTransition,
 };
 use crate::execution::validation::state_transition::processor::process_state_transition;
-use crate::metrics::{HistogramTiming, state_transition_execution_histogram};
+use crate::metrics::{state_transition_execution_histogram, HistogramTiming};
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::{
@@ -82,13 +82,14 @@ where
         let mut processing_result = StateTransitionsProcessingResult::default();
 
         for decoded_state_transition in state_transition_container.into_iter() {
-
             let execution_result: StateTransitionExecutionResult;
 
-            if known_from_us && timer.elapsed().as_millis() > self.config.abci.tx_processing_time_limit {
-                execution_result = StateTransitionExecutionResult::NotExecuted("not executed".to_string());
-            }
-            else {
+            if known_from_us
+                && timer.elapsed().as_millis() > self.config.abci.tx_processing_time_limit
+            {
+                execution_result =
+                    StateTransitionExecutionResult::NotExecuted("not executed".to_string());
+            } else {
                 execution_result = match decoded_state_transition {
                     DecodedStateTransition::SuccessfullyDecoded(
                         SuccessfullyDecodedStateTransition {
@@ -105,11 +106,11 @@ where
                             let st_hash = hex::encode(hash_single(raw_state_transition));
 
                             tracing::trace!(
-                            ?state_transition,
-                            st_hash,
-                            "Processing {} state transition",
-                            state_transition_name
-                        );
+                                ?state_transition,
+                                st_hash,
+                                "Processing {} state transition",
+                                state_transition_name
+                            );
                         }
 
                         // Validate state transition and produce an execution event
@@ -119,24 +120,24 @@ where
                             state_transition,
                             Some(transaction),
                         )
-                            .map(|validation_result| {
-                                self.process_validation_result_v0(
-                                    raw_state_transition,
-                                    &state_transition_name,
-                                    validation_result,
-                                    block_info,
-                                    transaction,
-                                    platform_version,
-                                    platform_ref.state.previous_fee_versions(),
-                                )
-                                    .unwrap_or_else(error_to_internal_error_execution_result)
-                            })
-                            .map_err(|error| StateTransitionAwareError {
-                                error,
+                        .map(|validation_result| {
+                            self.process_validation_result_v0(
                                 raw_state_transition,
-                                state_transition_name: Some(state_transition_name.to_string()),
-                            })
-                            .unwrap_or_else(error_to_internal_error_execution_result);
+                                &state_transition_name,
+                                validation_result,
+                                block_info,
+                                transaction,
+                                platform_version,
+                                platform_ref.state.previous_fee_versions(),
+                            )
+                            .unwrap_or_else(error_to_internal_error_execution_result)
+                        })
+                        .map_err(|error| StateTransitionAwareError {
+                            error,
+                            raw_state_transition,
+                            state_transition_name: Some(state_transition_name.to_string()),
+                        })
+                        .unwrap_or_else(error_to_internal_error_execution_result);
 
                         // Store metrics
                         let elapsed_time = start_time.elapsed() + decoding_elapsed_time;
@@ -160,20 +161,20 @@ where
                         execution_result
                     }
                     DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
-                                                                raw,
-                                                                error,
-                                                                elapsed_time: decoding_elapsed_time,
-                                                            }) => {
+                        raw,
+                        error,
+                        elapsed_time: decoding_elapsed_time,
+                    }) => {
                         if tracing::enabled!(tracing::Level::DEBUG) {
                             let st_hash = hex::encode(hash_single(raw));
 
                             tracing::debug!(
-                            ?error,
-                            st_hash,
-                            "Invalid unknown state transition ({}): {}",
-                            st_hash,
-                            error
-                        );
+                                ?error,
+                                st_hash,
+                                "Invalid unknown state transition ({}): {}",
+                                st_hash,
+                                error
+                            );
                         }
 
                         // Store metrics
