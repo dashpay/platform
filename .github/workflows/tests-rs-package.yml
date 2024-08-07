@@ -227,7 +227,7 @@ jobs:
   upgrade_fork_tests:
     name: Upgrade Fork Tests
     runs-on: ${{ fromJSON(inputs.test-runner) }}
-    timeout-minutes: 25
+    timeout-minutes: 15
     if: github.event.inputs.package == 'drive-abci'
     steps:
       - name: Check out repo
