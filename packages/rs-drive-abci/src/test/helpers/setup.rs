@@ -193,7 +193,7 @@ impl TempPlatform<MockCoreRPCLike> {
     /// Sets Platform to genesis state.
     pub fn set_genesis_state(self) -> Self {
         self.platform
-            .create_genesis_state(Default::default(), None, PlatformVersion::latest())
+            .create_genesis_state(1, Default::default(), None, PlatformVersion::latest())
             .expect("should create root tree successfully");
 
         self
