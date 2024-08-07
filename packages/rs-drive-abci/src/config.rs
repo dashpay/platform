@@ -624,8 +624,20 @@ impl Default for PlatformConfig {
     }
 }
 
-#[allow(missing_docs)]
+/// The platform config
 impl PlatformConfig {
+    /// The default depending on the network
+    pub fn default_for_network(network: Network) -> Self {
+        match network {
+            Network::Dash => Self::default_mainnet(),
+            Network::Testnet => Self::default_testnet(),
+            Network::Devnet => Self::default_devnet(),
+            Network::Regtest => Self::default_local(),
+            _ => Self::default_testnet()
+        }
+    }
+    
+    /// The default local config
     pub fn default_local() -> Self {
         Self {
             network: Network::Regtest,
@@ -668,6 +680,50 @@ impl PlatformConfig {
         }
     }
 
+    /// The default devnet config
+    pub fn default_devnet() -> Self {
+        Self {
+            network: Network::Regtest,
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::LlmqDevnetPlatform,
+                quorum_size: 12,
+                quorum_window: 24,
+                quorum_active_signers: 8,
+                quorum_rotation: false,
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::LlmqDevnetPlatform,
+                quorum_size: 12,
+                quorum_window: 24,
+                quorum_active_signers: 8,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::LlmqDevnetDip0024,
+                quorum_active_signers: 4,
+                quorum_size: 8,
+                quorum_window: 48,
+                quorum_rotation: true,
+            },
+            block_spacing_ms: 5000,
+            drive: Default::default(),
+            abci: Default::default(),
+            core: Default::default(),
+            execution: Default::default(),
+            db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
+            #[cfg(feature = "testing-config")]
+            testing_configs: PlatformTestConfig::default(),
+            tokio_console_enabled: false,
+            tokio_console_address: PlatformConfig::default_tokio_console_address(),
+            tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
+            initial_protocol_version: Self::default_initial_protocol_version(),
+            prometheus_bind_address: None,
+            grpc_bind_address: "127.0.0.1:26670".to_string(),
+        }
+    }
+
+    /// The default testnet config
     pub fn default_testnet() -> Self {
         Self {
             network: Network::Testnet,
@@ -710,6 +766,7 @@ impl PlatformConfig {
         }
     }
 
+    /// The default mainnet config
     pub fn default_mainnet() -> Self {
         Self {
             network: Network::Dash,

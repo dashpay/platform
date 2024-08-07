@@ -34,20 +34,26 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use std::borrow::Cow;
     use std::sync::Arc;
+    use dpp::dashcore::Network;
+    use dpp::prelude::{CoreBlockHeight, TimestampMillis};
+    use crate::config::PlatformConfig;
 
     pub fn setup_platform<'a>(
-        with_genesis_state: bool,
+        with_genesis_state: Option<(TimestampMillis, CoreBlockHeight)>,
+        network: Network,
     ) -> (
         TempPlatform<MockCoreRPCLike>,
         Arc<PlatformState>,
         &'a PlatformVersion,
     ) {
-        let platform = if with_genesis_state {
+        let platform = if let Some((timestamp, activation_core_block_height)) = with_genesis_state {
             TestPlatformBuilder::new()
+                .with_config(PlatformConfig::default_for_network(network))
                 .build_with_mock_rpc()
-                .set_genesis_state()
+                .set_genesis_state_with_activation_info(timestamp, activation_core_block_height)
         } else {
             TestPlatformBuilder::new()
+                .with_config(PlatformConfig::default_for_network(network))
                 .build_with_mock_rpc()
                 .set_initial_state_structure()
         };

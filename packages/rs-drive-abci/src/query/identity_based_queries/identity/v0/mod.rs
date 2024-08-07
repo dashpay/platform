@@ -69,12 +69,13 @@ impl<C> Platform<C> {
 
 #[cfg(test)]
 mod tests {
+    use dpp::dashcore::Network;
     use super::*;
     use crate::query::tests::{assert_invalid_identifier, setup_platform};
 
     #[test]
     fn test_invalid_identity_id() {
-        let (platform, state, _unused_version) = setup_platform(false);
+        let (platform, state, _unused_version) = setup_platform(false, Network::Testnet);
 
         let version = PlatformVersion::latest();
 
@@ -92,7 +93,7 @@ mod tests {
 
     #[test]
     fn test_identity_not_found() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(false, Network::Testnet);
 
         let id = vec![0; 32];
         let request = GetIdentityRequestV0 {
@@ -114,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_identity_absence_proof() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(false, Network::Testnet);
 
         let id = vec![0; 32];
         let request = GetIdentityRequestV0 {

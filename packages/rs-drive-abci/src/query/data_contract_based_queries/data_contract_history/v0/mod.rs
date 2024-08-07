@@ -123,6 +123,7 @@ mod tests {
     use dpp::tests::fixtures::get_data_contract_fixture;
     use drive::drive::Drive;
     use std::sync::Arc;
+    use dpp::dashcore::Network;
 
     fn default_request_v0() -> GetDataContractHistoryRequestV0 {
         GetDataContractHistoryRequestV0 {
@@ -242,7 +243,7 @@ mod tests {
 
     #[test]
     fn test_invalid_data_contract_id() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(false, Network::Testnet);
 
         let request = GetDataContractHistoryRequestV0 {
             id: vec![0; 8],
@@ -261,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_invalid_limit_overflow() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(false, Network::Testnet);
 
         let request = GetDataContractHistoryRequestV0 {
             id: vec![0; 32],
@@ -283,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_invalid_offset_overflow() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(false, Network::Testnet);
 
         let request = GetDataContractHistoryRequestV0 {
             id: vec![0; 32],
@@ -304,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_data_contract_not_found() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(false, Network::Testnet);
 
         let id = vec![0; 32];
 
@@ -469,7 +470,7 @@ mod tests {
 
     #[test]
     fn test_data_contract_history_absence_proof() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(false, Network::Testnet);
 
         let request = GetDataContractHistoryRequestV0 {
             id: vec![0; 32],

@@ -140,10 +140,11 @@ mod tests {
 
     fn test_query_total_system_credits(
         epoch_index: EpochIndex,
+        activation_core_height: CoreBlockHeight,
         epoch_core_start_height: CoreBlockHeight,
         current_core_height: CoreBlockHeight,
     ) {
-        let (platform, _state, platform_version) = setup_platform(true);
+        let (platform, _state, platform_version) = setup_platform(true, Network::Regtest);
 
         platform
             .drive
@@ -193,7 +194,7 @@ mod tests {
         let rewards = epoch_core_reward_credits_for_distribution(
             epoch_core_start_height,
             current_core_height,
-            1,
+            Network::Regtest.core_subsidy_halving_interval(),
             platform_version,
         )
         .expect("expected to get rewards");
@@ -203,10 +204,11 @@ mod tests {
 
     fn test_proved_query_total_system_credits(
         epoch_index: EpochIndex,
+        activation_core_height: CoreBlockHeight,
         epoch_core_start_height: CoreBlockHeight,
         current_core_height: CoreBlockHeight,
     ) {
-        let (platform, _state, platform_version) = setup_platform(true);
+        let (platform, _state, platform_version) = setup_platform(true, Network::Regtest);
 
         platform
             .drive
@@ -253,14 +255,14 @@ mod tests {
             panic!("expected proof")
         };
 
-        let network = Network::Testnet;
+        let network = Network::Regtest;
 
         let core_subsidy_halving_interval = network.core_subsidy_halving_interval();
 
         let (_, credits) = Drive::verify_total_credits_in_system(
             &proof.grovedb_proof,
             core_subsidy_halving_interval,
-            || Ok(0),
+            || Ok(activation_core_height),
             current_core_height,
             platform_version,
         )
@@ -269,7 +271,7 @@ mod tests {
         let rewards = epoch_core_reward_credits_for_distribution(
             epoch_core_start_height,
             current_core_height,
-            1,
+            core_subsidy_halving_interval,
             platform_version,
         )
         .expect("expected to get rewards");
@@ -278,23 +280,38 @@ mod tests {
     }
 
     #[test]
-    fn test_query_total_system_credits_at_genesis() {
-        // let's say the genesis is 1500
-        test_query_total_system_credits(0, 1500, 1500);
-        test_proved_query_total_system_credits(0, 1500, 1500);
+    fn test_query_total_system_credits_at_genesis_platform_immediate_start() {
+        // the fork height is 1500, the genesis core height is 1500 and we are asking for credits after this first block was committed
+        test_query_total_system_credits(0, 1500, 1500, 1500);
+        test_proved_query_total_system_credits(0, 1500, 1500,1500);
     }
 
     #[test]
-    fn test_query_total_system_credits_on_first_epoch_not_genesis() {
-        // let's say the genesis is 1500, we are height 1550
-        test_query_total_system_credits(0, 1500, 1550);
-        test_proved_query_total_system_credits(0, 1500, 1550);
+    fn test_query_total_system_credits_at_genesis_platform_later_start() {
+        // the fork height was 1320, the genesis core height is 1500 and we are asking for credits after this first block was committed
+        test_query_total_system_credits(0, 1320, 1500, 1500);
+        test_proved_query_total_system_credits(0, 1320, 1500,1500);
+    }
+
+
+    #[test]
+    fn test_query_total_system_credits_on_first_epoch_not_genesis_immediate_start() {
+        // the fork height is 1500, the genesis core height is 1500 and we are at height 1550
+        test_query_total_system_credits(0, 1500, 1500, 1550);
+        test_proved_query_total_system_credits(0, 1500, 1500, 1550);
+    }
+
+    #[test]
+    fn test_query_total_system_credits_on_first_epoch_not_genesis_later_start() {
+        // the fork height was 1320, the genesis core height is 1500 and we are at height 1550
+        test_query_total_system_credits(0, 1320, 1500, 1550);
+        test_proved_query_total_system_credits(0, 1320, 1500, 1550);
     }
 
     #[test]
     fn test_query_total_system_credits_not_genesis_epoch() {
-        // let's say the genesis is 1500, we are height 2500
-        test_query_total_system_credits(1, 2000, 2500);
-        test_proved_query_total_system_credits(1, 2000, 2500);
+        // the fork height was 1500, the genesis core height is 1500 and we are at height 1550
+        test_query_total_system_credits(1, 1500,  2000, 2500);
+        test_proved_query_total_system_credits(1, 1500,  2000,  2000, 2500);
     }
 }

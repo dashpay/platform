@@ -81,10 +81,11 @@ mod tests {
     use drive::drive::RootTree;
     use drive::grovedb::Element;
     use integer_encoding::VarInt;
+    use dpp::dashcore::Network;
 
     #[test]
     fn test_query_total_system_credits_from_path_elements_query() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(false, Network::Testnet);
 
         let platform_version = PlatformVersion::latest();
 
