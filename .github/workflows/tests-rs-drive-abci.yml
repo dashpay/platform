@@ -44,7 +44,7 @@ jobs:
 
       - uses: clechasseur/rs-clippy-check@v3
         with:
-          args: --package ${{ inputs.package }} --all-features --locked -- --no-deps
+          args: --package drive-abci --all-features --locked -- --no-deps
         env:
           RUSTC_WRAPPER: sccache
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
@@ -66,7 +66,7 @@ jobs:
           cache: false
 
       - name: Check formatting
-        run: cargo fmt --check --package=${{ inputs.package }}
+        run: cargo fmt --check --package=drive-abci
 
   unused_deps:
     name: Unused dependencies
@@ -89,11 +89,11 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/rust
 
-      - name: Get crate ${{ inputs.package }} info
+      - name: Get crate drive-abci info
         id: crate_info
         uses: ./.github/actions/crate_info
         with:
-          package: ${{ inputs.package }}
+          package: drive-abci
 
       - name: Find unused dependencies
         uses: lklimek/cargo-machete@feat/workdir
@@ -121,7 +121,7 @@ jobs:
       - name: Get all changed Rust files
         id: files
         run: |
-          gh pr view https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }} --json files --jq "[.files[].path] | map(select(test(\"packages/${{ inputs.package }}/.*.rs$\")))" > files.json
+          gh pr view https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }} --json files --jq "[.files[].path] | map(select(test(\"packages/drive-abci/.*.rs$\")))" > files.json
           echo "files=$(cat files.json)" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -268,9 +268,9 @@ jobs:
         id: crate_info
         uses: ./.github/actions/crate_info
         with:
-          package: ${{ inputs.package }}
+          package: drive-abci
 
-      - name: Check each feature in ${{ inputs.package }}
+      - name: Check each feature in drive-abci
         env:
           RUSTC_WRAPPER: sccache
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
@@ -282,12 +282,12 @@ jobs:
           features="${{ steps.crate_info.outputs.features }}"
           fails=""
           RUSTFLAGS="-D warnings"
-          cargo check --no-default-features --package "${{ inputs.package }}" --locked
+          cargo check --no-default-features --package "drive-abci" --locked
           for feature in $features ;  do
             echo " ============== Verify feature $feature =============="
             cargo check \
               --no-default-features \
-              --package "${{ inputs.package }}" \
+              --package "drive-abci" \
               --features="${feature}" \
               --locked || fails="${fails} ${feature}"
           done
