@@ -98,6 +98,7 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
     use drive::drive::protocol_upgrade::{
         desired_version_for_validators_path, desired_version_for_validators_path_vec,
         versions_counter_path,
@@ -110,11 +111,10 @@ mod tests {
     use integer_encoding::VarInt;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
-    use dpp::dashcore::Network;
 
     #[test]
     fn test_query_empty_upgrade_vote_status() {
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_query_upgrade_vote_status() {
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn test_prove_empty_upgrade_vote_status() {
         let platform_version = PlatformVersion::latest();
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn test_prove_upgrade_vote_status() {
         let platform_version = PlatformVersion::latest();
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let mut rand = StdRng::seed_from_u64(10);
 

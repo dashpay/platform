@@ -633,10 +633,10 @@ impl PlatformConfig {
             Network::Testnet => Self::default_testnet(),
             Network::Devnet => Self::default_devnet(),
             Network::Regtest => Self::default_local(),
-            _ => Self::default_testnet()
+            _ => Self::default_testnet(),
         }
     }
-    
+
     /// The default local config
     pub fn default_local() -> Self {
         Self {

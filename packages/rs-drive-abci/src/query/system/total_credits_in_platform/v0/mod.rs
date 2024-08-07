@@ -100,11 +100,16 @@ impl<C> Platform<C> {
 
             let unpaid_epoch = Epoch::new(unpaid_epoch_index)?;
 
-            let start_block_core_height = self.drive.get_epoch_start_block_core_height(
-                &unpaid_epoch,
-                None,
-                platform_version,
-            )?;
+            let start_block_core_height = if unpaid_epoch.index == 0 {
+                self.drive
+                    .fetch_genesis_core_height(None, platform_version)?
+            } else {
+                self.drive.get_epoch_start_block_core_height(
+                    &unpaid_epoch,
+                    None,
+                    platform_version,
+                )?
+            };
 
             let reward_credits_accumulated_during_current_epoch =
                 epoch_core_reward_credits_for_distribution(
@@ -135,6 +140,7 @@ mod tests {
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use dashcore_rpc::dashcore::Network;
     use dpp::block::epoch::EpochIndex;
+    use dpp::fee::Credits;
     use dpp::prelude::CoreBlockHeight;
     use drive::drive::Drive;
 
@@ -143,32 +149,29 @@ mod tests {
         activation_core_height: CoreBlockHeight,
         epoch_core_start_height: CoreBlockHeight,
         current_core_height: CoreBlockHeight,
-    ) {
-        let (platform, _state, platform_version) = setup_platform(true, Network::Regtest);
+    ) -> Credits {
+        let (platform, _state, platform_version) =
+            setup_platform(Some((1, activation_core_height)), Network::Regtest);
 
         platform
             .drive
             .add_to_system_credits(100, None, platform_version)
             .expect("expected to insert identity");
 
-        if epoch_index > 0 {
-            fast_forward_to_block(
-                &platform,
-                5000,
-                100,
-                epoch_core_start_height,
-                epoch_index - 1,
-                true,
-            );
-        } else {
-            fast_forward_to_block(&platform, 0, 1, epoch_core_start_height, 0, true);
-        }
+        fast_forward_to_block(
+            &platform,
+            5000 * epoch_index as u64,
+            100 * epoch_index as u64,
+            epoch_core_start_height,
+            epoch_index,
+            true,
+        );
 
         if current_core_height > epoch_core_start_height {
             fast_forward_to_block(
                 &platform,
-                15000,
-                200,
+                5000 * epoch_index as u64 + 10000,
+                100 * epoch_index as u64 + 50,
                 current_core_height,
                 epoch_index,
                 false,
@@ -192,7 +195,11 @@ mod tests {
         };
 
         let rewards = epoch_core_reward_credits_for_distribution(
-            epoch_core_start_height,
+            if epoch_index == 0 {
+                activation_core_height
+            } else {
+                epoch_core_start_height
+            },
             current_core_height,
             Network::Regtest.core_subsidy_halving_interval(),
             platform_version,
@@ -200,6 +207,8 @@ mod tests {
         .expect("expected to get rewards");
 
         assert_eq!(credits, 100 + rewards);
+
+        credits
     }
 
     fn test_proved_query_total_system_credits(
@@ -207,32 +216,29 @@ mod tests {
         activation_core_height: CoreBlockHeight,
         epoch_core_start_height: CoreBlockHeight,
         current_core_height: CoreBlockHeight,
-    ) {
-        let (platform, _state, platform_version) = setup_platform(true, Network::Regtest);
+    ) -> Credits {
+        let (platform, _state, platform_version) =
+            setup_platform(Some((1, activation_core_height)), Network::Regtest);
 
         platform
             .drive
             .add_to_system_credits(100, None, platform_version)
             .expect("expected to insert identity");
 
-        if epoch_index > 0 {
-            fast_forward_to_block(
-                &platform,
-                5000,
-                100,
-                epoch_core_start_height,
-                epoch_index - 1,
-                true,
-            );
-        } else {
-            fast_forward_to_block(&platform, 0, 1, epoch_core_start_height, 0, true);
-        }
+        fast_forward_to_block(
+            &platform,
+            5000 * epoch_index as u64,
+            100 * epoch_index as u64,
+            epoch_core_start_height,
+            epoch_index,
+            true,
+        );
 
         if current_core_height > epoch_core_start_height {
             fast_forward_to_block(
                 &platform,
-                15000,
-                200,
+                5000 * epoch_index as u64 + 10000,
+                100 * epoch_index as u64 + 50,
                 current_core_height,
                 epoch_index,
                 false,
@@ -269,7 +275,11 @@ mod tests {
         .expect("expected to verify total credits in platform");
 
         let rewards = epoch_core_reward_credits_for_distribution(
-            epoch_core_start_height,
+            if epoch_index == 0 {
+                activation_core_height
+            } else {
+                epoch_core_start_height
+            },
             current_core_height,
             core_subsidy_halving_interval,
             platform_version,
@@ -277,41 +287,47 @@ mod tests {
         .expect("expected to get rewards");
 
         assert_eq!(credits, 100 + rewards);
+
+        credits
     }
 
     #[test]
     fn test_query_total_system_credits_at_genesis_platform_immediate_start() {
         // the fork height is 1500, the genesis core height is 1500 and we are asking for credits after this first block was committed
-        test_query_total_system_credits(0, 1500, 1500, 1500);
-        test_proved_query_total_system_credits(0, 1500, 1500,1500);
+        let non_proved = test_query_total_system_credits(0, 1500, 1500, 1500);
+        let proved = test_proved_query_total_system_credits(0, 1500, 1500, 1500);
+        assert_eq!(non_proved, proved);
     }
 
     #[test]
     fn test_query_total_system_credits_at_genesis_platform_later_start() {
         // the fork height was 1320, the genesis core height is 1500 and we are asking for credits after this first block was committed
-        test_query_total_system_credits(0, 1320, 1500, 1500);
-        test_proved_query_total_system_credits(0, 1320, 1500,1500);
+        let non_proved = test_query_total_system_credits(0, 1320, 1500, 1500);
+        let proved = test_proved_query_total_system_credits(0, 1320, 1500, 1500);
+        assert_eq!(non_proved, proved);
     }
-
 
     #[test]
     fn test_query_total_system_credits_on_first_epoch_not_genesis_immediate_start() {
         // the fork height is 1500, the genesis core height is 1500 and we are at height 1550
-        test_query_total_system_credits(0, 1500, 1500, 1550);
-        test_proved_query_total_system_credits(0, 1500, 1500, 1550);
+        let non_proved = test_query_total_system_credits(0, 1500, 1500, 1550);
+        let proved = test_proved_query_total_system_credits(0, 1500, 1500, 1550);
+        assert_eq!(non_proved, proved);
     }
 
     #[test]
     fn test_query_total_system_credits_on_first_epoch_not_genesis_later_start() {
         // the fork height was 1320, the genesis core height is 1500 and we are at height 1550
-        test_query_total_system_credits(0, 1320, 1500, 1550);
-        test_proved_query_total_system_credits(0, 1320, 1500, 1550);
+        let non_proved = test_query_total_system_credits(0, 1320, 1500, 1550);
+        let proved = test_proved_query_total_system_credits(0, 1320, 1500, 1550);
+        assert_eq!(non_proved, proved);
     }
 
     #[test]
     fn test_query_total_system_credits_not_genesis_epoch() {
-        // the fork height was 1500, the genesis core height is 1500 and we are at height 1550
-        test_query_total_system_credits(1, 1500,  2000, 2500);
-        test_proved_query_total_system_credits(1, 1500,  2000,  2000, 2500);
+        // the fork height was 1500, the genesis core height is 1500 and we are at height 2500
+        let non_proved = test_query_total_system_credits(1, 1500, 2000, 2500);
+        let proved = test_proved_query_total_system_credits(1, 1500, 2000, 2500);
+        assert_eq!(non_proved, proved);
     }
 }

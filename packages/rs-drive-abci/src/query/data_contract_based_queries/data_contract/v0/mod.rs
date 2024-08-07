@@ -74,13 +74,13 @@ impl<C> Platform<C> {
 
 #[cfg(test)]
 mod tests {
-    use dpp::dashcore::Network;
     use super::*;
     use crate::query::tests::{assert_invalid_identifier, setup_platform};
+    use dpp::dashcore::Network;
 
     #[test]
     fn test_invalid_data_contract_id() {
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetDataContractRequestV0 {
             id: vec![0; 8],
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn test_data_contract_not_found() {
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let id = vec![0; 32];
         let request = GetDataContractRequestV0 {
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_data_contract_absence_proof() {
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let id = vec![0; 32];
         let request = GetDataContractRequestV0 {

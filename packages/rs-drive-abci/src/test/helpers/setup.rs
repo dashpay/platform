@@ -200,9 +200,18 @@ impl TempPlatform<MockCoreRPCLike> {
     }
 
     /// Sets Platform to genesis state with information that came at activation.
-    pub fn set_genesis_state_with_activation_info(self, genesis_time: TimestampMillis, start_core_block_height: CoreBlockHeight) -> Self {
+    pub fn set_genesis_state_with_activation_info(
+        self,
+        genesis_time: TimestampMillis,
+        start_core_block_height: CoreBlockHeight,
+    ) -> Self {
         self.platform
-            .create_genesis_state(genesis_time, None, PlatformVersion::latest())
+            .create_genesis_state(
+                start_core_block_height,
+                genesis_time,
+                None,
+                PlatformVersion::latest(),
+            )
             .expect("should create root tree successfully");
 
         self

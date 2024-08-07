@@ -86,7 +86,6 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
-        let drive_version = &platform_version.drive;
 
         let core_genesis_height: CoreBlockHeight = 1320;
         drive

@@ -62,6 +62,7 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
     use drive::drive::protocol_upgrade::{
         desired_version_for_validators_path, versions_counter_path, versions_counter_path_vec,
     };
@@ -74,11 +75,10 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
     use std::ops::RangeFull;
-    use dpp::dashcore::Network;
 
     #[test]
     fn test_query_empty_upgrade_state() {
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetProtocolVersionUpgradeStateRequestV0 { prove: false };
 
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn test_query_upgrade_state() {
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn test_prove_empty_upgrade_state() {
         let platform_version = PlatformVersion::latest();
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetProtocolVersionUpgradeStateRequestV0 { prove: true };
 
@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn test_prove_upgrade_state() {
         let platform_version = PlatformVersion::latest();
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let mut rand = StdRng::seed_from_u64(10);
 

@@ -40,9 +40,17 @@ impl<C> Platform<C> {
             return Ok(None);
         };
 
+        let start_block_core_height = if unpaid_epoch.epoch_index == 0 {
+            //On epoch 0 we need to use the activation height instead of the start of the block
+            self.drive
+                .fetch_genesis_core_height(Some(transaction), platform_version)?
+        } else {
+            unpaid_epoch.start_block_core_height
+        };
+
         // Calculate core block reward for the unpaid epoch
         let core_block_rewards = epoch_core_reward_credits_for_distribution(
-            unpaid_epoch.start_block_core_height,
+            start_block_core_height,
             unpaid_epoch.next_epoch_start_block_core_height,
             self.config.network.core_subsidy_halving_interval(),
             platform_version,

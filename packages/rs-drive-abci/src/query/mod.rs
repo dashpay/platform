@@ -29,14 +29,14 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::DataContract;
 
+    use crate::config::PlatformConfig;
+    use dpp::dashcore::Network;
+    use dpp::prelude::{CoreBlockHeight, TimestampMillis};
     use drive::util::batch::DataContractOperationType;
     use drive::util::batch::DriveOperation::DataContractOperation;
     use platform_version::version::PlatformVersion;
     use std::borrow::Cow;
     use std::sync::Arc;
-    use dpp::dashcore::Network;
-    use dpp::prelude::{CoreBlockHeight, TimestampMillis};
-    use crate::config::PlatformConfig;
 
     pub fn setup_platform<'a>(
         with_genesis_state: Option<(TimestampMillis, CoreBlockHeight)>,

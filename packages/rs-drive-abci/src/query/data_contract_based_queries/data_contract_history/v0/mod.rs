@@ -113,6 +113,7 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
+    use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::config::v0::DataContractConfigSettersV0;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -123,7 +124,6 @@ mod tests {
     use dpp::tests::fixtures::get_data_contract_fixture;
     use drive::drive::Drive;
     use std::sync::Arc;
-    use dpp::dashcore::Network;
 
     fn default_request_v0() -> GetDataContractHistoryRequestV0 {
         GetDataContractHistoryRequestV0 {
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn test_invalid_data_contract_id() {
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetDataContractHistoryRequestV0 {
             id: vec![0; 8],
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_invalid_limit_overflow() {
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetDataContractHistoryRequestV0 {
             id: vec![0; 32],
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_invalid_offset_overflow() {
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetDataContractHistoryRequestV0 {
             id: vec![0; 32],
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_data_contract_not_found() {
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let id = vec![0; 32];
 
@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn test_data_contract_history_absence_proof() {
-        let (platform, state, version) = setup_platform(false, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetDataContractHistoryRequestV0 {
             id: vec![0; 32],

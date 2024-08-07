@@ -13,6 +13,7 @@ use crate::test::helpers::setup::TempPlatform;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+use drive::drive::credit_pools::operations::update_unpaid_epoch_index_operation;
 use platform_version::version::PlatformVersion;
 use std::sync::Arc;
 
@@ -126,6 +127,10 @@ pub(crate) fn process_epoch_change(
             platform_version,
         )
         .expect("expected to process change operations");
+
+    operations.push(drive::util::batch::DriveOperation::GroveDBOperation(
+        update_unpaid_epoch_index_operation(epoch_index),
+    ));
 
     platform
         .drive
