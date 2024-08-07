@@ -350,6 +350,8 @@ pub(crate) mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
+        let timer = crate::metrics::abci_request_duration("");
+
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -358,6 +360,8 @@ pub(crate) mod tests {
                 &block_info,
                 &transaction,
                 platform_version,
+                false,
+                &timer,
             )
             .expect("expected to process state transition");
 
@@ -889,6 +893,8 @@ pub(crate) mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
+        let timer = crate::metrics::abci_request_duration("");
+
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -905,6 +911,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                &timer,
             )
             .expect("expected to process state transition");
 
@@ -918,6 +926,8 @@ pub(crate) mod tests {
         assert_eq!(processing_result.valid_count(), 2);
 
         let transaction = platform.drive.grove.start_transaction();
+
+        let timer = crate::metrics::abci_request_duration("");
 
         let processing_result = platform
             .platform
@@ -935,6 +945,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                &timer,
             )
             .expect("expected to process state transition");
 
@@ -1169,6 +1181,8 @@ pub(crate) mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
+        let timer = crate::metrics::abci_request_duration("");
+
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -1185,6 +1199,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                &timer,
             )
             .expect("expected to process state transition");
 
@@ -1198,6 +1214,8 @@ pub(crate) mod tests {
         assert_eq!(processing_result.valid_count(), 2);
 
         let transaction = platform.drive.grove.start_transaction();
+
+        let timer = crate::metrics::abci_request_duration("");
 
         let processing_result = platform
             .platform
@@ -1215,6 +1233,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                &timer,
             )
             .expect("expected to process state transition");
 
@@ -1346,6 +1366,8 @@ pub(crate) mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
+        let timer = crate::metrics::abci_request_duration("");
+
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -1359,6 +1381,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                &timer,
             )
             .expect("expected to process state transition");
 
@@ -1373,6 +1397,8 @@ pub(crate) mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
+        let timer = crate::metrics::abci_request_duration("");
+
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -1386,6 +1412,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                &timer,
             )
             .expect("expected to process state transition");
 
@@ -1665,6 +1693,8 @@ pub(crate) mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
+        let timer = crate::metrics::abci_request_duration("");
+
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -1673,6 +1703,8 @@ pub(crate) mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                &timer,
             )
             .expect("expected to process state transition");
 

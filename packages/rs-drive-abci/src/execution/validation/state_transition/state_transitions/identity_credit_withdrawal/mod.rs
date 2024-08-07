@@ -190,6 +190,8 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
+        let timer = crate::metrics::abci_request_duration("");
+
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -198,6 +200,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                &timer,
             )
             .expect("expected to process state transition");
 
