@@ -177,6 +177,7 @@ where
         false,
         &platform_state,
         transaction,
+        &timer,
     )?;
 
     if !run_result.is_valid() {

@@ -21,6 +21,8 @@ pub enum StateTransitionExecutionResult {
     InternalError(String),
     /// State Transition was successfully executed
     SuccessfulExecution(Option<EstimatedFeeResult>, FeeResult),
+    /// State Transition was not executed as it reached the maximum time limit
+    NotExecuted(String),
 }
 
 /// State Transitions Processing Result produced by [process_raw_state_transitions] and represents
@@ -54,6 +56,9 @@ impl StateTransitionsProcessingResult {
                 self.valid_count += 1;
 
                 self.fees.checked_add_assign(actual_fees.clone())?;
+            }
+            StateTransitionExecutionResult::NotExecuted(_) => {
+                self.failed_count += 1;
             }
         }
 

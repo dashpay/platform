@@ -9,6 +9,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
+use crate::metrics::HistogramTiming;
 
 impl<C> Platform<C>
 where
@@ -42,6 +43,8 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
+        known_from_us: bool,
+        timer: &HistogramTiming,
     ) -> Result<StateTransitionsProcessingResult, Error> {
         match platform_version
             .drive_abci
@@ -55,6 +58,8 @@ where
                 block_info,
                 transaction,
                 platform_version,
+                known_from_us,
+                timer,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "process_raw_state_transitions".to_string(),

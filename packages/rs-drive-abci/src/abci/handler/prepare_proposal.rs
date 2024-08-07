@@ -105,7 +105,7 @@ where
     // Running the proposal executes all the state transitions for the block
     let mut run_result =
         app.platform()
-            .run_block_proposal(block_proposal, true, &platform_state, transaction)?;
+            .run_block_proposal(block_proposal, true, &platform_state, transaction, &timer)?;
 
     if !run_result.is_valid() {
         // This is a system error, because we are proposing
@@ -151,6 +151,8 @@ where
             // We shouldn't include in the block any state transitions that produced an internal error
             // during execution
             StateTransitionExecutionResult::InternalError(..) => TxAction::Removed,
+            // State Transition was not executed as it reached the maximum time limit
+            StateTransitionExecutionResult::NotExecuted(..) => TxAction::Delayed,
         };
 
         let tx_result: ExecTxResult =

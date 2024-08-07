@@ -12,7 +12,7 @@ use crate::execution::types::state_transition_container::v0::{
     SuccessfullyDecodedStateTransition,
 };
 use crate::execution::validation::state_transition::processor::process_state_transition;
-use crate::metrics::state_transition_execution_histogram;
+use crate::metrics::{HistogramTiming, state_transition_execution_histogram};
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::{
@@ -66,6 +66,8 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
+        known_from_us: bool,
+        timer: &HistogramTiming,
     ) -> Result<StateTransitionsProcessingResult, Error> {
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -80,118 +82,127 @@ where
         let mut processing_result = StateTransitionsProcessingResult::default();
 
         for decoded_state_transition in state_transition_container.into_iter() {
-            let execution_result = match decoded_state_transition {
-                DecodedStateTransition::SuccessfullyDecoded(
-                    SuccessfullyDecodedStateTransition {
-                        decoded: state_transition,
-                        raw: raw_state_transition,
-                        elapsed_time: decoding_elapsed_time,
-                    },
-                ) => {
-                    let start_time = Instant::now();
 
-                    let state_transition_name = state_transition.name();
+            let execution_result: StateTransitionExecutionResult;
 
-                    if tracing::enabled!(tracing::Level::TRACE) {
-                        let st_hash = hex::encode(hash_single(raw_state_transition));
+            if known_from_us && timer.elapsed().as_millis() > self.config.abci.tx_processing_time_limit {
+                execution_result = StateTransitionExecutionResult::NotExecuted("not executed".to_string());
+            }
+            else {
+                execution_result = match decoded_state_transition {
+                    DecodedStateTransition::SuccessfullyDecoded(
+                        SuccessfullyDecodedStateTransition {
+                            decoded: state_transition,
+                            raw: raw_state_transition,
+                            elapsed_time: decoding_elapsed_time,
+                        },
+                    ) => {
+                        let start_time = Instant::now();
 
-                        tracing::trace!(
+                        let state_transition_name = state_transition.name();
+
+                        if tracing::enabled!(tracing::Level::TRACE) {
+                            let st_hash = hex::encode(hash_single(raw_state_transition));
+
+                            tracing::trace!(
                             ?state_transition,
                             st_hash,
                             "Processing {} state transition",
                             state_transition_name
                         );
-                    }
-
-                    // Validate state transition and produce an execution event
-                    let execution_result = process_state_transition(
-                        &platform_ref,
-                        block_info,
-                        state_transition,
-                        Some(transaction),
-                    )
-                    .map(|validation_result| {
-                        self.process_validation_result_v0(
-                            raw_state_transition,
-                            &state_transition_name,
-                            validation_result,
-                            block_info,
-                            transaction,
-                            platform_version,
-                            platform_ref.state.previous_fee_versions(),
-                        )
-                        .unwrap_or_else(error_to_internal_error_execution_result)
-                    })
-                    .map_err(|error| StateTransitionAwareError {
-                        error,
-                        raw_state_transition,
-                        state_transition_name: Some(state_transition_name.to_string()),
-                    })
-                    .unwrap_or_else(error_to_internal_error_execution_result);
-
-                    // Store metrics
-                    let elapsed_time = start_time.elapsed() + decoding_elapsed_time;
-
-                    let code = match &execution_result {
-                        StateTransitionExecutionResult::SuccessfulExecution(_, _) => 0,
-                        StateTransitionExecutionResult::PaidConsensusError(error, _)
-                        | StateTransitionExecutionResult::UnpaidConsensusError(error) => {
-                            error.code()
                         }
-                        StateTransitionExecutionResult::InternalError(_) => 1,
-                    };
 
-                    state_transition_execution_histogram(
-                        elapsed_time,
-                        &state_transition_name,
-                        code,
-                    );
+                        // Validate state transition and produce an execution event
+                        let execution_result = process_state_transition(
+                            &platform_ref,
+                            block_info,
+                            state_transition,
+                            Some(transaction),
+                        )
+                            .map(|validation_result| {
+                                self.process_validation_result_v0(
+                                    raw_state_transition,
+                                    &state_transition_name,
+                                    validation_result,
+                                    block_info,
+                                    transaction,
+                                    platform_version,
+                                    platform_ref.state.previous_fee_versions(),
+                                )
+                                    .unwrap_or_else(error_to_internal_error_execution_result)
+                            })
+                            .map_err(|error| StateTransitionAwareError {
+                                error,
+                                raw_state_transition,
+                                state_transition_name: Some(state_transition_name.to_string()),
+                            })
+                            .unwrap_or_else(error_to_internal_error_execution_result);
 
-                    execution_result
-                }
-                DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
-                    raw,
-                    error,
-                    elapsed_time: decoding_elapsed_time,
-                }) => {
-                    if tracing::enabled!(tracing::Level::DEBUG) {
-                        let st_hash = hex::encode(hash_single(raw));
+                        // Store metrics
+                        let elapsed_time = start_time.elapsed() + decoding_elapsed_time;
 
-                        tracing::debug!(
+                        let code = match &execution_result {
+                            StateTransitionExecutionResult::SuccessfulExecution(_, _) => 0,
+                            StateTransitionExecutionResult::PaidConsensusError(error, _)
+                            | StateTransitionExecutionResult::UnpaidConsensusError(error) => {
+                                error.code()
+                            }
+                            StateTransitionExecutionResult::InternalError(_) => 1,
+                            StateTransitionExecutionResult::NotExecuted(_) => 1, //todo
+                        };
+
+                        state_transition_execution_histogram(
+                            elapsed_time,
+                            &state_transition_name,
+                            code,
+                        );
+
+                        execution_result
+                    }
+                    DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
+                                                                raw,
+                                                                error,
+                                                                elapsed_time: decoding_elapsed_time,
+                                                            }) => {
+                        if tracing::enabled!(tracing::Level::DEBUG) {
+                            let st_hash = hex::encode(hash_single(raw));
+
+                            tracing::debug!(
                             ?error,
                             st_hash,
                             "Invalid unknown state transition ({}): {}",
                             st_hash,
                             error
                         );
+                        }
+
+                        // Store metrics
+                        state_transition_execution_histogram(
+                            decoding_elapsed_time,
+                            "Unknown",
+                            error.code(),
+                        );
+
+                        StateTransitionExecutionResult::UnpaidConsensusError(error)
                     }
+                    DecodedStateTransition::FailedToDecode(
+                        InvalidWithProtocolErrorStateTransition {
+                            raw,
+                            error: protocol_error,
+                            elapsed_time: decoding_elapsed_time,
+                        },
+                    ) => {
+                        // Store metrics
+                        state_transition_execution_histogram(decoding_elapsed_time, "Unknown", 1);
 
-                    // Store metrics
-                    state_transition_execution_histogram(
-                        decoding_elapsed_time,
-                        "Unknown",
-                        error.code(),
-                    );
-
-                    StateTransitionExecutionResult::UnpaidConsensusError(error)
-                }
-                DecodedStateTransition::FailedToDecode(
-                    InvalidWithProtocolErrorStateTransition {
-                        raw,
-                        error: protocol_error,
-                        elapsed_time: decoding_elapsed_time,
-                    },
-                ) => {
-                    // Store metrics
-                    state_transition_execution_histogram(decoding_elapsed_time, "Unknown", 1);
-
-                    error_to_internal_error_execution_result(StateTransitionAwareError {
-                        error: protocol_error.into(),
-                        raw_state_transition: raw,
-                        state_transition_name: None,
-                    })
-                }
-            };
+                        error_to_internal_error_execution_result(StateTransitionAwareError {
+                            error: protocol_error.into(),
+                            raw_state_transition: raw,
+                            state_transition_name: None,
+                        })
+                    }
+                };
+            }
 
             processing_result.add(execution_result)?;
         }

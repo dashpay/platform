@@ -9,6 +9,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
+use crate::metrics::HistogramTiming;
 
 mod v0;
 
@@ -46,6 +47,7 @@ where
         known_from_us: bool,
         platform_state: &PlatformState,
         transaction: &Transaction,
+        timer: &HistogramTiming,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
         // Epoch information is always calculated with the last committed platform version
@@ -127,6 +129,7 @@ Your software version: {}, latest supported protocol version: {}."#,
                 platform_state,
                 block_platform_state,
                 block_platform_version,
+                timer,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "run_block_proposal".to_string(),
