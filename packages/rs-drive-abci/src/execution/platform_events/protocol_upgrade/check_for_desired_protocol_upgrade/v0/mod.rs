@@ -37,7 +37,7 @@ impl<C> Platform<C> {
         if versions_passing_threshold.len() > 1 {
             return Err(Error::Execution(
                 ExecutionError::ProtocolUpgradeIncoherence(
-                    "only at most 1 version should be able to pass the threshold to upgrade",
+                    format!("only at most 1 version should be able to pass the threshold to upgrade, got versions [{}]", versions_passing_threshold.iter().map(|protocol_version| protocol_version.to_string()).collect::<Vec<_>>().join(", "))
                 ),
             ));
         }
