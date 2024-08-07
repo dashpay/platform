@@ -69,6 +69,33 @@ impl Drive {
                 ))
             })?);
 
-        Ok((genesis_core_height))
+        Ok(genesis_core_height)
+    }
+}
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::version::PlatformVersion;
+    use dpp::prelude::CoreBlockHeight;
+
+    #[test]
+    fn test_initial_state_structure_proper_heights() {
+        let drive = setup_drive_with_initial_state_structure();
+
+        let _db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+        let drive_version = &platform_version.drive;
+
+        let core_genesis_height :CoreBlockHeight = 1320;
+        drive.store_genesis_core_height(core_genesis_height, Some(&_db_transaction), &platform_version)
+            .expect("expected to store genesis core height");
+
+        let read_core_genesis_height = drive.fetch_genesis_core_height(Some(&_db_transaction), &platform_version)
+            .expect("expected to fetch genesis core height");
+
+        assert_eq!(core_genesis_height, read_core_genesis_height);
     }
 }
