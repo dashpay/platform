@@ -11,7 +11,6 @@ use crate::util::grove_operations::QueryType;
 use dpp::prelude::CoreBlockHeight;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
-use integer_encoding::VarInt;
 
 /// Genesis Core Height Key
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -84,7 +83,7 @@ mod tests {
     fn test_initial_state_structure_proper_heights() {
         let drive = setup_drive_with_initial_state_structure();
 
-        let _db_transaction = drive.grove.start_transaction();
+        let db_transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::latest();
         let drive_version = &platform_version.drive;
@@ -93,13 +92,13 @@ mod tests {
         drive
             .store_genesis_core_height(
                 core_genesis_height,
-                Some(&_db_transaction),
+                Some(&db_transaction),
                 &platform_version,
             )
             .expect("expected to store genesis core height");
 
         let read_core_genesis_height = drive
-            .fetch_genesis_core_height(Some(&_db_transaction), &platform_version)
+            .fetch_genesis_core_height(Some(&db_transaction), &platform_version)
             .expect("expected to fetch genesis core height");
 
         assert_eq!(core_genesis_height, read_core_genesis_height);
