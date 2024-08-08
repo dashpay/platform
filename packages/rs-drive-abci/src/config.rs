@@ -572,8 +572,7 @@ impl PlatformConfig {
     }
 
     fn default_network() -> Network {
-        Network::Regtest //todo: Do not leave this as regtest
-                         // TODO: Yes, must be mainnet
+        Network::Dash
     }
 
     fn default_tokio_console_address() -> String {
