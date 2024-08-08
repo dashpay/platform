@@ -108,7 +108,7 @@ where
         true,
         &platform_state,
         transaction,
-        &timer,
+        Some(&timer),
     )?;
 
     if !run_result.is_valid() {
@@ -159,11 +159,13 @@ where
             StateTransitionExecutionResult::NotExecuted(..) => TxAction::Delayed,
         };
 
-        let tx_result: ExecTxResult =
+        let tx_result: Option<ExecTxResult> =
             state_transition_execution_result.try_into_platform_versioned(platform_version)?;
 
-        if tx_action != TxAction::Removed {
-            tx_results.push(tx_result);
+        if let Some(result) = tx_result {
+            if tx_action != TxAction::Removed {
+                tx_results.push(result);
+            }
         }
 
         tx_records.push(TxRecord {

@@ -154,7 +154,7 @@ where
         check_tx_result.unique_identifiers = state_transition.unique_identifiers();
 
         let validation_result = state_transition_to_execution_event_for_check_tx(
-            &platform_ref,
+            platform_ref,
             state_transition,
             check_tx_level,
             platform_version,
@@ -360,8 +360,6 @@ mod tests {
 
         assert!(check_result.is_valid());
 
-        let timer = crate::metrics::abci_request_duration("");
-
         platform
             .platform
             .process_raw_state_transitions(
@@ -371,7 +369,7 @@ mod tests {
                 &transaction,
                 platform_version,
                 false,
-                &timer,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -475,8 +473,6 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        let timer = crate::metrics::abci_request_duration("");
-
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -486,7 +482,7 @@ mod tests {
                 &transaction,
                 platform_version,
                 false,
-                &timer,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -678,8 +674,6 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        let timer = crate::metrics::abci_request_duration("");
-
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -689,7 +683,7 @@ mod tests {
                 &transaction,
                 platform_version,
                 false,
-                &timer,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -833,8 +827,6 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        let timer = crate::metrics::abci_request_duration("");
-
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -844,7 +836,7 @@ mod tests {
                 &transaction,
                 platform_version,
                 false,
-                &timer,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -982,8 +974,6 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        let timer = crate::metrics::abci_request_duration("");
-
         platform
             .platform
             .process_raw_state_transitions(
@@ -993,7 +983,7 @@ mod tests {
                 &transaction,
                 platform_version,
                 false,
-                &timer,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1100,8 +1090,6 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        let timer = crate::metrics::abci_request_duration("");
-
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -1111,7 +1099,7 @@ mod tests {
                 &transaction,
                 platform_version,
                 false,
-                &timer,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1183,8 +1171,6 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        let timer = crate::metrics::abci_request_duration("");
-
         let update_processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -1194,7 +1180,7 @@ mod tests {
                 &transaction,
                 platform_version,
                 false,
-                &timer,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1314,8 +1300,6 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        let timer = crate::metrics::abci_request_duration("");
-
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -1325,7 +1309,7 @@ mod tests {
                 &transaction,
                 platform_version,
                 false,
-                &timer,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1435,8 +1419,6 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        let timer = crate::metrics::abci_request_duration("");
-
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
@@ -1446,7 +1428,7 @@ mod tests {
                 &transaction,
                 platform_version,
                 false,
-                &timer,
+                None,
             )
             .expect("expected to process state transition");
 

@@ -43,8 +43,8 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-        known_from_us: bool,
-        timer: &HistogramTiming,
+        proposing_state_transitions: bool,
+        timer: Option<&HistogramTiming>,
     ) -> Result<StateTransitionsProcessingResult, Error> {
         match platform_version
             .drive_abci
@@ -58,7 +58,7 @@ where
                 block_info,
                 transaction,
                 platform_version,
-                known_from_us,
+                proposing_state_transitions,
                 timer,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

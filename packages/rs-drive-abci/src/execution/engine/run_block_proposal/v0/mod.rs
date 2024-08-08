@@ -67,7 +67,7 @@ where
         last_committed_platform_state: &PlatformState,
         mut block_platform_state: PlatformState,
         platform_version: &'static PlatformVersion,
-        timer: &HistogramTiming,
+        timer: Option<&HistogramTiming>,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
         tracing::trace!(
@@ -312,7 +312,7 @@ where
             transaction,
             platform_version,
             known_from_us,
-            &timer,
+            timer,
         )?;
 
         // Pool withdrawals into transactions queue

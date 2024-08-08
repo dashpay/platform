@@ -1,5 +1,6 @@
 //! Configuration of ABCI Application server
 
+use dpp::prelude::TimestampMillis;
 use serde::{Deserialize, Serialize};
 
 // We allow changes in the ABCI configuration, but there should be a social process
@@ -35,7 +36,7 @@ pub struct AbciConfig {
 
     /// Maximum time limit (in ms) to process state transitions in block proposals
     #[serde(default)]
-    pub tx_processing_time_limit: u128,
+    pub tx_processing_time_limit: TimestampMillis,
 }
 
 impl AbciConfig {
@@ -47,7 +48,7 @@ impl AbciConfig {
         1
     }
 
-    pub(crate) fn default_tx_processing_time_limit() -> u128 {
+    pub(crate) fn default_tx_processing_time_limit() -> TimestampMillis {
         8000
     }
 }

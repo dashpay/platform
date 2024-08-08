@@ -16,9 +16,10 @@ use crate::metrics::{state_transition_execution_histogram, HistogramTiming};
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::{
-    StateTransitionExecutionResult, StateTransitionsProcessingResult,
+    NotExecutedReason, StateTransitionExecutionResult, StateTransitionsProcessingResult,
 };
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::prelude::TimestampMillis;
 use dpp::util::hash::hash_single;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -66,8 +67,8 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-        known_from_us: bool,
-        timer: &HistogramTiming,
+        proposing_state_transitions: bool,
+        timer: Option<&HistogramTiming>,
     ) -> Result<StateTransitionsProcessingResult, Error> {
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -82,15 +83,14 @@ where
         let mut processing_result = StateTransitionsProcessingResult::default();
 
         for decoded_state_transition in state_transition_container.into_iter() {
-            let execution_result: StateTransitionExecutionResult;
-
-            if known_from_us
-                && timer.elapsed().as_millis() > self.config.abci.tx_processing_time_limit
-            {
-                execution_result =
-                    StateTransitionExecutionResult::NotExecuted("not executed".to_string());
+            let execution_result = if proposing_state_transitions
+                && timer.map_or(false, |timer| {
+                    timer.elapsed().as_millis() as TimestampMillis
+                        > self.config.abci.tx_processing_time_limit
+                }) {
+                StateTransitionExecutionResult::NotExecuted(NotExecutedReason::ProposerRanOutOfTime)
             } else {
-                execution_result = match decoded_state_transition {
+                match decoded_state_transition {
                     DecodedStateTransition::SuccessfullyDecoded(
                         SuccessfullyDecodedStateTransition {
                             decoded: state_transition,
@@ -202,8 +202,8 @@ where
                             state_transition_name: None,
                         })
                     }
-                };
-            }
+                }
+            };
 
             processing_result.add(execution_result)?;
         }

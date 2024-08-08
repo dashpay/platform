@@ -47,7 +47,7 @@ where
         known_from_us: bool,
         platform_state: &PlatformState,
         transaction: &Transaction,
-        timer: &HistogramTiming,
+        timer: Option<&HistogramTiming>,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
         // Epoch information is always calculated with the last committed platform version
