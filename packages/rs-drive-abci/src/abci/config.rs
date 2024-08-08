@@ -35,7 +35,7 @@ pub struct AbciConfig {
     pub log: crate::logging::LogConfigs,
 
     /// Maximum time limit (in ms) to process state transitions in block proposals
-    #[serde(default)]
+    #[serde(default = "AbciConfig::default_tx_processing_time_limit")]
     pub tx_processing_time_limit: TimestampMillis,
 }
 
