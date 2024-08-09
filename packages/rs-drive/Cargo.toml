@@ -55,7 +55,7 @@ grovedb = { git = "https://github.com/dashpay/grovedb", rev = "7c743d5ac8113f848
 grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "7c743d5ac8113f848955d46a5a6722a422403b8c", optional = true }
 grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "7c743d5ac8113f848955d46a5a6722a422403b8c" }
 grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "7c743d5ac8113f848955d46a5a6722a422403b8c", optional = true }
-grovedb-version = "1.0.0-rc.2"
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "7c743d5ac8113f848955d46a5a6722a422403b8c"}
 
 [dev-dependencies]
 criterion = "0.3.5"
