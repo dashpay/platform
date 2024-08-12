@@ -49,8 +49,9 @@ impl<C> Platform<C> {
         };
 
         // Calculate core block reward for the unpaid epoch
+        // The unpdaid epochs start block has had it's credits distributed, so we must do a + 1
         let core_block_rewards = epoch_core_reward_credits_for_distribution(
-            start_block_core_height,
+            start_block_core_height + 1,
             unpaid_epoch.next_epoch_start_block_core_height,
             self.config.network.core_subsidy_halving_interval(),
             platform_version,
