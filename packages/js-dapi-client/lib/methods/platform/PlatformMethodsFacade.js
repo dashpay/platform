@@ -13,6 +13,7 @@ const getProtocolVersionUpgradeStateFactory = require('./getProtocolVersionUpgra
 const getIdentityContractNonceFactory = require('./getIdentityContractNonce/getIdentityContractNonceFactory');
 const getIdentityNonceFactory = require('./getIdentityNonce/getIdentityNonceFactory');
 const getIdentityKeysFactory = require('./getIdentityKeys/getIdentityKeysFactory');
+const getTotalCreditsFactory = require('./getTotalCreditsOnPlatform/getTotalCreditsOnPlatformFactory')
 
 class PlatformMethodsFacade {
   /**
@@ -36,6 +37,7 @@ class PlatformMethodsFacade {
     this.getIdentityContractNonce = getIdentityContractNonceFactory(grpcTransport);
     this.getIdentityNonce = getIdentityNonceFactory(grpcTransport);
     this.getIdentityKeys = getIdentityKeysFactory(grpcTransport);
+    this.getTotalCredits = getTotalCreditsFactory(grpcTransport)
   }
 }
 

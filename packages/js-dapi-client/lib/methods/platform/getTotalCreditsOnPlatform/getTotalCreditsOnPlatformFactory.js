@@ -1,7 +1,7 @@
 const {
   v0: {
     PlatformPromiseClient,
-    GetTotalCreditsOnPlatformRequest,
+    GetTotalCreditsInPlatformRequest,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -21,14 +21,14 @@ function getTotalCreditsOnPlatformFactory(grpcTransport) {
    */
   async function getTotalCreditsOnPlatform(options = {}) {
     const {
-      GetTotalCreditsOnPlatformRequestV0,
-    } = GetTotalCreditsOnPlatformRequest;
+      GetTotalCreditsInPlatformRequestV0,
+    } = GetTotalCreditsInPlatformRequest;
 
     // eslint-disable-next-line max-len
-    const getTotalCreditsOnPlatformRequest = new GetTotalCreditsOnPlatformRequest();
+    const getTotalCreditsOnPlatformRequest = new GetTotalCreditsInPlatformRequest();
 
     getTotalCreditsOnPlatformRequest.setV0(
-      new GetTotalCreditsOnPlatformRequestV0()
+      new GetTotalCreditsInPlatformRequestV0()
         .setProve(!!options.prove),
     );
 
@@ -40,7 +40,7 @@ function getTotalCreditsOnPlatformFactory(grpcTransport) {
         // eslint-disable-next-line no-await-in-loop
         const getTotalCreditsOnPlatformResponse = await grpcTransport.request(
           PlatformPromiseClient,
-          'getTotalCreditsOnPlatform',
+          'getTotalCreditsInPlatform',
           getTotalCreditsOnPlatformRequest,
           options,
         );
