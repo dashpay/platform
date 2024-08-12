@@ -26,7 +26,7 @@ pub(super) fn epoch_core_reward_credits_for_distribution_v0(
     core_subsidy_halving_interval: u32,
 ) -> Result<Credits, ProtocolError> {
     if from_start_block_core_height > to_end_block_core_height_included {
-        return Ok(0)
+        return Ok(0);
     }
     // Core is halving block rewards every year so we need to pay
     // core block rewards according to halving ratio for the all years during
@@ -77,7 +77,10 @@ pub(super) fn epoch_core_reward_credits_for_distribution_v0(
         // Default to 0 if the core reward year is more than 100 years in the future
         let core_block_distribution_ratio = CORE_HALVING_DISTRIBUTION
             .get(&core_reward_epoch)
-            .ok_or(ProtocolError::NotSupported(format!("having distribution not supported for core reward epoch {}", core_reward_epoch)))?;
+            .ok_or(ProtocolError::NotSupported(format!(
+                "having distribution not supported for core reward epoch {}",
+                core_reward_epoch
+            )))?;
 
         // Calculate the core rewards for this epoch and add to the total
         total_core_rewards += block_count as Credits * *core_block_distribution_ratio;
