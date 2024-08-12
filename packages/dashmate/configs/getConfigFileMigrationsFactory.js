@@ -765,7 +765,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
-      '1.0.3': (configFile) => {
+      '1.1.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network === NETWORK_MAINNET && name !== 'base') {
