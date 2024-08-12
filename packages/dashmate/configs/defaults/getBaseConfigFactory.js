@@ -388,15 +388,13 @@ export default function getBaseConfigFactory(homeDir) {
                   app_version: '1',
                 },
                 timeout: {
-                  propose: '40000000000',
+                  propose: '50000000000',
                   propose_delta: '5000000000',
-                  vote: '2000000000',
-                  vote_delta: '500000000',
-                  commit: '1000000000',
-                  bypass_commit_timeout: false,
+                  vote: '10000000000',
+                  vote_delta: '1000000000',
                 },
                 synchrony: {
-                  message_delay: '32000000000',
+                  message_delay: '70000000000',
                   precision: '1000000000',
                 },
                 abci: {

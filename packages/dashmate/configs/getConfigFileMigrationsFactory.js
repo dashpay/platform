@@ -765,6 +765,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.1.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.genesis
+              .consensus_params = base.get('platform.drive.tenderdash.genesis.consensus_params');
+          });
+        return configFile;
+      },
     };
   }
 
