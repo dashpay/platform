@@ -45,13 +45,14 @@ impl<C> Platform<C> {
             self.drive
                 .fetch_genesis_core_height(Some(transaction), platform_version)?
         } else {
-            unpaid_epoch.start_block_core_height
+            // The unpaid epochs start block has had its credits distributed, so we must do a + 1
+            // But only if we are not in the first epoch
+            unpaid_epoch.start_block_core_height + 1
         };
 
         // Calculate core block reward for the unpaid epoch
-        // The unpdaid epochs start block has had it's credits distributed, so we must do a + 1
         let core_block_rewards = epoch_core_reward_credits_for_distribution(
-            start_block_core_height + 1,
+            start_block_core_height,
             unpaid_epoch.next_epoch_start_block_core_height,
             self.config.network.core_subsidy_halving_interval(),
             platform_version,

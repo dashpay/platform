@@ -181,7 +181,7 @@ impl Drive {
                 Error::Proof(ProofError::CorruptedProof(
                     "start core height invalid length".to_string(),
                 ))
-            })?)
+            })?) + 1 // We need a plus one here, because we already distribute the first block on epoch change
         };
 
         let reward_credits_accumulated_during_current_epoch =
