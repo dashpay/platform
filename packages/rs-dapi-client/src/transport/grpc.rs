@@ -37,7 +37,7 @@ impl TransportClient for PlatformGrpcClient {
         pool.get_or_create(PoolPrefix::Platform, &uri, None, || {
             Self::new(create_channel(uri.clone(), None)).into()
         })
-        .into()
+            .into()
     }
 
     fn with_uri_and_settings(
@@ -48,7 +48,7 @@ impl TransportClient for PlatformGrpcClient {
         pool.get_or_create(PoolPrefix::Platform, &uri, Some(settings), || {
             Self::new(create_channel(uri.clone(), Some(settings))).into()
         })
-        .into()
+            .into()
     }
 }
 
@@ -59,7 +59,7 @@ impl TransportClient for CoreGrpcClient {
         pool.get_or_create(PoolPrefix::Core, &uri, None, || {
             Self::new(create_channel(uri.clone(), None)).into()
         })
-        .into()
+            .into()
     }
 
     fn with_uri_and_settings(
@@ -70,7 +70,7 @@ impl TransportClient for CoreGrpcClient {
         pool.get_or_create(PoolPrefix::Core, &uri, Some(settings), || {
             Self::new(create_channel(uri.clone(), Some(settings))).into()
         })
-        .into()
+            .into()
     }
 }
 
@@ -186,8 +186,7 @@ impl_transport_request_grpc!(
     platform_proto::WaitForStateTransitionResultResponse,
     PlatformGrpcClient,
     RequestSettings {
-        timeout: Some(Duration::from_secs(80)),
-        retries: Some(0),
+        timeout: Some(Duration::from_secs(120)),
         ..RequestSettings::default()
     },
     wait_for_state_transition_result
