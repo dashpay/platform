@@ -1,7 +1,8 @@
 import process from 'process';
 import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
-import getMetrics from '../util/getMetrics.js';
+import fetchHTTP from '../util/fetchHTTP.js';
 import Report from '../doctor/report.js';
+import { DASHMATE_VERSION } from '../constants.js';
 
 export default class DoctorCommand extends ConfigBaseCommand {
   static description = 'Dashmate node diagnostic.  Bring your node to a doctor';
@@ -50,17 +51,23 @@ export default class DoctorCommand extends ConfigBaseCommand {
     // OS INFO
     console.log('Collecting Operating System Info');
     const osInfo = await getOperatingSystemInfo();
-    report.setOSInfo(osInfo);
 
-    // CORE: bestchainlock, quorums, blockchaininfo, peers, masternode status
+    report.setOSInfo(osInfo);
+    report.setDashmateVersion(DASHMATE_VERSION);
+    // todo sanitize
+    report.setDashmateConfig(config);
+
     console.log('Collecting Core data');
     const coreCalls = [
       rpcClient.getBestChainLock(),
       rpcClient.quorum('list'),
       rpcClient.getBlockchainInfo(),
       rpcClient.getPeerInfo(),
-      rpcClient.masternode('status'),
     ];
+
+    if (config.get('core.masternode.enable')) {
+      coreCalls.push(rpcClient.masternode('status'));
+    }
 
     const [
       getBestChainLock,
@@ -70,50 +77,66 @@ export default class DoctorCommand extends ConfigBaseCommand {
       masternodeStatus,
     ] = (await Promise.allSettled(coreCalls)).map((e) => e.value?.result || e.reason);
 
-    report.setData('core', 'bestChainLock', getBestChainLock);
-    report.setData('core', 'quorums', quorums);
-    report.setData('core', 'blockchainInfo', getBlockchainInfo);
-    report.setData('core', 'peerInfo', getPeerInfo);
-    report.setData('core', 'masternodeStatus', masternodeStatus);
+    report.setServiceInfo('core', 'bestChainLock', getBestChainLock);
+    report.setServiceInfo('core', 'quorums', quorums);
+    report.setServiceInfo('core', 'blockchainInfo', getBlockchainInfo);
+    report.setServiceInfo('core', 'peerInfo', getPeerInfo);
+    report.setServiceInfo('core', 'masternodeStatus', masternodeStatus);
 
-    console.log('Collecting Tenderdash data');
-    // TENDERDASH: status, genesis, peers, metrics, abci_info, dump_consensus_state
-    const [
-      status,
-      genesis,
-      peers,
-      abciInfo,
-      consensusState,
-    ] = await Promise.allSettled([
-      tenderdashRPCClient.request('status', []),
-      tenderdashRPCClient.request('genesis', []),
-      tenderdashRPCClient.request('net_info', []),
-      tenderdashRPCClient.request('abci_info', []),
-      tenderdashRPCClient.request('dump_consensus_state', []),
-    ]);
+    if (config.get('platform.enable')) {
+      console.log('Collecting Tenderdash data');
+      const [
+        status,
+        genesis,
+        peers,
+        abciInfo,
+        consensusState,
+        validators,
+      ] = await Promise.allSettled([
+        tenderdashRPCClient.request('status', []),
+        tenderdashRPCClient.request('genesis', []),
+        tenderdashRPCClient.request('net_info', []),
+        tenderdashRPCClient.request('abci_info', []),
+        tenderdashRPCClient.request('dump_consensus_state', []),
+        fetchHTTP(`http://${config.get('platform.drive.tenderdash.rpc.host')}:${config.get('platform.drive.tenderdash.rpc.port')}/validators?request_quorum_info=true`, 'GET'),
+      ]);
 
-    report.setData('drive_tenderdash', 'status', status);
-    report.setData('drive_tenderdash', 'genesis', genesis);
-    report.setData('drive_tenderdash', 'peers', peers);
-    report.setData('drive_tenderdash', 'abciInfo', abciInfo);
-    report.setData('drive_tenderdash', 'consensusState', consensusState);
+      report.setServiceInfo('drive_tenderdash', 'status', status);
+      report.setServiceInfo('drive_tenderdash', 'validators', validators);
+      report.setServiceInfo('drive_tenderdash', 'genesis', genesis);
+      report.setServiceInfo('drive_tenderdash', 'peers', peers);
+      report.setServiceInfo('drive_tenderdash', 'abciInfo', abciInfo);
+      report.setServiceInfo('drive_tenderdash', 'consensusState', consensusState);
 
-    console.log('Collecting Drive & Tenderdash metrics');
-    const [tenderdashMetrics, driveMetrics] = (await Promise.allSettled(
-      [
-        getMetrics(
-          config.get('platform.drive.tenderdash.metrics.host'),
-          config.get('platform.drive.tenderdash.metrics.port'),
-        ),
-        getMetrics(
-          config.get('platform.drive.abci.metrics.host'),
-          config.get('platform.drive.abci.metrics.port'),
-        ),
-      ],
-    )).map((e) => e.value || e.reason);
+      if (config.get('platform.drive.tenderdash.metrics.enabled')) {
+        console.log('Collecting Tenderdash metrics');
 
-    report.setData('drive_tenderdash', 'metrics', tenderdashMetrics);
-    report.setData('drive_abci', 'metrics', driveMetrics);
+        const metrics = (await Promise.allSettled([
+          fetchHTTP(`http://${config.get('platform.drive.tenderdash.rpc.host')}:${config.get('platform.drive.tenderdash.rpc.port')}/metrics`, 'GET')]))
+          .map((e) => e.value || e.reason);
+
+        report.setServiceInfo('drive_tenderdash', 'metrics', metrics);
+      }
+
+      if (config.get('platform.drive.abci.metrics.enabled')) {
+        console.log('Collecting Drive metrics');
+
+        const metrics = (await Promise.allSettled([
+          fetchHTTP(`http://${config.get('platform.drive.abci.rpc.host')}:${config.get('platform.drive.abci.rpc.port')}/metrics`, 'GET')]))
+          .map((e) => e.value || e.reason);
+
+        report.setServiceInfo('drive_abci', 'metrics', metrics);
+      }
+
+      if (config.get('platform.gateway.metrics.enabled')) {
+        console.log('Collecting Gateway metrics');
+
+        const metrics = (await Promise.allSettled([
+          fetchHTTP(`http://${config.get('platform.gateway.metrics.host')}:${config.get('platform.gateway.metrics.port')}/metrics`, 'GET')]))
+          .map((e) => e.value || e.reason);
+        report.setServiceInfo('gateway', 'metrics', metrics);
+      }
+    }
 
     const services = await getServiceList(config);
 
@@ -121,22 +144,14 @@ export default class DoctorCommand extends ConfigBaseCommand {
 
     await Promise.all(
       services.map(async (service) => {
-        const [inspect, logs] = await Promise.all([
+        const [inspect, logs] = (await Promise.allSettled([
           dockerCompose.inspectService(config, service.name),
           dockerCompose.logs(config, [service.name]),
-        ]);
+        ])).map((e) => e.value || e.reason);
 
-        const dockerInfo = {
-          image: service.image,
-          name: service.name,
-          title: service.title,
-          status: inspect.State.Status,
-          exitCode: logs.exitCode,
-          stdOut: logs.out,
-          stdErr: logs.err,
-        };
-
-        report.setData(service.name, 'dockerInfo', dockerInfo);
+        report.setServiceInfo(service.name, 'stdOut', logs.out);
+        report.setServiceInfo(service.name, 'stdErr', logs.err);
+        report.setServiceInfo(service.name, 'dockerInspect', inspect);
       }),
     );
 
@@ -144,6 +159,6 @@ export default class DoctorCommand extends ConfigBaseCommand {
 
     await report.archive(archivePath);
 
-    console.log(`Archive with all logs created in the current working dir (${archivePath}/dashmate-report-${report.id}.tar)`);
+    console.log(`Archive with all logs created in the current working dir (${archivePath}/dashmate-report-${report.date.toISOString()}.tar)`);
   }
 }

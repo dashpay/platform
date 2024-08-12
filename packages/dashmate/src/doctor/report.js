@@ -2,24 +2,35 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import { create } from 'tar';
-import generateRandomString from '../util/generateRandomString.js';
 
 export default class Report {
-  id;
+  date;
 
   osInfo = {};
 
-  services = {};
+  dashmateVersion = null;
+
+  dashmateConfig = null;
 
   constructor() {
-    this.id = generateRandomString(8);
+    this.date = new Date();
   }
+
+  services = {};
 
   setOSInfo(osInfo) {
     this.osInfo = osInfo;
   }
 
-  setData(service, key, data) {
+  setDashmateVersion(version) {
+    this.dashmateVersion = version;
+  }
+
+  setDashmateConfig(config) {
+    this.dashmateConfig = config;
+  }
+
+  setServiceInfo(service, key, data) {
     this.services[service] = {
       ...(this.services[service] ?? {}),
       [key]: data,
@@ -37,11 +48,9 @@ export default class Report {
     if (dataType === 'string') {
       buffer = data;
       filetype = '.txt';
-    } else if (dataType === 'object') {
-      buffer = JSON.stringify(data);
-      filetype = '.json';
     } else {
-      throw new Error('Unknown data type');
+      buffer = JSON.stringify(data, null, 2);
+      filetype = '.json';
     }
 
     if (!fs.existsSync(serviceDir)) {
@@ -53,25 +62,18 @@ export default class Report {
 
   async archive(folderPath) {
     const tempDir = os.tmpdir();
-    const reportDir = path.join(tempDir, `dashmate-report-${this.id}`);
+    const reportName = `dashmate-report-${this.date.toISOString()}`;
+    const reportDir = path.join(tempDir, reportName);
 
     this.#writeReportFile(reportDir, null, 'osInfo', this.osInfo);
+    this.#writeReportFile(reportDir, null, 'dashmateConfig', this.dashmateConfig);
+    this.#writeReportFile(reportDir, null, 'dashmateVersion', this.dashmateVersion);
 
     for (const service of Object.keys(this.services)) {
       for (const dataKey of Object.keys(this.services[service])) {
         const data = this.services[service][dataKey];
 
-        if (data) {
-          if (dataKey === 'dockerInfo') {
-            const { stdOut, stdErr } = data;
-
-            this.#writeReportFile(reportDir, service, 'stdOut', stdOut);
-            this.#writeReportFile(reportDir, service, 'stdErr', stdErr);
-
-            data.stdOut = undefined;
-            data.stdErr = undefined;
-          }
-
+        if (data !== undefined && data !== null) {
           this.#writeReportFile(reportDir, service, dataKey, data);
         }
       }
@@ -81,7 +83,7 @@ export default class Report {
       {
         cwd: reportDir,
         gzip: false,
-        file: path.join(folderPath, `dashmate-report-${this.id}.tar`),
+        file: path.join(folderPath, `${reportName}.tar`),
       },
       ['.'],
     );

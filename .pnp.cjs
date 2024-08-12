@@ -3397,6 +3397,16 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["@isaacs/fs-minipass", [\
+      ["npm:4.0.1", {\
+        "packageLocation": "./.yarn/cache/@isaacs-fs-minipass-npm-4.0.1-677026e841-4412e9e671.zip/node_modules/@isaacs/fs-minipass/",\
+        "packageDependencies": [\
+          ["@isaacs/fs-minipass", "npm:4.0.1"],\
+          ["minipass", "npm:7.1.2"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
     ["@isaacs/string-locale-compare", [\
       ["npm:1.1.0", {\
         "packageLocation": "./.yarn/cache/@isaacs-string-locale-compare-npm-1.1.0-3911094464-85682b1460.zip/node_modules/@isaacs/string-locale-compare/",\
@@ -7419,6 +7429,13 @@ const RAW_RUNTIME_STATE =
           ["chownr", "npm:2.0.0"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:3.0.0", {\
+        "packageLocation": "./.yarn/cache/chownr-npm-3.0.0-5275e85d25-b63cb1f73d.zip/node_modules/chownr/",\
+        "packageDependencies": [\
+          ["chownr", "npm:3.0.0"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["chrome-trace-event", [\
@@ -8506,7 +8523,7 @@ const RAW_RUNTIME_STATE =
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["systeminformation", "npm:5.22.11"],\
           ["table", "npm:6.8.1"],\
-          ["tar", "npm:6.2.1"],\
+          ["tar", "npm:7.4.3"],\
           ["wrap-ansi", "npm:7.0.0"]\
         ],\
         "linkType": "SOFT"\
@@ -10849,6 +10866,19 @@ const RAW_RUNTIME_STATE =
           ["jackspeak", "npm:3.1.2"],\
           ["minimatch", "npm:9.0.4"],\
           ["minipass", "npm:7.1.2"],\
+          ["path-scurry", "npm:1.11.1"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:10.4.5", {\
+        "packageLocation": "./.yarn/cache/glob-npm-10.4.5-8c63175f05-698dfe1182.zip/node_modules/glob/",\
+        "packageDependencies": [\
+          ["glob", "npm:10.4.5"],\
+          ["foreground-child", "npm:3.1.1"],\
+          ["jackspeak", "npm:3.1.2"],\
+          ["minimatch", "npm:9.0.4"],\
+          ["minipass", "npm:7.1.2"],\
+          ["package-json-from-dist", "npm:1.0.0"],\
           ["path-scurry", "npm:1.11.1"]\
         ],\
         "linkType": "HARD"\
@@ -14067,6 +14097,15 @@ const RAW_RUNTIME_STATE =
           ["yallist", "npm:4.0.0"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:3.0.1", {\
+        "packageLocation": "./.yarn/cache/minizlib-npm-3.0.1-4bdabd978f-622cb85f51.zip/node_modules/minizlib/",\
+        "packageDependencies": [\
+          ["minizlib", "npm:3.0.1"],\
+          ["minipass", "npm:7.1.2"],\
+          ["rimraf", "npm:5.0.10"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["mkdirp", [\
@@ -14082,6 +14121,13 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/mkdirp-npm-1.0.4-37f6ef56b9-d71b8dcd4b.zip/node_modules/mkdirp/",\
         "packageDependencies": [\
           ["mkdirp", "npm:1.0.4"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:3.0.1", {\
+        "packageLocation": "./.yarn/cache/mkdirp-npm-3.0.1-f94bfa769e-16fd79c286.zip/node_modules/mkdirp/",\
+        "packageDependencies": [\
+          ["mkdirp", "npm:3.0.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -15315,6 +15361,15 @@ const RAW_RUNTIME_STATE =
           ["hasha", "npm:5.2.2"],\
           ["lodash.flattendeep", "npm:4.4.0"],\
           ["release-zalgo", "npm:1.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["package-json-from-dist", [\
+      ["npm:1.0.0", {\
+        "packageLocation": "./.yarn/cache/package-json-from-dist-npm-1.0.0-961f0fcb3b-ac706ec856.zip/node_modules/package-json-from-dist/",\
+        "packageDependencies": [\
+          ["package-json-from-dist", "npm:1.0.0"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -16686,6 +16741,14 @@ const RAW_RUNTIME_STATE =
           ["glob", "npm:7.2.3"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:5.0.10", {\
+        "packageLocation": "./.yarn/cache/rimraf-npm-5.0.10-d0c6647697-f3b8ce81ee.zip/node_modules/rimraf/",\
+        "packageDependencies": [\
+          ["rimraf", "npm:5.0.10"],\
+          ["glob", "npm:10.4.5"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["ripemd160", [\
@@ -17963,6 +18026,19 @@ const RAW_RUNTIME_STATE =
           ["minizlib", "npm:2.1.2"],\
           ["mkdirp", "npm:1.0.4"],\
           ["yallist", "npm:4.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:7.4.3", {\
+        "packageLocation": "./.yarn/cache/tar-npm-7.4.3-1dbbd1ffc3-12a2a4fc6d.zip/node_modules/tar/",\
+        "packageDependencies": [\
+          ["tar", "npm:7.4.3"],\
+          ["@isaacs/fs-minipass", "npm:4.0.1"],\
+          ["chownr", "npm:3.0.0"],\
+          ["minipass", "npm:7.1.2"],\
+          ["minizlib", "npm:3.0.1"],\
+          ["mkdirp", "npm:3.0.1"],\
+          ["yallist", "npm:5.0.0"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -20140,6 +20216,13 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/yallist-npm-4.0.0-b493d9e907-4cb02b42b8.zip/node_modules/yallist/",\
         "packageDependencies": [\
           ["yallist", "npm:4.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:5.0.0", {\
+        "packageLocation": "./.yarn/cache/yallist-npm-5.0.0-8732dd9f1c-1884d272d4.zip/node_modules/yallist/",\
+        "packageDependencies": [\
+          ["yallist", "npm:5.0.0"]\
         ],\
         "linkType": "HARD"\
       }]\

@@ -34,7 +34,7 @@ export default function verifySystemRequirementsTaskFactory(
           const warnings = [];
 
           const {
-            systemInfo, hostCpu, swap, diskInfo,
+            systemInfo, hostCpu, memoryData, diskInfo,
           } = await getOperatingSystemInfo();
 
           if (systemInfo) {
@@ -76,8 +76,8 @@ export default function verifySystemRequirementsTaskFactory(
           }
 
           // Check swap information
-          if (swap) {
-            const swapTotalGb = (swap.swaptotal / (1024 ** 3)); // Convert bytes to GB
+          if (memoryData) {
+            const swapTotalGb = (memoryData.swaptotal / (1024 ** 3)); // Convert bytes to GB
 
             if (swapTotalGb < 2) {
               warnings.push(`Swap space is ${swapTotalGb.toFixed(2)}GB. 2GB is recommended`);

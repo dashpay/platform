@@ -10,9 +10,15 @@ export default function getOperatingSystemInfoFactory(
       cpuCores: null,
       hostCpu: null,
       systemInfo: null,
+      osInfo: null,
+      systemData: null,
+      currentLoad: null,
+      diskIO: null,
       diskInfo: null,
+      fsOpenFiles: null,
+      inetLatency: null,
       memoryGb: null,
-      swap: null,
+      memoryData: null,
       swapTotalGb: null,
       availableDiskSpace: null,
     };
@@ -54,18 +60,79 @@ export default function getOperatingSystemInfoFactory(
         console.warn('Can\'t get CPU info');
       }
     }
-    // Check swap information
+
+    // Check System Data
     try {
-      result.swap = await si.mem();
-    } catch (e) {
+      result.systemData = await si.system();
+    } catch {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
-        console.warn(`Can't get swap info: ${e}`);
+        console.warn('Can\'t get System Data info');
       }
     }
 
-    if (result.swap) {
-      result.swapTotalGb = (result.swap.swaptotal / (1024 ** 3)); // Convert bytes to GB
+    // Check OS Info
+    try {
+      result.osInfo = await si.osInfo();
+    } catch {
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.warn('Can\'t get OS info');
+      }
+    }
+
+    // Check Current Load
+    try {
+      result.currentLoad = await si.currentLoad();
+    } catch {
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.warn('Can\'t get Current Load');
+      }
+    }
+
+    // Check FS Open Files
+    try {
+      result.fsOpenFiles = await si.fsOpenFiles();
+    } catch {
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.warn('Can\'t get FS Open Files');
+      }
+    }
+
+    // Check Disk IO
+    try {
+      result.diskIO = await si.disksIO();
+    } catch {
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.warn('Can\'t get Disk IO');
+      }
+    }
+
+    // Check Inet Latency
+    try {
+      result.inetLatency = await si.inetLatency();
+    } catch {
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.warn('Can\'t get Inet Latency');
+      }
+    }
+
+    // Check swap information
+    try {
+      result.memoryData = await si.mem();
+    } catch (e) {
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.warn(`Can't get mem info: ${e}`);
+      }
+    }
+
+    if (result.memoryData) {
+      result.swapTotalGb = (result.memoryData.swaptotal / (1024 ** 3)); // Convert bytes to GB
     }
 
     // Get disk usage info
