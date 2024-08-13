@@ -3,9 +3,9 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **platform:** masternode reward payouts are changed so previously created state won't be compatible  (#2032)
-* **dashmate:** Previously created networks won't be supported since genesis configuration is changed (#2042)
-* **platform:** added genesis core height in misc tree so previously created state won't be compatible (#2038)
+* masternode reward payouts are changed so previously created state won't be compatible (#2032)
+* previously created networks won't be supported since genesis configuration is changed (#2042)
+* added genesis core height in misc tree so previously created state won't be compatible (#2038)
 
 ### Features
 
