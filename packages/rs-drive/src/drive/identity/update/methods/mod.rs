@@ -9,3 +9,4 @@ pub(crate) mod merge_identity_nonce;
 mod re_enable_identity_keys;
 mod remove_from_identity_balance;
 mod update_identity_revision;
+mod refresh_identity_keys_references;
