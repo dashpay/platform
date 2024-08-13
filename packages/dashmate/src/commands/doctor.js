@@ -42,13 +42,38 @@ export default class DoctorCommand extends ConfigBaseCommand {
     const tasks = new Listr(
       [
         {
-          title: 'Prepare',
-          task: async (ctx) => {
+          task: async (ctx, task) => {
+            const agreement = await task.prompt({
+              type: 'toggle',
+              name: 'confirm',
+              header: `Dashmate is going to collect all necessary debug data from the node, including:
+
+* OS System Info (cpu, arch, disk, memory, inet)
+* Docker Inspect & Logs for each dashmate service
+* Dashmate Config (external ip, all keys and passwords stripped)
+* Core RPC data (getbestchainlock, getblockchaininfo, quorums, getpeerinfo, masternode('status'))
+* Tenderdash RPC data (if platform is enabled)
+* Prometheus Metrics (if platform is enabled)
+
+It will archived all collected info in an archive .tar archive in your current working directory (${process.cwd()})
+You can use it to analyze your node condition yourself or send it to the Dash team in case you need help
+
+support@dash.org
+              `,
+              message: 'Continue?',
+              enabled: 'Yes',
+              disabled: 'Abort',
+            });
+
+            if (!agreement) {
+              throw new Error('Operation is cancelled');
+            }
+
             ctx.report = new Report();
           },
         },
         {
-          title: 'Collecting Operating System Info',
+          title: 'Gathering Operating System Info',
           task: async (ctx) => {
             const osInfo = await getOperatingSystemInfo();
 
@@ -56,14 +81,14 @@ export default class DoctorCommand extends ConfigBaseCommand {
           },
         },
         {
-          title: 'Collecting Dashmate Config data',
+          title: 'Sanitizing Dashmate Config data',
           task: async (ctx) => {
             ctx.report.setDashmateVersion(DASHMATE_VERSION);
             ctx.report.setDashmateConfig(sanitizeDashmateConfig(config));
           },
         },
         {
-          title: 'Collecting Core data',
+          title: 'Requesting Core RPC node data',
           task: async (ctx) => {
             const rpcClient = createRpcClient({
               port: config.get('core.rpc.port'),
@@ -99,7 +124,7 @@ export default class DoctorCommand extends ConfigBaseCommand {
           },
         },
         {
-          title: 'Collecting Tenderdash info',
+          title: 'Collecting Tenderdash RPC status and consensus info',
           enabled: () => config.get('platform.enable'),
           task: async (ctx) => {
             const tenderdashRPCClient = createTenderdashRpcClient({
@@ -132,12 +157,12 @@ export default class DoctorCommand extends ConfigBaseCommand {
           },
         },
         {
-          title: 'Collecting metrics',
+          title: 'Reading Prometheus metrics',
           enabled: () => config.get('platform.enable'),
           task: async (ctx, task) => {
             if (config.get('platform.drive.tenderdash.metrics.enabled')) {
               // eslint-disable-next-line no-param-reassign
-              task.title = 'Collecting Tenderdash metrics';
+              task.title = 'Reading Tenderdash metrics';
 
               const metrics = (await Promise.allSettled([
                 fetchHTTP(`http://${config.get('platform.drive.tenderdash.rpc.host')}:${config.get('platform.drive.tenderdash.rpc.port')}/metrics`, 'GET')]))
@@ -148,7 +173,7 @@ export default class DoctorCommand extends ConfigBaseCommand {
 
             if (config.get('platform.drive.abci.metrics.enabled')) {
               // eslint-disable-next-line no-param-reassign
-              task.title = 'Collecting Drive metrics';
+              task.title = 'Reading Drive metrics';
 
               const metrics = (await Promise.allSettled([
                 fetchHTTP(`http://${config.get('platform.drive.abci.rpc.host')}:${config.get('platform.drive.abci.rpc.port')}/metrics`, 'GET')]))
@@ -159,7 +184,7 @@ export default class DoctorCommand extends ConfigBaseCommand {
 
             if (config.get('platform.gateway.metrics.enabled')) {
               // eslint-disable-next-line no-param-reassign
-              task.title = 'Collecting Gateway metrics';
+              task.title = 'Reading Gateway metrics';
 
               const metrics = (await Promise.allSettled([
                 fetchHTTP(`http://${config.get('platform.gateway.metrics.host')}:${config.get('platform.gateway.metrics.port')}/metrics`, 'GET')]))
@@ -169,12 +194,12 @@ export default class DoctorCommand extends ConfigBaseCommand {
           },
         },
         {
-          title: 'Collecting Docker info & Container Logs',
+          title: 'Pulling Docker Container Info & Logs',
           task: async (ctx, task) => {
             const services = await getServiceList(config);
 
             // eslint-disable-next-line no-param-reassign
-            task.title = `Collecting logs from ${services.map((e) => e.name)}`;
+            task.title = `Pulling logs from ${services.map((e) => e.name)}`;
 
             await Promise.all(
               services.map(async (service) => {
@@ -191,14 +216,14 @@ export default class DoctorCommand extends ConfigBaseCommand {
           },
         },
         {
-          title: 'Archive',
+          title: 'Archiving',
           task: async (ctx, task) => {
             const archivePath = process.cwd();
 
             await ctx.report.archive(archivePath);
 
             // eslint-disable-next-line no-param-reassign
-            task.title = `Archive with all logs created in the current working dir (${archivePath}/dashmate-report-${ctx.report.date.toISOString()}.tar)`;
+            task.title = `Archive with all debug data created in the current working dir (${archivePath}/dashmate-report-${ctx.report.date.toISOString()}.tar)`;
           },
         },
       ],
