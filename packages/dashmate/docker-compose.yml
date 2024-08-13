@@ -140,6 +140,7 @@ services:
       - NODE_ENV=${ENVIRONMENT:?err}
       - DRIVE_RPC_HOST=drive_abci
       - DRIVE_RPC_PORT=26670
+      - WAIT_FOR_ST_RESULT_TIMEOUT=${PLATFORM_DAPI_API_WAIT_FOR_ST_RESULT_TIMEOUT:?err}
     command: yarn run api
     stop_grace_period: 10s
     expose:

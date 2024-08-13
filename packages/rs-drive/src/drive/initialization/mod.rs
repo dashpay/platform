@@ -1,5 +1,6 @@
 //! Drive Initialization
 
+mod genesis_core_height;
 mod v0;
 
 use crate::drive::Drive;

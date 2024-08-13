@@ -1,5 +1,6 @@
 //! Configuration of ABCI Application server
 
+use dpp::prelude::TimestampMillis;
 use serde::{Deserialize, Serialize};
 
 // We allow changes in the ABCI configuration, but there should be a social process
@@ -32,6 +33,10 @@ pub struct AbciConfig {
     // Note it is parsed directly in PlatformConfig::from_env() so here we just set defaults.
     #[serde(default)]
     pub log: crate::logging::LogConfigs,
+
+    /// Maximum time limit (in ms) to process state transitions in block proposals
+    #[serde(default = "AbciConfig::default_tx_processing_time_limit")]
+    pub tx_processing_time_limit: TimestampMillis,
 }
 
 impl AbciConfig {
@@ -41,6 +46,10 @@ impl AbciConfig {
 
     pub(crate) fn default_genesis_core_height() -> u32 {
         1
+    }
+
+    pub(crate) fn default_tx_processing_time_limit() -> TimestampMillis {
+        8000
     }
 }
 
@@ -52,6 +61,7 @@ impl Default for AbciConfig {
             genesis_core_height: AbciConfig::default_genesis_core_height(),
             chain_id: "chain_id".to_string(),
             log: Default::default(),
+            tx_processing_time_limit: AbciConfig::default_tx_processing_time_limit(),
         }
     }
 }
