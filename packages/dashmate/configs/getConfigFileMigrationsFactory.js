@@ -767,7 +767,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       },
       '1.1.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([, options]) => {
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_MAINNET && name !== 'base') {
+              options.platform.drive.tenderdash.p2p.seeds = mainnet.get('platform.drive.tenderdash.p2p.seeds');
+            }
+
             options.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout = '125s';
             options.platform.dapi.api.waitForStResultTimeout = 120000;
 
