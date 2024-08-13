@@ -771,6 +771,19 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (name === 'local') {
               options.platform.drive.abci.epochTime = 1200;
             }
+
+            if (options.network === NETWORK_MAINNET && name !== 'base') {
+              options.platform.drive.tenderdash.p2p.seeds = mainnet.get('platform.drive.tenderdash.p2p.seeds');
+            }
+
+            options.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout = '125s';
+            options.platform.dapi.api.waitForStResultTimeout = 120000;
+
+            options.platform.drive.tenderdash.p2p.maxConnections = 64;
+            options.platform.drive.tenderdash.p2p.maxOutgoingConnections = 30;
+            options.platform.drive.tenderdash.genesis
+              .consensus_params = base.get('platform.drive.tenderdash.genesis.consensus_params');
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
           });
         return configFile;
       },
