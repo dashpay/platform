@@ -2,6 +2,7 @@
 
 use dpp::prelude::TimestampMillis;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 // We allow changes in the ABCI configuration, but there should be a social process
 // involved in making this change.
@@ -37,6 +38,15 @@ pub struct AbciConfig {
     /// Maximum time limit (in ms) to process state transitions in block proposals
     #[serde(default = "AbciConfig::default_tx_processing_time_limit")]
     pub tx_processing_time_limit: TimestampMillis,
+
+    /// Directory where files with consensus params updates for a given height, such as `H.json`, are
+    /// stored, where `H` is the height of the block for which the consensus params are sent, for example `123456`.
+    ///
+    /// If empty or not set, consensus params updates are not supported.
+    ///
+    /// Note that consensus params sent at a height H will be applied at height H+1.
+    #[serde(default)]
+    pub consensus_params_path: Option<PathBuf>,
 }
 
 impl AbciConfig {
@@ -62,6 +72,7 @@ impl Default for AbciConfig {
             chain_id: "chain_id".to_string(),
             log: Default::default(),
             tx_processing_time_limit: AbciConfig::default_tx_processing_time_limit(),
+            consensus_params_path: None,
         }
     }
 }

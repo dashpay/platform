@@ -1,4 +1,5 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
+use crate::abci::handler::prepare_proposal::get_consensus_params_update;
 use crate::abci::AbciError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::{
@@ -263,13 +264,21 @@ where
         })
         .collect::<Result<_, _>>()?;
 
+    // Get consensus param updates if there are any for this height
+    let consensus_param_updates =
+        if let Some(path) = app.platform().config.abci.consensus_params_path.as_ref() {
+            get_consensus_params_update(path, request.height)
+                .map_err(|e| Error::Abci(AbciError::InvalidConsensusParams(e.to_string())))?
+        } else {
+            None
+        };
+
     let response = proto::ResponseProcessProposal {
         app_hash: app_hash.to_vec(),
         tx_results,
         status: proto::response_process_proposal::ProposalStatus::Accept.into(),
         validator_set_update,
-        // TODO: Implement consensus param updates
-        consensus_param_updates: None,
+        consensus_param_updates,
         events: Vec::new(),
     };
 

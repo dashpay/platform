@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
@@ -12,7 +14,7 @@ use dpp::version::TryIntoPlatformVersioned;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
-use tenderdash_abci::proto::types::CoreChainLock;
+use tenderdash_abci::proto::types::{ConsensusParams, CoreChainLock};
 
 pub fn prepare_proposal<'a, A, C>(
     app: &A,
@@ -184,6 +186,15 @@ where
             }),
     );
 
+    // Get consensus param updates if there are any for this height
+    let consensus_param_updates =
+        if let Some(path) = app.platform().config.abci.consensus_params_path.as_ref() {
+            get_consensus_params_update(path, request.height)
+                .map_err(|e| Error::Abci(AbciError::InvalidConsensusParams(e.to_string())))?
+        } else {
+            None
+        };
+
     let response = proto::ResponsePrepareProposal {
         tx_results,
         app_hash: app_hash.to_vec(),
@@ -194,8 +205,7 @@ where
             signature: chain_lock.signature.to_bytes().to_vec(),
         }),
         validator_set_update,
-        // TODO: implement consensus param updates
-        consensus_param_updates: None,
+        consensus_param_updates,
         app_version: platform_version.protocol_version as u64,
     };
 
@@ -229,4 +239,90 @@ where
     );
 
     Ok(response)
+}
+
+/// Determine consensus params that shall be returned at provided height
+///
+/// If a file `$height.json` is found in `consensus_params_dir` directory, it will be returned.
+/// Otherwise, returns None.
+///
+/// # Arguments
+///
+/// * `consensus_params_dir` - Directory where consensus params are stored; if empty string, returns None
+/// * `height` - Height for which consensus params are requested
+///
+/// # Returns
+///
+/// * `Ok(Some(ConsensusParams))` - If file with consensus params for provided height is found
+/// * `Ok(None)` - If file with consensus params for provided height is not found
+/// * `Err(io::Error)` - If there was an error reading the file
+///
+// TODO: Move this to correct place
+pub(super) fn get_consensus_params_update(
+    consensus_params_dir: &Path,
+    height: i64,
+) -> Result<Option<ConsensusParams>, std::io::Error> {
+    let mut file_path = consensus_params_dir.to_path_buf();
+    file_path.push(format!("{}.json", height));
+
+    // check if file exists
+    if !file_path.exists() {
+        return Ok(None);
+    }
+
+    let rdr = std::fs::File::open(file_path)?;
+
+    serde_json::from_reader(rdr).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_get_consensus_params_update() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let consensus_params_path = temp_dir.path().to_path_buf();
+
+        let height = 123456;
+        let mut file_path = consensus_params_path.clone();
+        file_path.push(format!("{}.json", height));
+
+        let consensus_params = r#"{
+            "block": {
+            "max_bytes": "2097152",
+            "max_gas": "40000000000"
+            },
+            "evidence": {
+            "max_age_num_blocks": "100000",
+            "max_age_duration": "172800000000000",
+            "max_bytes": "0"
+            },
+            "validator": {
+            "pub_key_types": [
+                "bls12381"
+            ]
+            },
+            "version": {
+            "app_version": "1"
+            },
+            "synchrony": {
+            "precision": "500000000",
+            "message_delay": "60000000000"
+            },
+            "timeout": {
+            "propose": "40000000000",
+            "propose_delta": "5000000000",
+            "vote": "40000000000",
+            "vote_delta": "5000000000"
+            },
+            "abci": {
+            "recheck_tx": true
+            }
+        }"#;
+
+        std::fs::write(&file_path, consensus_params).unwrap();
+
+        let result = super::get_consensus_params_update(&consensus_params_path, height).unwrap();
+        println!("{:?}", result);
+        assert_eq!(result.unwrap().block.unwrap().max_bytes, 2097152);
+    }
 }

@@ -87,6 +87,10 @@ pub enum AbciError {
         drive: String,
     },
 
+    /// Consensus params are invalid
+    #[error("invalid consensus params: {0}")]
+    InvalidConsensusParams(String),
+
     /// Generic with code should only be used in tests
     #[error("invalid state transition error: {0}")]
     InvalidStateTransition(#[from] ConsensusError),
