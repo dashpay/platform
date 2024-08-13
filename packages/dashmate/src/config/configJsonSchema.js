@@ -947,8 +947,16 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    maxConnections: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
+                    maxOutgoingConnections: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
                   },
-                  required: ['host', 'port', 'persistentPeers', 'seeds', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate'],
+                  required: ['host', 'port', 'persistentPeers', 'seeds', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate', 'maxConnections', 'maxOutgoingConnections'],
                   additionalProperties: false,
                 },
                 mempool: {
