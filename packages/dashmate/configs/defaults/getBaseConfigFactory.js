@@ -178,6 +178,7 @@ export default function getBaseConfigFactory(homeDir) {
               http2: {
                 maxConcurrentStreams: 10,
               },
+              waitForStResultTimeout: '125s',
               host: '0.0.0.0',
               port: 443,
             },
@@ -235,6 +236,7 @@ export default function getBaseConfigFactory(homeDir) {
                 target: 'dapi',
               },
             },
+            waitForStResultTimeout: 120000,
           },
         },
         drive: {

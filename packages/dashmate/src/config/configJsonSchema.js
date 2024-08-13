@@ -519,6 +519,9 @@ export default {
                       additionalProperties: false,
                       required: ['maxConcurrentStreams'],
                     },
+                    waitForStResultTimeout: {
+                      $ref: '#/definitions/durationInSeconds',
+                    },
                     host: {
                       type: 'string',
                       minLength: 1,
@@ -528,7 +531,7 @@ export default {
                       $ref: '#/definitions/port',
                     },
                   },
-                  required: ['http2', 'host', 'port'],
+                  required: ['http2', 'host', 'port', 'waitForStResultTimeout'],
                   additionalProperties: false,
                 },
               },
@@ -777,8 +780,13 @@ export default {
                   required: ['image', 'build', 'deploy'],
                   additionalProperties: false,
                 },
+                waitForStResultTimeout: {
+                  type: 'integer',
+                  minimum: 1,
+                  description: 'How many millis to wait for state transition result before timeout',
+                },
               },
-              required: ['docker'],
+              required: ['docker', 'waitForStResultTimeout'],
               additionalProperties: false,
             },
           },

@@ -104,6 +104,7 @@ function platformHandlersFactory(
     blockchainListener,
     dpp,
     createGrpcErrorFromDriveResponse,
+    parseInt(process.env.WAIT_FOR_ST_RESULT_TIMEOUT, 10),
   );
 
   const wrappedWaitForStateTransitionResult = jsonToProtobufHandlerWrapper(
