@@ -3,6 +3,7 @@ import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import fetchHTTP from '../util/fetchHTTP.js';
 import Report from '../doctor/report.js';
 import { DASHMATE_VERSION } from '../constants.js';
+import sanitizeDashmateConfig from '../util/sanitizeDashmateConfig.js'
 
 export default class DoctorCommand extends ConfigBaseCommand {
   static description = 'Dashmate node diagnostic.  Bring your node to a doctor';
@@ -54,8 +55,7 @@ export default class DoctorCommand extends ConfigBaseCommand {
 
     report.setOSInfo(osInfo);
     report.setDashmateVersion(DASHMATE_VERSION);
-    // todo sanitize
-    report.setDashmateConfig(config);
+    report.setDashmateConfig(sanitizeDashmateConfig(config));
 
     console.log('Collecting Core data');
     const coreCalls = [
