@@ -201,6 +201,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -262,6 +264,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -323,6 +327,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
