@@ -1,11 +1,16 @@
 //! Mocking mechanisms for Dash Platform SDK.
 //!
 //! See [MockDashPlatformSdk] for more details.
+use crate::{
+    platform::{types::identity::IdentityRequest, DocumentQuery, Fetch, FetchMany, Query},
+    Error,
+};
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dapi_grpc::{
     mock::Mockable,
     platform::v0::{self as proto},
 };
+use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use drive_proof_verifier::{error::ContextProviderError, FromProof, MockContextProvider};
 use rs_dapi_client::mock::MockError;
@@ -16,11 +21,6 @@ use rs_dapi_client::{
 };
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-
-use crate::{
-    platform::{types::identity::IdentityRequest, DocumentQuery, Fetch, FetchMany, Query},
-    Error,
-};
 
 use super::MockResponse;
 
@@ -182,6 +182,14 @@ impl MockDashPlatformSdk {
                 }
                 "GetPrefundedSpecializedBalanceRequest" => {
                     self.load_expectation::<proto::GetPrefundedSpecializedBalanceRequest>(filename)
+                        .await?
+                }
+                "GetPathElementsRequest" => {
+                    self.load_expectation::<proto::GetPathElementsRequest>(filename)
+                        .await?
+                }
+                "GetTotalCreditsInPlatformRequest" => {
+                    self.load_expectation::<proto::GetTotalCreditsInPlatformRequest>(filename)
                         .await?
                 }
                 _ => {
@@ -389,7 +397,13 @@ impl MockDashPlatformSdk {
                     .ok_or(ContextProviderError::InvalidQuorum(
                         "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
                     ))?;
-                O::maybe_from_proof_with_metadata(request, response, version, provider)?
+                O::maybe_from_proof_with_metadata(
+                    request,
+                    response,
+                    Network::Regtest,
+                    version,
+                    provider,
+                )?
             }
         };
 

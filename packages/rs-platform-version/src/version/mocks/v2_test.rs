@@ -1,11 +1,11 @@
 use crate::version::contracts::SystemDataContractVersions;
 use crate::version::dpp_versions::{
-    AssetLockVersions, ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
-    DataContractMethodVersions, DataContractValidationVersions, DocumentFeatureVersionBounds,
-    DocumentMethodVersions, DocumentTransitionVersions, DocumentTypeClassMethodVersions,
-    DocumentTypeIndexVersions, DocumentTypeMethodVersions, DocumentTypeSchemaVersions,
-    DocumentTypeValidationVersions, DocumentTypeVersions, DocumentVersions,
-    DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
+    AssetLockVersions, ContractVersions, CostVersions, DPPMethodVersions, DPPValidationVersions,
+    DPPVersion, DataContractMethodVersions, DataContractValidationVersions,
+    DocumentFeatureVersionBounds, DocumentMethodVersions, DocumentTransitionVersions,
+    DocumentTypeClassMethodVersions, DocumentTypeIndexVersions, DocumentTypeMethodVersions,
+    DocumentTypeSchemaVersions, DocumentTypeValidationVersions, DocumentTypeVersions,
+    DocumentVersions, DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
     IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
     IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
     RecursiveSchemaValidatorVersions, StateTransitionConversionVersions,
@@ -16,7 +16,7 @@ use crate::version::drive_abci_versions::{
     DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions,
     DriveAbciBlockFeeProcessingMethodVersions, DriveAbciBlockStartMethodVersions,
     DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreChainLockMethodVersionsAndConstants,
-    DriveAbciCoreInstantSendLockMethodVersions, DriveAbciCoreSubsidyMethodVersions,
+    DriveAbciCoreInstantSendLockMethodVersions,
     DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions,
     DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions,
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
@@ -323,6 +323,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 system: DriveVerifySystemMethodVersions {
                     verify_epoch_infos: 0,
                     verify_elements: 0,
+                    verify_total_credits_in_system: 0,
                     verify_upgrade_state: 0,
                     verify_upgrade_vote_status: 0,
                 },
@@ -633,9 +634,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
                 add_process_epoch_change_operations: 0,
                 process_block_fees: 0,
-            },
-            core_subsidy: DriveAbciCoreSubsidyMethodVersions {
-                epoch_core_reward_credits_for_distribution: 0,
             },
             core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
                 choose_quorum: 0,
@@ -964,6 +962,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                total_credits_in_platform: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
             },
         },
     },
@@ -1223,6 +1226,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 default_current_version: 0,
             },
         },
+        methods: DPPMethodVersions { epoch_core_reward_credits_for_distribution: 0 },
     },
     system_data_contracts: SystemDataContractVersions {
         withdrawals: 1,

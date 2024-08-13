@@ -9,7 +9,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 impl Drive {
-    /// Verifies that the contract is included in the proof.
+    /// Verifies a proof and returns elements matching keys for a path.
     ///
     /// # Parameters
     ///

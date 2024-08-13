@@ -186,8 +186,7 @@ impl_transport_request_grpc!(
     platform_proto::WaitForStateTransitionResultResponse,
     PlatformGrpcClient,
     RequestSettings {
-        timeout: Some(Duration::from_secs(80)),
-        retries: Some(0),
+        timeout: Some(Duration::from_secs(120)),
         ..RequestSettings::default()
     },
     wait_for_state_transition_result
@@ -331,6 +330,24 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_prefunded_specialized_balance
+);
+
+// rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetPathElementsRequest,
+    platform_proto::GetPathElementsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_path_elements
+);
+
+// rpc getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTotalCreditsInPlatformRequest,
+    platform_proto::GetTotalCreditsInPlatformResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_total_credits_in_platform
 );
 
 // Link to each core gRPC request what client and method to use:

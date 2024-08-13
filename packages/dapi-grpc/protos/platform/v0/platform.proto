@@ -45,6 +45,7 @@ service Platform {
   // What vote polls will end soon?
   rpc getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse);
   rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
+  rpc getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse);
   rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
 }
 
@@ -945,6 +946,30 @@ message GetPrefundedSpecializedBalanceResponse {
   oneof version { GetPrefundedSpecializedBalanceResponseV0 v0 = 1; }
 }
 
+message GetTotalCreditsInPlatformRequest {
+  message GetTotalCreditsInPlatformRequestV0 {
+    bool prove = 1;
+  }
+
+  oneof version {
+    GetTotalCreditsInPlatformRequestV0 v0 = 1;
+  }
+}
+
+message GetTotalCreditsInPlatformResponse {
+  message GetTotalCreditsInPlatformResponseV0 {
+    oneof result {
+      uint64 credits = 1;
+
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetTotalCreditsInPlatformResponseV0 v0 = 1;
+  }
+}
 
 message GetPathElementsRequest {
   message GetPathElementsRequestV0 {

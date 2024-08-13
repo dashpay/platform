@@ -81,6 +81,7 @@ macro_rules! delegate_from_proof_variant {
             fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
                 request: I,
                 response: O,
+                network: dpp::dashcore::Network,
                 version: &dpp::version::PlatformVersion,
                 provider: &'a dyn drive_proof_verifier::ContextProvider,
             ) -> Result<(Option<Self>, ResponseMetadata, dapi_grpc::platform::v0::Proof), drive_proof_verifier::Error>
@@ -97,7 +98,7 @@ macro_rules! delegate_from_proof_variant {
                     req::$variant(request) => {
                         if let resp::$variant(response) = response {
                             <Self as drive_proof_verifier::FromProof<$req>>::maybe_from_proof_with_metadata(
-                                request, response, version, provider,
+                                request, response, network, version, provider,
                             )
                         } else {
                             Err(drive_proof_verifier::Error::ResponseDecodeError {
@@ -108,7 +109,7 @@ macro_rules! delegate_from_proof_variant {
                                 ),
                             })
                         }
-                    },
+                    }
                 )*
                 }
             }

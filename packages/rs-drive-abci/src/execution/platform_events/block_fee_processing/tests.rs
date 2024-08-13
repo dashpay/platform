@@ -1,11 +1,12 @@
 #[cfg(test)]
 mod refund_tests {
     use crate::execution::validation::state_transition::tests::{
-        fast_forward_to_block, fetch_expected_identity_balance, process_state_transitions,
+        fetch_expected_identity_balance, process_state_transitions,
         setup_identity_with_system_credits,
     };
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
@@ -388,7 +389,7 @@ mod refund_tests {
         let (document, insertion_fee_result, current_user_balance) =
             setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
 
-        fast_forward_to_block(&platform, 1_200_000_000, 900, 1); //next epoch
+        fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
 
         let documents_batch_delete_transition =
             DocumentsBatchTransition::new_document_deletion_transition_from_document(
@@ -487,7 +488,7 @@ mod refund_tests {
         let (document, insertion_fee_result, current_user_balance) =
             setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
 
-        fast_forward_to_block(&platform, 1_200_000_000, 900, 40); //a year later
+        fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 40, false); //a year later
 
         let documents_batch_delete_transition =
             DocumentsBatchTransition::new_document_deletion_transition_from_document(
@@ -582,7 +583,7 @@ mod refund_tests {
         let (document, insertion_fee_result, current_user_balance) =
             setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
 
-        fast_forward_to_block(&platform, 10_200_000_000, 9000, 40 * 25); //25 years later
+        fast_forward_to_block(&platform, 10_200_000_000, 9000, 42, 40 * 25, false); //25 years later
 
         let documents_batch_delete_transition =
             DocumentsBatchTransition::new_document_deletion_transition_from_document(
@@ -677,7 +678,7 @@ mod refund_tests {
         let (document, _, current_user_balance) =
             setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
 
-        fast_forward_to_block(&platform, 10_200_000_000, 9000, 40 * 50); //50 years later
+        fast_forward_to_block(&platform, 10_200_000_000, 9000, 42, 40 * 50, false); //50 years later
 
         let documents_batch_delete_transition =
             DocumentsBatchTransition::new_document_deletion_transition_from_document(
@@ -773,7 +774,7 @@ mod refund_tests {
         let (document, insertion_fee_result, current_user_balance) =
             setup_initial_document(&platform, profile, &mut rng, &identity, &key, &signer);
 
-        fast_forward_to_block(&platform, 1_200_000_000, 900, 10); //next epoch
+        fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 10, false); //next epoch
 
         let documents_batch_delete_transition =
             DocumentsBatchTransition::new_document_deletion_transition_from_document(
