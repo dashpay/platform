@@ -768,7 +768,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.1.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout = '120s';
+            options.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout = '125s';
             options.platform.dapi.api.waitForStResultTimeout = 120000;
           });
         return configFile;
