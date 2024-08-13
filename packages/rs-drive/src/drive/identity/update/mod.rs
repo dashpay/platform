@@ -222,7 +222,16 @@ mod tests {
 
             let new_keys_to_add = IdentityPublicKey::random_keys(5, 2, Some(15), platform_version);
 
-            drive.create_key_tree_with_keys_operations(identity.id().to_buffer(), new_keys_to_add.clone(), true, &block_info.epoch, &mut None, None, platform_version)
+            drive
+                .create_key_tree_with_keys_operations(
+                    identity.id().to_buffer(),
+                    new_keys_to_add.clone(),
+                    true,
+                    &block_info.epoch,
+                    &mut None,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to create key trees");
             drive
                 .add_new_unique_keys_to_identity(

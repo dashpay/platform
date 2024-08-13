@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use grovedb::batch::KeyInfoPath;
 use crate::drive::identity::{
     identity_contract_info_group_keys_path_vec, identity_contract_info_group_path_key_purpose_vec,
     identity_contract_info_root_path_vec, identity_key_path_vec, identity_query_keys_tree_path_vec,
@@ -9,18 +11,22 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::IdentityPublicKey;
 use grovedb::reference_path::ReferencePathType;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
-use grovedb::Element;
+use grovedb::{Element, EstimatedLayerInformation};
 use integer_encoding::VarInt;
 use platform_version::version::drive_versions::DriveVersion;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Updates the revision for a specific identity. This function is version controlled.
-    pub fn refresh_identity_keys_references_v0(
+    pub fn refresh_identity_keys_references_operations_v0(
         &self,
         identity_id: [u8; 32],
         key: &IdentityPublicKey,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         // At this point, we need to refresh reference to that Identity key that was just updated (disable is an update)
 
@@ -36,11 +42,19 @@ impl Drive {
 
         let key_id_bytes = key.id().encode_var_vec();
 
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_keys_for_identity_id(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+        }
+
         // There are two references that needs to be refreshed:
         // 1) [Root ; <identity> ; Query Keys ; Purpose ; Security Level]
         let mut index_query_keys_path = identity_query_keys_tree_path_vec(identity_id);
-        // index_query_keys_path.push(vec![key.purpose() as u8]);
-        // index_query_keys_path.push(vec![key.security_level() as u8]);
+        index_query_keys_path.push(vec![key.purpose() as u8]);
+        index_query_keys_path.push(vec![key.security_level() as u8]);
 
         self.batch_refresh_reference(
             index_query_keys_path,
@@ -48,7 +62,7 @@ impl Drive {
             identity_key_reference.clone(),
             trust_refresh_reference,
             drive_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         if let Some(contract_info) = key.contract_bounds() {
@@ -68,7 +82,7 @@ impl Drive {
                 identity_key_reference.clone(),
                 trust_refresh_reference,
                 drive_operations,
-                drive_version,
+                &platform_version.drive,
             )?;
 
             if let Some(document_type) = contract_info.document_type() {
@@ -89,7 +103,7 @@ impl Drive {
                     Element::Reference(SiblingReference(key_id_bytes.to_vec()), Some(2), None),
                     trust_refresh_reference,
                     drive_operations,
-                    drive_version,
+                    &platform_version.drive,
                 )?;
 
                 let sibling_ref_group_keys_path =
@@ -101,7 +115,7 @@ impl Drive {
                     Element::Reference(SiblingReference(key_id_bytes.to_vec()), Some(2), None),
                     trust_refresh_reference,
                     drive_operations,
-                    drive_version,
+                    &platform_version.drive,
                 )?;
             }
         }

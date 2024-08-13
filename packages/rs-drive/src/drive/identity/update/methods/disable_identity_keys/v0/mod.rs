@@ -171,6 +171,7 @@ impl Drive {
             self.refresh_identity_keys_references(
                 identity_id,
                 &key,
+                estimated_costs_only_with_layer_info,
                 &mut drive_operations,
                 platform_version,
             )?

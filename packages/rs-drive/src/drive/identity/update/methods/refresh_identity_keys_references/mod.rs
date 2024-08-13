@@ -24,6 +24,9 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         key: &IdentityPublicKey,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -34,11 +37,12 @@ impl Drive {
             .update
             .refresh_identity_keys_references
         {
-            0 => self.refresh_identity_keys_references_v0(
+            0 => self.refresh_identity_keys_references_operations_v0(
                 identity_id,
                 key,
+                estimated_costs_only_with_layer_info,
                 drive_operations,
-                &platform_version.drive,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "refresh_identity_keys_references_v0".to_string(),

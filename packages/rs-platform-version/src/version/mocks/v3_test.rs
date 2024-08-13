@@ -461,6 +461,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     add_to_previous_balance: 0,
                     apply_balance_change_from_fee_to_identity: 0,
                     remove_from_identity_balance: 0,
+                    refresh_identity_keys_references: 0,
                 },
                 insert: DriveIdentityInsertMethodVersions {
                     add_new_identity: 0,
