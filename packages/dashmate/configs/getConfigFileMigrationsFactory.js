@@ -768,8 +768,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.1.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
+
             options.platform.drive.tenderdash.p2p.maxConnections = 64;
             options.platform.drive.tenderdash.p2p.maxOutgoingConnections = 30;
+            options.platform.drive.tenderdash.genesis
+              .consensus_params = base.get('platform.drive.tenderdash.genesis.consensus_params');
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
           });
         return configFile;
       },
