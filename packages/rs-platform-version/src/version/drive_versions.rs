@@ -726,7 +726,7 @@ pub struct DriveIdentityUpdateMethodVersions {
     pub add_to_previous_balance: FeatureVersion,
     pub apply_balance_change_from_fee_to_identity: FeatureVersion,
     pub remove_from_identity_balance: FeatureVersion,
-    pub refresh_identity_keys_references: FeatureVersion,
+    pub refresh_identity_key_reference_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -19,8 +19,8 @@ use platform_version::version::drive_versions::DriveVersion;
 use std::collections::HashMap;
 
 impl Drive {
-    /// Updates the revision for a specific identity. This function is version controlled.
-    pub fn refresh_identity_keys_references(
+    /// Refreshes the identity key reference
+    pub fn refresh_identity_key_reference_operations(
         &self,
         identity_id: [u8; 32],
         key: &IdentityPublicKey,
@@ -35,9 +35,9 @@ impl Drive {
             .methods
             .identity
             .update
-            .refresh_identity_keys_references
+            .refresh_identity_key_reference_operations
         {
-            0 => self.refresh_identity_keys_references_operations_v0(
+            0 => self.refresh_identity_key_reference_operations_v0(
                 identity_id,
                 key,
                 estimated_costs_only_with_layer_info,
@@ -45,7 +45,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "refresh_identity_keys_references_v0".to_string(),
+                method: "refresh_identity_key_reference_v0".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

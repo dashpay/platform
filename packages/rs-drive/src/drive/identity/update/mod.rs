@@ -223,17 +223,6 @@ mod tests {
             let new_keys_to_add = IdentityPublicKey::random_keys(5, 2, Some(15), platform_version);
 
             drive
-                .create_key_tree_with_keys_operations(
-                    identity.id().to_buffer(),
-                    new_keys_to_add.clone(),
-                    true,
-                    &block_info.epoch,
-                    &mut None,
-                    None,
-                    platform_version,
-                )
-                .expect("expected to create key trees");
-            drive
                 .add_new_unique_keys_to_identity(
                     identity.id().to_buffer(),
                     new_keys_to_add.clone(),
@@ -266,7 +255,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 513000,
-                    processing_fee: 499220,
+                    processing_fee: 869380,
                     ..Default::default()
                 }
             );
@@ -331,7 +320,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 486000,
-                    processing_fee: 2429120,
+                    processing_fee: 3216860,
                     ..Default::default()
                 }
             );
@@ -385,7 +374,7 @@ mod tests {
                 )
                 .expect("should get the cost of the disabling a few keys");
 
-            assert_eq!(expected_fee_result.storage_fee, fee_result.storage_fee,);
+            assert_eq!(expected_fee_result.storage_fee, fee_result.storage_fee);
         }
     }
 

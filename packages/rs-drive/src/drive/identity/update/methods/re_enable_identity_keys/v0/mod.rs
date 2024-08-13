@@ -113,7 +113,7 @@ impl Drive {
                 drive_version,
             )?;
 
-            self.refresh_identity_keys_references(
+            self.refresh_identity_key_reference_operations(
                 identity_id,
                 &key,
                 estimated_costs_only_with_layer_info,

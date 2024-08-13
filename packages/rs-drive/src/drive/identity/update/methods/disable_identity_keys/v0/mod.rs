@@ -120,6 +120,11 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 drive_version,
             )?;
+            Self::add_estimation_costs_for_root_key_reference_tree(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+                drive_version,
+            )?;
             key_ids
                 .into_iter()
                 .map(|key_id| {
@@ -168,7 +173,7 @@ impl Drive {
                 drive_version,
             )?;
 
-            self.refresh_identity_keys_references(
+            self.refresh_identity_key_reference_operations(
                 identity_id,
                 &key,
                 estimated_costs_only_with_layer_info,
