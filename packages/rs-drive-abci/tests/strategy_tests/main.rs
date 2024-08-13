@@ -527,7 +527,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99867003200)
+        assert_eq!(balance, 99864012200)
     }
 
     #[test]
@@ -1194,7 +1194,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "ab195045304053357267bd2044ccfcf5773b8f9a2724a767559f915d49cecc1d".to_string()
+            "6dc3df8f19a8ede0ca1beab3548001a62d31f534e330015a21cf69d3e1bd2305".to_string()
         )
     }
 
@@ -1915,7 +1915,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "7d28354353e8a0e300a09f52820934d8aff376cd5b4b8c00321776396faa3df0".to_string()
+            "0cb58a19def9a26aeeef85e8bc9067ef02c0ea70322c3405d1f1936a1df417e1".to_string()
         )
     }
 
@@ -2050,7 +2050,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "afb99810fec251dfb76fcd5fe82f19eb9b9938076a12b5e7db7bef48ef5f69fc".to_string()
+            "a24095892cab8c6bac141ecd59a1970f69ef477b79174793915bf8bc2519c892".to_string()
         )
     }
 

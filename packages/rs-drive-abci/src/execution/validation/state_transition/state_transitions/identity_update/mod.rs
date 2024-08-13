@@ -109,3 +109,119 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::config::{PlatformConfig, PlatformTestConfig};
+    use crate::execution::validation::state_transition::tests::{
+        setup_identity, setup_identity_return_master_key,
+    };
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::dash_to_credits;
+    use dpp::dashcore::key::{KeyPair, Secp256k1};
+    use dpp::dashcore::{Network, PrivateKey};
+    use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::signer::Signer;
+    use dpp::identity::KeyType::ECDSA_SECP256K1;
+    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, Purpose, SecurityLevel};
+    use dpp::native_bls::NativeBlsModule;
+    use dpp::prelude::Identifier;
+    use dpp::serialization::{PlatformSerializable, Signable};
+    use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+    use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+    use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+    use dpp::state_transition::StateTransition;
+    use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
+    use platform_version::version::PlatformVersion;
+    use rand::prelude::StdRng;
+    use rand::{Rng, SeedableRng};
+    use simple_signer::signer::SimpleSigner;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_identity_update_that_disables_a_key() {
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform_version = PlatformVersion::latest();
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+        let platform_state = platform.state.load();
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![],
+            disable_public_keys: vec![1],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+
+        let data = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+        update_transition.set_signature(
+            signer
+                .sign(&key, data.as_slice())
+                .expect("expected to sign"),
+        );
+
+        let update_transition_bytes = update_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![update_transition_bytes.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let issues = platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(&platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(issues.len(), 0);
+    }
+}

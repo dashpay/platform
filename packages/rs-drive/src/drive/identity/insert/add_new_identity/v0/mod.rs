@@ -189,6 +189,7 @@ impl Drive {
                             .iter()
                             .map(|identity_public_key| identity_public_key.id())
                             .collect(),
+                        &block_info.epoch,
                         estimated_costs_only_with_layer_info,
                         transaction,
                         platform_version,

@@ -439,6 +439,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 },
                 contract_info: DriveIdentityContractInfoMethodVersions {
                     add_potential_contract_info_for_contract_bounded_key: 0,
+                    refresh_potential_contract_info_key_references: 0,
                     merge_identity_contract_nonce: 0,
                 },
                 cost_estimation: DriveIdentityCostEstimationMethodVersions {

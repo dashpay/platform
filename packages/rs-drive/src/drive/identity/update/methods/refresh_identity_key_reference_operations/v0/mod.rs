@@ -1,33 +1,31 @@
 use crate::drive::identity::{
-    identity_contract_info_group_keys_path_vec, identity_contract_info_group_path_key_purpose_vec,
-    identity_contract_info_root_path_vec, identity_key_location_within_identity_vec,
-    identity_key_path_vec, identity_query_keys_for_authentication_full_tree_path,
-    identity_query_keys_for_direct_searchable_reference_full_tree_path,
-    identity_query_keys_purpose_tree_path, identity_query_keys_purpose_tree_path_vec,
-    identity_query_keys_security_level_tree_path_vec, identity_query_keys_tree_path_vec,
+    identity_key_location_within_identity_vec, identity_query_keys_purpose_tree_path_vec,
+    identity_query_keys_security_level_tree_path_vec,
 };
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use dpp::block::epoch::Epoch;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, Purpose};
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
-use grovedb::reference_path::ReferencePathType::SiblingReference;
-use grovedb::{Element, EstimatedLayerInformation};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 impl Drive {
-    /// Updates the revision for a specific identity. This function is version controlled.
+    /// Refreshes identity key reference operations.
     pub fn refresh_identity_key_reference_operations_v0(
         &self,
         identity_id: [u8; 32],
         key: &IdentityPublicKey,
+        epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -94,59 +92,17 @@ impl Drive {
             )?;
         }
 
-        if let Some(contract_info) = key.contract_bounds() {
-            // 2) [Root ; <identity> ; Contract Info ; Contract Bound ; Keys]
-            let mut index_contract_info_path = identity_contract_info_root_path_vec(&identity_id);
-            index_contract_info_path.push(
-                contract_info
-                    .contract_bounds_type_string()
-                    .as_bytes()
-                    .to_vec(),
-            ); // todo: Check if contract bound type string should be used in path?
-            index_contract_info_path.push(vec![key.id() as u8]);
-
-            self.batch_refresh_reference(
-                index_contract_info_path,
-                key_id_bytes.to_vec(),
-                identity_key_reference.clone(),
-                trust_refresh_reference,
+        if key.contract_bounds().is_some() {
+            // if there are contract bounds we need to insert them
+            self.refresh_potential_contract_info_key_references(
+                identity_id,
+                &key,
+                epoch,
+                estimated_costs_only_with_layer_info,
+                transaction,
                 drive_operations,
-                &platform_version.drive,
+                platform_version,
             )?;
-
-            if let Some(document_type) = contract_info.document_type() {
-                let root_id = vec![]; // todo: really not sure about this vec![]. IdentityDataContractKeyApplyInfo has a root_id() method but not ContractBounds
-
-                let mut contract_id_bytes_with_document_type_name = root_id.clone();
-                contract_id_bytes_with_document_type_name.extend(document_type.as_bytes());
-                let sibling_ref_key_purpose_path =
-                    identity_contract_info_group_path_key_purpose_vec(
-                        &identity_id,
-                        &contract_id_bytes_with_document_type_name,
-                        key.purpose(),
-                    );
-
-                self.batch_refresh_reference(
-                    sibling_ref_key_purpose_path,
-                    key_id_bytes.to_vec(),
-                    Element::Reference(SiblingReference(key_id_bytes.to_vec()), Some(2), None),
-                    trust_refresh_reference,
-                    drive_operations,
-                    &platform_version.drive,
-                )?;
-
-                let sibling_ref_group_keys_path =
-                    identity_contract_info_group_keys_path_vec(&identity_id, &root_id.clone());
-
-                self.batch_refresh_reference(
-                    sibling_ref_group_keys_path,
-                    key_id_bytes.to_vec(),
-                    Element::Reference(SiblingReference(key_id_bytes.to_vec()), Some(2), None),
-                    trust_refresh_reference,
-                    drive_operations,
-                    &platform_version.drive,
-                )?;
-            }
         }
 
         Ok(())
