@@ -770,6 +770,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             options.platform.drive.tenderdash.genesis
               .consensus_params = base.get('platform.drive.tenderdash.genesis.consensus_params');
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
           });
         return configFile;
       },
