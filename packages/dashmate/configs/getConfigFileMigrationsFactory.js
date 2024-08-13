@@ -765,6 +765,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.1.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.p2p.maxConnections = 64;
+            options.platform.drive.tenderdash.p2p.maxOutgoingConnections = 30;
+          });
+        return configFile;
+      }
     };
   }
 

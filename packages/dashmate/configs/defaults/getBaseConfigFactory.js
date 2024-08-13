@@ -312,6 +312,8 @@ export default function getBaseConfigFactory(homeDir) {
               maxPacketMsgPayloadSize: 10240,
               sendRate: 5120000,
               recvRate: 5120000,
+              maxConnections: 64,
+              maxOutgoingConnections: 30,
             },
             rpc: {
               host: '127.0.0.1',
