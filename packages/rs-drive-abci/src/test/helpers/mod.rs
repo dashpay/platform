@@ -1,6 +1,8 @@
+/// Test helpers
+#[cfg(test)]
+pub mod fast_forward_to_block;
 pub mod fee_pools;
 pub mod setup;
-
 // TODO: Move tests to appropriate place
 
 #[cfg(test)]

@@ -33,8 +33,10 @@ pub mod initialization;
 /// Protocol upgrade module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod protocol_upgrade;
+
+/// System module
 #[cfg(feature = "server")]
-mod system;
+pub mod system;
 
 #[cfg(feature = "server")]
 mod asset_lock;

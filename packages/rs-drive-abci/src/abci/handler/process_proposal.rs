@@ -178,6 +178,7 @@ where
         false,
         &platform_state,
         transaction,
+        None,
     )?;
 
     if !run_result.is_valid() {
@@ -256,7 +257,11 @@ where
                     | StateTransitionExecutionResult::PaidConsensusError(..)
             )
         })
-        .map(|execution_result| execution_result.try_into_platform_versioned(platform_version))
+        .filter_map(|execution_result| {
+            execution_result
+                .try_into_platform_versioned(platform_version)
+                .transpose()
+        })
         .collect::<Result<_, _>>()?;
 
     // Get consensus param updates if there are any for this height

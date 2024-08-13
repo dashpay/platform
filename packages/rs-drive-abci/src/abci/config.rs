@@ -1,5 +1,6 @@
 //! Configuration of ABCI Application server
 
+use dpp::prelude::TimestampMillis;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -34,6 +35,10 @@ pub struct AbciConfig {
     #[serde(default)]
     pub log: crate::logging::LogConfigs,
 
+    /// Maximum time limit (in ms) to process state transitions in block proposals
+    #[serde(default = "AbciConfig::default_tx_processing_time_limit")]
+    pub tx_processing_time_limit: TimestampMillis,
+
     /// Directory where files with consensus params updates for a given height, such as `H.json`, are
     /// stored, where `H` is the height of the block for which the consensus params are sent, for example `123456`.
     ///
@@ -52,6 +57,10 @@ impl AbciConfig {
     pub(crate) fn default_genesis_core_height() -> u32 {
         1
     }
+
+    pub(crate) fn default_tx_processing_time_limit() -> TimestampMillis {
+        8000
+    }
 }
 
 impl Default for AbciConfig {
@@ -62,6 +71,7 @@ impl Default for AbciConfig {
             genesis_core_height: AbciConfig::default_genesis_core_height(),
             chain_id: "chain_id".to_string(),
             log: Default::default(),
+            tx_processing_time_limit: AbciConfig::default_tx_processing_time_limit(),
             consensus_params_path: None,
         }
     }

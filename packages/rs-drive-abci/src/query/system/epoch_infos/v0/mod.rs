@@ -102,10 +102,11 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
 
     #[test]
     fn test_query_empty_epoch_infos() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetEpochsInfoRequestV0 {
             start_epoch: None, // 0
@@ -129,7 +130,7 @@ mod tests {
 
     #[test]
     fn test_query_empty_epoch_infos_descending() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetEpochsInfoRequestV0 {
             start_epoch: None, // 0

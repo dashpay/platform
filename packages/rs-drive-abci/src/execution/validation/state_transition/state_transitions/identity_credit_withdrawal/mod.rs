@@ -119,10 +119,9 @@ impl StateTransitionStateValidationV0 for IdentityCreditWithdrawalTransition {
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
-    use crate::execution::validation::state_transition::tests::{
-        fast_forward_to_block, setup_identity_with_withdrawal_key_and_system_credits,
-    };
+    use crate::execution::validation::state_transition::tests::setup_identity_with_withdrawal_key_and_system_credits;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
@@ -156,7 +155,7 @@ mod tests {
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
-        fast_forward_to_block(&platform, 1_200_000_000, 900, 1); //next epoch
+        fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
 
         let (identity, signer, _, withdrawal_key) =
             setup_identity_with_withdrawal_key_and_system_credits(
@@ -198,6 +197,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 

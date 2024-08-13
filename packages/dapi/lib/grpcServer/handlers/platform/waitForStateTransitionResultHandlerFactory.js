@@ -34,7 +34,7 @@ function waitForStateTransitionResultHandlerFactory(
   blockchainListener,
   dpp,
   createGrpcErrorFromDriveResponse,
-  stateTransitionWaitTimeout = 80000,
+  stateTransitionWaitTimeout,
 ) {
   /**
    * @param {Object} txDeliverResult

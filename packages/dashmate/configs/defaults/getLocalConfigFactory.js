@@ -65,6 +65,7 @@ export default function getLocalConfigFactory(getBaseConfig) {
             },
           },
           abci: {
+            epochTime: 1200,
             validatorSet: {
               quorum: {
                 llmqType: 106,

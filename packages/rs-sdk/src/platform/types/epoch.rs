@@ -3,27 +3,14 @@ use async_trait::async_trait;
 use dapi_grpc::platform::v0::{GetEpochsInfoRequest, Proof, ResponseMetadata};
 use dpp::block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo};
 
+use crate::platform::fetch_current_no_parameters::FetchCurrent;
 use crate::{
     platform::{Fetch, LimitQuery, Query},
     Error, Sdk,
 };
 
 #[async_trait]
-
-/// Helper trait for managing Epoch information
-pub trait ExtendedEpochInfoEx: Sized {
-    /// Fetch current (the latest) epoch from Platform.
-    async fn fetch_current(sdk: &Sdk) -> Result<Self, Error>;
-    /// Fetch current (the latest) epoch from Platform with metadata.
-    async fn fetch_current_with_metadata(sdk: &Sdk) -> Result<(Self, ResponseMetadata), Error>;
-    /// Fetch current (the latest) epoch from Platform with metadata and proof.
-    async fn fetch_current_with_metadata_and_proof(
-        sdk: &Sdk,
-    ) -> Result<(Self, ResponseMetadata, Proof), Error>;
-}
-
-#[async_trait]
-impl ExtendedEpochInfoEx for ExtendedEpochInfo {
+impl FetchCurrent for ExtendedEpochInfo {
     async fn fetch_current(sdk: &Sdk) -> Result<Self, Error> {
         let (epoch, _) = Self::fetch_current_with_metadata(sdk).await?;
         Ok(epoch)

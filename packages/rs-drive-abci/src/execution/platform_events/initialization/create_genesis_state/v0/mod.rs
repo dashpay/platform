@@ -15,6 +15,7 @@ use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::SystemDataContract;
 use drive::util::batch::{DataContractOperationType, DocumentOperationType, DriveOperation};
 
+use dpp::prelude::CoreBlockHeight;
 use dpp::system_data_contracts::dpns_contract::{
     DPNS_DASH_TLD_DOCUMENT_ID, DPNS_DASH_TLD_PREORDER_SALT,
 };
@@ -30,14 +31,17 @@ impl<C> Platform<C> {
     #[inline(always)]
     pub(super) fn create_genesis_state_v0(
         &self,
+        genesis_core_height: CoreBlockHeight,
         genesis_time: TimestampMillis,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         //versioned call
         self.drive
-            .create_initial_state_structure(transaction, platform_version)
-            .map_err(Error::Drive)?;
+            .create_initial_state_structure(transaction, platform_version)?;
+
+        self.drive
+            .store_genesis_core_height(genesis_core_height, transaction, platform_version)?;
 
         let mut operations = vec![];
 
@@ -201,7 +205,7 @@ mod tests {
 
             assert_eq!(
                 hex::encode(root_hash),
-                "adfd53ece823697cec9b1afc71a0fac7fab41bf87ef98903f12a70c7efc896fc"
+                "8163884a9eef0d3b306bd6f426806e7ff41d7b09f030c4ff2b79b3b4c646dfca"
             )
         }
     }

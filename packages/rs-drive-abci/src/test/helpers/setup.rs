@@ -42,7 +42,7 @@ use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
 use dpp::block::block_info::BlockInfo;
 use dpp::document::transfer::Transferable;
 use dpp::nft::TradeMode;
-use dpp::prelude::DataContract;
+use dpp::prelude::{CoreBlockHeight, DataContract, TimestampMillis};
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
 use drive::util::storage_flags::StorageFlags;
@@ -193,7 +193,25 @@ impl TempPlatform<MockCoreRPCLike> {
     /// Sets Platform to genesis state.
     pub fn set_genesis_state(self) -> Self {
         self.platform
-            .create_genesis_state(Default::default(), None, PlatformVersion::latest())
+            .create_genesis_state(1, Default::default(), None, PlatformVersion::latest())
+            .expect("should create root tree successfully");
+
+        self
+    }
+
+    /// Sets Platform to genesis state with information that came at activation.
+    pub fn set_genesis_state_with_activation_info(
+        self,
+        genesis_time: TimestampMillis,
+        start_core_block_height: CoreBlockHeight,
+    ) -> Self {
+        self.platform
+            .create_genesis_state(
+                start_core_block_height,
+                genesis_time,
+                None,
+                PlatformVersion::latest(),
+            )
             .expect("should create root tree successfully");
 
         self
