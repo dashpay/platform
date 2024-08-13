@@ -3,9 +3,9 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **platform:** total credits on platform query and fix for reward distribution (#2032)
-* **dashmate:** update consensus params (#2042)
-* **platform:** store/fetch genesis core height in misc tree (#2038)
+* **platform:** masternode reward payouts are changed so previously created state won't be compatible  (#2032)
+* **dashmate:** Previously created networks won't be supported since genesis configuration is changed (#2042)
+* **platform:** added genesis core height in misc tree so previously created state won't be compatible (#2038)
 
 ### Features
 
