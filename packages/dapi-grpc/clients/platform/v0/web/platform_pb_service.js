@@ -235,6 +235,15 @@ Platform.getPrefundedSpecializedBalance = {
   responseType: platform_pb.GetPrefundedSpecializedBalanceResponse
 };
 
+Platform.getTotalCreditsInPlatform = {
+  methodName: "getTotalCreditsInPlatform",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetTotalCreditsInPlatformRequest,
+  responseType: platform_pb.GetTotalCreditsInPlatformResponse
+};
+
 Platform.getPathElements = {
   methodName: "getPathElements",
   service: Platform,
@@ -1000,6 +1009,37 @@ PlatformClient.prototype.getPrefundedSpecializedBalance = function getPrefundedS
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getPrefundedSpecializedBalance, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getTotalCreditsInPlatform = function getTotalCreditsInPlatform(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getTotalCreditsInPlatform, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

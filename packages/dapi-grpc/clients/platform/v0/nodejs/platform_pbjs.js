@@ -912,6 +912,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getTotalCreditsInPlatform}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getTotalCreditsInPlatformCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse} [response] GetTotalCreditsInPlatformResponse
+                         */
+
+                        /**
+                         * Calls getTotalCreditsInPlatform.
+                         * @function getTotalCreditsInPlatform
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformRequest} request GetTotalCreditsInPlatformRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getTotalCreditsInPlatformCallback} callback Node-style callback called with the error, if any, and GetTotalCreditsInPlatformResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getTotalCreditsInPlatform = function getTotalCreditsInPlatform(request, callback) {
+                            return this.rpcCall(getTotalCreditsInPlatform, $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest, $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse, request, callback);
+                        }, "name", { value: "getTotalCreditsInPlatform" });
+
+                        /**
+                         * Calls getTotalCreditsInPlatform.
+                         * @function getTotalCreditsInPlatform
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformRequest} request GetTotalCreditsInPlatformRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getPathElements}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getPathElementsCallback
@@ -35965,6 +35998,892 @@ $root.org = (function() {
                         })();
 
                         return GetPrefundedSpecializedBalanceResponse;
+                    })();
+
+                    v0.GetTotalCreditsInPlatformRequest = (function() {
+
+                        /**
+                         * Properties of a GetTotalCreditsInPlatformRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetTotalCreditsInPlatformRequest
+                         * @property {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.IGetTotalCreditsInPlatformRequestV0|null} [v0] GetTotalCreditsInPlatformRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetTotalCreditsInPlatformRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetTotalCreditsInPlatformRequest.
+                         * @implements IGetTotalCreditsInPlatformRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformRequest=} [properties] Properties to set
+                         */
+                        function GetTotalCreditsInPlatformRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetTotalCreditsInPlatformRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.IGetTotalCreditsInPlatformRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @instance
+                         */
+                        GetTotalCreditsInPlatformRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetTotalCreditsInPlatformRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetTotalCreditsInPlatformRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetTotalCreditsInPlatformRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest} GetTotalCreditsInPlatformRequest instance
+                         */
+                        GetTotalCreditsInPlatformRequest.create = function create(properties) {
+                            return new GetTotalCreditsInPlatformRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetTotalCreditsInPlatformRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformRequest} message GetTotalCreditsInPlatformRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetTotalCreditsInPlatformRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetTotalCreditsInPlatformRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformRequest} message GetTotalCreditsInPlatformRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetTotalCreditsInPlatformRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetTotalCreditsInPlatformRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest} GetTotalCreditsInPlatformRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetTotalCreditsInPlatformRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetTotalCreditsInPlatformRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest} GetTotalCreditsInPlatformRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetTotalCreditsInPlatformRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetTotalCreditsInPlatformRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetTotalCreditsInPlatformRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetTotalCreditsInPlatformRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest} GetTotalCreditsInPlatformRequest
+                         */
+                        GetTotalCreditsInPlatformRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetTotalCreditsInPlatformRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest} message GetTotalCreditsInPlatformRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetTotalCreditsInPlatformRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetTotalCreditsInPlatformRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetTotalCreditsInPlatformRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetTotalCreditsInPlatformRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                             * @interface IGetTotalCreditsInPlatformRequestV0
+                             * @property {boolean|null} [prove] GetTotalCreditsInPlatformRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetTotalCreditsInPlatformRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                             * @classdesc Represents a GetTotalCreditsInPlatformRequestV0.
+                             * @implements IGetTotalCreditsInPlatformRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.IGetTotalCreditsInPlatformRequestV0=} [properties] Properties to set
+                             */
+                            function GetTotalCreditsInPlatformRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetTotalCreditsInPlatformRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @instance
+                             */
+                            GetTotalCreditsInPlatformRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetTotalCreditsInPlatformRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.IGetTotalCreditsInPlatformRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0} GetTotalCreditsInPlatformRequestV0 instance
+                             */
+                            GetTotalCreditsInPlatformRequestV0.create = function create(properties) {
+                                return new GetTotalCreditsInPlatformRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetTotalCreditsInPlatformRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.IGetTotalCreditsInPlatformRequestV0} message GetTotalCreditsInPlatformRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetTotalCreditsInPlatformRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetTotalCreditsInPlatformRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.IGetTotalCreditsInPlatformRequestV0} message GetTotalCreditsInPlatformRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetTotalCreditsInPlatformRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetTotalCreditsInPlatformRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0} GetTotalCreditsInPlatformRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetTotalCreditsInPlatformRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetTotalCreditsInPlatformRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0} GetTotalCreditsInPlatformRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetTotalCreditsInPlatformRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetTotalCreditsInPlatformRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetTotalCreditsInPlatformRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetTotalCreditsInPlatformRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0} GetTotalCreditsInPlatformRequestV0
+                             */
+                            GetTotalCreditsInPlatformRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0();
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetTotalCreditsInPlatformRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0} message GetTotalCreditsInPlatformRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetTotalCreditsInPlatformRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.prove = false;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetTotalCreditsInPlatformRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetTotalCreditsInPlatformRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetTotalCreditsInPlatformRequestV0;
+                        })();
+
+                        return GetTotalCreditsInPlatformRequest;
+                    })();
+
+                    v0.GetTotalCreditsInPlatformResponse = (function() {
+
+                        /**
+                         * Properties of a GetTotalCreditsInPlatformResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetTotalCreditsInPlatformResponse
+                         * @property {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.IGetTotalCreditsInPlatformResponseV0|null} [v0] GetTotalCreditsInPlatformResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetTotalCreditsInPlatformResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetTotalCreditsInPlatformResponse.
+                         * @implements IGetTotalCreditsInPlatformResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformResponse=} [properties] Properties to set
+                         */
+                        function GetTotalCreditsInPlatformResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetTotalCreditsInPlatformResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.IGetTotalCreditsInPlatformResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @instance
+                         */
+                        GetTotalCreditsInPlatformResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetTotalCreditsInPlatformResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetTotalCreditsInPlatformResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetTotalCreditsInPlatformResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse} GetTotalCreditsInPlatformResponse instance
+                         */
+                        GetTotalCreditsInPlatformResponse.create = function create(properties) {
+                            return new GetTotalCreditsInPlatformResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetTotalCreditsInPlatformResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformResponse} message GetTotalCreditsInPlatformResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetTotalCreditsInPlatformResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetTotalCreditsInPlatformResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformResponse} message GetTotalCreditsInPlatformResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetTotalCreditsInPlatformResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetTotalCreditsInPlatformResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse} GetTotalCreditsInPlatformResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetTotalCreditsInPlatformResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetTotalCreditsInPlatformResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse} GetTotalCreditsInPlatformResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetTotalCreditsInPlatformResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetTotalCreditsInPlatformResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetTotalCreditsInPlatformResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetTotalCreditsInPlatformResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse} GetTotalCreditsInPlatformResponse
+                         */
+                        GetTotalCreditsInPlatformResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetTotalCreditsInPlatformResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse} message GetTotalCreditsInPlatformResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetTotalCreditsInPlatformResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetTotalCreditsInPlatformResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetTotalCreditsInPlatformResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetTotalCreditsInPlatformResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                             * @interface IGetTotalCreditsInPlatformResponseV0
+                             * @property {number|Long|null} [credits] GetTotalCreditsInPlatformResponseV0 credits
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetTotalCreditsInPlatformResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetTotalCreditsInPlatformResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetTotalCreditsInPlatformResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                             * @classdesc Represents a GetTotalCreditsInPlatformResponseV0.
+                             * @implements IGetTotalCreditsInPlatformResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.IGetTotalCreditsInPlatformResponseV0=} [properties] Properties to set
+                             */
+                            function GetTotalCreditsInPlatformResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetTotalCreditsInPlatformResponseV0 credits.
+                             * @member {number|Long} credits
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @instance
+                             */
+                            GetTotalCreditsInPlatformResponseV0.prototype.credits = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetTotalCreditsInPlatformResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @instance
+                             */
+                            GetTotalCreditsInPlatformResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetTotalCreditsInPlatformResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @instance
+                             */
+                            GetTotalCreditsInPlatformResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetTotalCreditsInPlatformResponseV0 result.
+                             * @member {"credits"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetTotalCreditsInPlatformResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["credits", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetTotalCreditsInPlatformResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.IGetTotalCreditsInPlatformResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0} GetTotalCreditsInPlatformResponseV0 instance
+                             */
+                            GetTotalCreditsInPlatformResponseV0.create = function create(properties) {
+                                return new GetTotalCreditsInPlatformResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetTotalCreditsInPlatformResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.IGetTotalCreditsInPlatformResponseV0} message GetTotalCreditsInPlatformResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetTotalCreditsInPlatformResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.credits != null && Object.hasOwnProperty.call(message, "credits"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.credits);
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetTotalCreditsInPlatformResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.IGetTotalCreditsInPlatformResponseV0} message GetTotalCreditsInPlatformResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetTotalCreditsInPlatformResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetTotalCreditsInPlatformResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0} GetTotalCreditsInPlatformResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetTotalCreditsInPlatformResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.credits = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetTotalCreditsInPlatformResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0} GetTotalCreditsInPlatformResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetTotalCreditsInPlatformResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetTotalCreditsInPlatformResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetTotalCreditsInPlatformResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.credits != null && message.hasOwnProperty("credits")) {
+                                    properties.result = 1;
+                                    if (!$util.isInteger(message.credits) && !(message.credits && $util.isInteger(message.credits.low) && $util.isInteger(message.credits.high)))
+                                        return "credits: integer|Long expected";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetTotalCreditsInPlatformResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0} GetTotalCreditsInPlatformResponseV0
+                             */
+                            GetTotalCreditsInPlatformResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0();
+                                if (object.credits != null)
+                                    if ($util.Long)
+                                        (message.credits = $util.Long.fromValue(object.credits)).unsigned = true;
+                                    else if (typeof object.credits === "string")
+                                        message.credits = parseInt(object.credits, 10);
+                                    else if (typeof object.credits === "number")
+                                        message.credits = object.credits;
+                                    else if (typeof object.credits === "object")
+                                        message.credits = new $util.LongBits(object.credits.low >>> 0, object.credits.high >>> 0).toNumber(true);
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetTotalCreditsInPlatformResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0} message GetTotalCreditsInPlatformResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetTotalCreditsInPlatformResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.credits != null && message.hasOwnProperty("credits")) {
+                                    if (typeof message.credits === "number")
+                                        object.credits = options.longs === String ? String(message.credits) : message.credits;
+                                    else
+                                        object.credits = options.longs === String ? $util.Long.prototype.toString.call(message.credits) : options.longs === Number ? new $util.LongBits(message.credits.low >>> 0, message.credits.high >>> 0).toNumber(true) : message.credits;
+                                    if (options.oneofs)
+                                        object.result = "credits";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetTotalCreditsInPlatformResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetTotalCreditsInPlatformResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetTotalCreditsInPlatformResponseV0;
+                        })();
+
+                        return GetTotalCreditsInPlatformResponse;
                     })();
 
                     v0.GetPathElementsRequest = (function() {

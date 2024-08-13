@@ -14,6 +14,7 @@ pub struct DPPVersion {
     pub identity_versions: IdentityVersions,
     pub voting_versions: VotingVersions,
     pub asset_lock_versions: AssetLockVersions,
+    pub methods: DPPMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -261,4 +262,9 @@ pub struct DocumentMethodVersions {
     pub hash: FeatureVersion,
     pub get_raw_for_contract: FeatureVersion,
     pub get_raw_for_document_type: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DPPMethodVersions {
+    pub epoch_core_reward_credits_for_distribution: FeatureVersion,
 }

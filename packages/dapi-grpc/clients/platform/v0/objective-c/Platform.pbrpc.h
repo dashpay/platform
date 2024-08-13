@@ -62,6 +62,8 @@
 @class GetProtocolVersionUpgradeStateResponse;
 @class GetProtocolVersionUpgradeVoteStatusRequest;
 @class GetProtocolVersionUpgradeVoteStatusResponse;
+@class GetTotalCreditsInPlatformRequest;
+@class GetTotalCreditsInPlatformResponse;
 @class GetVotePollsByEndDateRequest;
 @class GetVotePollsByEndDateResponse;
 @class WaitForStateTransitionResultRequest;
@@ -210,6 +212,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse)
 
 - (GRPCUnaryProtoCall *)getPrefundedSpecializedBalanceWithMessage:(GetPrefundedSpecializedBalanceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse)
+
+- (GRPCUnaryProtoCall *)getTotalCreditsInPlatformWithMessage:(GetTotalCreditsInPlatformRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
 
@@ -446,6 +452,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getPrefundedSpecializedBalanceWithRequest:(GetPrefundedSpecializedBalanceRequest *)request handler:(void(^)(GetPrefundedSpecializedBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetPrefundedSpecializedBalanceWithRequest:(GetPrefundedSpecializedBalanceRequest *)request handler:(void(^)(GetPrefundedSpecializedBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse)
+
+- (void)getTotalCreditsInPlatformWithRequest:(GetTotalCreditsInPlatformRequest *)request handler:(void(^)(GetTotalCreditsInPlatformResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetTotalCreditsInPlatformWithRequest:(GetTotalCreditsInPlatformRequest *)request handler:(void(^)(GetTotalCreditsInPlatformResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
