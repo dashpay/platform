@@ -113,9 +113,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
-    use crate::execution::validation::state_transition::tests::{
-        setup_identity_return_master_key,
-    };
+    use crate::execution::validation::state_transition::tests::setup_identity_return_master_key;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
@@ -204,7 +202,7 @@ mod tests {
         let issues = platform
             .drive
             .grove
-            .visualize_verify_grovedb(&platform_version.drive.grove_version)
+            .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(issues.len(), 0);
