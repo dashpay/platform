@@ -333,7 +333,7 @@ fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
     let grovedb = drive::grovedb::GroveDb::open(db_path).expect("open grovedb");
     //todo: get platform version instead of taking latest
     let result = grovedb
-        .visualize_verify_grovedb(&PlatformVersion::latest().drive.grove_version)
+        .visualize_verify_grovedb(true, &PlatformVersion::latest().drive.grove_version)
         .map_err(|e| e.to_string());
 
     match result {
