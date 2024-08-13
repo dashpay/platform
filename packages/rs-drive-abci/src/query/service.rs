@@ -28,6 +28,7 @@ use dapi_grpc::platform::v0::{
     GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse,
     GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
@@ -529,6 +530,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_prefunded_specialized_balance,
             "get_prefunded_specialized_balance",
+        )
+        .await
+    }
+
+    async fn get_total_credits_in_platform(
+        &self,
+        request: Request<GetTotalCreditsInPlatformRequest>,
+    ) -> Result<Response<GetTotalCreditsInPlatformResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_total_credits_in_platform,
+            "get_total_credits_in_platform",
         )
         .await
     }

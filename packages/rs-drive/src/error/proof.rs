@@ -46,6 +46,10 @@ pub enum ProofError {
     #[error("the contract could not be retrieved during verification: {0}")]
     ErrorRetrievingContract(String),
 
+    /// We are missing a context requirement
+    #[error("missing context requirement error: {0}")]
+    MissingContextRequirement(String),
+
     /// Incomplete proof error
     #[error("incomplete proof error: {0}")]
     IncompleteProof(&'static str),
@@ -80,5 +84,6 @@ fn get_error_code(error: &ProofError) -> u32 {
         ProofError::UnknownContract(_) => 6009,
         ProofError::ErrorRetrievingContract(_) => 6010,
         ProofError::InvalidMetadata(_) => 6011,
+        ProofError::MissingContextRequirement(_) => 6012,
     }
 }

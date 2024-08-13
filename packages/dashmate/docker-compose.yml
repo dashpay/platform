@@ -80,6 +80,7 @@ services:
       - TOKIO_CONSOLE_RETENTION_SECS=${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_RETENTION:?err}
       - GROVEDB_VISUALIZER_ENABLED=${PLATFORM_DRIVE_ABCI_GROVEDB_VISUALIZER_ENABLED:?err}
       - GROVEDB_VISUALIZER_ADDRESS=0.0.0.0:${PLATFORM_DRIVE_ABCI_GROVEDB_VISUALIZER_PORT:?err}
+      - NETWORK=${NETWORK:?err}
     stop_grace_period: 30s
     expose:
       - 26658
@@ -140,6 +141,7 @@ services:
       - NODE_ENV=${ENVIRONMENT:?err}
       - DRIVE_RPC_HOST=drive_abci
       - DRIVE_RPC_PORT=26670
+      - WAIT_FOR_ST_RESULT_TIMEOUT=${PLATFORM_DAPI_API_WAIT_FOR_ST_RESULT_TIMEOUT:?err}
     command: yarn run api
     stop_grace_period: 10s
     expose:

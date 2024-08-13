@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "1.0.0-rc.2"
+version = "1.0.2"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -28,7 +28,7 @@ rand = "0.8.5"
 tempfile = "3.3.0"
 hex = "0.4.3"
 indexmap = { version = "2.2.6", features = ["serde"] }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.2" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.4" }
 dpp = { path = "../rs-dpp", features = ["abci"] }
 simple-signer = { path = "../simple-signer" }
 rust_decimal = "1.2.5"
@@ -50,7 +50,7 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
   "tracing-log",
 ], optional = false }
 atty = { version = "0.2.14", optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.1.0-dev.1", tag = "v1.1.0-dev.1", features = [
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.1.0", tag = "v1.1.0", features = [
   "grpc",
 ] }
 lazy_static = "1.4.0"

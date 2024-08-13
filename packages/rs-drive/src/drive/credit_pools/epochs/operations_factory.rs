@@ -45,6 +45,7 @@ pub trait EpochOperations {
         start_block_height: u64, // TODO Many method in drive needs block time and height. Maybe we need DTO for drive as well which will contain block information
         start_block_core_height: u32,
         start_time_ms: u64,
+        protocol_version: ProtocolVersion,
         batch: &mut GroveDbOpBatch,
     );
     /// Adds to the groveDB op batch operations signifying that the epoch distribution fees were paid out.
@@ -144,6 +145,7 @@ impl EpochOperations for Epoch {
         start_block_height: u64, // TODO Many method in drive needs block time and height. Maybe we need DTO for drive as well which will contain block information
         start_block_core_height: u32,
         start_time_ms: u64,
+        protocol_version: ProtocolVersion,
         batch: &mut GroveDbOpBatch,
     ) {
         batch.push(self.update_start_block_height_operation(start_block_height));
@@ -155,6 +157,8 @@ impl EpochOperations for Epoch {
         batch.push(self.update_fee_multiplier_operation(multiplier_permille));
 
         batch.push(self.update_start_time_operation(start_time_ms));
+
+        batch.push(self.update_protocol_version_operation(protocol_version));
     }
 
     /// Adds to the groveDB op batch operations signifying that the epoch distribution fees were paid out.
@@ -480,6 +484,7 @@ mod tests {
                 start_block_height,
                 start_block_core_height,
                 start_time,
+                platform_version.protocol_version,
                 &mut batch,
             );
 
@@ -541,7 +546,14 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            epoch.add_init_current_operations(1000, 2, 5, 3, &mut batch);
+            epoch.add_init_current_operations(
+                1000,
+                2,
+                5,
+                3,
+                platform_version.protocol_version,
+                &mut batch,
+            );
 
             // Apply init current
             drive

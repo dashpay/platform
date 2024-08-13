@@ -292,9 +292,10 @@ mod tests {
         use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
         use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
         use drive::util::test_helpers::setup_contract;
-        use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_identity_name_contest, create_dpns_name_contest_give_key_info, fast_forward_to_block, perform_votes_multi};
+        use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_identity_name_contest, create_dpns_name_contest_give_key_info, perform_votes_multi};
         use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
         use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::PaidConsensusError;
+        use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
 
         #[test]
         fn test_document_creation() {
@@ -363,6 +364,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -462,6 +465,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
             assert_eq!(
@@ -706,6 +711,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -731,6 +738,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -976,7 +985,7 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 500_000_000, 900, 0); //less than a week
+            fast_forward_to_block(&platform, 500_000_000, 900, 42, 0, false); //less than a week
 
             let platform_state = platform.state.load();
 
@@ -989,7 +998,7 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 1_000_000_000, 900, 0); //more than a week, less than 2 weeks
+            fast_forward_to_block(&platform, 1_000_000_000, 900, 42, 0, false); //more than a week, less than 2 weeks
 
             let platform_state = platform.state.load();
 
@@ -1072,6 +1081,8 @@ mod tests {
                     ),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -1122,7 +1133,7 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 200_000_000, 900, 0); //less than a week
+            fast_forward_to_block(&platform, 200_000_000, 900, 42, 0, false); //less than a week
 
             let platform_state = platform.state.load();
 
@@ -1135,7 +1146,7 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 2_000_000_000, 900, 0); //more than two weeks
+            fast_forward_to_block(&platform, 2_000_000_000, 900, 42, 0, false); //more than two weeks
 
             let platform_state = platform.state.load();
 
@@ -1270,6 +1281,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -1330,6 +1343,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -1430,6 +1445,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -1471,6 +1488,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -1570,6 +1589,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -1611,6 +1632,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -1696,6 +1719,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -1790,6 +1815,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -1894,6 +1921,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -1992,6 +2021,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -2033,6 +2064,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -2152,6 +2185,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -2194,6 +2229,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -2313,6 +2350,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -2355,6 +2394,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -2456,6 +2497,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -2498,6 +2541,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -2587,6 +2632,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -2699,6 +2746,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -2744,6 +2793,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -2833,6 +2884,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -2925,6 +2978,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -3037,6 +3092,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -3129,6 +3186,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -3279,6 +3338,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -3382,6 +3443,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -3474,6 +3537,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -3541,6 +3606,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -3629,6 +3696,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -3698,6 +3767,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -3785,6 +3856,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -3877,6 +3950,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -4001,6 +4076,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -4119,6 +4196,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -4233,6 +4312,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -4375,6 +4456,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -4420,6 +4503,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -4468,6 +4553,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -4563,6 +4650,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -4608,6 +4697,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -4656,6 +4747,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -4756,6 +4849,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -4801,6 +4896,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -4849,6 +4946,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -4959,6 +5058,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -5053,6 +5154,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -5145,6 +5248,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -5237,6 +5342,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -5327,6 +5434,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -5374,6 +5483,8 @@ mod tests {
                     &BlockInfo::default_with_time(50000000),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -5757,6 +5868,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -5783,6 +5896,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -6201,6 +6316,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -6227,6 +6344,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 

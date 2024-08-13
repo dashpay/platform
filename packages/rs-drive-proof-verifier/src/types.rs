@@ -27,6 +27,7 @@ use dpp::{
 use drive::grovedb::Element;
 use std::collections::{BTreeMap, BTreeSet};
 
+use drive::grovedb::query_result_type::Path;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
@@ -156,6 +157,43 @@ pub type Elements = RetrievedObjects<Vec<u8>, Element>;
 
 /// Identity balance.
 pub type IdentityBalance = u64;
+
+/// Keys in a Path
+#[derive(Debug, Clone)]
+pub struct KeysInPath {
+    /// The path of the keys
+    pub path: Path,
+    /// The keys
+    pub keys: Vec<Vec<u8>>,
+}
+
+/// The total credits on Platform.
+#[derive(Debug, derive_more::From, Clone, Copy)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct TotalCreditsOnPlatform(pub Credits);
+
+/// A query with no parameters
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct NoParamQuery;
+
+/// The item of an element fetch request
+#[derive(Debug, derive_more::From, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct ElementFetchRequestItem(pub Element);
+
 /// Identity balance and revision of the identity.
 pub type IdentityBalanceAndRevision = (u64, Revision);
 

@@ -1,6 +1,6 @@
 [package]
 name = "drive-proof-verifier"
-version = "1.0.0-rc.2"
+version = "1.0.2"
 edition = "2021"
 rust-version = "1.76"
 
@@ -32,7 +32,7 @@ dpp = { path = "../rs-dpp", features = [
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive", optional = true }
 platform-serialization = { path = "../rs-platform-serialization", optional = true }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.1.0-dev.1", tag = "v1.1.0-dev.1", features = [
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.1.0", tag = "v1.1.0", features = [
   "crypto",
 ], default-features = false }
 tracing = { version = "0.1.37" }

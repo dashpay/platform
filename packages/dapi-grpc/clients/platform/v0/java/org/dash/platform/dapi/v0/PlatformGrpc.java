@@ -790,6 +790,37 @@ public final class PlatformGrpc {
     return getGetPrefundedSpecializedBalanceMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformResponse> getGetTotalCreditsInPlatformMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getTotalCreditsInPlatform",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformResponse> getGetTotalCreditsInPlatformMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformResponse> getGetTotalCreditsInPlatformMethod;
+    if ((getGetTotalCreditsInPlatformMethod = PlatformGrpc.getGetTotalCreditsInPlatformMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetTotalCreditsInPlatformMethod = PlatformGrpc.getGetTotalCreditsInPlatformMethod) == null) {
+          PlatformGrpc.getGetTotalCreditsInPlatformMethod = getGetTotalCreditsInPlatformMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getTotalCreditsInPlatform"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getTotalCreditsInPlatform"))
+              .build();
+        }
+      }
+    }
+    return getGetTotalCreditsInPlatformMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> getGetPathElementsMethod;
 
@@ -1061,6 +1092,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getTotalCreditsInPlatform(org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetTotalCreditsInPlatformMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void getPathElements(org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetPathElementsMethod(), responseObserver);
@@ -1243,6 +1281,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse>(
                   this, METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE)))
+          .addMethod(
+            getGetTotalCreditsInPlatformMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformResponse>(
+                  this, METHODID_GET_TOTAL_CREDITS_IN_PLATFORM)))
           .addMethod(
             getGetPathElementsMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -1485,6 +1530,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getTotalCreditsInPlatform(org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetTotalCreditsInPlatformMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
     public void getPathElements(org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
@@ -1694,6 +1747,13 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse getPrefundedSpecializedBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetPrefundedSpecializedBalanceMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformResponse getTotalCreditsInPlatform(org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetTotalCreditsInPlatformMethod(), getCallOptions(), request);
     }
 
     /**
@@ -1935,6 +1995,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformResponse> getTotalCreditsInPlatform(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetTotalCreditsInPlatformMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse> getPathElements(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -1967,7 +2035,8 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 22;
   private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 23;
   private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 24;
-  private static final int METHODID_GET_PATH_ELEMENTS = 25;
+  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 25;
+  private static final int METHODID_GET_PATH_ELEMENTS = 26;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -2086,6 +2155,10 @@ public final class PlatformGrpc {
           serviceImpl.getPrefundedSpecializedBalance((org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPrefundedSpecializedBalanceResponse>) responseObserver);
           break;
+        case METHODID_GET_TOTAL_CREDITS_IN_PLATFORM:
+          serviceImpl.getTotalCreditsInPlatform((org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetTotalCreditsInPlatformResponse>) responseObserver);
+          break;
         case METHODID_GET_PATH_ELEMENTS:
           serviceImpl.getPathElements((org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse>) responseObserver);
@@ -2176,6 +2249,7 @@ public final class PlatformGrpc {
               .addMethod(getGetContestedResourceIdentityVotesMethod())
               .addMethod(getGetVotePollsByEndDateMethod())
               .addMethod(getGetPrefundedSpecializedBalanceMethod())
+              .addMethod(getGetTotalCreditsInPlatformMethod())
               .addMethod(getGetPathElementsMethod())
               .build();
         }

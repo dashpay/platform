@@ -227,6 +227,7 @@ mod tests {
                 1,
                 1,
                 1,
+                platform_version.protocol_version,
                 &mut batch,
             );
 
@@ -250,6 +251,7 @@ mod tests {
                 proposers_count as u64 + 1,
                 1,
                 10,
+                platform_version.protocol_version,
                 &mut batch,
             );
 

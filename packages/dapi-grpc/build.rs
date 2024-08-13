@@ -47,7 +47,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 25] = [
+    const VERSIONED_REQUESTS: [&str; 26] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -73,10 +73,11 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContestedResourceVotersForIdentityRequest",
         "GetContestedResourceIdentityVotesRequest",
         "GetVotePollsByEndDateRequest",
+        "GetTotalCreditsInPlatformRequest",
     ];
 
     //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
-    const VERSIONED_RESPONSES: [&str; 26] = [
+    const VERSIONED_RESPONSES: [&str; 27] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -103,6 +104,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetContestedResourceVotersForIdentityResponse",
         "GetContestedResourceIdentityVotesResponse",
         "GetVotePollsByEndDateResponse",
+        "GetTotalCreditsInPlatformResponse",
     ];
 
     check_unique(&VERSIONED_REQUESTS).expect("VERSIONED_REQUESTS");

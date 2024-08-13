@@ -158,6 +158,10 @@ GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse);
 GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0);
 GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal);
 GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals);
+GPBObjCClassDeclaration(GetTotalCreditsInPlatformRequest);
+GPBObjCClassDeclaration(GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0);
+GPBObjCClassDeclaration(GetTotalCreditsInPlatformResponse);
+GPBObjCClassDeclaration(GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0);
 GPBObjCClassDeclaration(GetVotePollsByEndDateRequest);
 GPBObjCClassDeclaration(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0);
 GPBObjCClassDeclaration(GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo);
@@ -9973,6 +9977,245 @@ typedef struct GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBal
 
 void GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_ClearResultOneOfCase(GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0 *message) {
   GPBDescriptor *descriptor = [GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetTotalCreditsInPlatformRequest
+
+@implementation GetTotalCreditsInPlatformRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetTotalCreditsInPlatformRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0 *v0;
+} GetTotalCreditsInPlatformRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0),
+        .number = GetTotalCreditsInPlatformRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetTotalCreditsInPlatformRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetTotalCreditsInPlatformRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetTotalCreditsInPlatformRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetTotalCreditsInPlatformRequest_ClearVersionOneOfCase(GetTotalCreditsInPlatformRequest *message) {
+  GPBDescriptor *descriptor = [GetTotalCreditsInPlatformRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0
+
+@implementation GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0
+
+@dynamic prove;
+
+typedef struct GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+} GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0_FieldNumber_Prove,
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetTotalCreditsInPlatformRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetTotalCreditsInPlatformResponse
+
+@implementation GetTotalCreditsInPlatformResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetTotalCreditsInPlatformResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0 *v0;
+} GetTotalCreditsInPlatformResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0),
+        .number = GetTotalCreditsInPlatformResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetTotalCreditsInPlatformResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetTotalCreditsInPlatformResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetTotalCreditsInPlatformResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetTotalCreditsInPlatformResponse_ClearVersionOneOfCase(GetTotalCreditsInPlatformResponse *message) {
+  GPBDescriptor *descriptor = [GetTotalCreditsInPlatformResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0
+
+@implementation GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic credits;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  Proof *proof;
+  ResponseMetadata *metadata;
+  uint64_t credits;
+} GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "credits",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_FieldNumber_Credits,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0__storage_, credits),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetTotalCreditsInPlatformResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_ClearResultOneOfCase(GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0 descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }

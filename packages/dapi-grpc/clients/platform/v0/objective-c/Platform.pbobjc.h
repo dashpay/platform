@@ -112,6 +112,8 @@ CF_EXTERN_C_BEGIN
 @class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0;
 @class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal;
 @class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals;
+@class GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0;
+@class GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0;
 @class GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0;
 @class GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_EndAtTimeInfo;
 @class GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0_StartAtTimeInfo;
@@ -3943,6 +3945,99 @@ GPB_FINAL @interface GetPrefundedSpecializedBalanceResponse_GetPrefundedSpeciali
  * Clears whatever value was set for the oneof 'result'.
  **/
 void GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0_ClearResultOneOfCase(GetPrefundedSpecializedBalanceResponse_GetPrefundedSpecializedBalanceResponseV0 *message);
+
+#pragma mark - GetTotalCreditsInPlatformRequest
+
+typedef GPB_ENUM(GetTotalCreditsInPlatformRequest_FieldNumber) {
+  GetTotalCreditsInPlatformRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetTotalCreditsInPlatformRequest_Version_OneOfCase) {
+  GetTotalCreditsInPlatformRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTotalCreditsInPlatformRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetTotalCreditsInPlatformRequest : GPBMessage
+
+@property(nonatomic, readonly) GetTotalCreditsInPlatformRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetTotalCreditsInPlatformRequest_ClearVersionOneOfCase(GetTotalCreditsInPlatformRequest *message);
+
+#pragma mark - GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0
+
+typedef GPB_ENUM(GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0_FieldNumber) {
+  GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0_FieldNumber_Prove = 1,
+};
+
+GPB_FINAL @interface GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetTotalCreditsInPlatformResponse
+
+typedef GPB_ENUM(GetTotalCreditsInPlatformResponse_FieldNumber) {
+  GetTotalCreditsInPlatformResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetTotalCreditsInPlatformResponse_Version_OneOfCase) {
+  GetTotalCreditsInPlatformResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTotalCreditsInPlatformResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetTotalCreditsInPlatformResponse : GPBMessage
+
+@property(nonatomic, readonly) GetTotalCreditsInPlatformResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetTotalCreditsInPlatformResponse_ClearVersionOneOfCase(GetTotalCreditsInPlatformResponse *message);
+
+#pragma mark - GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0
+
+typedef GPB_ENUM(GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_FieldNumber) {
+  GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_FieldNumber_Credits = 1,
+  GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_FieldNumber_Proof = 2,
+  GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_Result_OneOfCase) {
+  GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_Result_OneOfCase_Credits = 1,
+  GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t credits;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0_ClearResultOneOfCase(GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0 *message);
 
 #pragma mark - GetPathElementsRequest
 

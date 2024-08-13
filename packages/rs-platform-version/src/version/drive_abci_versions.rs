@@ -60,6 +60,7 @@ pub struct DriveAbciQuerySystemVersions {
     pub version_upgrade_vote_status: FeatureVersionBounds,
     pub epoch_infos: FeatureVersionBounds,
     pub path_elements: FeatureVersionBounds,
+    pub total_credits_in_platform: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -79,7 +80,6 @@ pub struct DriveAbciMethodVersions {
     pub core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions,
     pub protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions,
     pub block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions,
-    pub core_subsidy: DriveAbciCoreSubsidyMethodVersions,
     pub core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants,
     pub core_instant_send_lock: DriveAbciCoreInstantSendLockMethodVersions,
     pub fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions,
@@ -250,11 +250,6 @@ pub struct DriveAbciInitializationMethodVersions {
 pub struct DriveAbciBlockFeeProcessingMethodVersions {
     pub add_process_epoch_change_operations: FeatureVersion,
     pub process_block_fees: FeatureVersion,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct DriveAbciCoreSubsidyMethodVersions {
-    pub epoch_core_reward_credits_for_distribution: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

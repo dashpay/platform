@@ -52,6 +52,7 @@ impl Drive {
             platform_version,
         )?;
         let fetch_cost = LowLevelDriveOperation::combine_cost_operations(&batch_operations);
+        println!("operations are {:?}", batch_operations);
         self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,

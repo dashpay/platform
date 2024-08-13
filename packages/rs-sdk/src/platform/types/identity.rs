@@ -1,5 +1,10 @@
 //! Identity related types and functions
 
+use crate::delegate_enum;
+use crate::{
+    platform::{proto, Query},
+    Error,
+};
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
@@ -14,12 +19,6 @@ use dapi_grpc::platform::v0::{
     GetIdentityNonceRequest, GetIdentityRequest, ResponseMetadata,
 };
 use dpp::prelude::Identity;
-
-use crate::delegate_enum;
-use crate::{
-    platform::{proto, Query},
-    Error,
-};
 
 // Create enum [IdentityRequest] and [IdentityResponse] that will wrap all possible
 // request/response types for [Identity] object.
