@@ -46,6 +46,13 @@ pub trait IdentityGettersV0 {
         security_levels: HashSet<SecurityLevel>,
         key_types: HashSet<KeyType>,
     ) -> Option<&IdentityPublicKey>;
+    /// Get first enabled public key matching a purpose, security levels or key types
+    fn get_first_enabled_public_key_matching(
+        &self,
+        purpose: Purpose,
+        security_levels: HashSet<SecurityLevel>,
+        key_types: HashSet<KeyType>,
+    ) -> Option<&IdentityPublicKey>;
     /// Add an identity public key
     fn add_public_key(&mut self, key: IdentityPublicKey);
 }
