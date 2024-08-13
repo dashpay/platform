@@ -18,13 +18,15 @@ use dapi_grpc::platform::v0::{
     GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
     GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
     GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
+    GetEpochsInfoResponse, GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse,
+    GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
     GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
     GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
     GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
     GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
     GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
-    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPathElementsRequest,
+    GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
     GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
@@ -532,6 +534,31 @@ impl PlatformService for QueryService {
         )
         .await
     }
+
+    async fn get_identities_balances(
+        &self,
+        request: Request<GetIdentitiesBalancesRequest>,
+    ) -> Result<Response<GetIdentitiesBalancesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities_balances,
+            "get_identities_balances",
+        )
+        .await
+    }
+
+    // todo v2
+    // async fn get_masternodes_balances(
+    //     &self,
+    //     request: Request<GetMasternodesBalancesRequest>,
+    // ) -> Result<Response<GetMasternodesBalancesResponse>, Status> {
+    //     self.handle_blocking_query(
+    //         request,
+    //         Platform::<DefaultCoreRPC>::query_masternodes_balances,
+    //         "get_masternodes_balances",
+    //     )
+    //     .await
+    // }
 }
 
 fn query_error_into_status(error: QueryError) -> Status {

@@ -48,8 +48,7 @@ impl Drive {
     ) -> Result<(RootHash, T), Error> {
         let mut path_query = Self::balances_for_identity_ids_query(
             identity_ids,
-            &platform_version.drive.grove_version,
-        )?;
+        );
         path_query.query.limit = Some(identity_ids.len() as u16);
         let (root_hash, proved_key_values) = if is_proof_subset {
             GroveDb::verify_subset_query_with_absence_proof(

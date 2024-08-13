@@ -121,6 +121,7 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_full_identity_by_public_key_hash: FeatureVersion,
     pub verify_identity_balance_for_identity_id: FeatureVersion,
     pub verify_identity_balances_for_identity_ids: FeatureVersion,
+    pub verify_identity_balances_for_range_query: FeatureVersion,
     pub verify_identity_id_by_public_key_hash: FeatureVersion,
     pub verify_identity_ids_by_public_key_hashes: FeatureVersion,
     pub verify_identity_keys_by_identity_id: FeatureVersion,

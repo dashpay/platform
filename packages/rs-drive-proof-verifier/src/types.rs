@@ -156,6 +156,9 @@ pub type Elements = RetrievedObjects<Vec<u8>, Element>;
 
 /// Identity balance.
 pub type IdentityBalance = u64;
+
+/// Identities balances.
+pub struct IdentitiesBalances(BTreeMap<Identifier, Credits>);
 /// Identity balance and revision of the identity.
 pub type IdentityBalanceAndRevision = (u64, Revision);
 
