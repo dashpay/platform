@@ -114,34 +114,19 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::execution::validation::state_transition::tests::{
-        setup_identity, setup_identity_return_master_key,
+        setup_identity_return_master_key,
     };
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
-    use dpp::dashcore::key::{KeyPair, Secp256k1};
-    use dpp::dashcore::{Network, PrivateKey};
-    use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::signer::Signer;
-    use dpp::identity::KeyType::ECDSA_SECP256K1;
-    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, Purpose, SecurityLevel};
-    use dpp::native_bls::NativeBlsModule;
-    use dpp::prelude::Identifier;
     use dpp::serialization::{PlatformSerializable, Signable};
-    use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
-    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-    use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
-    use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
     use dpp::state_transition::StateTransition;
-    use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
     use platform_version::version::PlatformVersion;
-    use rand::prelude::StdRng;
-    use rand::{Rng, SeedableRng};
-    use simple_signer::signer::SimpleSigner;
-    use std::collections::BTreeMap;
 
     #[test]
     fn test_identity_update_that_disables_a_key() {
