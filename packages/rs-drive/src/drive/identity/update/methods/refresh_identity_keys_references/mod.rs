@@ -14,9 +14,9 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use std::collections::HashMap;
 use dpp::identity::IdentityPublicKey;
 use platform_version::version::drive_versions::DriveVersion;
+use std::collections::HashMap;
 
 impl Drive {
     /// Updates the revision for a specific identity. This function is version controlled.

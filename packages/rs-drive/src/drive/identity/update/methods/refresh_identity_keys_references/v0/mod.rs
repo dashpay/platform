@@ -1,14 +1,17 @@
-use grovedb::Element;
-use grovedb::reference_path::ReferencePathType;
-use grovedb::reference_path::ReferencePathType::SiblingReference;
-use integer_encoding::VarInt;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::IdentityPublicKey;
-use platform_version::version::drive_versions::DriveVersion;
+use crate::drive::identity::{
+    identity_contract_info_group_keys_path_vec, identity_contract_info_group_path_key_purpose_vec,
+    identity_contract_info_root_path_vec, identity_key_path_vec, identity_query_keys_tree_path_vec,
+};
 use crate::drive::Drive;
-use crate::drive::identity::{identity_contract_info_group_keys_path_vec, identity_contract_info_group_path_key_purpose_vec, identity_contract_info_root_path_vec, identity_key_path_vec, identity_query_keys_tree_path_vec};
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::IdentityPublicKey;
+use grovedb::reference_path::ReferencePathType;
+use grovedb::reference_path::ReferencePathType::SiblingReference;
+use grovedb::Element;
+use integer_encoding::VarInt;
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Updates the revision for a specific identity. This function is version controlled.
@@ -51,7 +54,12 @@ impl Drive {
         if let Some(contract_info) = key.contract_bounds() {
             // 2) [Root ; <identity> ; Contract Info ; Contract Bound ; Keys]
             let mut index_contract_info_path = identity_contract_info_root_path_vec(&identity_id);
-            index_contract_info_path.push(contract_info.contract_bounds_type_string().as_bytes().to_vec()); // todo: Check if contract bound type string should be used in path?
+            index_contract_info_path.push(
+                contract_info
+                    .contract_bounds_type_string()
+                    .as_bytes()
+                    .to_vec(),
+            ); // todo: Check if contract bound type string should be used in path?
             index_contract_info_path.push(vec![key.id() as u8]);
 
             self.batch_refresh_reference(
@@ -68,11 +76,12 @@ impl Drive {
 
                 let mut contract_id_bytes_with_document_type_name = root_id.clone();
                 contract_id_bytes_with_document_type_name.extend(document_type.as_bytes());
-                let sibling_ref_key_purpose_path = identity_contract_info_group_path_key_purpose_vec(
-                    &identity_id,
-                    &contract_id_bytes_with_document_type_name,
-                    key.purpose(),
-                );
+                let sibling_ref_key_purpose_path =
+                    identity_contract_info_group_path_key_purpose_vec(
+                        &identity_id,
+                        &contract_id_bytes_with_document_type_name,
+                        key.purpose(),
+                    );
 
                 self.batch_refresh_reference(
                     sibling_ref_key_purpose_path,
@@ -83,11 +92,8 @@ impl Drive {
                     drive_version,
                 )?;
 
-
-                let sibling_ref_group_keys_path = identity_contract_info_group_keys_path_vec(
-                    &identity_id,
-                    &root_id.clone(),
-                );
+                let sibling_ref_group_keys_path =
+                    identity_contract_info_group_keys_path_vec(&identity_id, &root_id.clone());
 
                 self.batch_refresh_reference(
                     sibling_ref_group_keys_path,
