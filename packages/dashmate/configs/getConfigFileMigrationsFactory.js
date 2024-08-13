@@ -772,7 +772,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.drive.tenderdash.p2p.maxOutgoingConnections = 30;
           });
         return configFile;
-      }
+      },
     };
   }
 
