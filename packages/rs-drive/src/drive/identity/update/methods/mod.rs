@@ -7,5 +7,6 @@ mod apply_balance_change_from_fee_to_identity;
 mod disable_identity_keys;
 pub(crate) mod merge_identity_nonce;
 mod re_enable_identity_keys;
+mod refresh_identity_key_reference_operations;
 mod remove_from_identity_balance;
 mod update_identity_revision;

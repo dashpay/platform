@@ -462,12 +462,14 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     add_to_previous_balance: 0,
                     apply_balance_change_from_fee_to_identity: 0,
                     remove_from_identity_balance: 0,
+                    refresh_identity_key_reference_operations: 0,
                 },
                 insert: DriveIdentityInsertMethodVersions {
                     add_new_identity: 0,
                 },
                 contract_info: DriveIdentityContractInfoMethodVersions {
                     add_potential_contract_info_for_contract_bounded_key: 0,
+                    refresh_potential_contract_info_key_references: 0,
                     merge_identity_contract_nonce: 0,
                 },
                 cost_estimation: DriveIdentityCostEstimationMethodVersions {
