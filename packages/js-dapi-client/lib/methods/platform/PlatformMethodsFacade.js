@@ -37,7 +37,7 @@ class PlatformMethodsFacade {
     this.getIdentityContractNonce = getIdentityContractNonceFactory(grpcTransport);
     this.getIdentityNonce = getIdentityNonceFactory(grpcTransport);
     this.getIdentityKeys = getIdentityKeysFactory(grpcTransport);
-    this.getTotalCreditsInPlatform = getTotalCreditsInPlatform(grpcTransport)
+    this.getTotalCreditsInPlatform = getTotalCreditsInPlatformFactory(grpcTransport)
   }
 }
 
