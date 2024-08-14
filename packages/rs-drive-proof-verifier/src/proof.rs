@@ -1646,7 +1646,7 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
     }
 }
 
-impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsOnPlatform {
+impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPlatform {
     type Request = platform::GetTotalCreditsInPlatformRequest;
     type Response = platform::GetTotalCreditsInPlatformResponse;
 
@@ -1685,7 +1685,7 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsOnPla
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((
-            Some(TotalCreditsOnPlatform(credits)),
+            Some(TotalCreditsInPlatform(credits)),
             mtd.clone(),
             proof.clone(),
         ))
