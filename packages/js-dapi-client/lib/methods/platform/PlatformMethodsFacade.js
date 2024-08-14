@@ -13,7 +13,7 @@ const getProtocolVersionUpgradeStateFactory = require('./getProtocolVersionUpgra
 const getIdentityContractNonceFactory = require('./getIdentityContractNonce/getIdentityContractNonceFactory');
 const getIdentityNonceFactory = require('./getIdentityNonce/getIdentityNonceFactory');
 const getIdentityKeysFactory = require('./getIdentityKeys/getIdentityKeysFactory');
-const getTotalCreditsFactory = require('./getTotalCreditsOnPlatform/getTotalCreditsOnPlatformFactory')
+const getTotalCreditsFactory = require('./getTotalCreditsInPlatform/getTotalCreditsInPlatformFactory')
 
 class PlatformMethodsFacade {
   /**

@@ -1,7 +1,7 @@
 const AbstractResponse = require('../response/AbstractResponse');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
-class GetTotalCreditsOnPlatformResponse extends AbstractResponse {
+class GetTotalCreditsInPlatformResponse extends AbstractResponse {
   /**
    * @param {number} totalCreditsOnPlatform
    * @param {Metadata} metadata
@@ -16,13 +16,13 @@ class GetTotalCreditsOnPlatformResponse extends AbstractResponse {
   /**
    * @returns {number}
    */
-  getTotalCreditsOnPlatform() {
+  getTotalCreditsInPlatform() {
     return this.totalCreditsOnPlatform;
   }
 
   /**
    * @param proto
-   * @returns {GetTotalCreditsOnPlatformResponse}
+   * @returns {GetTotalCreditsInPlatformResponse}
    */
   static createFromProto(proto) {
     // eslint-disable-next-line
@@ -36,7 +36,7 @@ class GetTotalCreditsOnPlatformResponse extends AbstractResponse {
       throw new InvalidResponseError('Total Credits on Platform data is not defined');
     }
 
-    return new GetTotalCreditsOnPlatformResponse(
+    return new GetTotalCreditsInPlatformResponse(
       totalCreditsOnPlatform,
       metadata,
       proof,
@@ -44,4 +44,4 @@ class GetTotalCreditsOnPlatformResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetTotalCreditsOnPlatformResponse;
+module.exports = GetTotalCreditsInPlatformResponse;

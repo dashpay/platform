@@ -697,8 +697,6 @@ class PlatformPromiseClient {
     );
   }
 
-  // getTotalCreditsInPlatform
-
   getTotalCreditsInPlatform(
     getTotalCreditsInPlatformRequest,
     metadata = {},
