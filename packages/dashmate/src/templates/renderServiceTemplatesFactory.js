@@ -1,4 +1,3 @@
-import dots from 'dot';
 import * as glob from 'glob';
 import { TEMPLATES_DIR } from '../constants.js';
 
@@ -15,8 +14,6 @@ export default function renderServiceTemplatesFactory(renderTemplate) {
    * @return {Object<string,string>}
    */
   function renderServiceTemplates(config) {
-    dots.templateSettings.strip = false;
-
     const templatePaths = glob.sync(`${TEMPLATES_DIR}/**/*.dot`, {
       ignore: {
         // Ignore manual rendered templates
