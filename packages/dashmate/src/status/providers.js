@@ -1,6 +1,6 @@
 import { PortStateEnum } from './enums/portState.js';
 
-const MAX_REQUEST_TIMEOUT = 5000;
+const MAX_REQUEST_TIMEOUT = 60000;
 
 const request = async (url) => {
   try {
