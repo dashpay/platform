@@ -16,6 +16,7 @@ use dpp::identity::identity_public_key::accessors::v0::{
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::TimestampMillis;
 
+use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -44,6 +45,7 @@ impl Drive {
             identity_id,
             keys_ids,
             disable_at,
+            &block_info.epoch,
             &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,
@@ -99,6 +101,7 @@ impl Drive {
         identity_id: [u8; 32],
         key_ids: Vec<KeyID>,
         disable_at: TimestampMillis,
+        epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -116,6 +119,11 @@ impl Drive {
         ) = estimated_costs_only_with_layer_info
         {
             Self::add_estimation_costs_for_keys_for_identity_id(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+                drive_version,
+            )?;
+            Self::add_estimation_costs_for_root_key_reference_tree(
                 identity_id,
                 estimated_costs_only_with_layer_info,
                 drive_version,
@@ -167,6 +175,16 @@ impl Drive {
                 &mut drive_operations,
                 drive_version,
             )?;
+
+            self.refresh_identity_key_reference_operations(
+                identity_id,
+                &key,
+                epoch,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut drive_operations,
+                platform_version,
+            )?
         }
 
         Ok(drive_operations)

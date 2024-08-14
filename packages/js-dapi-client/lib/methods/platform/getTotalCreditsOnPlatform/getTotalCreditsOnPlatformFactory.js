@@ -1,34 +1,34 @@
 const {
   v0: {
     PlatformPromiseClient,
-    GetTotalCreditsInPlatformRequest,
+    GetTotalCreditsOnPlatformRequest,
   },
 } = require('@dashevo/dapi-grpc');
 
-const GetTotalCreditsInPlatformResponse = require('./GetTotalCreditsOnPlatformResponse');
+const GetTotalCreditsOnPlatformResponse = require('./GetTotalCreditsOnPlatformResponse');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 /**
  * @param {GrpcTransport} grpcTransport
- * @returns {getTotalCreditsInPlatform}
+ * @returns {getTotalCreditsOnPlatform}
  */
-function getTotalCreditsInPlatformFactory(grpcTransport) {
+function getTotalCreditsOnPlatformFactory(grpcTransport) {
   /**
    * Fetch the version upgrade votes status
-   * @typedef {getTotalCreditsInPlatform}
+   * @typedef {getTotalCreditsOnPlatform}
    * @param {DAPIClientOptions & {prove: boolean}} [options]
-   * @returns {Promise<GetTotalCreditsInPlatformResponse>}
+   * @returns {Promise<GetTotalCreditsOnPlatformResponse>}
    */
-  async function getTotalCreditsInPlatform(options = {}) {
+  async function getTotalCreditsOnPlatform(options = {}) {
     const {
-      GetTotalCreditsInPlatformRequestV0,
-    } = GetTotalCreditsInPlatformRequest;
+      GetTotalCreditsOnPlatformRequestV0,
+    } = GetTotalCreditsOnPlatformRequest;
 
     // eslint-disable-next-line max-len
-    const getTotalCreditsInPlatformRequest = new GetTotalCreditsInPlatformRequest();
+    const getTotalCreditsOnPlatformRequest = new GetTotalCreditsOnPlatformRequest();
 
-    getTotalCreditsInPlatformRequest.setV0(
-      new GetTotalCreditsInPlatformRequestV0()
+    getTotalCreditsOnPlatformRequest.setV0(
+      new GetTotalCreditsOnPlatformRequestV0()
         .setProve(!!options.prove),
     );
 
@@ -38,15 +38,15 @@ function getTotalCreditsInPlatformFactory(grpcTransport) {
     for (let i = 0; i < 3; i += 1) {
       try {
         // eslint-disable-next-line no-await-in-loop
-        const getTotalCreditsInPlatformResponse = await grpcTransport.request(
+        const getTotalCreditsOnPlatformResponse = await grpcTransport.request(
           PlatformPromiseClient,
-          'getTotalCreditsInPlatform',
-          getTotalCreditsInPlatformRequest,
+          'getTotalCreditsOnPlatform',
+          getTotalCreditsOnPlatformRequest,
           options,
         );
 
-        return GetTotalCreditsInPlatformResponse
-          .createFromProto(getTotalCreditsInPlatformResponse);
+        return GetTotalCreditsOnPlatformResponse
+          .createFromProto(getTotalCreditsOnPlatformResponse);
       } catch (e) {
         if (e instanceof InvalidResponseError) {
           lastError = e;
@@ -64,4 +64,4 @@ function getTotalCreditsInPlatformFactory(grpcTransport) {
   return getTotalCreditsInPlatform;
 }
 
-module.exports = getTotalCreditsInPlatformFactory;
+module.exports = getTotalCreditsOnPlatformFactory;

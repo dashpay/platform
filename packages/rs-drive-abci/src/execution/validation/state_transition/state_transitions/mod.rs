@@ -356,6 +356,8 @@ pub(crate) mod tests {
                 &block_info,
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -903,6 +905,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -933,6 +937,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1183,6 +1189,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1213,6 +1221,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1357,6 +1367,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1384,6 +1396,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1671,6 +1685,8 @@ pub(crate) mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 

@@ -8,6 +8,7 @@ mod get_epoch_start_block_height;
 mod get_first_epoch_start_block_info_between_epochs;
 
 use dpp::block::epoch::EpochIndex;
+use dpp::prelude::{BlockHeight, CoreBlockHeight};
 
 /// `StartBlockInfo` contains information about the starting block of an epoch.
 #[derive(Debug, PartialEq, Eq)]
@@ -16,10 +17,10 @@ pub struct StartBlockInfo {
     pub epoch_index: EpochIndex,
 
     /// The height of the starting block within the epoch.
-    pub start_block_height: u64,
+    pub start_block_height: BlockHeight,
 
     /// The core height of the starting block.
-    pub start_block_core_height: u32,
+    pub start_block_core_height: CoreBlockHeight,
 }
 
 #[cfg(feature = "server")]

@@ -108,7 +108,7 @@ impl<C> Platform<C> {
                     &unpaid_epoch,
                     None,
                     platform_version,
-                )?
+                )? + 1
             };
 
             let reward_credits_accumulated_during_current_epoch =
@@ -198,7 +198,7 @@ mod tests {
             if epoch_index == 0 {
                 activation_core_height
             } else {
-                epoch_core_start_height
+                epoch_core_start_height + 1
             },
             current_core_height,
             Network::Regtest.core_subsidy_halving_interval(),
@@ -278,7 +278,7 @@ mod tests {
             if epoch_index == 0 {
                 activation_core_height
             } else {
-                epoch_core_start_height
+                epoch_core_start_height + 1
             },
             current_core_height,
             core_subsidy_halving_interval,
