@@ -26,7 +26,8 @@ class GetTotalCreditsOnPlatformResponse extends AbstractResponse {
    */
   static createFromProto(proto) {
     // eslint-disable-next-line
-    const totalCreditsOnPlatform = proto.getV0().getTotalCreditsOnPlatform();
+    const totalCreditsOnPlatform = proto.getV0().getCredits();
+
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(
       proto,
     );
