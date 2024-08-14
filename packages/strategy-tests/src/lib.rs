@@ -1551,7 +1551,7 @@ impl Strategy {
                 rng,
                 asset_lock_proofs,
                 platform_version,
-            )?;
+            );
             state_transitions.append(&mut new_transitions);
         }
 
@@ -1571,7 +1571,7 @@ impl Strategy {
                     rng,
                     asset_lock_proofs,
                     platform_version,
-                )?;
+                );
                 state_transitions.append(&mut new_transitions);
             }
         }

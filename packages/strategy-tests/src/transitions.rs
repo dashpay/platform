@@ -640,7 +640,7 @@ pub fn create_identities_state_transitions(
     rng: &mut StdRng,
     asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
     platform_version: &PlatformVersion,
-) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
+) -> Vec<(Identity, StateTransition)> {
     let (mut identities, mut keys) =
         Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
             count,
@@ -661,18 +661,28 @@ pub fn create_identities_state_transitions(
         for (_, (purpose, security_to_key_type_map)) in extra_keys.iter().enumerate() {
             for (security_level, key_types) in security_to_key_type_map {
                 for key_type in key_types {
-                    let (key, private_key) = IdentityPublicKey::random_key_with_known_attributes(
-                        (identity.public_keys().len() + 1) as KeyID,
-                        rng,
-                        *purpose,
-                        *security_level,
-                        *key_type,
-                        None,
-                        platform_version,
-                    )?;
-                    identity.add_public_key(key.clone());
-                    let key_num = key_count as usize * (i + 1) + i;
-                    keys.insert(key_num, (key, private_key))
+                    // Generate a key with known attributes, handle any potential error
+                    if let Ok((key, private_key)) =
+                        IdentityPublicKey::random_key_with_known_attributes(
+                            (identity.public_keys().len() + 1) as KeyID,
+                            rng,
+                            *purpose,
+                            *security_level,
+                            *key_type,
+                            None,
+                            platform_version,
+                        )
+                    {
+                        identity.add_public_key(key.clone());
+                        let key_num = key_count as usize * (i + 1) + i;
+                        keys.insert(key_num, (key, private_key));
+                    } else {
+                        tracing::error!(
+                            "Failed to generate key with known attributes for identity index {}",
+                            i
+                        );
+                        continue;
+                    }
                 }
             }
         }
@@ -691,7 +701,7 @@ pub fn create_identities_state_transitions(
     identities
         .into_iter()
         .enumerate()
-        .map(|(index, mut identity)| {
+        .filter_map(|(index, mut identity)| {
             // Calculate the starting KeyID for this identity
             let identity_starting_id =
                 starting_id_num + index as u32 * (key_count + extra_keys.len() as u32);
@@ -702,9 +712,10 @@ pub fn create_identities_state_transitions(
                 .values_mut()
                 .enumerate()
                 .for_each(|(key_index, public_key)| {
-                    let IdentityPublicKey::V0(ref mut id_pub_key_v0) = public_key;
-                    let new_id = identity_starting_id + key_index as u32;
-                    id_pub_key_v0.set_id(new_id);
+                    if let IdentityPublicKey::V0(ref mut id_pub_key_v0) = public_key {
+                        let new_id = identity_starting_id + key_index as u32;
+                        id_pub_key_v0.set_id(new_id);
+                    }
                 });
 
             if let Some(proof_and_pk) = asset_lock_proofs.pop() {
@@ -721,18 +732,19 @@ pub fn create_identities_state_transitions(
                 ) {
                     Ok(identity_create_transition) => {
                         identity.set_id(identity_create_transition.owner_id());
-                        Ok((identity, identity_create_transition))
+                        Some((identity, identity_create_transition))
                     }
-                    Err(e) => Err(e),
+                    Err(e) => {
+                        tracing::error!("Error creating transition: {:?}", e);
+                        None
+                    }
                 }
             } else {
-                Err(ProtocolError::Generic(
-                    "No asset lock proofs available for create_identities_state_transitions"
-                        .to_string(),
-                ))
+                tracing::error!("No asset lock proof to create transition");
+                None
             }
         })
-        .collect::<Result<Vec<(Identity, StateTransition)>, ProtocolError>>()
+        .collect::<Vec<(Identity, StateTransition)>>()
 }
 
 /// Generates state transitions for the creation of new identities.
