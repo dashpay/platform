@@ -87,13 +87,13 @@ where
             // set and if we have exceeded it.
             let execution_result = if proposing_state_transitions
                 && timer.map_or(false, |timer| {
-                    timer.elapsed().as_millis() as TimestampMillis
-                        > self
-                            .config
-                            .abci
-                            .proposer_tx_processing_time_limit
-                            .unwrap_or(TimestampMillis::MAX)
-                }) {
+                timer.elapsed().as_millis()
+                    > self
+                    .config
+                    .abci
+                    .proposer_tx_processing_time_limit
+                    .unwrap_or(u16::MAX) as u128
+            }) {
                 StateTransitionExecutionResult::NotExecuted(NotExecutedReason::ProposerRanOutOfTime)
             } else {
                 match decoded_state_transition {
@@ -126,24 +126,24 @@ where
                             state_transition,
                             Some(transaction),
                         )
-                        .map(|validation_result| {
-                            self.process_validation_result_v0(
+                            .map(|validation_result| {
+                                self.process_validation_result_v0(
+                                    raw_state_transition,
+                                    &state_transition_name,
+                                    validation_result,
+                                    block_info,
+                                    transaction,
+                                    platform_version,
+                                    platform_ref.state.previous_fee_versions(),
+                                )
+                                    .unwrap_or_else(error_to_internal_error_execution_result)
+                            })
+                            .map_err(|error| StateTransitionAwareError {
+                                error,
                                 raw_state_transition,
-                                &state_transition_name,
-                                validation_result,
-                                block_info,
-                                transaction,
-                                platform_version,
-                                platform_ref.state.previous_fee_versions(),
-                            )
-                            .unwrap_or_else(error_to_internal_error_execution_result)
-                        })
-                        .map_err(|error| StateTransitionAwareError {
-                            error,
-                            raw_state_transition,
-                            state_transition_name: Some(state_transition_name.to_string()),
-                        })
-                        .unwrap_or_else(error_to_internal_error_execution_result);
+                                state_transition_name: Some(state_transition_name.to_string()),
+                            })
+                            .unwrap_or_else(error_to_internal_error_execution_result);
 
                         // Store metrics
                         let elapsed_time = start_time.elapsed() + decoding_elapsed_time;
@@ -167,10 +167,10 @@ where
                         execution_result
                     }
                     DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
-                        raw,
-                        error,
-                        elapsed_time: decoding_elapsed_time,
-                    }) => {
+                                                                raw,
+                                                                error,
+                                                                elapsed_time: decoding_elapsed_time,
+                                                            }) => {
                         if tracing::enabled!(tracing::Level::DEBUG) {
                             let st_hash = hex::encode(hash_single(raw));
 
@@ -290,11 +290,11 @@ where
             let state_transition_execution_result = match event_execution_result {
                 EventExecutionResult::SuccessfulPaidExecution(estimated_fees, actual_fees)
                 | EventExecutionResult::UnsuccessfulPaidExecution(estimated_fees, actual_fees, _) =>
-                {
-                    if tracing::enabled!(tracing::Level::DEBUG) {
-                        let st_hash = hex::encode(hash_single(raw_state_transition));
+                    {
+                        if tracing::enabled!(tracing::Level::DEBUG) {
+                            let st_hash = hex::encode(hash_single(raw_state_transition));
 
-                        tracing::debug!(
+                            tracing::debug!(
                             error = ?first_consensus_error,
                             st_hash,
                             ?estimated_fees,
@@ -304,13 +304,13 @@ where
                             st_hash,
                             &first_consensus_error
                         );
-                    }
+                        }
 
-                    StateTransitionExecutionResult::PaidConsensusError(
-                        first_consensus_error,
-                        actual_fees,
-                    )
-                }
+                        StateTransitionExecutionResult::PaidConsensusError(
+                            first_consensus_error,
+                            actual_fees,
+                        )
+                    }
                 EventExecutionResult::SuccessfulFreeExecution => {
                     if tracing::enabled!(tracing::Level::DEBUG) {
                         let st_hash = hex::encode(hash_single(raw_state_transition));

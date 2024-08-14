@@ -37,7 +37,7 @@ pub struct AbciConfig {
 
     /// Maximum time limit (in ms) to process state transitions to prepare proposal
     #[serde(default, deserialize_with = "from_opt_str_or_number")]
-    pub proposer_tx_processing_time_limit: Option<TimestampMillis>,
+    pub proposer_tx_processing_time_limit: Option<u16>,
 }
 
 impl AbciConfig {
