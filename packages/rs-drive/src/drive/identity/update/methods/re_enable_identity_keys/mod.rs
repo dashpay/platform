@@ -10,6 +10,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
+use dpp::block::epoch::Epoch;
 use std::collections::HashMap;
 
 impl Drive {
@@ -35,6 +36,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         key_ids: Vec<KeyID>,
+        epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -51,6 +53,7 @@ impl Drive {
             0 => self.re_enable_identity_keys_operations_v0(
                 identity_id,
                 key_ids,
+                epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

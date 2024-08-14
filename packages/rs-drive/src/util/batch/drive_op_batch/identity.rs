@@ -172,6 +172,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 identity_id,
                 keys_ids,
                 block_info.time_ms,
+                &block_info.epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
@@ -182,6 +183,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
             } => drive.re_enable_identity_keys_operations(
                 identity_id,
                 keys_ids,
+                &block_info.epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
