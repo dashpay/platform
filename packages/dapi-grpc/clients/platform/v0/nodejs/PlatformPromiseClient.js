@@ -59,7 +59,7 @@ const {
             GetIdentityKeysRequest: PBJSGetIdentityKeysRequest,
             GetIdentityKeysResponse: PBJSGetIdentityKeysResponse,
             GetTotalCreditsInPlatformRequest: PBJSGetTotalCreditsInPlatformRequest,
-            GetTotalCreditsInPlatformResponse: PBJSGetTotalCreditsInPlatformResponse
+            GetTotalCreditsInPlatformResponse: PBJSGetTotalCreditsInPlatformResponse,
           },
         },
       },
@@ -84,7 +84,7 @@ const {
   GetIdentityContractNonceResponse: ProtocGetIdentityContractNonceResponse,
   GetIdentityNonceResponse: ProtocGetIdentityNonceResponse,
   GetIdentityKeysResponse: ProtocGetIdentityKeysResponse,
-  GetTotalCreditsInPlatformResponse: ProtocGetTotalCreditsInPlatformResponse
+  GetTotalCreditsInPlatformResponse: ProtocGetTotalCreditsInPlatformResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -725,7 +725,6 @@ class PlatformPromiseClient {
       },
     );
   }
-
 
   /**
    * @param {string} protocolVersion
