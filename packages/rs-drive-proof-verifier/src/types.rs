@@ -174,7 +174,7 @@ pub struct KeysInPath {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-pub struct TotalCreditsOnPlatform(pub Credits);
+pub struct TotalCreditsInPlatform(pub Credits);
 
 /// A query with no parameters
 #[derive(Debug, Clone, Copy)]

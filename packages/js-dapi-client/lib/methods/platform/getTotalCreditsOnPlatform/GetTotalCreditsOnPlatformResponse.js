@@ -1,46 +1,46 @@
 const AbstractResponse = require('../response/AbstractResponse');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
-class GetTotalCreditsOnPlatformResponse extends AbstractResponse {
+class GetTotalCreditsInPlatformResponse extends AbstractResponse {
   /**
-   * @param {number} totalCreditsOnPlatform
+   * @param {number} totalCreditsInPlatform
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
-  constructor(totalCreditsOnPlatform, metadata, proof = undefined) {
+  constructor(totalCreditsInPlatform, metadata, proof = undefined) {
     super(metadata, proof);
 
-    this.totalCreditsOnPlatform = totalCreditsOnPlatform;
+    this.totalCreditsInPlatform = totalCreditsInPlatform;
   }
 
   /**
    * @returns {number}
    */
-  getTotalCreditsOnPlatform() {
-    return this.totalCreditsOnPlatform;
+  getTotalCreditsInPlatform() {
+    return this.totalCreditsInPlatform;
   }
 
   /**
    * @param proto
-   * @returns {GetTotalCreditsOnPlatformResponse}
+   * @returns {GetTotalCreditsInPlatformResponse}
    */
   static createFromProto(proto) {
     // eslint-disable-next-line
-    const totalCreditsOnPlatform = proto.getV0().getTotalCreditsOnPlatform();
+    const totalCreditsInPlatform = proto.getV0().getTotalCreditsInPlatform();
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(
       proto,
     );
 
-    if ((typeof totalCreditsOnPlatform === 'undefined' || totalCreditsOnPlatform === null) && !proof) {
+    if ((typeof totalCreditsInPlatform === 'undefined' || totalCreditsInPlatform === null) && !proof) {
       throw new InvalidResponseError('Total Credits on Platform data is not defined');
     }
 
-    return new GetTotalCreditsOnPlatformResponse(
-      totalCreditsOnPlatform,
+    return new GetTotalCreditsInPlatformResponse(
+      totalCreditsInPlatform,
       metadata,
       proof,
     );
   }
 }
 
-module.exports = GetTotalCreditsOnPlatformResponse;
+module.exports = GetTotalCreditsInPlatformResponse;
