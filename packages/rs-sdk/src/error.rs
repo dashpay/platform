@@ -5,7 +5,7 @@ use std::time::Duration;
 use dapi_grpc::mock::Mockable;
 use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
-use rs_dapi_client::DapiClientError;
+use rs_dapi_client::{CanRetry, DapiClientError};
 
 pub use drive_proof_verifier::error::ContextProviderError;
 
@@ -95,5 +95,15 @@ impl<T: Debug + Mockable> From<DapiClientError<T>> for Error {
 impl From<PlatformVersionError> for Error {
     fn from(value: PlatformVersionError) -> Self {
         Self::Protocol(value.into())
+    }
+}
+impl CanRetry for Error {
+    /// Returns true if the operation can be retried, false means it's unspecified
+    /// False means
+    fn can_retry(&self) -> bool {
+        matches!(
+            self,
+            Error::CoreLockedHeightNotYetAvailable(_, _) | Error::QuorumNotFound { .. }
+        )
     }
 }
