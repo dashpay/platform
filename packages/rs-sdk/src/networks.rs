@@ -1,4 +1,7 @@
 //! Configuration of dash networks (devnet, testnet, mainnet, etc.).
+//!
+//! See also:
+//! * https://github.com/dashpay/dash/blob/develop/src/chainparams.cpp
 
 /*
 Mainnet:
@@ -23,26 +26,33 @@ Devnet:
 
 use dashcore_rpc::json::QuorumType;
 
+/// Dash network types.
+#[derive(Eq, PartialEq, Clone, Debug)]
 pub enum NetworkType {
-    Mainnet,
-    Testnet,
-    Devnet,
+    /// Mock implementation; in practice, feaults to Devnet config for Mock mode. Errors when used in non-mock mode.
     Mock,
-    Custom(NetworkConfig),
+    /// Mainnet network, used for production.
+    Mainnet,
+    /// Testnet network, used for testing and development.
+    Testnet,
+    /// Devnet network, used local for development.
+    Devnet,
+    /// Custom network configuration.
+    Custom(QuorumParams),
 }
 
 impl NetworkType {
     pub fn instant_lock_quorum_type(&self) -> QuorumType {
-        self.to_network_config().instant_lock
+        self.to_quorum_params().instant_lock_quorum_type
     }
 
-    fn to_network_config(&self) -> NetworkConfig {
+    pub(crate) fn to_quorum_params(&self) -> QuorumParams {
         match self {
-            NetworkType::Mainnet => NetworkConfig::new_mainnet(),
-            NetworkType::Testnet => NetworkConfig::new_testnet(),
-            NetworkType::Devnet => NetworkConfig::new_devnet(),
-            NetworkType::Mock => NetworkConfig::new_mock(),
+            NetworkType::Mainnet => QuorumParams::new_mainnet(),
+            NetworkType::Testnet => QuorumParams::new_testnet(),
+            NetworkType::Devnet => QuorumParams::new_devnet(),
             NetworkType::Custom(config) => config.clone(),
+            NetworkType::Mock => QuorumParams::new_mock(),
         }
     }
 }
@@ -50,27 +60,27 @@ impl NetworkType {
 /// Configuration of Dash Core Quorums.
 ///
 /// In most cases, you should use the [`new_mainnet`] or [`new_testnet`] functions to create a new instance.
-#[derive(Clone, Debug)]
-pub struct NetworkConfig {
-    pub instant_lock: QuorumType,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuorumParams {
+    pub instant_lock_quorum_type: QuorumType,
 }
 
-impl NetworkConfig {
+impl QuorumParams {
     pub fn new_mainnet() -> Self {
-        NetworkConfig {
-            instant_lock: QuorumType::Llmq400_60,
+        QuorumParams {
+            instant_lock_quorum_type: QuorumType::Llmq400_60,
         }
     }
 
     pub fn new_testnet() -> Self {
-        NetworkConfig {
-            instant_lock: QuorumType::Llmq50_60,
+        QuorumParams {
+            instant_lock_quorum_type: QuorumType::Llmq50_60,
         }
     }
 
     pub fn new_devnet() -> Self {
-        NetworkConfig {
-            instant_lock: QuorumType::LlmqDevnet,
+        QuorumParams {
+            instant_lock_quorum_type: QuorumType::LlmqDevnet,
         }
     }
 

@@ -5,7 +5,7 @@ use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
-use crate::networks::NetworkType;
+use crate::networks::{NetworkType, QuorumParams};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
 use dapi_grpc::mock::Mockable;
@@ -79,6 +79,8 @@ pub type LastQueryTimestamp = u64;
 #[derive(Clone)]
 pub struct Sdk {
     inner: SdkInstance,
+    /// Type of network we use. Determines some parameters, like quorum types.
+    network_type: NetworkType,
     /// Use proofs when retrieving data from the platform.
     ///
     /// This is set to `true` by default. `false` is not implemented yet.
@@ -420,6 +422,12 @@ impl Sdk {
         }
     }
 
+    
+    /// Return configuration of quorum, like type of quorum used for instant lock.
+    pub(crate) fn quorum_params(&self) -> QuorumParams {
+        self.network_type.to_quorum_params()
+    }
+
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
     ///
     ///
@@ -499,8 +507,9 @@ impl DapiRequestExecutor for &Sdk {
 /// Mandatory steps of initialization in normal mode are:
 ///
 /// 1. Create an instance of [SdkBuilder] with [`SdkBuilder::new()`]
-/// 2. Configure the builder with [`SdkBuilder::with_core()`]
-/// 3. Call [`SdkBuilder::build()`] to create the [Sdk] instance.
+/// 2. Set up network type with [`SdkBuilder::with_network_type()`] (not needed for mock)
+/// 3. Configure the builder with [`SdkBuilder::with_core()`]
+/// 4. Call [`SdkBuilder::build()`] to create the [Sdk] instance.
 pub struct SdkBuilder {
     /// List of addressses to connect to.
     ///
@@ -576,15 +585,14 @@ impl Default for SdkBuilder {
 impl SdkBuilder {
     /// Create a new SdkBuilder with provided address list.
     ///
-    /// It creates new SdkBuilder, preconfigured to connect to provided addresses on the [NetworkType::Testnet].
+    /// It creates new SdkBuilder, preconfigured to connect to provided addresses.
     ///
-    /// You can change this using [`SdkBuilder::with_network_type()`].
+    /// Once created, you need to set [NetworkType] with [`SdkBuilder::with_network_type()`].
     pub fn new(addresses: AddressList) -> Self {
         Self {
             addresses: Some(addresses),
             ..Default::default()
         }
-        .with_network_type(NetworkType::Testnet)
     }
 
     /// Create a new SdkBuilder that will generate mock client.
@@ -714,6 +722,12 @@ impl SdkBuilder {
         let sdk= match self.addresses {
             // non-mock mode
             Some(addresses) => {
+                if self.network_type == NetworkType::Mock {
+                    return Err(Error::Config(
+                        "Network type must be set, use SdkBuilder::with_network_type()".to_string(),
+                    ));
+                }
+
                 let dapi = DapiClient::new(addresses, self.settings);
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
@@ -721,6 +735,7 @@ impl SdkBuilder {
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
+                    network_type: self.network_type,
                     proofs:self.proofs,
                     context_provider: self.context_provider.map(Arc::new),
                     cancel_token: self.cancel_token,
@@ -770,7 +785,8 @@ impl SdkBuilder {
                         mock:Arc::new(Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs))),
                         dapi,
                         version:self.version,
-                    },
+                    },       
+                    network_type: self.network_type,
                     dump_dir: self.dump_dir,
                     proofs:self.proofs,
                     internal_cache: Default::default(),
