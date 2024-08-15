@@ -80,7 +80,8 @@ impl QuorumParams {
 
     pub fn new_devnet() -> Self {
         QuorumParams {
-            instant_lock_quorum_type: QuorumType::LlmqDevnet,
+            // FIXME: local devnet uses regtest
+            instant_lock_quorum_type: QuorumType::LlmqTest,
         }
     }
 

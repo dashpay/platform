@@ -2,7 +2,6 @@ use dapi_grpc::platform::v0::get_epochs_info_request::GetEpochsInfoRequestV0;
 use dapi_grpc::platform::v0::{GetEpochsInfoRequest, GetEpochsInfoResponse};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_sdk::platform::transition::asset_lock::AssetLockProofVerifier;
-use dash_sdk::platform::types::epoch::{Epoch, ExtendedEpochInfoEx};
 use dpp::dashcore::consensus::deserialize;
 use dpp::dashcore::hash_types::CycleHash;
 use dpp::dashcore::hashes::hex::FromHex;
