@@ -9,10 +9,14 @@ use crate::networks::{NetworkType, QuorumParams};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
 use dapi_grpc::mock::Mockable;
-use dapi_grpc::platform::v0::ResponseMetadata;
+use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+use dpp::bincode;
+use dpp::bincode::error::DecodeError;
+use dpp::dashcore::Network;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use drive::grovedb::operations::proof::GroveDBProof;
 use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::MockContextProvider;
@@ -78,6 +82,8 @@ pub type LastQueryTimestamp = u64;
 /// See tests/ for examples of using the SDK.
 #[derive(Clone)]
 pub struct Sdk {
+    /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)  
+    pub network: Network,
     inner: SdkInstance,
     /// Type of network we use. Determines some parameters, like quorum types.
     network_type: NetworkType,
@@ -205,9 +211,53 @@ impl Sdk {
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
         match self.inner {
-            SdkInstance::Dapi { .. } => {
-                O::maybe_from_proof_with_metadata(request, response, self.version(), &provider)
+            SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
+                request,
+                response,
+                self.network,
+                self.version(),
+                &provider,
+            )
+            .map(|(a, b, _)| (a, b)),
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { ref mock, .. } => {
+                let guard = mock.lock().await;
+                guard
+                    .parse_proof_with_metadata(request, response)
+                    .map(|(a, b, _)| (a, b))
             }
+        }
+    }
+
+    /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
+    ///
+    /// This method is used to retrieve objects from proofs returned by Dash Platform.
+    ///
+    /// ## Generic Parameters
+    ///
+    /// - `R`: Type of the request that was used to fetch the proof.
+    /// - `O`: Type of the object to be retrieved from the proof.
+    pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
+        &self,
+        request: O::Request,
+        response: O::Response,
+    ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
+    where
+        O::Request: Mockable,
+    {
+        let provider = self
+            .context_provider
+            .as_ref()
+            .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
+
+        match self.inner {
+            SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
+                request,
+                response,
+                self.network,
+                self.version(),
+                &provider,
+            ),
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
                 let guard = mock.lock().await;
@@ -517,6 +567,8 @@ pub struct SdkBuilder {
     addresses: Option<AddressList>,
     settings: RequestSettings,
 
+    network: Network,
+
     core_ip: String,
     core_port: u16,
     core_user: String,
@@ -555,6 +607,7 @@ impl Default for SdkBuilder {
         Self {
             addresses: None,
             settings: RequestSettings::default(),
+            network: Network::Dash,
             core_ip: "".to_string(),
             core_port: 0,
             core_password: "".to_string(),
@@ -619,6 +672,14 @@ impl SdkBuilder {
         unimplemented!(
             "Mainnet address list not implemented yet. Use new() and provide address list."
         )
+    }
+
+    /// Configure network type.
+    ///
+    /// Defaults to Network::Dash which is mainnet.
+    pub fn with_network(mut self, network: Network) -> Self {
+        self.network = network;
+        self
     }
 
     /// Configure request settings.
@@ -734,6 +795,7 @@ impl SdkBuilder {
 
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
+                    network: self.network,
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     network_type: self.network_type,
                     proofs:self.proofs,
@@ -781,6 +843,7 @@ impl SdkBuilder {
                 let  context_provider = self.context_provider.unwrap_or(Box::new(MockContextProvider::new()));
 
                 Sdk {
+                    network: self.network,
                     inner:SdkInstance::Mock {
                         mock:Arc::new(Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs))),
                         dapi,
@@ -800,4 +863,33 @@ impl SdkBuilder {
 
         Ok(sdk)
     }
+}
+
+pub fn prettify_proof(proof: &Proof) -> String {
+    let config = bincode::config::standard()
+        .with_big_endian()
+        .with_no_limit();
+    let grovedb_proof: Result<GroveDBProof, DecodeError> =
+        bincode::decode_from_slice(&proof.grovedb_proof, config).map(|(a, _)| a);
+
+    let grovedb_proof_string = match grovedb_proof {
+        Ok(proof) => format!("{}", proof),
+        Err(_) => "Invalid GroveDBProof".to_string(),
+    };
+    format!(
+        "Proof {{
+            grovedb_proof: {},
+            quorum_hash: 0x{},
+            signature: 0x{},
+            round: {},
+            block_id_hash: 0x{},
+            quorum_type: {},
+        }}",
+        grovedb_proof_string,
+        hex::encode(&proof.quorum_hash),
+        hex::encode(&proof.signature),
+        proof.round,
+        hex::encode(&proof.block_id_hash),
+        proof.quorum_type,
+    )
 }

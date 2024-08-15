@@ -77,6 +77,7 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
     use drive::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
     use drive::drive::RootTree;
     use drive::grovedb::Element;
@@ -84,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_query_total_system_credits_from_path_elements_query() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let platform_version = PlatformVersion::latest();
 

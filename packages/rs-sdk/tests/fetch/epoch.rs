@@ -7,7 +7,8 @@ use dapi_grpc::platform::{
 };
 use dash_sdk::{
     platform::{
-        types::epoch::ExtendedEpochInfoEx, Fetch, FetchMany, LimitQuery, DEFAULT_EPOCH_QUERY_LIMIT,
+        fetch_current_no_parameters::FetchCurrent, Fetch, FetchMany, LimitQuery,
+        DEFAULT_EPOCH_QUERY_LIMIT,
     },
     Sdk,
 };
@@ -165,7 +166,7 @@ async fn test_epoch_fetch_future() {
     assert!(epoch.is_none());
 }
 
-/// Fetch current epoch from the platform.
+/// Fetch current epoch from Platform.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_epoch_fetch_current() {
     setup_logs();

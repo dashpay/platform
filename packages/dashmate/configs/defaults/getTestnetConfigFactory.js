@@ -24,10 +24,6 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
         },
       },
       core: {
-        docker: {
-          image: 'dashpay/dashd:21.0.0-rc.2',
-          commandArgs: [],
-        },
         p2p: {
           port: 19999,
         },
@@ -94,12 +90,6 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
                 },
               ],
               port: 36656,
-            },
-            mempool: {
-              timeoutCheckTx: '1s',
-              txEnqueueTimeout: '10ms',
-              txSendRateLimit: 10,
-              txRecvRateLimit: 12,
             },
             rpc: {
               port: 36657,

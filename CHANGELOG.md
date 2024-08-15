@@ -1,3 +1,72 @@
+## [1.1.0-dev.1](https://github.com/dashpay/platform/compare/v1.0.2...v1.1.0-dev.1) (2024-08-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* masternode reward payouts are changed so previously created state won't be compatible (#2032)
+* previously created networks won't be supported since genesis configuration is changed (#2042)
+* added genesis core height in misc tree so previously created state won't be compatible (#2038)
+
+### Features
+
+* configure wait for ST result timeout ([#2045](https://github.com/dashpay/platform/issues/2045))
+* **dashmate:** configure tenderdash connections ([#2048](https://github.com/dashpay/platform/issues/2048))
+* **drive-abci:** skip state transition txs if time limit is reached on prepare_proposal ([#2041](https://github.com/dashpay/platform/issues/2041))
+* **platform:** store/fetch genesis core height in misc tree ([#2038](https://github.com/dashpay/platform/issues/2038))
+* **platform:** total credits on platform query and fix for reward distribution ([#2032](https://github.com/dashpay/platform/issues/2032))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update consensus params ([#2042](https://github.com/dashpay/platform/issues/2042))
+* **dashmate:** update tenderdash seed ([#2040](https://github.com/dashpay/platform/issues/2040))
+* ignore security vulnerability 1098397 ([#2044](https://github.com/dashpay/platform/issues/2044))
+
+### [1.0.2](https://github.com/dashpay/platform/compare/v1.0.1...v1.0.2) (2024-07-31)
+
+
+### Features
+
+* **dashmate:** a flag to keep data on reset ([#2026](https://github.com/dashpay/platform/issues/2026))
+
+
+### Bug Fixes
+
+* **dashmate:** status command shows tenderdash error before activation ([#2028](https://github.com/dashpay/platform/issues/2028))
+* **dashmate:** unnecessary core indexes are required ([#2025](https://github.com/dashpay/platform/issues/2025))
+
+### [1.0.1](https://github.com/dashpay/platform/compare/v1.0.0...v1.0.1) (2024-07-29)
+
+
+### Miscellaneous Chores
+
+* bump dash-spv version to 2.0.0
+
+## [1.0.0](https://github.com/dashpay/platform/compare/v1.0.0-rc.2...v1.0.0) (2024-07-29)
+
+
+### Features
+
+* sdk to return proofs if requested ([#2014](https://github.com/dashpay/platform/issues/2014))
+
+
+### Bug Fixes
+
+* **dashmate:** imported node is not starting ([#2009](https://github.com/dashpay/platform/issues/2009))
+* **dashmate:** remove `dash-cli` from protx registration instructions ([#2018](https://github.com/dashpay/platform/issues/2018))
+* epoch protocol version setting ([#2013](https://github.com/dashpay/platform/issues/2013))
+
+
+### Build System
+
+* update tenderdash to 1.1.0 ([#2017](https://github.com/dashpay/platform/issues/2017))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** configure mainnet ([#2016](https://github.com/dashpay/platform/issues/2016))
+* update to GroveDB Version 1.0.0 ([#2015](https://github.com/dashpay/platform/issues/2015))
+
 ## [1.0.0-rc.2](https://github.com/dashpay/platform/compare/v1.0.0-rc.1...v1.0.0-rc.2) (2024-07-25)
 
 

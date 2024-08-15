@@ -102,12 +102,12 @@ impl std::fmt::Display for Purpose {
 
 impl Purpose {
     /// The full range of purposes
-    pub fn full_range() -> [Purpose; 4] {
-        [AUTHENTICATION, ENCRYPTION, DECRYPTION, TRANSFER]
+    pub fn full_range() -> [Purpose; 5] {
+        [AUTHENTICATION, ENCRYPTION, DECRYPTION, TRANSFER, VOTING]
     }
     /// Just the authentication and withdraw purposes
-    pub fn authentication_and_transfer() -> [Purpose; 2] {
-        [AUTHENTICATION, TRANSFER]
+    pub fn searchable_purposes() -> [Purpose; 3] {
+        [AUTHENTICATION, TRANSFER, VOTING]
     }
     /// Just the encryption and decryption purposes
     pub fn encryption_decryption() -> [Purpose; 2] {

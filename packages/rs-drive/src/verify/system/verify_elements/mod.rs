@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 mod v0;
 
 impl Drive {
-    /// Verifies a proof containing potentially multiple epoch infos.
+    /// Verifies a proof and returns elements matching keys for a path.
     ///
     /// # Parameters
     ///
@@ -20,7 +20,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// Returns a `Result` with a tuple of `RootHash` and `Vec<Element>`. The `BTreeMap<Vec<u8>, Option<Element>>`
+    /// Returns a `Result` with a tuple of `RootHash` and `BTreeMap<Vec<u8>, Option<Element>>`. The `BTreeMap<Vec<u8>, Option<Element>>`
     /// is the map of elements we get back.
     ///
     /// # Errors

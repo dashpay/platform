@@ -14,6 +14,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 mod add_potential_contract_info_for_contract_bounded_key;
+mod refresh_potential_contract_info_key_references;
 
 pub enum IdentityDataContractKeyApplyInfo {
     /// The root_id is either a contract id or an owner id

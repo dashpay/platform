@@ -278,11 +278,11 @@ persistent-peers = "{{~it.platform.drive.tenderdash.p2p.persistentPeers :peer:in
 upnp = false
 
 # Maximum number of connections (inbound and outbound).
-max-connections = 64
+max-connections = {{=it.platform.drive.tenderdash.p2p.maxConnections}}
 
 # Maximum number of connections reserved for outgoing
 # connections. Must be less than max-connections
-max-outgoing-connections = 12
+max-outgoing-connections = {{=it.platform.drive.tenderdash.p2p.maxOutgoingConnections}}
 
 # Rate limits the number of incoming connection attempts per IP address.
 max-incoming-connection-attempts = 100
