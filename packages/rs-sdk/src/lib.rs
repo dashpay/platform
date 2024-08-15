@@ -67,6 +67,7 @@ mod core_client;
 pub mod error;
 mod internal_cache;
 pub mod mock;
+pub mod networks;
 pub mod platform;
 pub mod sdk;
 

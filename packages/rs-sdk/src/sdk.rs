@@ -5,6 +5,7 @@ use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
+use crate::networks::NetworkType;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
 use dapi_grpc::mock::Mockable;
@@ -512,6 +513,8 @@ pub struct SdkBuilder {
     core_user: String,
     core_password: String,
 
+    network_type: NetworkType,
+
     /// If true, request and verify proofs of the responses.
     proofs: bool,
 
@@ -547,6 +550,7 @@ impl Default for SdkBuilder {
             core_port: 0,
             core_password: "".to_string(),
             core_user: "".to_string(),
+            network_type: NetworkType::Mock,
 
             proofs: true,
 
@@ -571,11 +575,16 @@ impl Default for SdkBuilder {
 
 impl SdkBuilder {
     /// Create a new SdkBuilder with provided address list.
+    ///
+    /// It creates new SdkBuilder, preconfigured to connect to provided addresses on the [NetworkType::Testnet].
+    ///
+    /// You can change this using [`SdkBuilder::with_network_type()`].
     pub fn new(addresses: AddressList) -> Self {
         Self {
             addresses: Some(addresses),
             ..Default::default()
         }
+        .with_network_type(NetworkType::Testnet)
     }
 
     /// Create a new SdkBuilder that will generate mock client.
@@ -646,6 +655,15 @@ impl SdkBuilder {
     /// Once that cancellation token is cancelled, all pending requests shall teriminate.
     pub fn with_cancellation_token(mut self, cancel_token: CancellationToken) -> Self {
         self.cancel_token = cancel_token;
+        self
+    }
+
+    /// Define network to which you want to connect.
+    ///
+    /// For development, you can use [NetworkType::Testnet] or [NetworkType::Devnet].
+    /// For production, use [NetworkType::Mainnet].
+    pub fn with_network_type(mut self, network_type: NetworkType) -> Self {
+        self.network_type = network_type;
         self
     }
 
