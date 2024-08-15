@@ -1514,7 +1514,7 @@ mod tests {
             let issues = platform
                 .drive
                 .grove
-                .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+                .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
             assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
@@ -2072,7 +2072,7 @@ mod tests {
             let document = query_sender_results.documents().first().expect("expected a document");
 
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
-            
+
             let documents_batch_update_transition_1 =
                 DocumentsBatchTransition::new_document_replacement_transition_from_document(
                     altered_document,
@@ -2149,15 +2149,15 @@ mod tests {
                     None,
                 )
                 .expect("expected query result");
-            
+
             let document = query_sender_results.documents().first().expect("expected a document");
-            
+
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] displayName:string Ody publicMessage:string 8XG7KBGNvm2  ");
 
             let issues = platform
                 .drive
                 .grove
-                .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+                .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
             assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
@@ -2367,11 +2367,11 @@ mod tests {
             let document = query_sender_results.documents().first().expect("expected a document");
 
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] displayName:string Samuel publicMessage:string 8XG7KBGNvm2  ");
-            
+
             fast_forward_to_block(&platform, 1_600_000_000, 902, 44, 1, false); //next epoch
 
             let platform_state = platform.state.load();
-            
+
             let transaction = platform.drive.grove.start_transaction();
 
             let processing_result = platform
@@ -2418,7 +2418,7 @@ mod tests {
             let issues = platform
                 .drive
                 .grove
-                .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+                .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
             assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
@@ -2541,7 +2541,7 @@ mod tests {
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
 
             fast_forward_to_block(&platform, 1_400_000_000, 901, 43, 1, false); //next epoch
-            
+
             let platform_state = platform.state.load();
 
             let documents_batch_update_transition_1 =
@@ -2628,7 +2628,7 @@ mod tests {
             fast_forward_to_block(&platform, 1_600_000_000, 902, 44, 1, false); //next epoch
 
             let platform_state = platform.state.load();
-            
+
             let transaction = platform.drive.grove.start_transaction();
 
             let processing_result = platform
@@ -2675,7 +2675,7 @@ mod tests {
             let issues = platform
                 .drive
                 .grove
-                .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+                .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
             assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
@@ -2889,7 +2889,7 @@ mod tests {
             fast_forward_to_block(&platform, 1_600_000_000, 905, 44, 2, true); //next epoch
 
             let platform_state = platform.state.load();
-            
+
             let transaction = platform.drive.grove.start_transaction();
 
             let processing_result = platform
@@ -2936,7 +2936,7 @@ mod tests {
             let issues = platform
                 .drive
                 .grove
-                .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+                .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
             assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
@@ -3087,7 +3087,7 @@ mod tests {
             let issues = platform
                 .drive
                 .grove
-                .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+                .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
             assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
@@ -3425,7 +3425,7 @@ mod tests {
             let issues = platform
                 .drive
                 .grove
-                .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+                .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
             assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
@@ -3834,7 +3834,7 @@ mod tests {
             let issues = platform
                 .drive
                 .grove
-                .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+                .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
             assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
@@ -4052,7 +4052,7 @@ mod tests {
             let issues = platform
                 .drive
                 .grove
-                .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+                .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
             assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
@@ -4661,7 +4661,7 @@ mod tests {
             let issues = platform
                 .drive
                 .grove
-                .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+                .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
             assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));

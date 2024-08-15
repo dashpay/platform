@@ -205,7 +205,7 @@ mod tests {
         let issues = platform
             .drive
             .grove
-            .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+            .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(issues.len(), 0);
@@ -238,11 +238,11 @@ mod tests {
         let issues = platform
             .drive
             .grove
-            .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+            .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
-        
+
         let platform_state = platform.state.load();
 
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
@@ -299,7 +299,7 @@ mod tests {
         let issues = platform
             .drive
             .grove
-            .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+            .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));

@@ -743,12 +743,13 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.1.10"
+version = "1.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9e8aabfac534be767c909e0690571677d49f41bd8465ae876fe043d52ba5292"
+checksum = "5fb8dd288a69fc53a1996d7ecfbf4a20d59065bff137ce7e56bbd620de191189"
 dependencies = [
  "jobserver",
  "libc",
+ "shlex",
 ]
 
 [[package]]
@@ -1457,7 +1458,7 @@ dependencies = [
  "env_logger 0.9.3",
  "getrandom",
  "hex",
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "integer-encoding",
  "itertools 0.12.1",
  "json-schema-compatibility-validator",
@@ -1508,7 +1509,7 @@ dependencies = [
  "grovedb-storage",
  "grovedb-version",
  "hex",
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "integer-encoding",
  "intmap",
  "itertools 0.11.0",
@@ -1551,7 +1552,7 @@ dependencies = [
  "envy",
  "file-rotate",
  "hex",
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "integer-encoding",
  "itertools 0.10.5",
  "lazy_static",
@@ -2055,7 +2056,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a0540320151bf1ee8ff0cd2e5aac9ee250e713dc#a0540320151bf1ee8ff0cd2e5aac9ee250e713dc"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#66e7611cf5811b437f28946c2e2c38b1f4fc446d"
 dependencies = [
  "axum 0.7.5",
  "bincode",
@@ -2071,7 +2072,7 @@ dependencies = [
  "grovedbg-types",
  "hex",
  "hex-literal",
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "integer-encoding",
  "intmap",
  "itertools 0.12.1",
@@ -2088,7 +2089,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a0540320151bf1ee8ff0cd2e5aac9ee250e713dc#a0540320151bf1ee8ff0cd2e5aac9ee250e713dc"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#66e7611cf5811b437f28946c2e2c38b1f4fc446d"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2098,7 +2099,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a0540320151bf1ee8ff0cd2e5aac9ee250e713dc#a0540320151bf1ee8ff0cd2e5aac9ee250e713dc"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#66e7611cf5811b437f28946c2e2c38b1f4fc446d"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2111,7 +2112,7 @@ dependencies = [
  "grovedb-version",
  "grovedb-visualize",
  "hex",
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "integer-encoding",
  "num_cpus",
  "rand",
@@ -2122,12 +2123,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a0540320151bf1ee8ff0cd2e5aac9ee250e713dc#a0540320151bf1ee8ff0cd2e5aac9ee250e713dc"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#66e7611cf5811b437f28946c2e2c38b1f4fc446d"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a0540320151bf1ee8ff0cd2e5aac9ee250e713dc#a0540320151bf1ee8ff0cd2e5aac9ee250e713dc"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#66e7611cf5811b437f28946c2e2c38b1f4fc446d"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2146,7 +2147,7 @@ dependencies = [
 [[package]]
 name = "grovedb-version"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a0540320151bf1ee8ff0cd2e5aac9ee250e713dc#a0540320151bf1ee8ff0cd2e5aac9ee250e713dc"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#66e7611cf5811b437f28946c2e2c38b1f4fc446d"
 dependencies = [
  "thiserror",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2155,7 +2156,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a0540320151bf1ee8ff0cd2e5aac9ee250e713dc#a0540320151bf1ee8ff0cd2e5aac9ee250e713dc"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#66e7611cf5811b437f28946c2e2c38b1f4fc446d"
 dependencies = [
  "hex",
  "itertools 0.12.1",
@@ -2164,7 +2165,7 @@ dependencies = [
 [[package]]
 name = "grovedbg-types"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=a0540320151bf1ee8ff0cd2e5aac9ee250e713dc#a0540320151bf1ee8ff0cd2e5aac9ee250e713dc"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#66e7611cf5811b437f28946c2e2c38b1f4fc446d"
 dependencies = [
  "serde",
  "serde_with 3.9.0",
@@ -2182,7 +2183,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http 0.2.12",
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -2201,7 +2202,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "http 1.1.0",
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -2272,6 +2273,12 @@ name = "hermit-abi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024"
+
+[[package]]
+name = "hermit-abi"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fbf6a919d6cf397374f7dfeeea91d974c7c0a7221d0d0f4f20d859d329e53fcc"
 
 [[package]]
 name = "hex"
@@ -2564,9 +2571,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.3.0"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de3fc2e30ba82dd1b3911c8de1ffc143c74a914a14e99514d7637e3099df5ea0"
+checksum = "93ead53efc7ea8ed3cfb0c79fc8023fbb782a5432b52830b6518941cebe6505c"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.5",
@@ -2625,11 +2632,11 @@ checksum = "8f518f335dce6725a761382244631d86cf0ccb2863413590b31338feb467f9c3"
 
 [[package]]
 name = "is-terminal"
-version = "0.4.12"
+version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f23ff5ef2b80d608d61efee834934d862cd92461afc0560dedf493e4c033738b"
+checksum = "261f68e344040fbd0edea105bef17c66edf46f984ddb1115b775ce31be948f4b"
 dependencies = [
- "hermit-abi 0.3.9",
+ "hermit-abi 0.4.0",
  "libc",
  "windows-sys 0.52.0",
 ]
@@ -2936,7 +2943,7 @@ dependencies = [
  "hyper 1.4.1",
  "hyper-tls",
  "hyper-util",
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "ipnet",
  "metrics",
  "metrics-util",
@@ -3398,7 +3405,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db"
 dependencies = [
  "fixedbitset",
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
 ]
 
 [[package]]
@@ -3476,7 +3483,7 @@ dependencies = [
  "bs58 0.5.1",
  "ciborium",
  "hex",
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "lazy_static",
  "platform-serialization",
  "platform-version",
@@ -4459,11 +4466,11 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.124"
+version = "1.0.125"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66ad62847a56b3dba58cc891acd13884b9c61138d330c0d7b6181713d4fce38d"
+checksum = "83c8e735a073ccf5be70aa8066aa984eaf2fa000db6c8d0100ae605b366d31ed"
 dependencies = [
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "itoa",
  "memchr",
  "ryu",
@@ -4538,7 +4545,7 @@ dependencies = [
  "chrono",
  "hex",
  "indexmap 1.9.3",
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "serde",
  "serde_derive",
  "serde_json",
@@ -5273,7 +5280,7 @@ version = "0.19.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b5bb770da30e5cbfde35a2d7b9b8a2c4b8ef89548a7a6aeab5c9a576e3e7421"
 dependencies = [
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "toml_datetime",
  "winnow 0.5.40",
 ]
@@ -5284,7 +5291,7 @@ version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a8534fd7f78b5405e860340ad6575217ce99f38d4d5c8f2442cb5ecb50090e1"
 dependencies = [
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "toml_datetime",
  "winnow 0.5.40",
 ]
@@ -5295,7 +5302,7 @@ version = "0.22.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "583c44c02ad26b0c3f3066fe629275e50627026c51ac2e595cca4c230ce1ce1d"
 dependencies = [
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "serde",
  "serde_spanned",
  "toml_datetime",
@@ -5394,7 +5401,7 @@ source = "git+https://github.com/QuantumExplorer/tower?branch=fix/indexMap2OnV04
 dependencies = [
  "futures-core",
  "futures-util",
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "pin-project",
  "pin-project-lite",
  "rand",
@@ -6137,7 +6144,7 @@ dependencies = [
  "crossbeam-utils",
  "displaydoc",
  "flate2",
- "indexmap 2.3.0",
+ "indexmap 2.4.0",
  "memchr",
  "thiserror",
  "zopfli",

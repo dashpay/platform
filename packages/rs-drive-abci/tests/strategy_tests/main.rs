@@ -1793,7 +1793,7 @@ mod tests {
         let issues = outcome.abci_app.platform
             .drive
             .grove
-            .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+            .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
@@ -2417,7 +2417,7 @@ mod tests {
         let issues = outcome.abci_app.platform
             .drive
             .grove
-            .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+            .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
@@ -2545,7 +2545,7 @@ mod tests {
         let issues = outcome.abci_app.platform
             .drive
             .grove
-            .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+            .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
@@ -2584,7 +2584,7 @@ mod tests {
                 .expect("expected a profile document type")
                 .to_owned_document_type(),
         };
-        
+
         let mut rng = StdRng::seed_from_u64(567);
 
         let mut simple_signer = SimpleSigner::default();
@@ -2690,7 +2690,7 @@ mod tests {
         let issues = outcome.abci_app.platform
             .drive
             .grove
-            .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+            .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
@@ -2833,7 +2833,7 @@ mod tests {
         let issues = outcome.abci_app.platform
             .drive
             .grove
-            .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+            .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
