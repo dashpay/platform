@@ -154,7 +154,7 @@ where
         check_tx_result.unique_identifiers = state_transition.unique_identifiers();
 
         let validation_result = state_transition_to_execution_event_for_check_tx(
-            &platform_ref,
+            platform_ref,
             state_transition,
             check_tx_level,
             platform_version,
@@ -368,6 +368,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -479,6 +481,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -678,6 +682,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -829,6 +835,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -974,6 +982,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1088,6 +1098,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1167,6 +1179,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1294,6 +1308,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1411,6 +1427,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 

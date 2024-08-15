@@ -1,3 +1,27 @@
+## [1.1.0-dev.1](https://github.com/dashpay/platform/compare/v1.0.2...v1.1.0-dev.1) (2024-08-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* masternode reward payouts are changed so previously created state won't be compatible (#2032)
+* previously created networks won't be supported since genesis configuration is changed (#2042)
+* added genesis core height in misc tree so previously created state won't be compatible (#2038)
+
+### Features
+
+* configure wait for ST result timeout ([#2045](https://github.com/dashpay/platform/issues/2045))
+* **dashmate:** configure tenderdash connections ([#2048](https://github.com/dashpay/platform/issues/2048))
+* **drive-abci:** skip state transition txs if time limit is reached on prepare_proposal ([#2041](https://github.com/dashpay/platform/issues/2041))
+* **platform:** store/fetch genesis core height in misc tree ([#2038](https://github.com/dashpay/platform/issues/2038))
+* **platform:** total credits on platform query and fix for reward distribution ([#2032](https://github.com/dashpay/platform/issues/2032))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update consensus params ([#2042](https://github.com/dashpay/platform/issues/2042))
+* **dashmate:** update tenderdash seed ([#2040](https://github.com/dashpay/platform/issues/2040))
+* ignore security vulnerability 1098397 ([#2044](https://github.com/dashpay/platform/issues/2044))
+
 ### [1.0.2](https://github.com/dashpay/platform/compare/v1.0.1...v1.0.2) (2024-07-31)
 
 

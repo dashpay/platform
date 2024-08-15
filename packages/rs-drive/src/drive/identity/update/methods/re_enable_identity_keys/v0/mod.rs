@@ -10,6 +10,7 @@ use dpp::identity::identity_public_key::accessors::v0::{
 };
 use dpp::identity::{IdentityPublicKey, KeyID};
 
+use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
@@ -45,6 +46,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         key_ids: Vec<KeyID>,
+        epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -112,6 +114,16 @@ impl Drive {
                 &mut drive_operations,
                 drive_version,
             )?;
+
+            self.refresh_identity_key_reference_operations(
+                identity_id,
+                &key,
+                epoch,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut drive_operations,
+                platform_version,
+            )?
         }
 
         Ok(drive_operations)

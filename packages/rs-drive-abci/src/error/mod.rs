@@ -75,6 +75,13 @@ impl From<ValueError> for Error {
     }
 }
 
+impl From<drive::grovedb::Error> for Error {
+    fn from(value: drive::grovedb::Error) -> Self {
+        let drive_error: DriveError = value.into();
+        drive_error.into()
+    }
+}
+
 impl From<Error> for ResponseException {
     fn from(value: Error) -> Self {
         Self {

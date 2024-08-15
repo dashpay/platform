@@ -19,7 +19,7 @@ use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Methods, BlockStateInfoV0Setters,
 };
 use crate::execution::types::{block_execution_context, block_state_info};
-
+use crate::metrics::HistogramTiming;
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal;
 use crate::platform_types::epoch_info::v0::{EpochInfoV0Getters, EpochInfoV0Methods};
@@ -67,6 +67,7 @@ where
         last_committed_platform_state: &PlatformState,
         mut block_platform_state: PlatformState,
         platform_version: &'static PlatformVersion,
+        timer: Option<&HistogramTiming>,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
         tracing::trace!(
@@ -310,6 +311,8 @@ where
             &block_info,
             transaction,
             platform_version,
+            known_from_us,
+            timer,
         )?;
 
         // Pool withdrawals into transactions queue

@@ -229,6 +229,15 @@ type PlatformgetPrefundedSpecializedBalance = {
   readonly responseType: typeof platform_pb.GetPrefundedSpecializedBalanceResponse;
 };
 
+type PlatformgetTotalCreditsInPlatform = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetTotalCreditsInPlatformRequest;
+  readonly responseType: typeof platform_pb.GetTotalCreditsInPlatformResponse;
+};
+
 type PlatformgetPathElements = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -265,6 +274,7 @@ export class Platform {
   static readonly getContestedResourceIdentityVotes: PlatformgetContestedResourceIdentityVotes;
   static readonly getVotePollsByEndDate: PlatformgetVotePollsByEndDate;
   static readonly getPrefundedSpecializedBalance: PlatformgetPrefundedSpecializedBalance;
+  static readonly getTotalCreditsInPlatform: PlatformgetTotalCreditsInPlatform;
   static readonly getPathElements: PlatformgetPathElements;
 }
 
@@ -524,6 +534,15 @@ export class PlatformClient {
   getPrefundedSpecializedBalance(
     requestMessage: platform_pb.GetPrefundedSpecializedBalanceRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetPrefundedSpecializedBalanceResponse|null) => void
+  ): UnaryResponse;
+  getTotalCreditsInPlatform(
+    requestMessage: platform_pb.GetTotalCreditsInPlatformRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetTotalCreditsInPlatformResponse|null) => void
+  ): UnaryResponse;
+  getTotalCreditsInPlatform(
+    requestMessage: platform_pb.GetTotalCreditsInPlatformRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetTotalCreditsInPlatformResponse|null) => void
   ): UnaryResponse;
   getPathElements(
     requestMessage: platform_pb.GetPathElementsRequest,

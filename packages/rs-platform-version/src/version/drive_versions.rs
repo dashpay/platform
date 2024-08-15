@@ -145,6 +145,7 @@ pub struct DriveVerifyVoteMethodVersions {
 pub struct DriveVerifySystemMethodVersions {
     pub verify_epoch_infos: FeatureVersion,
     pub verify_elements: FeatureVersion,
+    pub verify_total_credits_in_system: FeatureVersion,
     pub verify_upgrade_state: FeatureVersion,
     pub verify_upgrade_vote_status: FeatureVersion,
 }
@@ -582,6 +583,7 @@ pub struct DriveIdentityWithdrawalTransactionQueueMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityContractInfoMethodVersions {
     pub add_potential_contract_info_for_contract_bounded_key: FeatureVersion,
+    pub refresh_potential_contract_info_key_references: FeatureVersion,
     pub merge_identity_contract_nonce: FeatureVersion,
 }
 
@@ -726,6 +728,7 @@ pub struct DriveIdentityUpdateMethodVersions {
     pub add_to_previous_balance: FeatureVersion,
     pub apply_balance_change_from_fee_to_identity: FeatureVersion,
     pub remove_from_identity_balance: FeatureVersion,
+    pub refresh_identity_key_reference_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -765,6 +765,31 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.1.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (name === 'local') {
+              options.platform.drive.abci.epochTime = 1200;
+            }
+
+            if (options.network === NETWORK_MAINNET && name !== 'base') {
+              options.platform.drive.tenderdash.p2p.seeds = mainnet.get('platform.drive.tenderdash.p2p.seeds');
+            }
+
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
+
+            options.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout = '125s';
+            options.platform.dapi.api.waitForStResultTimeout = 120000;
+
+            options.platform.drive.tenderdash.p2p.maxConnections = 64;
+            options.platform.drive.tenderdash.p2p.maxOutgoingConnections = 30;
+            options.platform.drive.tenderdash.genesis
+              .consensus_params = base.get('platform.drive.tenderdash.genesis.consensus_params');
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+          });
+        return configFile;
+      },
     };
   }
 

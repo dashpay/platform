@@ -2,6 +2,8 @@ use crate::error::Error;
 use crate::execution::types::proposer_payouts;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
+use dpp::core_subsidy::epoch_core_reward_credits_for_distribution::epoch_core_reward_credits_for_distribution;
+use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::version::PlatformVersion;
 use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
 use drive::drive::credit_pools::operations::update_unpaid_epoch_index_operation;
@@ -38,10 +40,21 @@ impl<C> Platform<C> {
             return Ok(None);
         };
 
+        let start_block_core_height = if unpaid_epoch.epoch_index == 0 {
+            //On epoch 0 we need to use the activation height instead of the start of the block
+            self.drive
+                .fetch_genesis_core_height(Some(transaction), platform_version)?
+        } else {
+            // The unpaid epochs start block has had its credits distributed, so we must do a + 1
+            // But only if we are not in the first epoch
+            unpaid_epoch.start_block_core_height + 1
+        };
+
         // Calculate core block reward for the unpaid epoch
-        let core_block_rewards = Self::epoch_core_reward_credits_for_distribution(
-            unpaid_epoch.start_block_core_height,
+        let core_block_rewards = epoch_core_reward_credits_for_distribution(
+            start_block_core_height,
             unpaid_epoch.next_epoch_start_block_core_height,
+            self.config.network.core_subsidy_halving_interval(),
             platform_version,
         )?;
 
@@ -52,6 +65,14 @@ impl<C> Platform<C> {
                 amount: core_block_rewards,
             },
         ));
+
+        tracing::info!(
+            "Core block rewards for epoch {} from height {} to height {} are {}",
+            unpaid_epoch.epoch_index,
+            unpaid_epoch.start_block_core_height,
+            unpaid_epoch.next_epoch_start_block_core_height,
+            core_block_rewards
+        );
 
         let unpaid_epoch = unpaid_epoch.into();
 
@@ -132,7 +153,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
-            .set_initial_state_structure();
+            .set_genesis_state_with_activation_info(0, 1);
         let transaction = platform.drive.grove.start_transaction();
 
         // Create masternode reward shares contract

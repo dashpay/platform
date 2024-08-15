@@ -17,6 +17,10 @@ export default function renderTemplateFactory() {
    */
   function renderTemplate(templatePath, variables) {
     const templateString = fs.readFileSync(templatePath, 'utf-8');
+
+    // do not strip \n
+    dots.templateSettings.strip = false;
+
     const template = dots.template(templateString);
 
     return template({ ...variables, crypto });

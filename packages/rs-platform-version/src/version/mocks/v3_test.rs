@@ -1,11 +1,11 @@
 use crate::version::contracts::SystemDataContractVersions;
 use crate::version::dpp_versions::{
-    AssetLockVersions, ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
-    DataContractMethodVersions, DataContractValidationVersions, DocumentFeatureVersionBounds,
-    DocumentMethodVersions, DocumentTransitionVersions, DocumentTypeClassMethodVersions,
-    DocumentTypeIndexVersions, DocumentTypeMethodVersions, DocumentTypeSchemaVersions,
-    DocumentTypeValidationVersions, DocumentTypeVersions, DocumentVersions,
-    DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
+    AssetLockVersions, ContractVersions, CostVersions, DPPMethodVersions, DPPValidationVersions,
+    DPPVersion, DataContractMethodVersions, DataContractValidationVersions,
+    DocumentFeatureVersionBounds, DocumentMethodVersions, DocumentTransitionVersions,
+    DocumentTypeClassMethodVersions, DocumentTypeIndexVersions, DocumentTypeMethodVersions,
+    DocumentTypeSchemaVersions, DocumentTypeValidationVersions, DocumentTypeVersions,
+    DocumentVersions, DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
     IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
     IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
     RecursiveSchemaValidatorVersions, StateTransitionConversionVersions,
@@ -16,7 +16,7 @@ use crate::version::drive_abci_versions::{
     DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions,
     DriveAbciBlockFeeProcessingMethodVersions, DriveAbciBlockStartMethodVersions,
     DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreChainLockMethodVersionsAndConstants,
-    DriveAbciCoreInstantSendLockMethodVersions, DriveAbciCoreSubsidyMethodVersions,
+    DriveAbciCoreInstantSendLockMethodVersions,
     DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions,
     DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions,
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
@@ -352,6 +352,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 system: DriveVerifySystemMethodVersions {
                     verify_epoch_infos: 0,
                     verify_elements: 0,
+                    verify_total_credits_in_system: 0,
                     verify_upgrade_state: 0,
                     verify_upgrade_vote_status: 0,
                 },
@@ -461,12 +462,14 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     add_to_previous_balance: 0,
                     apply_balance_change_from_fee_to_identity: 0,
                     remove_from_identity_balance: 0,
+                    refresh_identity_key_reference_operations: 0,
                 },
                 insert: DriveIdentityInsertMethodVersions {
                     add_new_identity: 0,
                 },
                 contract_info: DriveIdentityContractInfoMethodVersions {
                     add_potential_contract_info_for_contract_bounded_key: 0,
+                    refresh_potential_contract_info_key_references: 0,
                     merge_identity_contract_nonce: 0,
                 },
                 cost_estimation: DriveIdentityCostEstimationMethodVersions {
@@ -631,9 +634,6 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
                 add_process_epoch_change_operations: 0,
                 process_block_fees: 0,
-            },
-            core_subsidy: DriveAbciCoreSubsidyMethodVersions {
-                epoch_core_reward_credits_for_distribution: 0,
             },
             core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
                 choose_quorum: 0,
@@ -962,6 +962,11 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                total_credits_in_platform: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
             },
         },
     },
@@ -1221,6 +1226,9 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 default_current_version: 0,
             },
         },
+        methods: DPPMethodVersions {
+            epoch_core_reward_credits_for_distribution: 0,
+        }
     },
     system_data_contracts: SystemDataContractVersions {
         withdrawals: 1,
