@@ -39,12 +39,12 @@ pub enum DapiClientError<TE: Mockable> {
 }
 
 impl<TE: CanRetry + Mockable> CanRetry for DapiClientError<TE> {
-    fn is_node_failure(&self) -> bool {
+    fn can_retry(&self) -> bool {
         use DapiClientError::*;
         match self {
-            NoAvailableAddresses => false,
-            Transport(transport_error, _) => transport_error.is_node_failure(),
-            AddressList(_) => false,
+            NoAvailableAddresses => true,
+            Transport(transport_error, _) => transport_error.can_retry(),
+            AddressList(_) => true,
             #[cfg(feature = "mocks")]
             Mock(_) => false,
         }
@@ -222,7 +222,7 @@ impl DapiRequestExecutor for DapiClient {
                         tracing::trace!(?response, "received {} response", response_name);
                     }
                     Err(error) => {
-                        if error.is_node_failure() {
+                        if !error.can_retry() {
                             if applied_settings.ban_failed_address {
                                 let mut address_list = self
                                     .address_list
@@ -253,12 +253,12 @@ impl DapiRequestExecutor for DapiClient {
                     duration.as_secs_f32()
                 )
             })
-            .when(|e| e.is_node_failure())
+            .when(|e| !e.can_retry())
             .instrument(tracing::info_span!("request routine"))
             .await;
 
         if let Err(error) = &result {
-            if error.is_node_failure() {
+            if !error.can_retry() {
                 tracing::error!(?error, "request failed");
             }
         }
