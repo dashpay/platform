@@ -8,6 +8,9 @@ use crate::{
     Error, Sdk,
 };
 
+/// Epoch information
+pub type Epoch = ExtendedEpochInfo;
+
 #[async_trait]
 
 /// Helper trait for managing Epoch information

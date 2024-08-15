@@ -13,7 +13,7 @@ use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 pub trait AssetLockProofVerifier {
     /// Verifies the asset lock proof against the platform.
     ///
-    /// This function will return an error if the proof is not yet available on the platform.
+    /// This function will return an error if Dash Platform cannot use the provided asset lock proof.
     ///
     /// # Errors
     ///

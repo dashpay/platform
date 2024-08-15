@@ -3,6 +3,7 @@
 //! This module contains [Config] struct that can be used to configure dash-platform-sdk.
 //! It's mainly used for testing.
 
+use dash_sdk::networks::NetworkType;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::{
     dashcore::{hashes::Hash, ProTxHash},
@@ -176,12 +177,14 @@ impl Config {
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
             // Dump all traffic to disk
-            let builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
-                &self.platform_host,
-                self.core_port,
-                &self.core_user,
-                &self.core_password,
-            );
+            let builder = dash_sdk::SdkBuilder::new(self.address_list())
+                .with_core(
+                    &self.platform_host,
+                    self.core_port,
+                    &self.core_user,
+                    &self.core_password,
+                )
+                .with_network_type(NetworkType::Devnet);
 
             #[cfg(feature = "generate-test-vectors")]
             let builder = {
