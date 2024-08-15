@@ -321,6 +321,22 @@ impl<'a> DriveDocumentQuery<'a> {
         }
     }
 
+    #[cfg(feature = "server")]
+    /// Returns all items
+    pub fn all_items_query(contract: &'a DataContract, document_type: DocumentTypeRef<'a>, limit: Option<u16>) -> Self {
+        DriveDocumentQuery {
+            contract,
+            document_type,
+            internal_clauses: Default::default(),
+            offset: None,
+            limit,
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: true,
+            block_time_ms: None,
+        }
+    }
+
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns true if the query clause if for primary keys.
     pub fn is_for_primary_key(&self) -> bool {

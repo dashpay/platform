@@ -235,6 +235,14 @@ mod tests {
         
         let key = setup_add_key_to_identity(&mut platform, &mut identity, &mut signer, 4, 2, Purpose::ENCRYPTION, SecurityLevel::MEDIUM, KeyType::ECDSA_SECP256K1, Some(ContractBounds::SingleContractDocumentType { id: dashpay.id(), document_type_name: "contactRequest".to_string() }));
 
+        let issues = platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+        
         let platform_state = platform.state.load();
 
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
@@ -294,6 +302,6 @@ mod tests {
             .visualize_verify_grovedb(true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
-        assert_eq!(issues.len(), 0);
+        assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
     }
 }
