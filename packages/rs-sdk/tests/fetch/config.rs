@@ -208,18 +208,10 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(feature = "offline-testing")]
         let sdk = {
-            let mut mock_sdk = dash_sdk::SdkBuilder::new_mock()
+            dash_sdk::SdkBuilder::new_mock()
+                .with_dump_dir(&dump_dir)
                 .build()
-                .expect("initialize api");
-
-            mock_sdk
-                .mock()
-                .quorum_info_dir(&dump_dir)
-                .load_expectations(&dump_dir)
-                .await
-                .expect("load expectations");
-
-            mock_sdk
+                .expect("initialize api")
         };
 
         sdk
@@ -235,7 +227,6 @@ impl Config {
             Encoding::Base58,
         )
         .unwrap()
-        .into()
     }
 
     fn default_data_contract_id() -> Identifier {
