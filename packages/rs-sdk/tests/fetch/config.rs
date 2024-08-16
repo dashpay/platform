@@ -184,7 +184,7 @@ impl Config {
                     &self.core_user,
                     &self.core_password,
                 )
-                .with_network_type(NetworkType::Devnet);
+                .with_network_type(dash_sdk::networks::NetworkType::Devnet);
 
             #[cfg(feature = "generate-test-vectors")]
             let builder = {
