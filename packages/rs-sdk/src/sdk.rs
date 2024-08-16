@@ -824,7 +824,7 @@ impl SdkBuilder {
                         dapi,
                         version:self.version,
 
-                    },       
+                    },
                     dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     internal_cache: Default::default(),
