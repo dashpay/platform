@@ -686,7 +686,7 @@ impl SdkBuilder {
     /// [SdkBuilder::with_ca_certificate()].
     pub fn with_ca_certificate_file(
         self,
-        certificate_file_path: impl AsRef<Path>,
+        certificate_file_path: impl AsRef<std::path::Path>,
     ) -> std::io::Result<Self> {
         let pem = std::fs::read(certificate_file_path).expect("failed to read file");
         Ok(self.with_ca_certificate(&pem))
