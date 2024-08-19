@@ -1048,38 +1048,88 @@ impl<'a> WhereClause {
         Ok(query)
     }
 
-    /// Recursively find the property type for a given nested field name.
+    /// Recursively finds the property type associated with a given nested field name within a `DocumentType`.
+    ///
+    /// # Arguments
+    ///
+    /// * `document_type` - A reference to the `DocumentType` which holds the schema information
+    ///   including properties and their respective types. This represents the structure of the
+    ///   document being queried.
+    /// * `property_name` - A string slice containing the name of the property whose type is to be
+    ///   found. This can be a nested field name, represented by a dot-separated path (e.g., "user.address.city").
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing either:
+    ///
+    /// * `Ok(Cow<'a, DocumentPropertyType>)` - The property type if the field name is valid and exists
+    ///   within the `DocumentType`. The result is wrapped in a `Cow`, which allows for either a borrowed
+    ///   or owned `DocumentPropertyType`.
+    ///
+    /// * `Err(Error)` - An error if the field name does not exist within the document type. Specifically,
+    ///   it returns a `QuerySyntaxError::InvalidSQL` variant with a message indicating that the provided
+    ///   property name is not found in the document type.
+    ///
+    /// # Method
+    ///
+    /// The function first splits the `property_name` into its constituent parts based on the `.` character,
+    /// to handle nested fields. It then iteratively traverses the properties of the `document_type`, starting
+    /// from the top-level properties and moving deeper into nested objects as dictated by the parts of the
+    /// `property_name`.
+    ///
+    /// For each part of the `property_name`:
+    ///
+    /// * The function checks if the part corresponds to a property in the current level of the document structure.
+    ///   If the property exists, it retrieves its type.
+    /// * If the property type is an `Object`, it continues to the next level of nested properties.
+    /// * If the property type is not an `Object` (i.e., it is a leaf in the document structure), the loop breaks,
+    ///   and the current property type is returned.
+    ///
+    /// If any part of the `property_name` is not found during the traversal, the function returns an error indicating
+    /// the property is invalid.
+    ///
+    /// This function is useful for validating queries that reference document fields, ensuring that the fields exist
+    /// and their types are correctly interpreted before further processing.
     fn find_property_type(
         document_type: &'a DocumentType,
-        field_name: &str,
+        property_name: &str,
     ) -> Result<Cow<'a, DocumentPropertyType>, Error> {
-        let parts = field_name.split('.');
+        let parts = property_name.split('.');
 
-        let mut current_properties = document_type.properties();
-        let mut current_property_type = None;
+        // Traverse the property path
+        let result = parts.fold(
+            Ok((document_type.properties(), None)),
+            |acc, part| match acc {
+                Ok((current_properties, _)) => {
+                    // Look up the property in the current properties map
+                    let property = current_properties.get(part).ok_or_else(|| {
+                        Error::Query(QuerySyntaxError::InvalidSQL(format!(
+                            "Invalid query: property named {} not in document type",
+                            part
+                        )))
+                    })?;
 
-        for part in parts {
-            let property = current_properties.get(part).ok_or_else(|| {
+                    // If the property type is an Object, continue with its nested properties
+                    if let DocumentPropertyType::Object(nested_properties) = &property.property_type
+                    {
+                        Ok((nested_properties, Some(&property.property_type)))
+                    } else {
+                        // If it's not an Object, stop here and return the current property type
+                        Ok((current_properties, Some(&property.property_type)))
+                    }
+                }
+                Err(err) => Err(err),
+            },
+        );
+
+        // Extract the final property type
+        result.and_then(|(_, property_type)| {
+            property_type.map(Cow::Borrowed).ok_or_else(|| {
                 Error::Query(QuerySyntaxError::InvalidSQL(format!(
                     "Invalid query: property named {} not in document type",
-                    part
+                    property_name
                 )))
-            })?;
-
-            current_property_type = Some(&property.property_type);
-
-            if let DocumentPropertyType::Object(nested_properties) = &property.property_type {
-                current_properties = nested_properties;
-            } else {
-                break;
-            }
-        }
-
-        current_property_type.map(Cow::Borrowed).ok_or_else(|| {
-            Error::Query(QuerySyntaxError::InvalidSQL(format!(
-                "Invalid query: property named {} not in document type",
-                field_name
-            )))
+            })
         })
     }
 
