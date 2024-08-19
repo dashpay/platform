@@ -657,6 +657,7 @@ impl NetworkStrategy {
                                             KeyType::ECDSA_SECP256K1,
                                             KeyType::BLS12_381,
                                         ]),
+                                        false,
                                     )
                                     .expect("expected to get a signing key");
 
@@ -786,6 +787,7 @@ impl NetworkStrategy {
                                             KeyType::ECDSA_SECP256K1,
                                             KeyType::BLS12_381,
                                         ]),
+                                        false,
                                     )
                                     .expect("expected to get a signing key");
 
@@ -1293,6 +1295,7 @@ impl NetworkStrategy {
                                     Purpose::AUTHENTICATION,
                                     HashSet::from([SecurityLevel::CRITICAL]),
                                     HashSet::from([KeyType::ECDSA_SECP256K1]),
+                                    false,
                                 )
                                 .expect("Expected to get identity public key in ContractCreate");
                             let mut state_transition =
