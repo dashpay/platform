@@ -16,7 +16,7 @@ use dpp::{
 };
 use drive_proof_verifier::types::{
     Contenders, ContestedResources, ElementFetchRequestItem, IdentityBalanceAndRevision,
-    MasternodeProtocolVote, PrefundedSpecializedBalance, TotalCreditsOnPlatform,
+    MasternodeProtocolVote, PrefundedSpecializedBalance, TotalCreditsInPlatform,
     VotePollsGroupedByTimestamp, Voters,
 };
 use std::collections::BTreeMap;
@@ -227,5 +227,5 @@ impl_mock_response!(Contenders);
 impl_mock_response!(Voters);
 impl_mock_response!(VotePollsGroupedByTimestamp);
 impl_mock_response!(PrefundedSpecializedBalance);
-impl_mock_response!(TotalCreditsOnPlatform);
+impl_mock_response!(TotalCreditsInPlatform);
 impl_mock_response!(ElementFetchRequestItem);
