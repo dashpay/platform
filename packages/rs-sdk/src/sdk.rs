@@ -472,7 +472,6 @@ impl Sdk {
         }
     }
 
-    
     /// Return configuration of quorum, like type of quorum used for instant lock.
     pub(crate) fn quorum_params(&self) -> QuorumParams {
         self.network_type.to_quorum_params()
@@ -848,7 +847,7 @@ impl SdkBuilder {
                         mock:Arc::new(Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs))),
                         dapi,
                         version:self.version,
-                    },       
+                    },
                     network_type: self.network_type,
                     dump_dir: self.dump_dir,
                     proofs:self.proofs,
