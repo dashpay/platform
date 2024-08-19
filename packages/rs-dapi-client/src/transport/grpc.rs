@@ -6,8 +6,8 @@ use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::core::v0::{self as core_proto};
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
-use dapi_grpc::tonic::transport::ClientTlsConfig;
 use dapi_grpc::tonic::transport::Uri;
+use dapi_grpc::tonic::transport::{Certificate, ClientTlsConfig};
 use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{transport::Channel, IntoRequest};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
@@ -27,10 +27,11 @@ fn create_channel(uri: Uri, settings: Option<&AppliedRequestSettings>) -> Channe
         if let Some(timeout) = settings.connect_timeout {
             builder = builder.connect_timeout(timeout);
         }
-        if let Some(cert) = settings.ca_certificate.as_ref() {
+        if let Some(pem) = settings.ca_certificate.as_ref() {
+            let cert = Certificate::from_pem(pem);
             let tls_config = ClientTlsConfig::new()
                 .domain_name(host)
-                .ca_certificate(cert.clone());
+                .ca_certificate(cert);
             builder = builder
                 .tls_config(tls_config)
                 .expect("Failed to set TLS config");
@@ -198,7 +199,6 @@ impl_transport_request_grpc!(
     RequestSettings {
         timeout: Some(Duration::from_secs(80)),
         retries: Some(0),
-        ca_certificate: None,
         ban_failed_address: None,
         connect_timeout: None,
     },
@@ -395,7 +395,6 @@ impl_transport_request_grpc!(
     CoreGrpcClient,
     RequestSettings {
         timeout: Some(STREAMING_TIMEOUT),
-        ca_certificate: None,
         ban_failed_address: None,
         connect_timeout: None,
         retries: None,

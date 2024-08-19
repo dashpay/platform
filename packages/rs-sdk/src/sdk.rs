@@ -587,6 +587,9 @@ pub struct SdkBuilder {
 
     /// Cancellation token; once cancelled, all pending requests should be aborted.
     pub(crate) cancel_token: CancellationToken,
+
+    /// CA certificate to use for TLS connections.
+    ca_certificate: Option<Vec<u8>>,
 }
 
 impl Default for SdkBuilder {
@@ -615,6 +618,8 @@ impl Default for SdkBuilder {
             cancel_token: CancellationToken::new(),
 
             version: PlatformVersion::latest(),
+
+            ca_certificate: None,
 
             #[cfg(feature = "mocks")]
             dump_dir: None,
@@ -663,6 +668,28 @@ impl SdkBuilder {
     pub fn with_network(mut self, network: Network) -> Self {
         self.network = network;
         self
+    }
+
+    /// Configure CA certificate to use when verifying TLS connections.
+    ///
+    /// Used mainly for testing purposes and local networks.
+    ///
+    /// If not set, uses standard system CA certificates.
+    pub fn with_ca_certificate(mut self, pem_certificate: &[u8]) -> Self {
+        self.ca_certificate = Some(pem_certificate.to_vec());
+        self
+    }
+
+    /// Load CA certificate from file.
+    ///
+    /// This is a convenience method that reads the certificate from a file and sets it using
+    /// [SdkBuilder::with_ca_certificate()].
+    pub fn with_ca_certificate_file(
+        self,
+        certificate_file_path: impl AsRef<Path>,
+    ) -> std::io::Result<Self> {
+        let pem = std::fs::read(certificate_file_path).expect("failed to read file");
+        Ok(self.with_ca_certificate(&pem))
     }
 
     /// Configure request settings.
@@ -757,7 +784,11 @@ impl SdkBuilder {
         let sdk= match self.addresses {
             // non-mock mode
             Some(addresses) => {
-                let dapi = DapiClient::new(addresses, self.settings);
+                let mut dapi = DapiClient::new(addresses, self.settings);
+                if let Some(pem) = self.ca_certificate {
+                    dapi = dapi.with_ca_certificate(&pem);
+                }
+
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
 

@@ -48,9 +48,7 @@ impl WithdrawFromIdentity for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
-        let new_identity_nonce = sdk
-            .get_identity_nonce(self.id(), true, settings.clone())
-            .await?;
+        let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             self,
             None,

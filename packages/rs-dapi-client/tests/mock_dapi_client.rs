@@ -27,10 +27,7 @@ async fn test_mock_get_identity_dapi_client() {
 
     let settings = RequestSettings::default();
 
-    let result = dapi
-        .execute(request.clone(), settings.clone())
-        .await
-        .unwrap();
+    let result = dapi.execute(request.clone(), settings).await.unwrap();
 
     let result2 = request.execute(&dapi, settings).await.unwrap();
 

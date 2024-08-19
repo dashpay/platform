@@ -71,7 +71,7 @@ impl<S: Signer> TransferDocument<S> for Document {
                 self.owner_id(),
                 document_type.data_contract_id(),
                 true,
-                settings.clone(),
+                settings,
             )
             .await?;
 

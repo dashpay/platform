@@ -3,6 +3,7 @@
 use backon::{ExponentialBuilder, Retryable};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
+use dapi_grpc::tonic::transport::Certificate;
 use std::fmt::Debug;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -94,6 +95,8 @@ pub struct DapiClient {
     address_list: Arc<RwLock<AddressList>>,
     settings: RequestSettings,
     pool: ConnectionPool,
+    /// Certificate Authority certificate to use for verifying the server's certificate.
+    pub ca_certificate: Option<Certificate>,
     #[cfg(feature = "dump")]
     pub(crate) dump_dir: Option<std::path::PathBuf>,
 }
@@ -110,7 +113,22 @@ impl DapiClient {
             pool: ConnectionPool::new(address_count),
             #[cfg(feature = "dump")]
             dump_dir: None,
+            ca_certificate: None,
         }
+    }
+
+    /// Set CA certificate to use when verifying the server's certificate.
+    ///
+    /// # Arguments
+    ///
+    /// * `pem_ca_cert` - CA certificate in PEM format.
+    ///
+    /// # Returns
+    /// [DapiClient] with CA certificate set.
+    pub fn with_ca_certificate(mut self, pem_ca_cert: &[u8]) -> Self {
+        self.ca_certificate = Some(Certificate::from_pem(pem_ca_cert));
+
+        self
     }
 }
 
@@ -128,12 +146,16 @@ impl DapiRequestExecutor for DapiClient {
         <R::Client as TransportClient>::Error: Mockable,
     {
         // Join settings of different sources to get final version of the settings for this execution:
-        let applied_settings = self
+        let mut applied_settings = self
             .settings
-            .clone()
             .override_by(R::SETTINGS_OVERRIDES)
             .override_by(settings)
             .finalize();
+
+        // Setup CA certificate
+        if let Some(ca_certificate) = &self.ca_certificate {
+            applied_settings = applied_settings.with_ca_certificate(ca_certificate.clone());
+        }
 
         // Setup retry policy:
         let retry_settings = ExponentialBuilder::default()

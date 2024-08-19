@@ -75,7 +75,7 @@ impl<S: Signer> PurchaseDocument<S> for Document {
                 purchaser_id,
                 document_type.data_contract_id(),
                 true,
-                settings.clone(),
+                settings,
             )
             .await?;
 
