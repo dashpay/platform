@@ -3,10 +3,10 @@ use crate::platform::fetch_current_no_parameters::FetchCurrent;
 use crate::{platform::Fetch, Error, Sdk};
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
-use drive_proof_verifier::types::{NoParamQuery, TotalCreditsOnPlatform};
+use drive_proof_verifier::types::{NoParamQuery, TotalCreditsInPlatform};
 
 #[async_trait]
-impl FetchCurrent for TotalCreditsOnPlatform {
+impl FetchCurrent for TotalCreditsInPlatform {
     async fn fetch_current(sdk: &Sdk) -> Result<Self, Error> {
         let (total_credits_on_platform, _) = Self::fetch_current_with_metadata(sdk).await?;
         Ok(total_credits_on_platform)

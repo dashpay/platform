@@ -58,6 +58,8 @@ const {
             GetIdentityNonceResponse: PBJSGetIdentityNonceResponse,
             GetIdentityKeysRequest: PBJSGetIdentityKeysRequest,
             GetIdentityKeysResponse: PBJSGetIdentityKeysResponse,
+            GetTotalCreditsInPlatformRequest: PBJSGetTotalCreditsInPlatformRequest,
+            GetTotalCreditsInPlatformResponse: PBJSGetTotalCreditsInPlatformResponse,
           },
         },
       },
@@ -82,6 +84,7 @@ const {
   GetIdentityContractNonceResponse: ProtocGetIdentityContractNonceResponse,
   GetIdentityNonceResponse: ProtocGetIdentityNonceResponse,
   GetIdentityKeysResponse: ProtocGetIdentityKeysResponse,
+  GetTotalCreditsInPlatformResponse: ProtocGetTotalCreditsInPlatformResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -170,6 +173,10 @@ class PlatformPromiseClient {
 
     this.client.getIdentityKeys = promisify(
       this.client.getIdentityKeys.bind(this.client),
+    );
+
+    this.client.getTotalCreditsInPlatform = promisify(
+      this.client.getTotalCreditsInPlatform.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -682,6 +689,35 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetIdentityKeysRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  getTotalCreditsInPlatform(
+    getTotalCreditsInPlatformRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getTotalCreditsInPlatform(
+      getTotalCreditsInPlatformRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetTotalCreditsInPlatformResponse,
+              PBJSGetTotalCreditsInPlatformResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetTotalCreditsInPlatformRequest,
             ),
           ),
         ],
