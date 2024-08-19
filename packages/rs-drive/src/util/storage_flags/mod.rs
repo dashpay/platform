@@ -131,12 +131,8 @@ impl StorageFlags {
                 other_epoch_index_map
                     .iter()
                     .for_each(|(epoch_index, bytes_added)| {
-                        let original_value = combined_index_map.remove(epoch_index);
-                        match original_value {
-                            None => combined_index_map.insert(*epoch_index, *bytes_added),
-                            Some(original_bytes) => combined_index_map
-                                .insert(*epoch_index, original_bytes + *bytes_added),
-                        };
+                        // Simply insert the value from rhs, overwriting any existing value
+                        combined_index_map.insert(*epoch_index, *bytes_added);
                     });
                 Some(combined_index_map)
             } else {
