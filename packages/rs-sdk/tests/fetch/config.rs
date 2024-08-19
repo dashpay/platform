@@ -73,7 +73,7 @@ pub struct Config {
     #[serde(default = "Config::default_document_id")]
     pub existing_document_id: Identifier,
     // Hex-encoded ProTxHash of the existing HP masternode
-    #[serde(default)]
+    #[serde(default = "Config::default_protxhash")]
     pub masternode_owner_pro_reg_tx_hash: String,
 }
 
@@ -244,6 +244,13 @@ impl Config {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("vectors")
+    }
+
+    /// Existing masternode proTxHash. Must be updated every time test vectors are regenerated.
+    ///
+    /// See documentation of [contested_resource_identity_votes_ok](super::contested_resource_identity_votes::contested_resource_identity_votes_ok).
+    fn default_protxhash() -> String {
+        String::from("d10bf435af7c75f5b07b09486af1212469d69fdc787589548e315776bc1052a1")
     }
 
     /// Return ProTxHash of an existing evo node, or None if not set
