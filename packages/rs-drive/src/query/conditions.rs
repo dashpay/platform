@@ -1048,15 +1048,16 @@ impl<'a> WhereClause {
         Ok(query)
     }
 
-    /// Recursively finds the property type associated with a given nested field name within a `DocumentType`.
+    /// Recursively finds the property type associated with a given nested field name within a `DocumentType`
+    /// using an iterator fold operation.
     ///
     /// # Arguments
     ///
-    /// * `document_type` - A reference to the `DocumentType` which holds the schema information
+    /// * `document_type` - A reference to the `DocumentType` which contains the schema information,
     ///   including properties and their respective types. This represents the structure of the
     ///   document being queried.
     /// * `property_name` - A string slice containing the name of the property whose type is to be
-    ///   found. This can be a nested field name, represented by a dot-separated path (e.g., "user.address.city").
+    ///   determined. This can be a nested field name, represented by a dot-separated path (e.g., "user.address.city").
     ///
     /// # Returns
     ///
@@ -1072,24 +1073,24 @@ impl<'a> WhereClause {
     ///
     /// # Method
     ///
-    /// The function first splits the `property_name` into its constituent parts based on the `.` character,
-    /// to handle nested fields. It then iteratively traverses the properties of the `document_type`, starting
-    /// from the top-level properties and moving deeper into nested objects as dictated by the parts of the
-    /// `property_name`.
+    /// The function begins by splitting the `property_name` into its constituent parts based on the `.` character,
+    /// to handle nested fields. It then uses the `Iterator::fold` method to iteratively traverse the properties
+    /// of the `document_type`, starting from the top-level properties and moving deeper into nested objects as dictated
+    /// by the parts of the `property_name`.
     ///
-    /// For each part of the `property_name`:
+    /// For each part of the `property_name`, the `fold` function:
     ///
-    /// * The function checks if the part corresponds to a property in the current level of the document structure.
+    /// * Checks if the part corresponds to a property in the current level of the document structure.
     ///   If the property exists, it retrieves its type.
-    /// * If the property type is an `Object`, it continues to the next level of nested properties.
-    /// * If the property type is not an `Object` (i.e., it is a leaf in the document structure), the loop breaks,
-    ///   and the current property type is returned.
+    /// * If the property type is an `Object`, it continues with the nested properties for the next iteration.
+    /// * If the property type is not an `Object` (i.e., it is a leaf in the document structure), the loop terminates,
+    ///   and the current property type is retained.
+    /// * If any part of the `property_name` is not found, the `fold` short-circuits and returns an error indicating
+    ///   that the property is invalid.
     ///
-    /// If any part of the `property_name` is not found during the traversal, the function returns an error indicating
-    /// the property is invalid.
-    ///
-    /// This function is useful for validating queries that reference document fields, ensuring that the fields exist
-    /// and their types are correctly interpreted before further processing.
+    /// After the fold operation completes, the function attempts to extract the final property type. If a property
+    /// type was found, it is returned wrapped in `Cow::Borrowed`. If no valid property type was found, an error
+    /// is returned indicating the invalidity of the field name.
     fn find_property_type(
         document_type: &'a DocumentType,
         property_name: &str,
