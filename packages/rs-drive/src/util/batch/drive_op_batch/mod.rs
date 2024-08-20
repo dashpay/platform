@@ -29,7 +29,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::{GroveDbOp, KeyInfoPath};
+use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 
 use crate::error::drive::DriveError;
 use crate::util::batch::drive_op_batch::finalize_task::{
@@ -78,7 +78,7 @@ pub enum DriveOperation<'a> {
     /// A system operation
     SystemOperation(SystemOperationType),
     /// A single low level groveDB operation
-    GroveDBOperation(GroveDbOp),
+    GroveDBOperation(QualifiedGroveDbOp),
     /// Multiple low level groveDB operations
     GroveDBOpBatch(GroveDbOpBatch),
 }

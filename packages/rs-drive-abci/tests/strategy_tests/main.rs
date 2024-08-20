@@ -83,13 +83,17 @@ mod tests {
     use drive_abci::logging::LogLevel;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use itertools::Itertools;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
 
     use dpp::data_contract::document_type::v0::random_document_type::{
         FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
     };
-    use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::state_transition::StateTransition;
+    use simple_signer::signer::SimpleSigner;
+    use strategy_tests::transitions::create_state_transitions_for_identities;
     use tenderdash_abci::Application;
 
     #[test]
@@ -1785,6 +1789,25 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+
+        let issues = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 
     #[test]
@@ -1915,7 +1938,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "48cfe777a90adbe975bfab264e7a2a0951c93386ef81f17bfe6640ad1251feda".to_string()
+            "f55d96bb04c3e5e737c883a18538fc008a55aaf003ccd64d0e8dd3640b7fa888".to_string()
         )
     }
 
@@ -2050,7 +2073,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "3319167d723776fdb8dab32dd9d360d098a47e7f496b7b4c24419b4edbac5f77".to_string()
+            "a409bbb8c0522bab91eed208e058f1a35320b52efd42f289be14d874a4cab807".to_string()
         )
     }
 
@@ -2401,6 +2424,311 @@ mod tests {
             .filter(|(_, balance)| *balance != 0)
             .count();
         assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+
+        let issues = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
+    }
+
+    #[test]
+    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_updates_with_epoch_change(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
+            true,
+            platform_version,
+        )
+        .expect("expected to get contract from a json document");
+
+        let contract = created_contract.data_contract();
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_replace_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionReplaceRandom,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..40,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_replace_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..6,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
+                },
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let day_in_ms = 1000 * 60 * 60 * 24;
+
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                epoch_time_length_s: 1576800,
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
+            ..Default::default()
+        };
+        let block_count = 21;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+
+        let issues = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
+    }
+
+    #[test]
+    fn run_chain_insert_many_document_updates_with_epoch_change() {
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
+            true,
+            platform_version,
+        )
+        .expect("expected to get contract from a json document");
+
+        let contract = created_contract.data_contract();
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_replace_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionReplaceRandom,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let mut simple_signer = SimpleSigner::default();
+
+        let (identity1, keys1) =
+            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
+                2,
+                &mut rng,
+                platform_version,
+            )
+            .unwrap();
+
+        simple_signer.add_keys(keys1);
+
+        let (identity2, keys2) =
+            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
+                2,
+                &mut rng,
+                platform_version,
+            )
+            .unwrap();
+
+        simple_signer.add_keys(keys2);
+
+        let start_identities = create_state_transitions_for_identities(
+            vec![identity1, identity2],
+            &simple_signer,
+            &mut rng,
+            platform_version,
+        );
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..2,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_replace_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..2,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities {
+                    hard_coded: start_identities,
+                    ..Default::default()
+                },
+                identity_inserts: Default::default(),
+
+                identity_contract_nonce_gaps: None,
+                signer: Some(simple_signer),
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let day_in_ms = 1000 * 60 * 60 * 24;
+
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                epoch_time_length_s: 1576800,
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig {
+                block_signing: false,
+                store_platform_state: false,
+                block_commit_signature_verification: false,
+                disable_instant_lock_signature_verification: true,
+            },
+            ..Default::default()
+        };
+        let block_count = 21;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+
+        let issues = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 
     #[test]
@@ -2536,6 +2864,25 @@ mod tests {
             .filter(|(_, balance)| *balance != 0)
             .count();
         assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+
+        let issues = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 
     #[test]

@@ -4,7 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::GroveDbOp;
+use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -21,7 +21,7 @@ impl Drive {
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     pub fn grove_apply_operation(
         &self,
-        operation: GroveDbOp,
+        operation: QualifiedGroveDbOp,
         validate: bool,
         transaction: TransactionArg,
         drive_version: &DriveVersion,

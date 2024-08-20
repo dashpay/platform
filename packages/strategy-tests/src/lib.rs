@@ -114,6 +114,22 @@ pub struct Strategy {
     pub signer: Option<SimpleSigner>,
 }
 
+impl Strategy {
+    pub fn max_document_operation_count_without_inserts(&self) -> u16 {
+        self.operations
+            .iter()
+            .filter(|operation| match &operation.op_type {
+                OperationType::Document(document_op) => match &document_op.action {
+                    DocumentAction::DocumentActionInsertRandom(_, _) => false,
+                    DocumentAction::DocumentActionInsertSpecific(_, _, _, _) => false,
+                    _ => true,
+                },
+                _ => false,
+            })
+            .count() as u16
+    }
+}
+
 /// Config stuff for a Strategy
 #[derive(Clone, Debug, PartialEq)]
 pub struct StrategyConfig {
