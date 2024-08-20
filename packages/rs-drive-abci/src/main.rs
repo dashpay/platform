@@ -483,7 +483,7 @@ mod test {
 
         for (i, item) in iter.enumerate() {
             let (key, mut value) = item.unwrap();
-            // println!("{} = {}", hex::encode(&key), hex::encode(value));
+             println!("{} = {}", hex::encode(&key), hex::encode(&value));
             tracing::trace!(cf, key=?hex::encode(&key), value=hex::encode(&value),"found item in rocksdb");
 
             if i == n {
@@ -508,8 +508,8 @@ mod test {
 
         corrupt_rocksdb_item(&db_path, "roots", 0);
 
-        let result = super::verify_grovedb(&db_path, true);
-        assert!(result.is_err());
+        let result_error = super::verify_grovedb(&db_path, true).expect_err("expected an error");
+        assert_eq!(result_error, "data corruption error: expected merk to contain value at key");
 
         println!("db path: {:?}", &db_path);
     }
