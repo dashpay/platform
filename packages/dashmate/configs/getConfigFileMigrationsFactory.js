@@ -776,6 +776,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.drive.tenderdash.p2p.seeds = mainnet.get('platform.drive.tenderdash.p2p.seeds');
             }
 
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
+
             options.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout = '125s';
             options.platform.dapi.api.waitForStResultTimeout = 120000;
 
