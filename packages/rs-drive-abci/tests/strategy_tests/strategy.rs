@@ -858,10 +858,6 @@ impl NetworkStrategy {
                                 );
                             *identity_contract_nonce += 1;
 
-                            if hex::encode(document.id().to_buffer()) == "0350acebd698bc18ce24fe6a833b64c970d60aa2db2345db03b9f4ae836d7bcb" {
-                                println!("deleted document {}", document);
-                            }
-
                             let document_delete_transition: DocumentDeleteTransition =
                                 DocumentDeleteTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
