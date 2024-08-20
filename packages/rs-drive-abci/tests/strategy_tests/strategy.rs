@@ -562,7 +562,8 @@ impl NetworkStrategy {
         let mut replaced = vec![];
         let mut transferred = vec![];
         let mut deleted = vec![];
-        let max_document_operation_count_without_inserts = self.strategy.max_document_operation_count_without_inserts();
+        let max_document_operation_count_without_inserts =
+            self.strategy.max_document_operation_count_without_inserts();
         for op in &self.strategy.operations {
             if op.frequency.check_hit(rng) {
                 let mut count = rng.gen_range(op.frequency.times_per_block_range.clone());
@@ -619,17 +620,6 @@ impl NetworkStrategy {
                                     .expect(
                                         "expected to get prefunded voting balances for document",
                                     );
-
-                                if hex::encode(document.id().to_buffer()) == "0350acebd698bc18ce24fe6a833b64c970d60aa2db2345db03b9f4ae836d7bcb" {
-                                    println!("block {} inserted document {}", block_info, document);
-                                } else {
-                                    //println!("\"{}\",", hex::encode(document.id()));
-                                }
-
-                                println!("block {} inserted document {}", block_info, hex::encode(document.id()));
-                                
-                                // 
-                                // println!("block {} inserted document with id {} :  {}", block_info, hex::encode(document.id().to_buffer()), document);
 
                                 let document_create_transition: DocumentCreateTransition =
                                     DocumentCreateTransitionV0 {
@@ -819,8 +809,11 @@ impl NetworkStrategy {
                         document_type,
                         contract,
                     }) => {
-                        let any_item_query =
-                            DriveDocumentQuery::all_items_query(contract, document_type.as_ref(), Some(max_document_operation_count_without_inserts));
+                        let any_item_query = DriveDocumentQuery::all_items_query(
+                            contract,
+                            document_type.as_ref(),
+                            Some(max_document_operation_count_without_inserts),
+                        );
                         let mut items = platform
                             .drive
                             .query_documents(
@@ -868,7 +861,7 @@ impl NetworkStrategy {
                             if hex::encode(document.id().to_buffer()) == "0350acebd698bc18ce24fe6a833b64c970d60aa2db2345db03b9f4ae836d7bcb" {
                                 println!("deleted document {}", document);
                             }
-                            
+
                             let document_delete_transition: DocumentDeleteTransition =
                                 DocumentDeleteTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
@@ -966,27 +959,7 @@ impl NetworkStrategy {
                                     "the identity should already have a nonce for that contract",
                                 );
                             *identity_contract_nonce += 1;
-                            // 
-                            // if hex::encode(document.id().to_buffer()) == "0350acebd698bc18ce24fe6a833b64c970d60aa2db2345db03b9f4ae836d7bcb" {
-                            //     println!("block {} updated document {}", block_info, document);
-                            // }
-                            
-                            if block_info.height != 21 {
-                                continue;
-                            }
-                            
-                            random_new_document.set("senderKeyIndex", document.get("senderKeyIndex").unwrap().clone());
-                            random_new_document.set("recipientKeyIndex", document.get("recipientKeyIndex").unwrap().clone());
-                            random_new_document.set("accountReference", document.get("accountReference").unwrap().clone());
-                            random_new_document.set("encryptedPublicKey", document.get("encryptedPublicKey").unwrap().clone());
-                            // let a = document.get("encryptedAccountLabel").unwrap().clone();
-                            // a.as_bytes().unwrap();
-                            // random_new_document.set("encryptedAccountLabel", document.get("encryptedAccountLabel").unwrap().clone());
-                            random_new_document.set_owner_id(document.owner_id());
-                            // random_new_document.set("ownerId", document.get("ownerId").unwrap().clone());
 
-                            println!("block {} updated document {}", block_info, random_new_document);
-                            
                             let document_replace_transition: DocumentReplaceTransition =
                                 DocumentReplaceTransitionV0 {
                                     base: DocumentBaseTransitionV0 {

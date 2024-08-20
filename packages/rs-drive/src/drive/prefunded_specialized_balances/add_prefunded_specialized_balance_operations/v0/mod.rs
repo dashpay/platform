@@ -13,7 +13,7 @@ use crate::error::identity::IdentityError;
 use dpp::balances::credits::MAX_CREDITS;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::{QualifiedGroveDbOp, KeyInfoPath};
+use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 

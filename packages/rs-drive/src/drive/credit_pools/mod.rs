@@ -183,7 +183,6 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 
     mod add_update_epoch_storage_fee_pools_operations {
-        use grovedb::batch::GroveOp;
         use super::*;
         use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
         use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -191,6 +190,7 @@ mod tests {
         use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
         use dpp::fee::Credits;
         use dpp::version::PlatformVersion;
+        use grovedb::batch::GroveOp;
 
         #[test]
         fn should_do_nothing_if_credits_per_epoch_are_empty() {

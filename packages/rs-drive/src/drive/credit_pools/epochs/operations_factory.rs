@@ -51,13 +51,19 @@ pub trait EpochOperations {
     /// Adds to the groveDB op batch operations signifying that the epoch distribution fees were paid out.
     fn add_mark_as_paid_operations(&self, batch: &mut GroveDbOpBatch);
     /// Update Epoch's protocol version
-    fn update_protocol_version_operation(&self, protocol_version: ProtocolVersion) -> QualifiedGroveDbOp;
+    fn update_protocol_version_operation(
+        &self,
+        protocol_version: ProtocolVersion,
+    ) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the epoch start time.
     fn update_start_time_operation(&self, time_ms: u64) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the epoch start block height.
     fn update_start_block_height_operation(&self, start_block_height: u64) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the epoch start block height.
-    fn update_start_block_core_height_operation(&self, start_block_core_height: u32) -> QualifiedGroveDbOp;
+    fn update_start_block_core_height_operation(
+        &self,
+        start_block_core_height: u32,
+    ) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the epoch fee multiplier.
     fn update_fee_multiplier_operation(&self, multiplier_permille: u64) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the epoch processing credits for distribution.
@@ -68,7 +74,10 @@ pub trait EpochOperations {
     /// Returns a groveDB op which deletes the epoch processing credits for distribution tree.
     fn delete_processing_credits_for_distribution_operation(&self) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the epoch storage credits for distribution.
-    fn update_storage_fee_pool_operation(&self, storage_fee: Credits) -> Result<QualifiedGroveDbOp, Error>;
+    fn update_storage_fee_pool_operation(
+        &self,
+        storage_fee: Credits,
+    ) -> Result<QualifiedGroveDbOp, Error>;
     /// Returns a groveDB op which deletes the epoch storage credits for distribution tree.
     fn delete_storage_credits_for_distribution_operation(&self) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the given epoch proposer's block count.
@@ -171,7 +180,10 @@ impl EpochOperations for Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch start time.
-    fn update_protocol_version_operation(&self, protocol_version: ProtocolVersion) -> QualifiedGroveDbOp {
+    fn update_protocol_version_operation(
+        &self,
+        protocol_version: ProtocolVersion,
+    ) -> QualifiedGroveDbOp {
         QualifiedGroveDbOp::insert_or_replace_op(
             self.get_path_vec(),
             KEY_PROTOCOL_VERSION.to_vec(),
@@ -198,7 +210,10 @@ impl EpochOperations for Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch start block core height.
-    fn update_start_block_core_height_operation(&self, start_block_core_height: u32) -> QualifiedGroveDbOp {
+    fn update_start_block_core_height_operation(
+        &self,
+        start_block_core_height: u32,
+    ) -> QualifiedGroveDbOp {
         QualifiedGroveDbOp::insert_or_replace_op(
             self.get_path_vec(),
             KEY_START_BLOCK_CORE_HEIGHT.to_vec(),
@@ -233,7 +248,10 @@ impl EpochOperations for Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch storage credits for distribution.
-    fn update_storage_fee_pool_operation(&self, storage_fee: Credits) -> Result<QualifiedGroveDbOp, Error> {
+    fn update_storage_fee_pool_operation(
+        &self,
+        storage_fee: Credits,
+    ) -> Result<QualifiedGroveDbOp, Error> {
         Ok(QualifiedGroveDbOp::insert_or_replace_op(
             self.get_path_vec(),
             KEY_POOL_STORAGE_FEES.to_vec(),

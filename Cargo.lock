@@ -2056,7 +2056,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#47845a7219394f224081f0efcdb674ce6c35e20e"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
 dependencies = [
  "axum 0.7.5",
  "bincode",
@@ -2089,7 +2089,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#47845a7219394f224081f0efcdb674ce6c35e20e"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2099,7 +2099,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#47845a7219394f224081f0efcdb674ce6c35e20e"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2123,12 +2123,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#47845a7219394f224081f0efcdb674ce6c35e20e"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#47845a7219394f224081f0efcdb674ce6c35e20e"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2147,7 +2147,7 @@ dependencies = [
 [[package]]
 name = "grovedb-version"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#47845a7219394f224081f0efcdb674ce6c35e20e"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
 dependencies = [
  "thiserror",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2156,7 +2156,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#47845a7219394f224081f0efcdb674ce6c35e20e"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
 dependencies = [
  "hex",
  "itertools 0.12.1",
@@ -2165,7 +2165,7 @@ dependencies = [
 [[package]]
 name = "grovedbg-types"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#47845a7219394f224081f0efcdb674ce6c35e20e"
+source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
 dependencies = [
  "serde",
  "serde_with 3.9.0",

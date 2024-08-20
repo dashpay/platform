@@ -1370,8 +1370,8 @@ mod tests {
     }
 
     mod replacement_tests {
-        use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
         use super::*;
+        use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
 
         #[test]
         fn test_document_replace_on_document_type_that_is_mutable() {
@@ -1517,7 +1517,16 @@ mod tests {
                 .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
-            assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
 
         #[test]
@@ -2018,7 +2027,7 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
             let documents_batch_create_serialized_transition = documents_batch_create_transition
                 .serialize_to_bytes()
@@ -2048,28 +2057,24 @@ mod tests {
                 .unwrap()
                 .expect("expected to commit transaction");
 
-            let receiver_documents_sql_string =
-                "select * from profile".to_string();
+            let receiver_documents_sql_string = "select * from profile".to_string();
 
             let query_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &dashpay,
                 Some(&platform.config.drive),
             )
-                .expect("expected document query");
+            .expect("expected document query");
 
             let query_sender_results = platform
                 .drive
-                .query_documents(
-                    query_documents.clone(),
-                    None,
-                    false,
-                    None,
-                    None,
-                )
+                .query_documents(query_documents.clone(), None, false, None, None)
                 .expect("expected query result");
 
-            let document = query_sender_results.documents().first().expect("expected a document");
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
 
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
 
@@ -2086,11 +2091,12 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
-            let documents_batch_update_serialized_transition_1 = documents_batch_update_transition_1
-                .serialize_to_bytes()
-                .expect("expected documents batch serialized state transition");
+            let documents_batch_update_serialized_transition_1 =
+                documents_batch_update_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
 
             let documents_batch_update_transition_2 =
                 DocumentsBatchTransition::new_document_replacement_transition_from_document(
@@ -2105,18 +2111,22 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
-            let documents_batch_update_serialized_transition_2 = documents_batch_update_transition_2
-                .serialize_to_bytes()
-                .expect("expected documents batch serialized state transition");
+            let documents_batch_update_serialized_transition_2 =
+                documents_batch_update_transition_2
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![documents_batch_update_serialized_transition_1.clone(), documents_batch_update_serialized_transition_2.clone()],
+                    &vec![
+                        documents_batch_update_serialized_transition_1.clone(),
+                        documents_batch_update_serialized_transition_2.clone(),
+                    ],
                     &platform_state,
                     platform_state.last_block_info(),
                     &transaction,
@@ -2141,16 +2151,13 @@ mod tests {
 
             let query_sender_results = platform
                 .drive
-                .query_documents(
-                    query_documents.clone(),
-                    None,
-                    false,
-                    None,
-                    None,
-                )
+                .query_documents(query_documents.clone(), None, false, None, None)
                 .expect("expected query result");
 
-            let document = query_sender_results.documents().first().expect("expected a document");
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
 
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] displayName:string Ody publicMessage:string 8XG7KBGNvm2  ");
 
@@ -2160,7 +2167,16 @@ mod tests {
                 .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
-            assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
 
         #[test]
@@ -2228,7 +2244,7 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
             let documents_batch_create_serialized_transition = documents_batch_create_transition
                 .serialize_to_bytes()
@@ -2258,28 +2274,24 @@ mod tests {
                 .unwrap()
                 .expect("expected to commit transaction");
 
-            let receiver_documents_sql_string =
-                "select * from profile".to_string();
+            let receiver_documents_sql_string = "select * from profile".to_string();
 
             let query_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &dashpay,
                 Some(&platform.config.drive),
             )
-                .expect("expected document query");
+            .expect("expected document query");
 
             let query_sender_results = platform
                 .drive
-                .query_documents(
-                    query_documents.clone(),
-                    None,
-                    false,
-                    None,
-                    None,
-                )
+                .query_documents(query_documents.clone(), None, false, None, None)
                 .expect("expected query result");
 
-            let document = query_sender_results.documents().first().expect("expected a document");
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
 
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
 
@@ -2300,11 +2312,12 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
-            let documents_batch_update_serialized_transition_1 = documents_batch_update_transition_1
-                .serialize_to_bytes()
-                .expect("expected documents batch serialized state transition");
+            let documents_batch_update_serialized_transition_1 =
+                documents_batch_update_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
 
             let documents_batch_update_transition_2 =
                 DocumentsBatchTransition::new_document_replacement_transition_from_document(
@@ -2319,11 +2332,12 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
-            let documents_batch_update_serialized_transition_2 = documents_batch_update_transition_2
-                .serialize_to_bytes()
-                .expect("expected documents batch serialized state transition");
+            let documents_batch_update_serialized_transition_2 =
+                documents_batch_update_transition_2
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -2355,16 +2369,13 @@ mod tests {
 
             let query_sender_results = platform
                 .drive
-                .query_documents(
-                    query_documents.clone(),
-                    None,
-                    false,
-                    None,
-                    None,
-                )
+                .query_documents(query_documents.clone(), None, false, None, None)
                 .expect("expected query result");
 
-            let document = query_sender_results.documents().first().expect("expected a document");
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
 
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] displayName:string Samuel publicMessage:string 8XG7KBGNvm2  ");
 
@@ -2402,16 +2413,13 @@ mod tests {
 
             let query_sender_results = platform
                 .drive
-                .query_documents(
-                    query_documents.clone(),
-                    None,
-                    false,
-                    None,
-                    None,
-                )
+                .query_documents(query_documents.clone(), None, false, None, None)
                 .expect("expected query result");
 
-            let document = query_sender_results.documents().first().expect("expected a document");
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
 
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] displayName:string Ody publicMessage:string 8XG7KBGNvm2  ");
 
@@ -2421,7 +2429,16 @@ mod tests {
                 .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
-            assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
 
         #[test]
@@ -2485,7 +2502,7 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
             let documents_batch_create_serialized_transition = documents_batch_create_transition
                 .serialize_to_bytes()
@@ -2515,28 +2532,24 @@ mod tests {
                 .unwrap()
                 .expect("expected to commit transaction");
 
-            let receiver_documents_sql_string =
-                "select * from profile".to_string();
+            let receiver_documents_sql_string = "select * from profile".to_string();
 
             let query_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &dashpay,
                 Some(&platform.config.drive),
             )
-                .expect("expected document query");
+            .expect("expected document query");
 
             let query_sender_results = platform
                 .drive
-                .query_documents(
-                    query_documents.clone(),
-                    None,
-                    false,
-                    None,
-                    None,
-                )
+                .query_documents(query_documents.clone(), None, false, None, None)
                 .expect("expected query result");
 
-            let document = query_sender_results.documents().first().expect("expected a document");
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
 
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
 
@@ -2557,11 +2570,12 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
-            let documents_batch_update_serialized_transition_1 = documents_batch_update_transition_1
-                .serialize_to_bytes()
-                .expect("expected documents batch serialized state transition");
+            let documents_batch_update_serialized_transition_1 =
+                documents_batch_update_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
 
             let documents_batch_update_transition_2 =
                 DocumentsBatchTransition::new_document_replacement_transition_from_document(
@@ -2576,11 +2590,12 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
-            let documents_batch_update_serialized_transition_2 = documents_batch_update_transition_2
-                .serialize_to_bytes()
-                .expect("expected documents batch serialized state transition");
+            let documents_batch_update_serialized_transition_2 =
+                documents_batch_update_transition_2
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -2612,16 +2627,13 @@ mod tests {
 
             let query_sender_results = platform
                 .drive
-                .query_documents(
-                    query_documents.clone(),
-                    None,
-                    false,
-                    None,
-                    None,
-                )
+                .query_documents(query_documents.clone(), None, false, None, None)
                 .expect("expected query result");
 
-            let document = query_sender_results.documents().first().expect("expected a document");
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
 
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
 
@@ -2659,16 +2671,13 @@ mod tests {
 
             let query_sender_results = platform
                 .drive
-                .query_documents(
-                    query_documents.clone(),
-                    None,
-                    false,
-                    None,
-                    None,
-                )
+                .query_documents(query_documents.clone(), None, false, None, None)
                 .expect("expected query result");
 
-            let document = query_sender_results.documents().first().expect("expected a document");
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
 
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
 
@@ -2678,7 +2687,16 @@ mod tests {
                 .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
-            assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
 
         #[test]
@@ -2746,7 +2764,7 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
             let documents_batch_create_serialized_transition = documents_batch_create_transition
                 .serialize_to_bytes()
@@ -2776,28 +2794,24 @@ mod tests {
                 .unwrap()
                 .expect("expected to commit transaction");
 
-            let receiver_documents_sql_string =
-                "select * from profile".to_string();
+            let receiver_documents_sql_string = "select * from profile".to_string();
 
             let query_documents = DriveDocumentQuery::from_sql_expr(
                 receiver_documents_sql_string.as_str(),
                 &dashpay,
                 Some(&platform.config.drive),
             )
-                .expect("expected document query");
+            .expect("expected document query");
 
             let query_sender_results = platform
                 .drive
-                .query_documents(
-                    query_documents.clone(),
-                    None,
-                    false,
-                    None,
-                    None,
-                )
+                .query_documents(query_documents.clone(), None, false, None, None)
                 .expect("expected query result");
 
-            let document = query_sender_results.documents().first().expect("expected a document");
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
 
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
 
@@ -2818,11 +2832,12 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
-            let documents_batch_update_serialized_transition_1 = documents_batch_update_transition_1
-                .serialize_to_bytes()
-                .expect("expected documents batch serialized state transition");
+            let documents_batch_update_serialized_transition_1 =
+                documents_batch_update_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
 
             let documents_batch_update_transition_2 =
                 DocumentsBatchTransition::new_document_replacement_transition_from_document(
@@ -2837,11 +2852,12 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
-            let documents_batch_update_serialized_transition_2 = documents_batch_update_transition_2
-                .serialize_to_bytes()
-                .expect("expected documents batch serialized state transition");
+            let documents_batch_update_serialized_transition_2 =
+                documents_batch_update_transition_2
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -2873,16 +2889,13 @@ mod tests {
 
             let query_sender_results = platform
                 .drive
-                .query_documents(
-                    query_documents.clone(),
-                    None,
-                    false,
-                    None,
-                    None,
-                )
+                .query_documents(query_documents.clone(), None, false, None, None)
                 .expect("expected query result");
 
-            let document = query_sender_results.documents().first().expect("expected a document");
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
 
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] displayName:string Samuel publicMessage:string 8XG7KBGNvm2  ");
 
@@ -2920,16 +2933,13 @@ mod tests {
 
             let query_sender_results = platform
                 .drive
-                .query_documents(
-                    query_documents.clone(),
-                    None,
-                    false,
-                    None,
-                    None,
-                )
+                .query_documents(query_documents.clone(), None, false, None, None)
                 .expect("expected query result");
 
-            let document = query_sender_results.documents().first().expect("expected a document");
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
 
             assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] displayName:string Ody publicMessage:string 8XG7KBGNvm2  ");
 
@@ -2939,7 +2949,16 @@ mod tests {
                 .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
-            assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
     }
 
@@ -3090,7 +3109,16 @@ mod tests {
                 .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
-            assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
 
         #[test]
@@ -3428,7 +3456,16 @@ mod tests {
                 .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
-            assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
 
         #[test]
@@ -3837,7 +3874,16 @@ mod tests {
                 .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
-            assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
 
         #[test]
@@ -4055,7 +4101,16 @@ mod tests {
                 .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
-            assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
 
         #[test]
@@ -4664,7 +4719,16 @@ mod tests {
                 .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
                 .expect("expected to have no issues");
 
-            assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
     }
 

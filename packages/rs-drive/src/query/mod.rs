@@ -323,7 +323,11 @@ impl<'a> DriveDocumentQuery<'a> {
 
     #[cfg(feature = "server")]
     /// Returns all items
-    pub fn all_items_query(contract: &'a DataContract, document_type: DocumentTypeRef<'a>, limit: Option<u16>) -> Self {
+    pub fn all_items_query(
+        contract: &'a DataContract,
+        document_type: DocumentTypeRef<'a>,
+        limit: Option<u16>,
+    ) -> Self {
         DriveDocumentQuery {
             contract,
             document_type,
@@ -1942,7 +1946,9 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::drive::Drive;
-    use crate::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
+    use crate::query::{
+        DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator,
+    };
     use crate::util::storage_flags::StorageFlags;
 
     use dpp::data_contract::DataContract;
@@ -2213,7 +2219,9 @@ mod tests {
     fn test_valid_query_drive_document_query() {
         let platform_version = PlatformVersion::latest();
         let contract = get_dpns_data_contract_fixture(None, 0, 1).data_contract_owned();
-        let domain = contract.document_type_for_name("domain").expect("expected to get domain");
+        let domain = contract
+            .document_type_for_name("domain")
+            .expect("expected to get domain");
 
         let query_asc = DriveDocumentQuery {
             contract: &contract,
@@ -2230,8 +2238,8 @@ mod tests {
                             "AYN4srupPWDrp833iG5qtmaAsbapNvaV7svAdncLN5Rh",
                             Encoding::Base58,
                         )
-                            .unwrap()
-                            .to_buffer(),
+                        .unwrap()
+                        .to_buffer(),
                     ),
                 }),
                 equal_clauses: BTreeMap::new(),
@@ -2245,15 +2253,17 @@ mod tests {
                     ascending: false,
                 },
             )]
-                .into_iter()
-                .collect(),
+            .into_iter()
+            .collect(),
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
         };
-        
-        let path_query = query_asc.construct_path_query(None, platform_version).expect("expected to create path query");
-        
+
+        let path_query = query_asc
+            .construct_path_query(None, platform_version)
+            .expect("expected to create path query");
+
         println!("{}", path_query);
     }
 

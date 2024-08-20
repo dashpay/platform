@@ -92,9 +92,9 @@ mod tests {
     };
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::state_transition::StateTransition;
-    use tenderdash_abci::Application;
     use simple_signer::signer::SimpleSigner;
     use strategy_tests::transitions::create_state_transitions_for_identities;
+    use tenderdash_abci::Application;
 
     #[test]
     fn run_chain_nothing_happening() {
@@ -1198,7 +1198,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "4f4fc212d1d0c631b985a29544a24fbe6f7ffdd9e8d69a69d2da173dea567945".to_string()
+            "d12cc15405f4a810c239539f06fe6eee9f2b2d1ad49055a5ca55882b5842baa4".to_string()
         )
     }
 
@@ -1790,13 +1790,24 @@ mod tests {
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
 
-        let issues = outcome.abci_app.platform
+        let issues = outcome
+            .abci_app
+            .platform
             .drive
             .grove
             .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
-        assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 
     #[test]
@@ -1927,7 +1938,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "cdb5dc16b1e774c0fc777f1b7ffa16b652ba5a80ad8329d75accf30b19f97dd8".to_string()
+            "f55d96bb04c3e5e737c883a18538fc008a55aaf003ccd64d0e8dd3640b7fa888".to_string()
         )
     }
 
@@ -2062,7 +2073,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "f7422a9297c1c2b903dac3873f31604f6268e69498e06c658c2948093efb4368".to_string()
+            "a409bbb8c0522bab91eed208e058f1a35320b52efd42f289be14d874a4cab807".to_string()
         )
     }
 
@@ -2414,13 +2425,24 @@ mod tests {
             .count();
         assert_eq!(balance_count, 19); // 1 epoch worth of proposers
 
-        let issues = outcome.abci_app.platform
+        let issues = outcome
+            .abci_app
+            .platform
             .drive
             .grove
             .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
-        assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 
     #[test]
@@ -2433,7 +2455,7 @@ mod tests {
             true,
             platform_version,
         )
-            .expect("expected to get contract from a json document");
+        .expect("expected to get contract from a json document");
 
         let contract = created_contract.data_contract();
 
@@ -2533,13 +2555,24 @@ mod tests {
         let outcome =
             run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
 
-        let issues = outcome.abci_app.platform
+        let issues = outcome
+            .abci_app
+            .platform
             .drive
             .grove
             .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
-        assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 
     #[test]
@@ -2551,7 +2584,7 @@ mod tests {
             true,
             platform_version,
         )
-            .expect("expected to get contract from a json document");
+        .expect("expected to get contract from a json document");
 
         let contract = created_contract.data_contract();
 
@@ -2586,7 +2619,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-                .unwrap();
+            .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -2596,7 +2629,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-                .unwrap();
+            .unwrap();
 
         simple_signer.add_keys(keys2);
 
@@ -2678,13 +2711,24 @@ mod tests {
         let outcome =
             run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
 
-        let issues = outcome.abci_app.platform
+        let issues = outcome
+            .abci_app
+            .platform
             .drive
             .grove
             .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
-        assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 
     #[test]
@@ -2821,13 +2865,24 @@ mod tests {
             .count();
         assert_eq!(balance_count, 19); // 1 epoch worth of proposers
 
-        let issues = outcome.abci_app.platform
+        let issues = outcome
+            .abci_app
+            .platform
             .drive
             .grove
             .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
-        assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 
     #[test]

@@ -11,7 +11,7 @@ use dpp::block::epoch::Epoch;
 use dpp::identity::{Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
 use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::{QualifiedGroveDbOp, GroveDbOpConsistencyResults, KeyInfoPath, GroveOp};
+use grovedb::batch::{GroveDbOpConsistencyResults, GroveOp, KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::operations::proof::util::hex_to_ascii;
 use grovedb::Element;
 use std::borrow::Cow;
@@ -452,7 +452,11 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
     /// Adds an `Insert` operation with an empty tree at the specified path and key to a list of GroveDB ops.
     fn add_insert_empty_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>) {
         self.operations
-            .push(QualifiedGroveDbOp::insert_or_replace_op(path, key, Element::empty_tree()))
+            .push(QualifiedGroveDbOp::insert_or_replace_op(
+                path,
+                key,
+                Element::empty_tree(),
+            ))
     }
 
     /// Adds an `Insert` operation with an empty tree with storage flags to a list of GroveDB ops.
@@ -462,19 +466,24 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         key: Vec<u8>,
         storage_flags: &Option<Cow<StorageFlags>>,
     ) {
-        self.operations.push(QualifiedGroveDbOp::insert_or_replace_op(
-            path,
-            key,
-            Element::empty_tree_with_flags(StorageFlags::map_borrowed_cow_to_some_element_flags(
-                storage_flags,
-            )),
-        ))
+        self.operations
+            .push(QualifiedGroveDbOp::insert_or_replace_op(
+                path,
+                key,
+                Element::empty_tree_with_flags(
+                    StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                ),
+            ))
     }
 
     /// Adds an `Insert` operation with an empty sum tree at the specified path and key to a list of GroveDB ops.
     fn add_insert_empty_sum_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>) {
         self.operations
-            .push(QualifiedGroveDbOp::insert_or_replace_op(path, key, Element::empty_sum_tree()))
+            .push(QualifiedGroveDbOp::insert_or_replace_op(
+                path,
+                key,
+                Element::empty_sum_tree(),
+            ))
     }
 
     /// Adds an `Insert` operation with an empty sum tree with storage flags to a list of GroveDB ops.
@@ -484,18 +493,20 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         key: Vec<u8>,
         storage_flags: &Option<Cow<StorageFlags>>,
     ) {
-        self.operations.push(QualifiedGroveDbOp::insert_or_replace_op(
-            path,
-            key,
-            Element::empty_sum_tree_with_flags(
-                StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
-            ),
-        ))
+        self.operations
+            .push(QualifiedGroveDbOp::insert_or_replace_op(
+                path,
+                key,
+                Element::empty_sum_tree_with_flags(
+                    StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                ),
+            ))
     }
 
     /// Adds a `Delete` operation to a list of GroveDB ops.
     fn add_delete(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>) {
-        self.operations.push(QualifiedGroveDbOp::delete_op(path, key))
+        self.operations
+            .push(QualifiedGroveDbOp::delete_op(path, key))
     }
 
     /// Adds a `Delete` tree operation to a list of GroveDB ops.
@@ -604,7 +615,10 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
             let op = &self.operations[index].op;
             let op = if matches!(
                 op,
-                &GroveOp::InsertOrReplace { .. } | &GroveOp::InsertOnly { .. } | &GroveOp::Replace { .. } | &GroveOp::Patch { .. }
+                &GroveOp::InsertOrReplace { .. }
+                    | &GroveOp::InsertOnly { .. }
+                    | &GroveOp::Replace { .. }
+                    | &GroveOp::Patch { .. }
             ) {
                 self.operations.remove(index).op
             } else {

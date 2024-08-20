@@ -480,7 +480,7 @@ mod test {
 
         let cf_handle = db.cf_handle(cf).unwrap();
         let iter = db.iterator_cf(cf_handle, IteratorMode::Start);
-        
+
         for (i, item) in iter.enumerate() {
             let (key, mut value) = item.unwrap();
             // println!("{} = {}", hex::encode(&key), hex::encode(value));

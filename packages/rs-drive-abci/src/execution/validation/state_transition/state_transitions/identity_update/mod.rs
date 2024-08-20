@@ -113,16 +113,18 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
-    use crate::execution::validation::state_transition::tests::{setup_add_key_to_identity, setup_identity_return_master_key};
+    use crate::execution::validation::state_transition::tests::{
+        setup_add_key_to_identity, setup_identity_return_master_key,
+    };
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::identity::contract_bounds::ContractBounds;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::signer::Signer;
+    use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::serialization::{PlatformSerializable, Signable};
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
@@ -232,8 +234,21 @@ mod tests {
             setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
-        
-        let key = setup_add_key_to_identity(&mut platform, &mut identity, &mut signer, 4, 2, Purpose::ENCRYPTION, SecurityLevel::MEDIUM, KeyType::ECDSA_SECP256K1, Some(ContractBounds::SingleContractDocumentType { id: dashpay.id(), document_type_name: "contactRequest".to_string() }));
+
+        let key = setup_add_key_to_identity(
+            &mut platform,
+            &mut identity,
+            &mut signer,
+            4,
+            2,
+            Purpose::ENCRYPTION,
+            SecurityLevel::MEDIUM,
+            KeyType::ECDSA_SECP256K1,
+            Some(ContractBounds::SingleContractDocumentType {
+                id: dashpay.id(),
+                document_type_name: "contactRequest".to_string(),
+            }),
+        );
 
         let issues = platform
             .drive
@@ -241,7 +256,16 @@ mod tests {
             .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
-        assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
 
         let platform_state = platform.state.load();
 
@@ -255,7 +279,7 @@ mod tests {
             signature_public_key_id: master_key.id(),
             signature: Default::default(),
         }
-            .into();
+        .into();
 
         let mut update_transition: StateTransition = update_transition.into();
 
@@ -302,6 +326,15 @@ mod tests {
             .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
-        assert_eq!(issues.len(), 0, "issues are {}", issues.iter().map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c)).collect::<Vec<_>>().join(" | "));
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 }

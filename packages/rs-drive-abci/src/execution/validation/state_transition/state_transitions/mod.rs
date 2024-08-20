@@ -269,20 +269,19 @@ pub(crate) mod tests {
 
         let mut rng = StdRng::seed_from_u64(seed);
 
-        let (key, private_key) =
-            IdentityPublicKey::random_key_with_known_attributes(
-                key_id,
-                &mut rng,
-                purpose,
-                security_level,
-                key_type,
-                contract_bounds,
-                platform_version,
-            )
-                .expect("expected to get key pair");
+        let (key, private_key) = IdentityPublicKey::random_key_with_known_attributes(
+            key_id,
+            &mut rng,
+            purpose,
+            security_level,
+            key_type,
+            contract_bounds,
+            platform_version,
+        )
+        .expect("expected to get key pair");
 
         signer.add_key(key.clone(), private_key.clone());
-        
+
         identity.add_public_key(key.clone());
 
         platform

@@ -424,7 +424,12 @@ impl LowLevelDriveOperation {
         element: Element,
         change_in_bytes: i32,
     ) -> Self {
-        GroveOperation(QualifiedGroveDbOp::patch_op(path, key, element, change_in_bytes))
+        GroveOperation(QualifiedGroveDbOp::patch_op(
+            path,
+            key,
+            element,
+            change_in_bytes,
+        ))
     }
 
     /// Sets `GroveOperation` for inserting an element at an unknown estimated path and key
