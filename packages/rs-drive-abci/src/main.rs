@@ -488,7 +488,7 @@ mod test {
 
         for (i, item) in iter.enumerate() {
             let (key, mut value) = item.unwrap();
-            println!("{} = {}", hex::encode(&key), hex::encode(&value));
+            // println!("{} = {}", hex::encode(&key), hex::encode(&value));
             tracing::trace!(cf, key=?hex::encode(&key), value=hex::encode(&value),"found item in rocksdb");
 
             if i == n {
