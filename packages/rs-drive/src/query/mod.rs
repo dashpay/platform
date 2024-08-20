@@ -1937,11 +1937,12 @@ mod tests {
     use dpp::prelude::Identifier;
     use serde_json::json;
     use std::borrow::Cow;
+    use std::collections::BTreeMap;
     use std::option::Option::None;
     use tempfile::TempDir;
 
     use crate::drive::Drive;
-    use crate::query::DriveDocumentQuery;
+    use crate::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
     use crate::util::storage_flags::StorageFlags;
 
     use dpp::data_contract::DataContract;
@@ -1952,7 +1953,9 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::platform_value::string_encoding::Encoding;
+    use dpp::platform_value::Value;
+    use dpp::tests::fixtures::{get_data_contract_fixture, get_dpns_data_contract_fixture};
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::util::cbor_serializer;
     use dpp::version::PlatformVersion;
@@ -2204,6 +2207,54 @@ mod tests {
             &DriveConfig::default(),
         )
         .expect("query should be fine for a 255 byte long string");
+    }
+
+    #[test]
+    fn test_valid_query_drive_document_query() {
+        let platform_version = PlatformVersion::latest();
+        let contract = get_dpns_data_contract_fixture(None, 0, 1).data_contract_owned();
+        let domain = contract.document_type_for_name("domain").expect("expected to get domain");
+
+        let query_asc = DriveDocumentQuery {
+            contract: &contract,
+            document_type: domain,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clause: None,
+                range_clause: Some(WhereClause {
+                    field: "records.identity".to_string(),
+                    operator: WhereOperator::LessThan,
+                    value: Value::Identifier(
+                        Identifier::from_string(
+                            "AYN4srupPWDrp833iG5qtmaAsbapNvaV7svAdncLN5Rh",
+                            Encoding::Base58,
+                        )
+                            .unwrap()
+                            .to_buffer(),
+                    ),
+                }),
+                equal_clauses: BTreeMap::new(),
+            },
+            offset: None,
+            limit: Some(6),
+            order_by: vec![(
+                "records.identity".to_string(),
+                OrderClause {
+                    field: "records.identity".to_string(),
+                    ascending: false,
+                },
+            )]
+                .into_iter()
+                .collect(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+        };
+        
+        let path_query = query_asc.construct_path_query(None, platform_version).expect("expected to create path query");
+        
+        println!("{}", path_query);
     }
 
     #[test]

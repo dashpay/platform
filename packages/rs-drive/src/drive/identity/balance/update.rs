@@ -474,7 +474,7 @@ mod tests {
         use dpp::fee::fee_result::FeeResult;
         use dpp::fee::{Credits, SignedCredits};
         use dpp::version::PlatformVersion;
-        use grovedb::batch::Op;
+        use grovedb::batch::GroveOp;
         use grovedb::Element;
         use nohash_hasher::IntMap;
         use std::collections::BTreeMap;
@@ -549,15 +549,15 @@ mod tests {
                 [
                     _,
                     _,
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::SumItem(refund_amount, None),
                         },
                         ..
                     }),
                     ..,
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::SumItem(other_refund_amount, None),
                         },
                         ..
@@ -645,14 +645,14 @@ mod tests {
                 [
                     _,
                     _,
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::SumItem(refund_amount, None),
                         },
                     ..
                     }),
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..
@@ -720,8 +720,8 @@ mod tests {
                 [
                     _,
                     _,
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..
@@ -775,8 +775,8 @@ mod tests {
 
             assert!(matches!(
                 drive_operations[..],
-                [_, LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                    op: Op::Replace {
+                [_, LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                    op: GroveOp::Replace {
                         element: Element::SumItem(balance, None),
                     },
                     ..
@@ -834,14 +834,14 @@ mod tests {
                 &drive_operations[..],
                 [
                     _,
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::SumItem(balance, None),
                         },
                         ..
                     }),
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..

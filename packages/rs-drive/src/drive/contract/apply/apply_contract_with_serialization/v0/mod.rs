@@ -52,7 +52,6 @@ impl Drive {
             platform_version,
         )?;
         let fetch_cost = LowLevelDriveOperation::combine_cost_operations(&batch_operations);
-        println!("operations are {:?}", batch_operations);
         self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
@@ -112,7 +111,7 @@ impl Drive {
         };
 
         // We can do a get direct because there are no references involved
-        match self.grove_get_raw(
+        match self.grove_get_raw_optional(
             (&contract_root_path(contract.id_ref().as_bytes())).into(),
             &[0],
             direct_query_type,

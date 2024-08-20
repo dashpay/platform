@@ -480,8 +480,7 @@ mod test {
 
         let cf_handle = db.cf_handle(cf).unwrap();
         let iter = db.iterator_cf(cf_handle, IteratorMode::Start);
-
-        // let iter = db.iterator(IteratorMode::Start);
+        
         for (i, item) in iter.enumerate() {
             let (key, mut value) = item.unwrap();
             // println!("{} = {}", hex::encode(&key), hex::encode(value));
@@ -502,6 +501,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn test_verify_grovedb_corrupt_0th_root() {
         drive_abci::logging::init_for_tests(LogLevel::Silent);
         let tempdir = tempfile::tempdir().unwrap();

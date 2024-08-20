@@ -70,7 +70,7 @@ mod tests {
     use dpp::fee::epoch::CreditsPerEpoch;
 
     use dpp::version::PlatformVersion;
-    use grovedb::batch::Op;
+    use grovedb::batch::GroveOp;
 
     #[test]
     fn should_add_delete_operations_v0() {
@@ -124,7 +124,7 @@ mod tests {
         assert_eq!(batch.len(), expected_pending_refunds.len());
 
         for operation in batch.into_iter() {
-            assert!(matches!(operation.op, Op::Delete));
+            assert!(matches!(operation.op, GroveOp::Delete));
 
             assert_eq!(operation.path.to_path(), pending_epoch_refunds_path_vec());
 

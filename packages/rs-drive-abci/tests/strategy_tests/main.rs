@@ -2458,15 +2458,6 @@ mod tests {
                 .to_owned_document_type(),
         };
 
-        let document_deletion_op = DocumentOp {
-            contract: contract.clone(),
-            action: DocumentAction::DocumentActionDelete,
-            document_type: contract
-                .document_type_for_name("contactRequest")
-                .expect("expected a profile document type")
-                .to_owned_document_type(),
-        };
-
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![(created_contract, None)],

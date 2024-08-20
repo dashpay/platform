@@ -266,7 +266,6 @@ pub(crate) mod tests {
         contract_bounds: Option<ContractBounds>,
     ) -> IdentityPublicKey {
         let platform_version = PlatformVersion::latest();
-        let mut signer = SimpleSigner::default();
 
         let mut rng = StdRng::seed_from_u64(seed);
 

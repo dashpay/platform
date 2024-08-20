@@ -8,7 +8,7 @@ use crate::util::batch::GroveDbOpBatch;
 use dpp::balances::credits::Creditable;
 use dpp::block::epoch::EpochIndex;
 use dpp::fee::Credits;
-use grovedb::batch::GroveDbOp;
+use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::Element;
 
 #[cfg(feature = "server")]
@@ -21,8 +21,8 @@ pub fn add_create_pending_epoch_refunds_tree_operations(batch: &mut GroveDbOpBat
 /// Updates the storage fee distribution pool with a new storage fee
 pub fn update_storage_fee_distribution_pool_operation(
     storage_fee: Credits,
-) -> Result<GroveDbOp, Error> {
-    Ok(GroveDbOp::insert_op(
+) -> Result<QualifiedGroveDbOp, Error> {
+    Ok(QualifiedGroveDbOp::insert_or_replace_op(
         pools_vec_path(),
         KEY_STORAGE_FEE_POOL.to_vec(),
         Element::new_sum_item(storage_fee.to_signed()?),
@@ -31,8 +31,8 @@ pub fn update_storage_fee_distribution_pool_operation(
 
 #[cfg(feature = "server")]
 /// Updates the unpaid epoch index
-pub fn update_unpaid_epoch_index_operation(epoch_index: EpochIndex) -> GroveDbOp {
-    GroveDbOp::insert_op(
+pub fn update_unpaid_epoch_index_operation(epoch_index: EpochIndex) -> QualifiedGroveDbOp {
+    QualifiedGroveDbOp::insert_or_replace_op(
         pools_vec_path(),
         KEY_UNPAID_EPOCH_INDEX.to_vec(),
         Element::new_item(epoch_index.to_be_bytes().to_vec()),
