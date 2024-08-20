@@ -501,7 +501,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn test_verify_grovedb_corrupt_0th_root() {
         drive_abci::logging::init_for_tests(LogLevel::Silent);
         let tempdir = tempfile::tempdir().unwrap();
