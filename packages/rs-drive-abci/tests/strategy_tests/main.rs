@@ -1795,7 +1795,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
+            .visualize_verify_grovedb(None, true, false,&platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(
@@ -2430,7 +2430,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
+            .visualize_verify_grovedb(None, true, false,&platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(
@@ -2560,7 +2560,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
+            .visualize_verify_grovedb(None, true, false,&platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(
@@ -2716,7 +2716,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
+            .visualize_verify_grovedb(None, true, false,&platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(
@@ -2870,7 +2870,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .visualize_verify_grovedb(None, true, &platform_version.drive.grove_version)
+            .visualize_verify_grovedb(None, true, false,&platform_version.drive.grove_version)
             .expect("expected to have no issues");
 
         assert_eq!(

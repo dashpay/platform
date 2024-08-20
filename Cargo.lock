@@ -18,6 +18,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f26201604c87b1e01bd3d98f8d5d9a8fcbb815e8cedb41ffccbeb4bf593a35fe"
 
 [[package]]
+name = "adler2"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "512761e0bb2578dd7380c6baaa0f4ce03e84f95e960231d1dec8bf4d7d6e2627"
+
+[[package]]
 name = "aes"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -391,7 +397,7 @@ dependencies = [
  "cc",
  "cfg-if",
  "libc",
- "miniz_oxide",
+ "miniz_oxide 0.7.4",
  "object",
  "rustc-demangle",
 ]
@@ -1830,12 +1836,12 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 
 [[package]]
 name = "flate2"
-version = "1.0.31"
+version = "1.0.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f211bbe8e69bbd0cfdea405084f128ae8b4aaa6b0b522fc8f2b009084797920"
+checksum = "9c0596c1eac1f9e04ed902702e9878208b336edc9d6fddc8a48387349bab3666"
 dependencies = [
  "crc32fast",
- "miniz_oxide",
+ "miniz_oxide 0.8.0",
 ]
 
 [[package]]
@@ -2056,7 +2062,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 dependencies = [
  "axum 0.7.5",
  "bincode",
@@ -2089,7 +2095,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2099,7 +2105,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2123,12 +2129,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2147,7 +2153,7 @@ dependencies = [
 [[package]]
 name = "grovedb-version"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 dependencies = [
  "thiserror",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2156,7 +2162,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 dependencies = [
  "hex",
  "itertools 0.12.1",
@@ -2165,7 +2171,7 @@ dependencies = [
 [[package]]
 name = "grovedbg-types"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=verify_ref_after_batch_op#354a66ccc0a6c87d1f9994b3517e7695bbf6b162"
+source = "git+https://github.com/dashpay/grovedb?rev=713ad96a0ca443f72fa15738e82df529be1becbb#713ad96a0ca443f72fa15738e82df529be1becbb"
 dependencies = [
  "serde",
  "serde_with 3.9.0",
@@ -2997,6 +3003,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8a240ddb74feaf34a79a7add65a741f3167852fba007066dcac1ca548d89c08"
 dependencies = [
  "adler",
+]
+
+[[package]]
+name = "miniz_oxide"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2d80299ef12ff69b16a84bb182e3b9df68b5a91574d3d4fa6e41b65deec4df1"
+dependencies = [
+ "adler2",
 ]
 
 [[package]]
