@@ -51,8 +51,11 @@ async fn contested_resource_identity_votes_not_found() {
 /// 0. Ensure you have at least 1 contested DPNS name in the system.
 /// See [check_mn_voting_prerequisities](super::contested_resource::check_mn_voting_prerequisities) for more details.
 ///
-/// 1. Grep log output of `yarn setup` to find `ProRegTx transaction ID` and `Owner Private Key`.
-/// Use `ProRegTx transaction ID` to set `DASH_SDK_MASTERNODE_OWNER_PRO_REG_TX_HASH`  in `packages/rs-sdk/tests/.env`.
+/// 1. Grep log output of `yarn setup` (see logs/setup.log) to find `ProRegTx transaction ID` and `Owner Private Key`:
+///  ```bash
+///  egrep '(ProRegTx transaction ID|Owner Private Key)' logs/setup.log|head -n2
+///  ```
+///  Hardcode `ProRegTx transaction ID` in [Config::default_protxhash].
 ///
 /// 2. Load masternode identity into [rs-platform-explorer](https://github.com/dashpay/rs-platform-explorer/):
 ///
@@ -78,7 +81,7 @@ async fn contested_resource_identity_votes_not_found() {
     ignore = "requires manual DPNS names setup for masternode voting tests; see docs of contested_resource_identity_votes_ok()"
 )]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn contested_resource_identity_votes_ok() {
+pub(super) async fn contested_resource_identity_votes_ok() {
     setup_logs();
 
     let cfg = Config::new();
