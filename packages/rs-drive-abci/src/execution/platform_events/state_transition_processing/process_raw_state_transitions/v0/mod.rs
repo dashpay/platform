@@ -19,7 +19,6 @@ use crate::platform_types::state_transitions_processing_result::{
     NotExecutedReason, StateTransitionExecutionResult, StateTransitionsProcessingResult,
 };
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use dpp::prelude::TimestampMillis;
 use dpp::util::hash::hash_single;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
