@@ -527,17 +527,6 @@ impl DapiRequestExecutor for Sdk {
     }
 }
 
-#[async_trait::async_trait]
-impl DapiRequestExecutor for &Sdk {
-    async fn execute<R: TransportRequest>(
-        &self,
-        request: R,
-        settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
-        DapiRequestExecutor::execute(self, request, settings).await
-    }
-}
-
 /// Dash Platform SDK Builder, used to configure and [`SdkBuilder::build()`] the [Sdk].
 ///
 /// [SdkBuilder] implements a "builder" design pattern to allow configuration of the Sdk before it is instantiated.
