@@ -40,6 +40,8 @@ export default class DoctorCommand extends ConfigBaseCommand {
     getServiceList,
     getOperatingSystemInfo,
   ) {
+
+
     const tasks = new Listr(
       [
         {
@@ -47,23 +49,19 @@ export default class DoctorCommand extends ConfigBaseCommand {
             const agreement = await task.prompt({
               type: 'toggle',
               name: 'confirm',
-              header: `Dashmate is going to collect all necessary debug data from the node, including:
+              header: chalk`  Dashmate is going to collect all necessary debug data from the node to create a report, including:
 
-${chalk.yellow('* OS System Info (cpu, arch, disk, memory, inet)')}
-${chalk.yellow('* Docker Inspect & Logs for each dashmate service')}
-${chalk.red('* Dashmate Config (external ip, all keys and passwords stripped)')}
-${chalk.yellow('* Core RPC data (getbestchainlock, getblockchaininfo, quorums, getpeerinfo, masternode(\'status\'))')}
-${chalk.green('* Tenderdash RPC data (if platform is enabled)')}
-${chalk.green('* Prometheus Metrics (if platform is enabled)')}
+  - System information
+  - The node configuration
+  - Service logs, metrics and status
 
-It will archived all collected info in an archive .tar archive in your current working directory (${process.cwd()})
-You can use it to analyze your node condition yourself or send it to the Dash team in case you need help
+  Collected data will contain only anonymous information. All sensitive data like private keys or passwords is obfuscated.
 
-support@dash.org
-              `,
-              message: 'Continue?',
+  The report will be created as an TAR archive in {bold.cyanBright ${process.cwd()}}
+  You can use the report to analyze your node condition yourself or send it to the Dash Core Group ({underline.cyanBright support@dash.org}) in case you need help.\n`,
+              message: 'Create a report?',
               enabled: 'Yes',
-              disabled: 'Abort',
+              disabled: 'No',
             });
 
             if (!agreement) {
@@ -74,7 +72,7 @@ support@dash.org
           },
         },
         {
-          title: 'Gathering Operating System Info',
+          title: 'System information',
           task: async (ctx) => {
             const osInfo = await getOperatingSystemInfo();
 
@@ -82,14 +80,14 @@ support@dash.org
           },
         },
         {
-          title: 'Sanitizing Dashmate Config data',
+          title: 'The node configuration',
           task: async (ctx) => {
             ctx.report.setDashmateVersion(DASHMATE_VERSION);
             ctx.report.setDashmateConfig(sanitizeDashmateConfig(config));
           },
         },
         {
-          title: 'Requesting Core RPC node data',
+          title: 'Core status',
           task: async (ctx) => {
             const rpcClient = createRpcClient({
               port: config.get('core.rpc.port'),
@@ -125,7 +123,7 @@ support@dash.org
           },
         },
         {
-          title: 'Collecting Tenderdash RPC status and consensus info',
+          title: 'Tenderdash status',
           enabled: () => config.get('platform.enable'),
           task: async (ctx) => {
             const tenderdashRPCClient = createTenderdashRpcClient({
@@ -158,7 +156,7 @@ support@dash.org
           },
         },
         {
-          title: 'Reading Prometheus metrics',
+          title: 'Metrics',
           enabled: () => config.get('platform.enable'),
           task: async (ctx, task) => {
             if (config.get('platform.drive.tenderdash.metrics.enabled')) {
@@ -195,12 +193,12 @@ support@dash.org
           },
         },
         {
-          title: 'Pulling Docker Container Info & Logs',
+          title: 'Logs',
           task: async (ctx, task) => {
             const services = await getServiceList(config);
 
             // eslint-disable-next-line no-param-reassign
-            task.title = `Pulling logs from ${services.map((e) => e.name)}`;
+            task.output = `Pulling logs from ${services.map((e) => e.name)}`;
 
             await Promise.all(
               services.map(async (service) => {
@@ -217,24 +215,27 @@ support@dash.org
           },
         },
         {
-          title: 'Archiving',
+          title: 'Create an archive',
           task: async (ctx, task) => {
             const archivePath = process.cwd();
 
             await ctx.report.archive(archivePath);
 
             // eslint-disable-next-line no-param-reassign
-            task.title = `Archive with all debug data created in the current working dir (${archivePath}/dashmate-report-${ctx.report.date.toISOString()}.tar)`;
+            task.output = chalk`Saved to {bold.cyanBright ${archivePath}/dashmate-report-${ctx.report.date.toISOString()}.tar}`;
+          },
+          options: {
+            persistentOutput: true,
           },
         },
       ],
       {
         renderer: isVerbose ? 'verbose' : 'default',
         rendererOptions: {
-          showTimer: isVerbose,
           clearOutput: false,
-          collapse: false,
-          showSubtasks: true,
+          showTimer: isVerbose,
+          bottomBar: true,
+          removeEmptyLines: false,
         },
       },
     );
