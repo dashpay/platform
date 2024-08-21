@@ -895,9 +895,20 @@ export default {
                 grovedbVisualizer: {
                   $ref: '#/definitions/enabledHostPort',
                 },
+                proposer: {
+                  type: 'object',
+                  properties: {
+                    txProcessingTimeLimit: {
+                      type: ['null', 'integer'],
+                      minimum: 0,
+                    },
+                  },
+                  required: ['txProcessingTimeLimit'],
+                  additionalProperties: false,
+                },
               },
               additionalProperties: false,
-              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics', 'grovedbVisualizer'],
+              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics', 'grovedbVisualizer', 'proposer'],
             },
             tenderdash: {
               type: 'object',
@@ -992,9 +1003,16 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    ttlDuration: {
+                      $ref: '#/definitions/duration',
+                    },
+                    ttlNumBlocks: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                   },
                   additionalProperties: false,
-                  required: ['size', 'maxTxsBytes', 'cacheSize', 'timeoutCheckTx', 'txEnqueueTimeout', 'txSendRateLimit', 'txRecvRateLimit', 'maxConcurrentCheckTx'],
+                  required: ['size', 'maxTxsBytes', 'cacheSize', 'timeoutCheckTx', 'txEnqueueTimeout', 'txSendRateLimit', 'txRecvRateLimit', 'maxConcurrentCheckTx', 'ttlDuration', 'ttlNumBlocks'],
                 },
                 consensus: {
                   type: 'object',

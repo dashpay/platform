@@ -233,23 +233,22 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
         };
 
         let validation_result = document_transitions
-        .iter()
-        .map(|(document_type_name, document_transitions)| {
-            Self::transform_document_transitions_within_document_type_v0(
-                platform,
-                block_info,
-                validate_against_state,
-                data_contract_fetch_info.clone(),
-                document_type_name,
-                owner_id,
-                document_transitions,
-                execution_context,
-                transaction,
-                platform_version,
-            )
-        })
-        .collect::<Result<Vec<ConsensusValidationResult<Vec<DocumentTransitionAction>>>, Error>>(
-        )?;
+            .iter()
+            .map(|(document_type_name, document_transitions)| {
+                Self::transform_document_transitions_within_document_type_v0(
+                    platform,
+                    block_info,
+                    validate_against_state,
+                    data_contract_fetch_info.clone(),
+                    document_type_name,
+                    owner_id,
+                    document_transitions,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )
+            })
+            .collect::<Result<Vec<ConsensusValidationResult<Vec<DocumentTransitionAction>>>, Error>>()?;
         Ok(ConsensusValidationResult::flatten(validation_result))
     }
 
@@ -327,7 +326,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 .map(|transition| {
                     // we validate every transition in this document type
                     Self::transform_transition_v0(
-                        &platform.drive,
+                        platform.drive,
                         transaction,
                         validate_against_state,
                         block_info,
@@ -376,7 +375,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     drive, transaction,
                     document_create_transition, block_info, |_identifier| {
                         Ok(data_contract_fetch_info.clone())
-                }, platform_version)?;
+                    }, platform_version)?;
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
@@ -475,9 +474,9 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 }
             }
             DocumentTransition::Delete(document_delete_transition) => {
-                let action = DocumentDeleteTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_delete_transition,                      |_identifier| {
-                Ok(data_contract_fetch_info.clone())
-            })?;
+                let action = DocumentDeleteTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_delete_transition, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                })?;
                 Ok(DocumentTransitionAction::DeleteAction(action).into())
             }
             DocumentTransition::Transfer(document_transfer_transition) => {
