@@ -1,6 +1,7 @@
 import process from 'process';
 import { Flags } from '@oclif/core';
 import { Listr } from 'listr2';
+import chalk from 'chalk';
 import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import fetchHTTP from '../util/fetchHTTP.js';
 import Report from '../doctor/report.js';
@@ -48,12 +49,12 @@ export default class DoctorCommand extends ConfigBaseCommand {
               name: 'confirm',
               header: `Dashmate is going to collect all necessary debug data from the node, including:
 
-* OS System Info (cpu, arch, disk, memory, inet)
-* Docker Inspect & Logs for each dashmate service
-* Dashmate Config (external ip, all keys and passwords stripped)
-* Core RPC data (getbestchainlock, getblockchaininfo, quorums, getpeerinfo, masternode('status'))
-* Tenderdash RPC data (if platform is enabled)
-* Prometheus Metrics (if platform is enabled)
+${chalk.yellow('* OS System Info (cpu, arch, disk, memory, inet)')}
+${chalk.yellow('* Docker Inspect & Logs for each dashmate service')}
+${chalk.red('* Dashmate Config (external ip, all keys and passwords stripped)')}
+${chalk.yellow('* Core RPC data (getbestchainlock, getblockchaininfo, quorums, getpeerinfo, masternode(\'status\'))')}
+${chalk.green('* Tenderdash RPC data (if platform is enabled)')}
+${chalk.green('* Prometheus Metrics (if platform is enabled)')}
 
 It will archived all collected info in an archive .tar archive in your current working directory (${process.cwd()})
 You can use it to analyze your node condition yourself or send it to the Dash team in case you need help
