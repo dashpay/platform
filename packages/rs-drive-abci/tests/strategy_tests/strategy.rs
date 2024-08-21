@@ -17,7 +17,7 @@ use strategy_tests::operations::{
     DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, OperationType,
 };
 
-use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
@@ -937,7 +937,7 @@ impl NetworkStrategy {
                             //todo: fix this into a search key request for the following
                             //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);
 
-                            let mut random_new_document = document_type
+                            let random_new_document = document_type
                                 .random_document_with_rng(rng, platform_version)
                                 .unwrap();
                             let request = IdentityKeysRequest {
