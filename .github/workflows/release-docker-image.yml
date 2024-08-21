@@ -106,11 +106,7 @@ jobs:
         with:
           result-encoding: string
           script: |
-            return (
-              context.eventName === 'workflow_dispatch'
-                ? '${{ github.event.inputs.tag }}'
-                : context.payload.release.tag_name
-            );
+            return ( github.event.inputs.tag ||  context.payload.release.tag_name );
 
       - name: Set suffix
         uses: actions/github-script@v6
@@ -133,10 +129,10 @@ jobs:
         with:
           images: ${{ inputs.image_org }}/${{ inputs.image_name }}
           tags: |
-            type=match,pattern=v(\d+),group=1,value=${{ steps.version.outputs.result }}
-            type=match,pattern=v(\d+.\d+),group=1,value=${{ steps.version.outputs.result }}
-            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{ steps.version.outputs.result }}
-            type=match,pattern=v(.*),group=1,value=${{ steps.version.outputs.result }},suffix=
+            type=semver,pattern={{version}},priority=950
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=ref,event=pr
           flavor: |
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
@@ -148,6 +144,8 @@ jobs:
       - name: Create manifest list and push
         working-directory: ${{ env.DIGEST_DIR_PATH }}
         run: |
+          # todo: remove this line
+          exit 1 
           ls -lah
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ inputs.image_org }}/${{ inputs.image_name }}@sha256:%s ' *)
