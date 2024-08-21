@@ -101,7 +101,7 @@ rocksdb = { version = "0.22.0" }
 integer-encoding = { version = "4.0.0" }
 
 [features]
-# TODO: Remove console for production
+
 default = ["mocks", "console", "grovedbg"]
 mocks = ["mockall", "drive/fixtures-and-mocks"]
 console = ["console-subscriber", "tokio/tracing"]
