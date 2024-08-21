@@ -9,6 +9,10 @@ on:
       tag:
         description: "Version (i.e. v0.22.3-pre.2)"
         required: true
+      dry_run:
+        type: boolean
+        description: When set to true, the workflow will not push the updated manifest to Docker Hub
+        default: false
 
 env:
   # Provided tag can override the tag from the release event
@@ -108,6 +112,7 @@ jobs:
         run: yarn config set npmAuthToken ${{ secrets.NPM_TOKEN }}
 
       - name: Publish NPM packages
+        if: ${{ !inputs.dry_run }}
         run: yarn workspaces foreach --all --no-private --parallel npm publish --access public --tag ${{ steps.tag.outputs.result }}
 
       - name: Ignore only already cached artifacts
@@ -141,6 +146,7 @@ jobs:
       image_name: drive
       target: drive-abci
       tag: $IMAGE_TAG
+      dry_run: ${{ inputs.dry_run }}
 
   release-drive-image-debug:
     name: Release Drive debug image
@@ -153,6 +159,7 @@ jobs:
       target: drive-abci
       cargo_profile: dev
       tag: $IMAGE_TAG
+      dry_run: ${{ inputs.dry_run }}
 
   release-dapi-image:
     name: Release DAPI image
@@ -164,6 +171,7 @@ jobs:
       image_name: dapi
       target: dapi
       tag: $IMAGE_TAG
+      dry_run: ${{ inputs.dry_run }}
 
   release-test-suite-image:
     name: Release Test Suite image
@@ -175,6 +183,7 @@ jobs:
       image_name: platform-test-suite
       target: test-suite
       tag: $IMAGE_TAG
+      dry_run: ${{ inputs.dry_run }}
 
   release-dashmate-helper-image:
     name: Release Dashmate Helper image
@@ -186,6 +195,7 @@ jobs:
       image_name: dashmate-helper
       target: dashmate-helper
       tag: $IMAGE_TAG
+      dry_run: ${{ inputs.dry_run }}
 
   release-dashmate-packages:
     name: Release Dashmate packages
@@ -274,18 +284,18 @@ jobs:
 
       - name: Upload artifacts to action summary
         uses: actions/upload-artifact@v3
-        if: github.event_name != 'release'
+        if: github.event_name != 'release' && !inputs.dry_run
         with:
           name: dashmate
           path: packages/dashmate/dist/**
 
       - name: Notarize MacOS Release Build
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && !inputs.dry_run
         run: |
           find packages/dashmate/dist/ -name '*.pkg' -exec sh -c 'xcrun notarytool submit "{}" --apple-id "${{ secrets.MACOS_APPLE_ID }}" --team-id "${{ secrets.MACOS_TEAM_ID }}" --password "${{ secrets.MACOS_NOTARIZING_PASSWORD }}" --wait;' \;
 
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@v0.1.15
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' && !inputs.dry_run
         with:
           files: packages/dashmate/dist/**

@@ -25,6 +25,10 @@ on:
         type: string
         description: Cargo profile. i.e. release, dev
         default: release
+      dry_run:
+        type: boolean
+        description: When set to true, the workflow will not push the updated manifest to Docker Hub
+        default: false
 env:
   DIGEST_NAME: digests-${{ inputs.image_org }}-${{ inputs.image_name }}-${{ github.sha }}
   DIGEST_DIR_PATH: /tmp/digests
@@ -80,6 +84,7 @@ jobs:
 
       - name: Upload digest
         uses: actions/upload-artifact@v3
+        if: ${{ !inputs.dry_run }}
         with:
           name: ${{ env.DIGEST_NAME }}
           path: ${{ env.DIGEST_DIR_PATH }}/*
@@ -142,10 +147,12 @@ jobs:
             latest=${{ github.event_name == 'release' }}
       - name: Login to Docker Hub
         uses: docker/login-action@v3
+        if: ${{ !inputs.dry_run }}
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Create manifest list and push
+        if: ${{ !inputs.dry_run }}
         working-directory: ${{ env.DIGEST_DIR_PATH }}
         run: |
           ls -lah
