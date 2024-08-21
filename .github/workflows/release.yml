@@ -104,7 +104,7 @@ jobs:
         with:
           result-encoding: string
           script: |
-            const tag = env.IMAGE_TAG;
+            const tag = vars.IMAGE_TAG;
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
             return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
 
@@ -145,7 +145,7 @@ jobs:
       image_org: dashpay
       image_name: drive
       target: drive-abci
-      tag: ${{ IMAGE_TAG }}
+      tag: ${{ vars.IMAGE_TAG }}
       dry_run: ${{ inputs.dry_run }}
 
   release-drive-image-debug:
@@ -158,7 +158,7 @@ jobs:
       image_name: drive
       target: drive-abci
       cargo_profile: dev
-      tag: ${{ env.IMAGE_TAG }}
+      tag: ${{ vars.IMAGE_TAG }}
       dry_run: ${{ inputs.dry_run }}
 
   release-dapi-image:
@@ -170,7 +170,7 @@ jobs:
       image_org: dashpay
       image_name: dapi
       target: dapi
-      tag: ${{ env.IMAGE_TAG }}
+      tag: ${{ vars.IMAGE_TAG }}
       dry_run: ${{ inputs.dry_run }}
 
   release-test-suite-image:
@@ -182,7 +182,7 @@ jobs:
       image_org: dashpay
       image_name: platform-test-suite
       target: test-suite
-      tag: ${{ env.IMAGE_TAG }}
+      tag: ${{ vars.IMAGE_TAG }}
       dry_run: ${{ inputs.dry_run }}
 
   release-dashmate-helper-image:
@@ -194,7 +194,7 @@ jobs:
       image_org: dashpay
       image_name: dashmate-helper
       target: dashmate-helper
-      tag: ${{ env.IMAGE_TAG }}
+      tag: ${{ vars.IMAGE_TAG }}
       dry_run: ${{ inputs.dry_run }}
 
   release-dashmate-packages:
