@@ -136,8 +136,6 @@ impl<C> Platform<C> {
             .into_btree_string_map()
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
-        println!("{:?}", document_stub_properties);
-
         let document = DocumentV0 {
             id: DPNS_DASH_TLD_DOCUMENT_ID.into(),
             properties: document_stub_properties,
