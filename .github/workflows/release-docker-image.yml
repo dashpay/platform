@@ -17,6 +17,14 @@ on:
         type: string
         description: Image target. i.e. drive-abci, dapi
         required: true
+      tag:
+        type: string
+        description: Image tag, i.e. v0.1.0; note it can be inherited from 'workflow_dispatch' event
+        default: ${{ github.event.inputs.tag }}
+      cargo_profile:
+        type: string
+        description: Cargo profile. i.e. release, dev
+        default: release
 env:
   DIGEST_NAME: digests-${{ inputs.image_org }}-${{ inputs.image_name }}-${{ github.sha }}
   DIGEST_DIR_PATH: /tmp/digests
@@ -29,9 +37,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+          - runner: ["self-hosted", "linux", "x64", "ubuntu-platform"]
             platform: linux/amd64
-          - runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+          - runner: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
             platform: linux/arm64
     steps:
       - name: Check out repo
@@ -52,10 +60,10 @@ jobs:
         with:
           image_name: ${{ inputs.image_name }}
           image_org: ${{ inputs.image_org }}
-          image_version: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.event.release.tag_name }}
+          image_version: ${{ github.event.inputs.tag || github.event.release.tag_name }}
           target: ${{ inputs.target }}
           platform: ${{ matrix.platform }}
-          cargo_profile: release
+          cargo_profile: ${{ inputs.cargo_profile }}
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           region: ${{ secrets.AWS_REGION }}
@@ -132,13 +140,11 @@ jobs:
           flavor: |
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
-
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Create manifest list and push
         working-directory: ${{ env.DIGEST_DIR_PATH }}
         run: |

@@ -10,6 +10,10 @@ on:
         description: "Version (i.e. v0.22.3-pre.2)"
         required: true
 
+env:
+  # Provided tag can override the tag from the release event
+  IMAGE_TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -17,7 +21,7 @@ concurrency:
 jobs:
   release-npm:
     name: Release NPM packages
-    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
     timeout-minutes: 15
     if: github.event_name != 'workflow_dispatch'
     steps:
@@ -96,7 +100,7 @@ jobs:
         with:
           result-encoding: string
           script: |
-            const tag = context.payload.release.tag_name;
+            const tag = $IMAGE_TAG;
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
             return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
 
@@ -136,6 +140,19 @@ jobs:
       image_org: dashpay
       image_name: drive
       target: drive-abci
+      tag: $IMAGE_TAG
+
+  release-drive-image-debug:
+    name: Release Drive debug image
+    secrets: inherit
+    uses: ./.github/workflows/release-docker-image.yml
+    with:
+      name: Drive
+      image_org: dashpay
+      image_name: drive
+      target: drive-abci
+      cargo_profile: dev
+      tag: $IMAGE_TAG
 
   release-dapi-image:
     name: Release DAPI image
@@ -146,6 +163,7 @@ jobs:
       image_org: dashpay
       image_name: dapi
       target: dapi
+      tag: $IMAGE_TAG
 
   release-test-suite-image:
     name: Release Test Suite image
@@ -156,6 +174,7 @@ jobs:
       image_org: dashpay
       image_name: platform-test-suite
       target: test-suite
+      tag: $IMAGE_TAG
 
   release-dashmate-helper-image:
     name: Release Dashmate Helper image
@@ -166,6 +185,7 @@ jobs:
       image_org: dashpay
       image_name: dashmate-helper
       target: dashmate-helper
+      tag: $IMAGE_TAG
 
   release-dashmate-packages:
     name: Release Dashmate packages
@@ -190,7 +210,7 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
         with:
-            fetch-depth: 0
+          fetch-depth: 0
 
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
