@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
-use dpp::platform_value::{platform_value, BinaryData};
+use dpp::platform_value::platform_value;
 use dpp::ProtocolError;
 
 use drive::dpp::identity::TimestampMillis;
@@ -16,9 +16,7 @@ use drive::dpp::system_data_contracts::SystemDataContract;
 use drive::util::batch::{DataContractOperationType, DocumentOperationType, DriveOperation};
 
 use dpp::prelude::CoreBlockHeight;
-use dpp::system_data_contracts::dpns_contract::{
-    DPNS_DASH_TLD_DOCUMENT_ID, DPNS_DASH_TLD_PREORDER_SALT,
-};
+use dpp::system_data_contracts::dpns_contract::DPNS_DASH_TLD_DOCUMENT_ID;
 use drive::query::TransactionArg;
 use drive::util::object_size_info::{
     DataContractInfo, DocumentInfo, DocumentTypeInfo, OwnedDocumentInfo,
