@@ -6,33 +6,33 @@ import { create } from 'tar';
 export default class Report {
   date;
 
-  osInfo = {};
+  #systemInfo = {};
 
-  dashmateVersion = null;
+  #dashmateVersion = null;
 
-  dashmateConfig = null;
+  #dashmateConfig = null;
+
+  #services = {};
 
   constructor() {
     this.date = new Date();
   }
 
-  services = {};
-
-  setOSInfo(osInfo) {
-    this.osInfo = osInfo;
+  setSystemInfo(systemInfo) {
+    this.#systemInfo = systemInfo;
   }
 
   setDashmateVersion(version) {
-    this.dashmateVersion = version;
+    this.#dashmateVersion = version;
   }
 
   setDashmateConfig(config) {
-    this.dashmateConfig = config;
+    this.#dashmateConfig = config;
   }
 
   setServiceInfo(service, key, data) {
-    this.services[service] = {
-      ...(this.services[service] ?? {}),
+    this.#services[service] = {
+      ...(this.#services[service] ?? {}),
       [key]: data,
     };
   }
@@ -65,13 +65,13 @@ export default class Report {
     const reportName = `dashmate-report-${this.date.toISOString()}`;
     const reportDir = path.join(tempDir, reportName);
 
-    this.#writeReportFile(reportDir, null, 'osInfo', this.osInfo);
-    this.#writeReportFile(reportDir, null, 'dashmateConfig', this.dashmateConfig);
-    this.#writeReportFile(reportDir, null, 'dashmateVersion', this.dashmateVersion);
+    this.#writeReportFile(reportDir, null, 'systemInfo', this.#systemInfo);
+    this.#writeReportFile(reportDir, null, 'dashmateConfig', this.#dashmateConfig);
+    this.#writeReportFile(reportDir, null, 'dashmateVersion', this.#dashmateVersion);
 
-    for (const service of Object.keys(this.services)) {
-      for (const dataKey of Object.keys(this.services[service])) {
-        const data = this.services[service][dataKey];
+    for (const service of Object.keys(this.#services)) {
+      for (const dataKey of Object.keys(this.#services[service])) {
+        const data = this.#services[service][dataKey];
 
         if (data !== undefined && data !== null) {
           this.#writeReportFile(reportDir, service, dataKey, data);

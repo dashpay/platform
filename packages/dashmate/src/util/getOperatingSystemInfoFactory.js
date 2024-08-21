@@ -7,25 +7,22 @@ export default function getOperatingSystemInfoFactory(
 ) {
   async function getOperatingSystemInfo() {
     const result = {
-      cpuCores: null,
-      hostCpu: null,
-      systemInfo: null,
+      cpu: null,
       osInfo: null,
-      systemData: null,
+      dockerSystemInfo: null,
       currentLoad: null,
       diskIO: null,
-      diskInfo: null,
+      diskSpace: null,
       fsOpenFiles: null,
       inetLatency: null,
-      memoryGb: null,
-      memoryData: null,
-      swapTotalGb: null,
-      availableDiskSpace: null,
+      memory: null,
     };
 
     // Get System Info
     try {
-      result.systemInfo = await docker.info();
+      // TODO: Obfuscate home dir because it contains the username
+      //  /home/ivanshumkov/ -> /home/******/)
+      result.dockerSystemInfo = await docker.info();
     } catch (e) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
@@ -33,27 +30,31 @@ export default function getOperatingSystemInfoFactory(
       }
     }
 
-    if (result.systemInfo) {
-      if (Number.isInteger(result.systemInfo.NCPU)) {
-        // Check CPU cores
-        result.cpuCores = result.systemInfo.NCPU;
-      } else {
-        // eslint-disable-next-line no-console
-        console.warn('Can\'t get NCPU from docker info');
-      }
-
-      // Check RAM
-      if (Number.isInteger(result.systemInfo.MemTotal)) {
-        result.memoryGb = result.systemInfo.MemTotal / (1024 ** 3); // Convert to GB
-      } else {
-        // eslint-disable-next-line no-console
-        console.warn('Can\'t get MemTotal from docker info');
-      }
-    }
-
     // Check CPU frequency
     try {
-      result.hostCpu = await si.cpu();
+      const {
+        manufacturer, brand, vendor, family, model,
+        speed, speedMin, speedMax,
+        governor, cores, physicalCores, performanceCores,
+        efficiencyCores, processors,
+      } = await si.cpu();
+
+      result.cpu = {
+        manufacturer,
+        brand,
+        vendor,
+        family,
+        model,
+        speed,
+        speedMin,
+        speedMax,
+        governor,
+        cores,
+        physicalCores,
+        performanceCores,
+        efficiencyCores,
+        processors,
+      };
     } catch {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
@@ -61,19 +62,23 @@ export default function getOperatingSystemInfoFactory(
       }
     }
 
-    // Check System Data
-    try {
-      result.systemData = await si.system();
-    } catch {
-      if (process.env.DEBUG) {
-        // eslint-disable-next-line no-console
-        console.warn('Can\'t get System Data info');
-      }
-    }
-
     // Check OS Info
     try {
-      result.osInfo = await si.osInfo();
+      const {
+        platform, distro, release, codename, kernel, arch, codepage, build, servicepack,
+      } = await si.osInfo();
+
+      result.osInfo = {
+        platform,
+        distro,
+        release,
+        codename,
+        kernel,
+        arch,
+        codepage,
+        build,
+        servicepack,
+      };
     } catch {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
@@ -83,7 +88,15 @@ export default function getOperatingSystemInfoFactory(
 
     // Check Current Load
     try {
-      result.currentLoad = await si.currentLoad();
+      const {
+        avgLoad,
+        currentLoad,
+      } = await si.currentLoad();
+
+      result.currentLoad = {
+        avgLoad,
+        currentLoad,
+      };
     } catch {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
@@ -123,7 +136,7 @@ export default function getOperatingSystemInfoFactory(
 
     // Check swap information
     try {
-      result.memoryData = await si.mem();
+      result.memory = await si.mem();
     } catch (e) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
@@ -131,35 +144,27 @@ export default function getOperatingSystemInfoFactory(
       }
     }
 
-    if (result.memoryData) {
-      result.swapTotalGb = (result.memoryData.swaptotal / (1024 ** 3)); // Convert bytes to GB
-    }
-
     // Get disk usage info
-    if (result.systemInfo) {
+    if (result.dockerSystemInfo) {
       try {
-        result.diskInfo = await diskusage.check(result.systemInfo.DockerRootDir);
+        result.diskSpace = await diskusage.check(result.dockerSystemInfo.DockerRootDir);
       } catch (e) {
         if (process.env.DEBUG) {
           // eslint-disable-next-line no-console
-          console.warn(`Can't get disk usage for '${result.systemInfo.DockerRootDir}': ${e}`);
+          console.warn(`Can't get disk usage for '${result.dockerSystemInfo.DockerRootDir}': ${e}`);
         }
       }
     }
 
-    if (!result.diskInfo) {
+    if (!result.diskSpace) {
       try {
-        result.diskInfo = await diskusage.check(os.platform() === 'win32' ? 'c:' : '/');
+        result.diskSpace = await diskusage.check(os.platform() === 'win32' ? 'c:' : '/');
       } catch (e) {
         if (process.env.DEBUG) {
           // eslint-disable-next-line no-console
           console.warn(`Can't get disk usage for root directory: ${e}`);
         }
       }
-    }
-
-    if (result.diskInfo) {
-      result.availableDiskSpace = result.diskInfo.available / (1024 ** 3); // Convert to GB
     }
 
     return result;

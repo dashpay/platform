@@ -4,7 +4,7 @@ const hideString = (string) => (typeof string === 'string'
   ? Array.from(string).map(() => '*').join('')
   : string);
 
-export default function sanitizeDashmateConfig(
+export default function sanitizeConfig(
   config,
 ) {
   const sanitizeFieldRecursive = (object, field) => {

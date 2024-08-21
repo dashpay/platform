@@ -6,7 +6,7 @@ import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import fetchHTTP from '../util/fetchHTTP.js';
 import Report from '../doctor/report.js';
 import { DASHMATE_VERSION } from '../constants.js';
-import sanitizeDashmateConfig from '../util/sanitizeDashmateConfig.js';
+import sanitizeConfig from '../config/sanitizeConfig.js';
 import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
 
 export default class DoctorCommand extends ConfigBaseCommand {
@@ -40,8 +40,6 @@ export default class DoctorCommand extends ConfigBaseCommand {
     getServiceList,
     getOperatingSystemInfo,
   ) {
-
-
     const tasks = new Listr(
       [
         {
@@ -76,14 +74,16 @@ export default class DoctorCommand extends ConfigBaseCommand {
           task: async (ctx) => {
             const osInfo = await getOperatingSystemInfo();
 
-            ctx.report.setOSInfo(osInfo);
+            ctx.report.setSystemInfo(osInfo);
           },
         },
         {
           title: 'The node configuration',
           task: async (ctx) => {
+            // TODO: Obfuscate home dir because it contains the username
+            //  /home/ivanshumkov/ -> /home/******/)
             ctx.report.setDashmateVersion(DASHMATE_VERSION);
-            ctx.report.setDashmateConfig(sanitizeDashmateConfig(config));
+            ctx.report.setDashmateConfig(sanitizeConfig(config));
           },
         },
         {
@@ -199,6 +199,10 @@ export default class DoctorCommand extends ConfigBaseCommand {
 
             // eslint-disable-next-line no-param-reassign
             task.output = `Pulling logs from ${services.map((e) => e.name)}`;
+
+            // TODO: Obfuscate home dir because it contains the username
+            //  /home/ivanshumkov/ -> /home/******/)
+            //  also external IP
 
             await Promise.all(
               services.map(async (service) => {
