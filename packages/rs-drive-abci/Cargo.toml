@@ -111,4 +111,3 @@ grovedbg = ["drive/grovedbg"]
 [[bin]]
 name = "drive-abci"
 path = "src/main.rs"
-required-features = ["console"]
