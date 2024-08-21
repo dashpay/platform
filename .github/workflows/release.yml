@@ -19,6 +19,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  calc_tags:
+    name: Calculate tags
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set Docker tags and labels from image
+        id: docker_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: dashpay/drive
+          tags: |
+            type=semver,pattern={{version}},priority=950
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=ref,event=pr
+          flavor: |
+            suffix=-dev,onlatest=true
+            latest=${{ github.event_name == 'release' }}
   release-npm:
     name: Release NPM packages
     runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
