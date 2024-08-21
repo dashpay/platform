@@ -23,15 +23,23 @@ jobs:
     name: Calculate tags
     runs-on: ubuntu-22.04
     steps:
+      - name: Get image version
+        uses: actions/github-script@v6
+        id: version
+        with:
+          result-encoding: string
+          script: |
+            return ( "${{ github.event.inputs.tag }}" ||  context.payload.release.tag_name );
+
       - name: Set Docker tags and labels from image
         id: docker_meta
         uses: docker/metadata-action@v5
         with:
           images: dashpay/drive
           tags: |
-            type=semver,pattern={{version}},priority=950
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}},priority=950,value=${{ steps.version.outputs.result }},enable=${{ steps.version.outputs.result != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.result }},enable=${{ steps.version.outputs.result != '' }}
+            type=semver,pattern={{major}},value=${{ steps.version.outputs.result }},enable=${{ steps.version.outputs.result != '' }}
             type=ref,event=pr
           flavor: |
             suffix=-dev,onlatest=true
@@ -151,6 +159,7 @@ jobs:
   release-drive-image:
     name: Release Drive image
     secrets: inherit
+    if: false
     uses: ./.github/workflows/release-docker-image.yml
     with:
       name: Drive

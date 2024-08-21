@@ -129,9 +129,9 @@ jobs:
         with:
           images: ${{ inputs.image_org }}/${{ inputs.image_name }}
           tags: |
-            type=semver,pattern={{version}},priority=950
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}},priority=950,value=${{ steps.version.outputs.result }},enable=${{ steps.version.outputs.result != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.result }},enable=${{ steps.version.outputs.result != '' }}
+            type=semver,pattern={{major}},value=${{ steps.version.outputs.result }},enable=${{ steps.version.outputs.result != '' }}
             type=ref,event=pr
           flavor: |
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
