@@ -27,7 +27,7 @@ on:
         default: release
       dry_run:
         type: boolean
-        description: When set to true, the workflow will not push the updated manifest to Docker Hub
+        description: Dry run - do not push
         default: false
 env:
   DIGEST_NAME: digests-${{ inputs.image_org }}-${{ inputs.image_name }}-${{ github.sha }}
