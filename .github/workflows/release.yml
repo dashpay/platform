@@ -145,7 +145,7 @@ jobs:
       image_org: dashpay
       image_name: drive
       target: drive-abci
-      tag: ${{ env.IMAGE_TAG }}
+      tag: ${{ IMAGE_TAG }}
       dry_run: ${{ inputs.dry_run }}
 
   release-drive-image-debug:
