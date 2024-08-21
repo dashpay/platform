@@ -94,13 +94,22 @@ impl Drive {
                     .ok_or(GroveError::JustInTimeElementFlagsClientError(
                         "removing flags from an item with flags is not allowed".to_string()
                     ))?;
+                let binding = maybe_old_storage_flags.clone().unwrap();
+                let old_epoch_index_map = binding.epoch_index_map();
+                let new_epoch_index_map = new_storage_flags.epoch_index_map();
+                if old_epoch_index_map.is_some() || new_epoch_index_map.is_some() {
+                    //println!("> old:{:?} new:{:?}", old_epoch_index_map, new_epoch_index_map);
+                }
+
                 match &cost.transition_type() {
                     OperationStorageTransitionType::OperationUpdateBiggerSize => {
                         // In the case that the owners do not match up this means that there has been a transfer
                         //  of ownership of the underlying document, the value held is transferred to the new owner
+                        //println!(">---------------------combine_added_bytes:{}", cost.added_bytes);
+                        // println!(">---------------------apply_batch_with_add_costs old_flags:{:?} new_flags:{:?}", maybe_old_storage_flags, new_storage_flags);
                         let combined_storage_flags = StorageFlags::optional_combine_added_bytes(
-                            maybe_old_storage_flags,
-                            new_storage_flags,
+                            maybe_old_storage_flags.clone(),
+                            new_storage_flags.clone(),
                             cost.added_bytes,
                             MergingOwnersStrategy::UseTheirs,
                         )
@@ -109,6 +118,10 @@ impl Drive {
                                 format!("drive could not combine storage flags (new flags were bigger): {}",e)
                             )
                         })?;
+                        println!(">added_bytes:{} old:{:?} new:{:?} --> combined:{:?}",cost.added_bytes, maybe_old_storage_flags, new_storage_flags, combined_storage_flags);
+                        if combined_storage_flags.epoch_index_map().is_some() {
+                            //println!("     --------> bigger_combined_flags:{:?}", combined_storage_flags.epoch_index_map());
+                        }
                         let combined_flags = combined_storage_flags.to_element_flags();
                         // it's possible they got bigger in the same epoch
                         if combined_flags == *new_flags {
@@ -123,8 +136,8 @@ impl Drive {
                         // In the case that the owners do not match up this means that there has been a transfer
                         //  of ownership of the underlying document, the value held is transferred to the new owner
                         let combined_storage_flags = StorageFlags::optional_combine_removed_bytes(
-                            maybe_old_storage_flags,
-                            new_storage_flags,
+                            maybe_old_storage_flags.clone(),
+                            new_storage_flags.clone(),
                             &cost.removed_bytes,
                             MergingOwnersStrategy::UseTheirs,
                         )
@@ -133,6 +146,10 @@ impl Drive {
                                 format!("drive could not combine storage flags (new flags were smaller): {}", e)
                             )
                         })?;
+                        println!(">removed_bytes:{:?} old:{:?} new:{:?} --> combined:{:?}", cost.removed_bytes, maybe_old_storage_flags, new_storage_flags, combined_storage_flags);
+                        if combined_storage_flags.epoch_index_map().is_some() {
+                           // println!("     --------> smaller_combined_flags:{:?}", combined_storage_flags.epoch_index_map());
+                        }
                         let combined_flags = combined_storage_flags.to_element_flags();
                         // it's possible they got bigger in the same epoch
                         if combined_flags == *new_flags {

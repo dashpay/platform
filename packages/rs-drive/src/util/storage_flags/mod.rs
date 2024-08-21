@@ -25,7 +25,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 #[cfg(any(feature = "server", feature = "verify"))]
 use std::collections::BTreeMap;
-
+use std::mem;
 #[cfg(feature = "server")]
 use crate::error::storage_flags::StorageFlagsError;
 #[cfg(feature = "server")]
@@ -134,6 +134,10 @@ impl StorageFlags {
                         // Simply insert the value from rhs, overwriting any existing value
                         combined_index_map.insert(*epoch_index, *bytes_added);
                     });
+                println!(
+                    "         >combine_non_base_epoch_bytes: self:{:?} & rhs:{:?} -> {:?}",
+                    our_epoch_index_map, other_epoch_index_map, combined_index_map
+                );
                 Some(combined_index_map)
             } else {
                 Some(our_epoch_index_map.clone())
@@ -179,6 +183,7 @@ impl StorageFlags {
                 other_epoch_bytes.insert(*epoch_with_adding_bytes, original_bytes + added_bytes)
             }
         };
+        println!("         >combine_with_higher_base_epoch added_bytes:{} self:{:?} & rhs:{:?} -> {:?}", added_bytes, self.epoch_index_map(), rhs.epoch_index_map(), other_epoch_bytes);
 
         match owner_id {
             None => Ok(MultiEpoch(base_epoch, other_epoch_bytes)),
@@ -235,6 +240,7 @@ impl StorageFlags {
                     Ok::<(), Error>(())
                 })?;
         }
+        println!("         >combine_with_higher_base_epoch_remove_bytes: self:{:?} & rhs:{:?} -> {:?}", self.epoch_index_map(), rhs.epoch_index_map(), other_epoch_bytes);
 
         match owner_id {
             None => Ok(MultiEpoch(base_epoch, other_epoch_bytes)),
@@ -778,5 +784,180 @@ impl StorageFlags {
     /// Wrap Storage Flags into optional owned cow
     pub fn into_optional_cow<'a>(self) -> Option<Cow<'a, Self>> {
         Some(Cow::Owned(self))
+    }
+}
+
+#[cfg(test)]
+mod storage_flags_tests {
+    use grovedb_costs::storage_cost::removal::StorageRemovedBytes;
+    use crate::util::storage_flags::{BaseEpoch, BytesAddedInEpoch, MergingOwnersStrategy};
+    use crate::util::storage_flags::StorageFlags;
+    #[test]
+    fn test_storage_flags_combine() {
+        {
+            // Same SingleEpoch - AdditionBytes
+            let common_base_index: BaseEpoch = 1;
+            let left_flag = StorageFlags::new_single_epoch(common_base_index, None);
+            let right_flag = StorageFlags::new_single_epoch(common_base_index, None);
+
+            let added_bytes: BytesAddedInEpoch = 10;
+            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+        }
+        /*{
+            // Same SingleEpoch - RemovedBytes
+            let common_base_index: BaseEpoch = 1;
+            let left_flag = StorageFlags::new_single_epoch(common_base_index, None);
+            let right_flag = StorageFlags::new_single_epoch(common_base_index, None);
+
+            let removed_bytes = StorageRemovedBytes::BasicStorageRemoval(10);
+            let combined_flag = left_flag.clone().combine_removed_bytes(right_flag.clone(), &removed_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} removed_bytes:{:?} --> {:?}\n", left_flag, right_flag, removed_bytes, combined_flag);
+        }*/
+        {
+            // Different-Higher SingleEpoch - AdditionBytes
+            let left_base_index: BaseEpoch = 1;
+            let right_base_index: BaseEpoch = 2;
+            let left_flag = StorageFlags::new_single_epoch(left_base_index, None);
+            let right_flag = StorageFlags::new_single_epoch(right_base_index, None);
+
+            let added_bytes: BytesAddedInEpoch = 10;
+            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+        }
+        {
+            // Different-Lesser SingleEpoch - AdditionBytes
+            let left_base_index: BaseEpoch = 2;
+            let right_base_index: BaseEpoch = 1;
+            let left_flag = StorageFlags::new_single_epoch(left_base_index, None);
+            let right_flag = StorageFlags::new_single_epoch(right_base_index, None);
+
+            let added_bytes: BytesAddedInEpoch = 10;
+            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+        }
+        {
+            // SingleEpoch-MultiEpoch same BaseEpoch - AdditionBytes
+            let common_base_index: BaseEpoch = 1;
+            let left_flag = StorageFlags::new_single_epoch(common_base_index, None);
+            let right_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 5)].iter().cloned().collect());
+
+            let added_bytes: BytesAddedInEpoch = 10;
+            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+        }
+        {
+            // SingleEpoch-MultiEpoch higher BaseEpoch - AdditionBytes
+            let left_base_index: BaseEpoch = 1;
+            let right_base_index: BaseEpoch = 2;
+            let left_flag = StorageFlags::new_single_epoch(left_base_index, None);
+            let right_flag = StorageFlags::MultiEpoch(right_base_index, [(right_base_index + 1, 5)].iter().cloned().collect());
+
+            let added_bytes: BytesAddedInEpoch = 10;
+            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+        }
+        /*{
+            // SingleEpoch-MultiEpoch same BaseEpoch - RemovedBytes (positive difference)
+            let common_base_index: BaseEpoch = 1;
+            let left_flag = StorageFlags::new_single_epoch(common_base_index, None);
+            let right_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 10)].iter().cloned().collect());
+
+            let removed_bytes = StorageRemovedBytes::BasicStorageRemoval(3);
+            let combined_flag = left_flag.clone().combine_removed_bytes(right_flag.clone(), &removed_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} removed_bytes:{:?} --> {:?}\n", left_flag, right_flag, &removed_bytes, combined_flag);
+        }*/
+        /*{
+            // SingleEpoch-MultiEpoch same BaseEpoch - RemovedBytes (negative difference)
+            let common_base_index: BaseEpoch = 1;
+            let left_flag = StorageFlags::new_single_epoch(common_base_index, None);
+            let right_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 10)].iter().cloned().collect());
+
+            let removed_bytes = StorageRemovedBytes::BasicStorageRemoval(13);
+            let combined_flag = left_flag.clone().combine_removed_bytes(right_flag.clone(), &removed_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} removed_bytes:{:?} --> {:?}\n", left_flag, right_flag, &removed_bytes, combined_flag);
+        }*/
+        /*{
+            // SingleEpoch-MultiEpoch higher BaseEpoch - RemovedBytes (positive difference)
+            let left_base_index: BaseEpoch = 1;
+            let right_base_index: BaseEpoch = 2;
+            let left_flag = StorageFlags::new_single_epoch(left_base_index, None);
+            let right_flag = StorageFlags::MultiEpoch(right_base_index, [(right_base_index + 1, 10)].iter().cloned().collect());
+
+            let removed_bytes = StorageRemovedBytes::BasicStorageRemoval(3);
+            let combined_flag = left_flag.clone().combine_removed_bytes(right_flag.clone(), &removed_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} removed_bytes:{:?} --> {:?}\n", left_flag, right_flag, &removed_bytes, combined_flag);
+        }*/
+        /*{
+            // SingleEpoch-MultiEpoch higher BaseEpoch - RemovedBytes (negative difference)
+            let left_base_index: BaseEpoch = 1;
+            let right_base_index: BaseEpoch = 2;
+            let left_flag = StorageFlags::new_single_epoch(left_base_index, None);
+            let right_flag = StorageFlags::MultiEpoch(right_base_index, [(right_base_index + 1, 5)].iter().cloned().collect());
+
+            let removed_bytes = StorageRemovedBytes::BasicStorageRemoval(7);
+            let combined_flag = left_flag.clone().combine_removed_bytes(right_flag.clone(), &removed_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} removed_bytes:{:?} --> {:?}\n", left_flag, right_flag, &removed_bytes, combined_flag);
+        }*/
+        {
+            // MultiEpochs same BaseEpoch - AdditionBytes #1
+            let common_base_index: BaseEpoch = 1;
+            let left_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 7)].iter().cloned().collect());
+            let right_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 5)].iter().cloned().collect());
+
+            let added_bytes: BytesAddedInEpoch = 10;
+            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+        }
+        {
+            // MultiEpochs same BaseEpoch - AdditionBytes #2
+            let common_base_index: BaseEpoch = 1;
+            let left_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 7)].iter().cloned().collect());
+            let right_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 2, 5)].iter().cloned().collect());
+
+            let added_bytes: BytesAddedInEpoch = 10;
+            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+        }
+        {
+            // MultiEpochs same BaseEpoch - AdditionBytes #3
+            let common_base_index: BaseEpoch = 1;
+            let left_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 7)].iter().cloned().collect());
+            let right_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 3),(common_base_index + 2, 5)].iter().cloned().collect());
+
+            let added_bytes: BytesAddedInEpoch = 10;
+            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+        }
+        {
+            // MultiEpochs higher BaseEpoch - AdditionBytes #1
+            let common_base_index: BaseEpoch = 1;
+            let left_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 7)].iter().cloned().collect());
+            let right_flag = StorageFlags::MultiEpoch(common_base_index + 1, [(common_base_index + 1, 5)].iter().cloned().collect());
+
+            let added_bytes: BytesAddedInEpoch = 10;
+            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+        }
+        {
+            // MultiEpochs higher BaseEpoch - AdditionBytes #2
+            let common_base_index: BaseEpoch = 1;
+            let left_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 7)].iter().cloned().collect());
+            let right_flag = StorageFlags::MultiEpoch(common_base_index + 1, [(common_base_index + 2, 5)].iter().cloned().collect());
+
+            let added_bytes: BytesAddedInEpoch = 10;
+            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+        }
+        {
+            // MultiEpochs higher BaseEpoch - AdditionBytes #3
+            let common_base_index: BaseEpoch = 1;
+            let left_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 7)].iter().cloned().collect());
+            let right_flag = StorageFlags::MultiEpoch(common_base_index + 1, [(common_base_index + 2, 3),(common_base_index + 3, 5)].iter().cloned().collect());
+
+            let added_bytes: BytesAddedInEpoch = 10;
+            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
+            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+        }
     }
 }
