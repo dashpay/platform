@@ -23,6 +23,7 @@ use crate::execution::validation::state_transition::state_transitions::documents
 use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;
@@ -119,6 +120,21 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
         for transition in action.transitions() {
             match transition {
                 DocumentTransitionAction::CreateAction(create_action) => {
+                    if create_action.prefunded_voting_balance().is_some() && block {
+                        let result =
+                            create_action.validate_structure(identity.id, platform_version)?;
+                        if !result.is_valid() {
+                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(transition.base().expect("there is always a base for the create action"), self.owner_id(), self.user_fee_increase()),
+                            );
+
+                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                bump_action,
+                                result.errors,
+                            ));
+                        }
+                    }
+
                     let result = create_action.validate_structure(identity.id, platform_version)?;
                     if !result.is_valid() {
                         let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(

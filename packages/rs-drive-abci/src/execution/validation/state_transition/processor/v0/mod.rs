@@ -39,6 +39,18 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
+    // Disable contested document create transitions for the first 2 epochs
+    // We doing it very top of state transition validation logic to avoid any unnecessary expenses
+    // for a state transition owner.
+    let result = state_transition.validate_temporary_disabled_contested_documents(
+        platform.state.last_block_info(),
+        platform_version,
+    )?;
+
+    if !result.is_valid() {
+        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+    }
+
     // Only identity create does not use identity in state validation, because it doesn't yet have the identity in state
     let mut maybe_identity = if state_transition.uses_identity_in_state() {
         // Validating signature for identity based state transitions (all those except identity create and identity top up)
@@ -459,7 +471,7 @@ pub(crate) trait StateTransitionPrefundedSpecializedBalanceValidationV0 {
 
 /// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionStateValidationV0:
-    StateTransitionActionTransformerV0
+StateTransitionActionTransformerV0
 {
     /// Validates the state transition by analyzing the changes in the platform state after applying the transaction.
     ///

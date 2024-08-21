@@ -23,14 +23,15 @@ use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
 use crate::consensus::basic::document::{
-    DataContractNotPresentError, DocumentCreationNotAllowedError,
-    DocumentFieldMaxSizeExceededError, DocumentTransitionsAreAbsentError,
-    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
-    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
-    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
-    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
-    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
-    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
+    ContestedDocumentsTemporaryNotAllowedError, DataContractNotPresentError,
+    DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
+    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
+    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
+    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
+    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
+    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
+    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
+    MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
@@ -393,6 +394,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     UnsupportedFeatureError(UnsupportedFeatureError),
+
+    #[error(transparent)]
+    ContestedDocumentsTemporaryNotAllowedError(ContestedDocumentsTemporaryNotAllowedError),
 }
 
 impl From<BasicError> for ConsensusError {
