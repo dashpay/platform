@@ -1939,6 +1939,8 @@ mod tests {
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
     use dpp::prelude::Identifier;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
     use serde_json::json;
     use std::borrow::Cow;
     use std::collections::BTreeMap;
@@ -2218,7 +2220,10 @@ mod tests {
     #[test]
     fn test_valid_query_drive_document_query() {
         let platform_version = PlatformVersion::latest();
-        let contract = get_dpns_data_contract_fixture(None, 0, 1).data_contract_owned();
+        let mut rng = StdRng::seed_from_u64(5);
+        let contract =
+            get_dpns_data_contract_fixture(Some(Identifier::random_with_rng(&mut rng)), 0, 1)
+                .data_contract_owned();
         let domain = contract
             .document_type_for_name("domain")
             .expect("expected to get domain");
@@ -2264,7 +2269,7 @@ mod tests {
             .construct_path_query(None, platform_version)
             .expect("expected to create path query");
 
-        println!("{}", path_query);
+        assert_eq!(path_query.to_string(), "PathQuery { path: [@, 0x1da29f488023e306ff9a680bc9837153fb0778c8ee9c934a87dc0de1d69abd3c, 0x01, domain, 0x7265636f7264732e6964656e74697479], query: SizedQuery { query: Query {\n  items: [\n    RangeTo(.. 8dc201fd7ad7905f8a84d66218e2b387daea7fe4739ae0e21e8c3ee755e6a2c0),\n  ],\n  default_subquery_branch: SubqueryBranch { subquery_path: [00], subquery: Query {\n  items: [\n    RangeFull,\n  ],\n  default_subquery_branch: SubqueryBranch { subquery_path: None subquery: None },\n  left_to_right: false,\n} },\n  conditional_subquery_branches: {\n    Key(): SubqueryBranch { subquery_path: [00], subquery: Query {\n  items: [\n    RangeFull,\n  ],\n  default_subquery_branch: SubqueryBranch { subquery_path: None subquery: None },\n  left_to_right: false,\n} },\n  },\n  left_to_right: false,\n}, limit: 6 } }");
 
         // Serialize the PathQuery to a Vec<u8>
         let encoded = bincode::encode_to_vec(&path_query, bincode::config::standard())
@@ -2273,8 +2278,7 @@ mod tests {
         // Convert the encoded bytes to a hex string
         let hex_string = hex::encode(encoded);
 
-        // Print the hex string
-        println!("{}", hex_string);
+        assert_eq!(hex_string, "050140201da29f488023e306ff9a680bc9837153fb0778c8ee9c934a87dc0de1d69abd3c010106646f6d61696e107265636f7264732e6964656e746974790105208dc201fd7ad7905f8a84d66218e2b387daea7fe4739ae0e21e8c3ee755e6a2c0010101000101030000000001010000010101000101030000000000010600");
     }
 
     #[test]
