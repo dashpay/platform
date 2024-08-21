@@ -5,7 +5,7 @@ use crate::query::GroveError;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::{GroveDbOp, KeyInfoPath, OpsByLevelPath};
+use grovedb::batch::{KeyInfoPath, OpsByLevelPath, QualifiedGroveDbOp};
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use grovedb_costs::storage_cost::StorageCost;
 use grovedb_costs::OperationCost;
@@ -26,7 +26,7 @@ impl Drive {
         mut add_on_operations: impl FnMut(
             &OperationCost,
             &Option<OpsByLevelPath>,
-        ) -> Result<Vec<GroveDbOp>, GroveError>,
+        ) -> Result<Vec<QualifiedGroveDbOp>, GroveError>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
