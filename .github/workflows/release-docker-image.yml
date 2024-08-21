@@ -106,7 +106,7 @@ jobs:
         with:
           result-encoding: string
           script: |
-            return ( github.event.inputs.tag ||  context.payload.release.tag_name );
+            return ( ${{ github.event.inputs.tag }} ||  context.payload.release.tag_name );
 
       - name: Set suffix
         uses: actions/github-script@v6
