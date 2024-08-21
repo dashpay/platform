@@ -126,9 +126,8 @@ impl<C> Platform<C> {
             "normalizedLabel" : domain,
             "parentDomainName" : "",
             "normalizedParentDomainName" : "",
-            "preorderSalt" : BinaryData::new(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
             "records" : {
-                "dashAliasIdentityId" : contract.owner_id(),
+                "identity" : contract.owner_id(),
             },
             "subdomainRules": {
                 "allowSubdomains": true,
@@ -138,6 +137,8 @@ impl<C> Platform<C> {
         let document_stub_properties = document_stub_properties_value
             .into_btree_string_map()
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+
+        println!("{:?}", document_stub_properties);
 
         let document = DocumentV0 {
             id: DPNS_DASH_TLD_DOCUMENT_ID.into(),
@@ -205,7 +206,7 @@ mod tests {
 
             assert_eq!(
                 hex::encode(root_hash),
-                "8163884a9eef0d3b306bd6f426806e7ff41d7b09f030c4ff2b79b3b4c646dfca"
+                "dc5b0d4be407428adda2315db7d782e64015cbe2d2b7df963f05622390dc3c9f"
             )
         }
     }

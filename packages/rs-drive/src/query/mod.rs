@@ -2265,6 +2265,16 @@ mod tests {
             .expect("expected to create path query");
 
         println!("{}", path_query);
+
+        // Serialize the PathQuery to a Vec<u8>
+        let encoded = bincode::encode_to_vec(&path_query, bincode::config::standard())
+            .expect("Failed to serialize PathQuery");
+
+        // Convert the encoded bytes to a hex string
+        let hex_string = hex::encode(encoded);
+
+        // Print the hex string
+        println!("{}", hex_string);
     }
 
     #[test]
