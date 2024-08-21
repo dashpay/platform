@@ -9,6 +9,10 @@ on:
       tag:
         description: "Version (i.e. v0.22.3-pre.2)"
         required: true
+      only_drive:
+        type: boolean
+        description: Only build Drive image
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -152,7 +156,7 @@ jobs:
 
   release-dapi-image:
     name: Release DAPI image
-    if: false
+    if: ${{ !inputs.only_drive }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -164,7 +168,7 @@ jobs:
 
   release-test-suite-image:
     name: Release Test Suite image
-    if: false
+    if: ${{ !inputs.only_drive }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -177,7 +181,7 @@ jobs:
   release-dashmate-helper-image:
     name: Release Dashmate Helper image
     secrets: inherit
-    if: false
+    if: ${{ !inputs.only_drive }}
     uses: ./.github/workflows/release-docker-image.yml
     with:
       name: Dashmate Helper
@@ -189,7 +193,7 @@ jobs:
   release-dashmate-packages:
     name: Release Dashmate packages
     runs-on: ${{ matrix.os }}
-    if: false
+    if: ${{ !inputs.only_drive }}
     needs: release-npm
     permissions:
       id-token: write # s3 cache
