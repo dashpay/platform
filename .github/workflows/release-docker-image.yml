@@ -20,7 +20,7 @@ on:
       tag:
         type: string
         description: Image tag, i.e. v0.1.0; note it can be inherited from 'workflow_dispatch' event
-        default: ${{ github.event.inputs.tag }}
+        default: ${{ github.event.inputs.tag || github.event.release.tag_name }}
       cargo_profile:
         type: string
         description: Cargo profile. i.e. release, dev
@@ -60,7 +60,7 @@ jobs:
         with:
           image_name: ${{ inputs.image_name }}
           image_org: ${{ inputs.image_org }}
-          image_version: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+          image_version: ${{ inputs.tag || github.event.release.tag_name }}
           target: ${{ inputs.target }}
           platform: ${{ matrix.platform }}
           cargo_profile: ${{ inputs.cargo_profile }}
@@ -106,7 +106,7 @@ jobs:
         with:
           result-encoding: string
           script: |
-            return ( "${{ github.event.inputs.tag }}" ||  context.payload.release.tag_name );
+            return ( "${{ inputs.tag }}" ||  context.payload.release.tag_name );
 
       - name: Set suffix
         uses: actions/github-script@v6
@@ -115,10 +115,9 @@ jobs:
           result-encoding: string
           script: |
             const fullTag = '${{ steps.version.outputs.result }}';
-            if (fullTag.includes('-')) {
-              const [, fullSuffix] = fullTag.split('-');
-              const [suffix] = fullSuffix.split('.');
-              return `-${suffix}`;
+            const firstMinusIndex = fullTag.indexOf('-');
+            if (firstMinusIndex !== -1) {
+              return fullTag.substring(firstMinusIndex);
             } else {
               return '';
             }
