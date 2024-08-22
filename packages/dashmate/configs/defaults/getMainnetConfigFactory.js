@@ -67,10 +67,17 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
               txEnqueueTimeout: '30ms',
               txSendRateLimit: 100,
               txRecvRateLimit: 120,
+              ttlDuration: '24h',
+              ttlNumBlocks: 0,
             },
             genesis: {
               chain_id: 'dash-1',
               validator_quorum_type: 4,
+            },
+          },
+          abci: {
+            proposer: {
+              txProcessingTimeLimit: 5000,
             },
           },
         },

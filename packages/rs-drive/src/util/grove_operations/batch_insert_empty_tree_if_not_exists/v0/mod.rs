@@ -10,7 +10,7 @@ use crate::util::object_size_info::PathKeyInfo::{
 };
 use crate::util::storage_flags::StorageFlags;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::Op;
+use grovedb::batch::GroveOp;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -58,7 +58,7 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == key
                                 && grove_op.path == path
-                                && matches!(grove_op.op, Op::DeleteTree)
+                                && matches!(grove_op.op, GroveOp::DeleteTree)
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -133,7 +133,7 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == key
                                 && grove_op.path == path
-                                && matches!(grove_op.op, Op::DeleteTree)
+                                && matches!(grove_op.op, GroveOp::DeleteTree)
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -206,7 +206,7 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == key
                                 && grove_op.path == path
-                                && matches!(grove_op.op, Op::DeleteTree)
+                                && matches!(grove_op.op, GroveOp::DeleteTree)
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -279,7 +279,7 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == key
                                 && grove_op.path == path
-                                && matches!(grove_op.op, Op::DeleteTree)
+                                && matches!(grove_op.op, GroveOp::DeleteTree)
                             {
                                 found = true;
                                 existing_operations.remove(i);

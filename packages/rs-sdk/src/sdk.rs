@@ -527,17 +527,6 @@ impl DapiRequestExecutor for Sdk {
     }
 }
 
-#[async_trait::async_trait]
-impl DapiRequestExecutor for &Sdk {
-    async fn execute<R: TransportRequest>(
-        &self,
-        request: R,
-        settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
-        DapiRequestExecutor::execute(self, request, settings).await
-    }
-}
-
 /// Dash Platform SDK Builder, used to configure and [`SdkBuilder::build()`] the [Sdk].
 ///
 /// [SdkBuilder] implements a "builder" design pattern to allow configuration of the Sdk before it is instantiated.
@@ -807,21 +796,37 @@ impl SdkBuilder {
             None => {
                 let dapi =Arc::new(tokio::sync::Mutex::new(  MockDapiClient::new()));
                 // We create mock context provider that will use the mock DAPI client to retrieve data contracts.
-                let  context_provider = self.context_provider.unwrap_or(Box::new(MockContextProvider::new()));
-
-                Sdk {
+                let  context_provider = self.context_provider.unwrap_or_else(||{
+                    let mut cp=MockContextProvider::new();
+                    if let Some(ref dump_dir) = self.dump_dir {
+                        cp.quorum_keys_dir(Some(dump_dir.clone()));
+                    }
+                    Box::new(cp)
+                }
+                );
+                let mock_sdk = MockDashPlatformSdk::new(self.version, Arc::clone(&dapi));
+                let mock_sdk = Arc::new(Mutex::new(mock_sdk));
+                let sdk= Sdk {
                     network: self.network,
                     inner:SdkInstance::Mock {
-                        mock:Arc::new(Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs))),
+                        mock:mock_sdk.clone(),
                         dapi,
                         version:self.version,
+
                     },
-                    dump_dir: self.dump_dir,
+                    dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     internal_cache: Default::default(),
                     context_provider:Some(Arc::new(context_provider)),
                     cancel_token: self.cancel_token,
-                }
+                };
+                let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and connot be reconfigured");
+                guard.set_sdk(sdk.clone());
+                if let Some(ref dump_dir) = self.dump_dir {
+                    pollster::block_on(   guard.load_expectations(dump_dir))?;
+                };
+
+                sdk
             },
             #[cfg(not(feature = "mocks"))]
             None => return Err(Error::Config("Mock mode is not available. Please enable `mocks` feature or provide address list.".to_string())),

@@ -74,6 +74,9 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
                 rotation: true,
               },
             },
+            proposer: {
+              txProcessingTimeLimit: 5000,
+            },
           },
           tenderdash: {
             p2p: {
@@ -90,6 +93,14 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
                 },
               ],
               port: 36656,
+            },
+            mempool: {
+              timeoutCheckTx: '3s',
+              txEnqueueTimeout: '30ms',
+              txSendRateLimit: 100,
+              txRecvRateLimit: 120,
+              ttlDuration: '24h',
+              ttlNumBlocks: 0,
             },
             rpc: {
               port: 36657,

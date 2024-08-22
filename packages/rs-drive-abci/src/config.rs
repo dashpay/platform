@@ -1,4 +1,5 @@
 use crate::logging::LogConfigs;
+use crate::utils::from_str_or_number;
 use crate::{abci::config::AbciConfig, error::Error};
 use bincode::{Decode, Encode};
 use dashcore_rpc::json::QuorumType;
@@ -111,18 +112,6 @@ pub struct ExecutionConfig {
         deserialize_with = "from_str_or_number"
     )]
     pub epoch_time_length_s: u64,
-}
-
-fn from_str_or_number<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: serde::Deserialize<'de> + std::str::FromStr,
-    <T as std::str::FromStr>::Err: std::fmt::Display,
-{
-    use serde::de::Error;
-
-    let s = String::deserialize(deserializer)?;
-    s.parse::<T>().map_err(Error::custom)
 }
 
 /// Configuration of Dash Platform.

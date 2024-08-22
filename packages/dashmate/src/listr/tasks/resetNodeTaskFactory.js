@@ -77,7 +77,7 @@ export default function resetNodeTaskFactory(
           await dockerCompose.rm(config, { profiles: ['platform'] });
 
           // Remove volumes
-          if (ctx.keepData) {
+          if (!ctx.keepData) {
             const { COMPOSE_PROJECT_NAME: composeProjectName } = generateEnvs(config);
 
             const projectVolumeNames = await dockerCompose.getVolumeNames(

@@ -251,7 +251,7 @@ impl Fetch for drive_proof_verifier::types::IdentityBalance {
     type Request = platform_proto::GetIdentityBalanceRequest;
 }
 
-impl Fetch for drive_proof_verifier::types::TotalCreditsOnPlatform {
+impl Fetch for drive_proof_verifier::types::TotalCreditsInPlatform {
     type Request = platform_proto::GetTotalCreditsInPlatformRequest;
 }
 
