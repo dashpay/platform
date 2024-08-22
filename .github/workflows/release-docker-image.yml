@@ -57,7 +57,7 @@ jobs:
             if (fullTag.includes('-')) {
               const suffixes = fullTag.split('-').slice(1);
               const firstElements = suffixes.map(suffix => suffix.split('.')[0]);
-              return `${firstElements.join('-')}`;
+              return `-${firstElements.join('-')}`;
             } else {
               return '';
             }
