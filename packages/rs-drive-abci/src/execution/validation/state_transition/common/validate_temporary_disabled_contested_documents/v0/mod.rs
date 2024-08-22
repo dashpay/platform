@@ -20,11 +20,10 @@ pub fn validate_temporary_disabled_contested_documents_v0(
 
     if let StateTransition::DocumentsBatch(transition) = state_transition {
         let is_contested = transition.transitions().iter().any(|transition| {
-            if let DocumentTransition::Create(create) = transition {
-                create.prefunded_voting_balance().is_some()
-            } else {
-                false
-            }
+            transition
+                .as_transition_create()
+                .and_then(|create| create.prefunded_voting_balance().as_ref())
+                .is_some()
         });
 
         if is_contested {
