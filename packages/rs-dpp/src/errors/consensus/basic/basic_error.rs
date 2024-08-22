@@ -23,7 +23,7 @@ use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
 use crate::consensus::basic::document::{
-    ContestedDocumentsTemporaryNotAllowedError, DataContractNotPresentError,
+    ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
     DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
     DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
@@ -396,7 +396,7 @@ pub enum BasicError {
     UnsupportedFeatureError(UnsupportedFeatureError),
 
     #[error(transparent)]
-    ContestedDocumentsTemporaryNotAllowedError(ContestedDocumentsTemporaryNotAllowedError),
+    ContestedDocumentsTemporarilyNotAllowedError(ContestedDocumentsTemporarilyNotAllowedError),
 }
 
 impl From<BasicError> for ConsensusError {

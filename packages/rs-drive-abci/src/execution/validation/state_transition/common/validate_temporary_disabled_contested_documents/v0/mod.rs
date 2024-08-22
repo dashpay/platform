@@ -1,6 +1,6 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::EpochIndex;
-use dpp::consensus::basic::document::ContestedDocumentsTemporaryNotAllowedError;
+use dpp::consensus::basic::document::ContestedDocumentsTemporarilyNotAllowedError;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
@@ -28,11 +28,11 @@ pub fn validate_temporary_disabled_contested_documents(
 
         if is_contested {
             return ConsensusValidationResult::new_with_errors(vec![
-                ContestedDocumentsTemporaryNotAllowedError::new(
+                ContestedDocumentsTemporarilyNotAllowedError::new(
                     block_info.epoch.index,
                     TARGET_EPOCH_INDEX,
                 )
-                .into(),
+                    .into(),
             ]);
         }
     }

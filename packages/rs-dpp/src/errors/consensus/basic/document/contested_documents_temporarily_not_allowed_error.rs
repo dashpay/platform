@@ -16,7 +16,7 @@ use bincode::{Decode, Encode};
     "Contested documents are not allowed until epoch {target_epoch}. Current epoch is {current_epoch}"
 )]
 #[platform_serialize(unversioned)]
-pub struct ContestedDocumentsTemporaryNotAllowedError {
+pub struct ContestedDocumentsTemporarilyNotAllowedError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
@@ -26,7 +26,7 @@ pub struct ContestedDocumentsTemporaryNotAllowedError {
     target_epoch: EpochIndex,
 }
 
-impl ContestedDocumentsTemporaryNotAllowedError {
+impl ContestedDocumentsTemporarilyNotAllowedError {
     pub fn new(current_epoch: EpochIndex, target_epoch: EpochIndex) -> Self {
         Self {
             current_epoch,
@@ -35,8 +35,10 @@ impl ContestedDocumentsTemporaryNotAllowedError {
     }
 }
 
-impl From<ContestedDocumentsTemporaryNotAllowedError> for ConsensusError {
-    fn from(err: ContestedDocumentsTemporaryNotAllowedError) -> Self {
-        Self::BasicError(BasicError::ContestedDocumentsTemporaryNotAllowedError(err))
+impl From<ContestedDocumentsTemporarilyNotAllowedError> for ConsensusError {
+    fn from(err: ContestedDocumentsTemporarilyNotAllowedError) -> Self {
+        Self::BasicError(BasicError::ContestedDocumentsTemporarilyNotAllowedError(
+            err,
+        ))
     }
 }
