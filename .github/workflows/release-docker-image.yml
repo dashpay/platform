@@ -121,10 +121,10 @@ jobs:
         with:
           images: ${{ inputs.image_org }}/${{ inputs.image_name }}
           tags: |
+            type=match,pattern=v(.*),group=1,value=${{ inputs.tag }},priority=910,suffix=
             type=match,pattern=v(\d+),group=1,value=${{ inputs.tag }}
             type=match,pattern=v(\d+.\d+),group=1,value=${{ inputs.tag }}
             type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{ inputs.tag }}
-            type=match,pattern=v(.*),group=1,value=${{ inputs.tag }},suffix=
           flavor: |
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
