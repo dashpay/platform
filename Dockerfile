@@ -201,10 +201,11 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml && \
-        export FEATURES_FLAG="--no-default-features" ; \
         export OUT_DIRECTORY=release ; \
     else \
+        export FEATURES_FLAG="--features=console,grovedbg" ; \
         export OUT_DIRECTORY=debug ; \
+        
     fi && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \

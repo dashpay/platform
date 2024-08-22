@@ -102,7 +102,7 @@ integer-encoding = { version = "4.0.0" }
 
 [features]
 
-default = ["mocks", "console", "grovedbg"]
+default = ["mocks"]
 mocks = ["mockall", "drive/fixtures-and-mocks"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
