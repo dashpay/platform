@@ -25,7 +25,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 #[cfg(any(feature = "server", feature = "verify"))]
 use std::collections::BTreeMap;
-use std::mem;
+use std::{fmt, mem};
 #[cfg(feature = "server")]
 use crate::error::storage_flags::StorageFlagsError;
 #[cfg(feature = "server")]
@@ -69,6 +69,34 @@ pub enum StorageFlags {
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
+impl fmt::Display for StorageFlags {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StorageFlags::SingleEpoch(base_epoch) => {
+                write!(f, "SingleEpoch(BaseEpoch: {})", base_epoch)
+            }
+            StorageFlags::MultiEpoch(base_epoch, epochs) => {
+                write!(f, "MultiEpoch(BaseEpoch: {}, Epochs: ", base_epoch)?;
+                for (index, bytes) in epochs {
+                    write!(f, "[EpochIndex: {}, BytesAdded: {}] ", index, bytes)?;
+                }
+                write!(f, ")")
+            }
+            StorageFlags::SingleEpochOwned(base_epoch, owner_id) => {
+                write!(f, "SingleEpochOwned(BaseEpoch: {}, OwnerId: {})", base_epoch, hex::encode(owner_id))
+            }
+            StorageFlags::MultiEpochOwned(base_epoch, epochs, owner_id) => {
+                write!(f, "MultiEpochOwned(BaseEpoch: {}, Epochs: ", base_epoch)?;
+                for (index, bytes) in epochs {
+                    write!(f, "[EpochIndex: {}, BytesAdded: {}] ", index, bytes)?;
+                }
+                write!(f, ", OwnerId: {})", hex::encode(owner_id))
+            }
+        }
+    }
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
 /// MergingOwnersStrategy decides which owner to keep during a merge
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum MergingOwnersStrategy {
@@ -88,6 +116,17 @@ impl StorageFlags {
         match maybe_owner_id {
             None => SingleEpoch(epoch),
             Some(owner_id) => SingleEpochOwned(epoch, owner_id),
+        }
+    }
+    
+    /// Sets the owner id if we have owned storage flags
+    pub fn set_owner_id(&mut self, owner_id: OwnerId) {
+        match self {
+            SingleEpochOwned(_, previous_owner_id) |
+            MultiEpochOwned(_, _, previous_owner_id) => {
+                *previous_owner_id = owner_id;
+            }
+            _ => {}
         }
     }
 

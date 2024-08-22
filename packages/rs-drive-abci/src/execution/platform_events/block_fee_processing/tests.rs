@@ -5,17 +5,14 @@ use std::borrow::Cow;
     use std::collections::BTreeMap;
     use bs58;
 use dpp::platform_value;
-use crate::execution::validation::state_transition::tests::{
-        fetch_expected_identity_balance, process_state_transitions,
-        setup_identity_with_system_credits,
-    };
+use crate::execution::validation::state_transition::tests::{fetch_expected_identity_balance, process_state_transitions, setup_identity, setup_identity_with_system_credits};
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::{
@@ -29,7 +26,7 @@ use crate::execution::validation::state_transition::tests::{
     use dpp::fee::Credits;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
-    use dpp::platform_value::{platform_value, Identifier, Value, Bytes32};
+    use dpp::platform_value::{platform_value, Value, Bytes32};
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use drive::util::test_helpers::setup_contract;
@@ -43,10 +40,11 @@ use crate::execution::validation::state_transition::tests::{
     use dpp::data_contract::DataContract;
     use dpp::prelude::CoreBlockHeight;
     use drive::util::storage_flags::StorageFlags;
-    use dpp::document::serialization_traits::DocumentPlatformValueMethodsV0;
     use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-    use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-    use drive::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use drive::util::object_size_info::{OwnedDocumentInfo};
+    use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
 
     static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
@@ -865,212 +863,151 @@ use crate::execution::validation::state_transition::tests::{
 
     #[test]
     fn test_document_storage_flags() {
-        let mut epoch_index: EpochIndex = 1;
-        let activation_core_height: CoreBlockHeight = 100;
         let epoch_core_start_height: CoreBlockHeight = 100;
-        let current_core_height: CoreBlockHeight = 100;
+        let platform_version = PlatformVersion::latest();
 
-        let (mut platform, _state, platform_version) =
-            crate::query::tests::setup_platform(Some((1, activation_core_height)), Network::Regtest);
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
 
-        let contract = platform_value!({
-            "$format_version": "0",
-            "id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
-            "schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
-            "version": 1,
-            "ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
-            "documentSchemas": {
-                "indexedDocument": {
-                    "type": "object",
-                    "indices": [
-                        {"name":"index1", "properties": [{"$ownerId":"asc"}, {"firstName":"desc"}], "unique":true},
-                        {"name":"index2", "properties": [{"$ownerId":"asc"}, {"lastName":"desc"}], "unique":true},
-                        {"name":"index3", "properties": [{"lastName":"asc"}]},
-                        {"name":"index4", "properties": [{"$createdAt":"asc"}, {"$updatedAt":"asc"}]},
-                        {"name":"index5", "properties": [{"$updatedAt":"asc"}]},
-                        {"name":"index6", "properties": [{"$createdAt":"asc"}]}
-                    ],
-                    "properties":{
-                        "firstName": {
-                            "type": "string",
-                            "maxLength": 63,
-                            "position": 0,
-                        },
-                        "lastName": {
-                            "type": "string",
-                            "maxLength": 63,
-                            "position": 1,
-                        }
-                    },
-                    "required": ["firstName", "$createdAt", "$updatedAt", "lastName"],
-                    "additionalProperties": false,
-                },
-            },
-        });
+        let mut rng = StdRng::seed_from_u64(433);
 
-        // first we need to deserialize the contract
-        let contract = DataContract::from_value(contract, false, platform_version)
-            .expect("expected data contract");
+        let entropy = Bytes32::random_with_rng(&mut rng);
 
-        platform.drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("should create a contract");
+        let (identity, signer, key) = setup_identity_with_system_credits(&mut platform, 958, dash_to_credits!(0.1));
+
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay_contract = dashpay.clone();
+
+        let profile = dashpay_contract
+            .document_type_for_name("profile")
+            .expect("expected a profile document type");
 
         fast_forward_to_block(
             &platform,
-            5000 * epoch_index as u64,
-            activation_core_height as u64,
+            7000,
+            301,
             epoch_core_start_height,
-            epoch_index,
-            true,
+            0,
+            false,
         );
 
-        let document_values = platform_value!({
-           "$id": Identifier::new(bs58::decode("DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN").into_vec()
-                        .unwrap().try_into().unwrap()),
-           "$type": "indexedDocument",
-           "$dataContractId": Identifier::new(bs58::decode("BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54").into_vec()
-                        .unwrap().try_into().unwrap()),
-           "$ownerId": Identifier::new(bs58::decode("GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5").into_vec()
-                        .unwrap().try_into().unwrap()),
-           "$revision": 1,
-           "firstName": "name",
-           "lastName": "lastName",
-           "$createdAt": 1647535750329_u64,
-           "$updatedAt": 1647535750329_u64,
-        });
+        let mut document = profile
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
 
-        let mut document = Document::from_platform_value(document_values, platform_version)
-            .expect("expected to make document");
+        document.set("avatarUrl", "http://test.com/bob.jpg".into());
+        document.set("displayName", "sam".into());
 
-        let document_type = contract
-            .document_type_for_name("indexedDocument")
-            .expect("expected to get a document type");
-
-        let current_epoch_index = platform.state.load().last_block_info().epoch.index;
-        let storage_flags = Some(StorageFlags::new_single_epoch(
-            current_epoch_index,
-            None,
-        ));
-        let storage_flags_cow: Option<Cow<'_, StorageFlags>> = storage_flags.clone().map(Cow::Owned);
-        println!("add_document with storage_flags:{:?}\n", storage_flags.clone());
-
-        platform.drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentOwnedInfo((
-                            document.clone(),
-                            storage_flags_cow,
-                        )),
-                        owner_id: None,
-                    },
-                    contract: &contract,
-                    document_type,
-                },
-                false,
-                *platform.state.load().last_block_info(),
-                true,
-                None,
+        let documents_batch_create_transition =
+            DocumentsBatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                profile,
+                entropy.0,
+                &key,
+                2,
+                0,
+                &signer,
                 platform_version,
                 None,
+                None,
+                None,
             )
-            .expect("should add document");
+                .expect("expect to create documents batch transition");
 
-        println!("document created @ last_block_info: {:?}\n", platform.state.load().last_block_info());
+        let platform_state = platform.state.load();
 
-        epoch_index += 1;
+        process_state_transitions(
+            &platform,
+            &vec![documents_batch_create_transition.clone()],
+            *platform_state.last_block_info(),
+            &platform_state,
+        );
+
+        // epoch_index = 2;
         fast_forward_to_block(
             &platform,
-            5000 * epoch_index as u64,
-            (activation_core_height + 100) as u64,
-            (epoch_core_start_height + 100),
-            epoch_index,
+            10_200_000_000, 9000, 42, 2,
             true,
         );
+        
+        println!("renaming {} -> {}\n", document.get(&"displayName".to_string()).unwrap().to_string(), "quantum");
+        document.set("displayName", "quantum".into());
+        document.set_revision(Some(2));
 
-        let document_properties = document.properties_mut();
-        let new_value : platform_value::Value = dpp::platform_value::Value::Text("nameody".to_string()); // +3 bytes on property firstName
-        println!("renaming {} -> {}\n", document_properties.get(&"firstName".to_string()).unwrap().to_string(), new_value.to_string());
-        document_properties.insert("firstName".to_string(), new_value);
-        println!("document_properties: {:?}\n", document_properties);
-
-        let current_epoch_index = platform.state.load().last_block_info().epoch.index;
-        let storage_flags = Some(StorageFlags::new_single_epoch(
-            current_epoch_index,
-            None,
-        ));
-        let storage_flags_cow: Option<Cow<'_, StorageFlags>> = storage_flags.clone().map(Cow::Owned);
-        println!("update_document with storage_flags:{:?}\n", storage_flags.clone());
-
-        platform.drive
-            .update_document_for_contract(
-                &document,
-                &contract,
-                document_type,
-                None,
-                *platform.state.load().last_block_info(),
-                true,
-                storage_flags_cow,
-                None,
+        let documents_batch_update_transition =
+            DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                document,
+                profile,
+                &key,
+                3,
+                0,
+                &signer,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+                None,
+                None,
+                None,
             )
-            .expect("should update document");
+                .expect("expect to create documents batch transition");
 
-        println!("document updated @ last_block_info: {:?}\n", platform.state.load().last_block_info());
-        return;
-
-        epoch_index += 1;
-        fast_forward_to_block(
+        process_state_transitions(
             &platform,
-            5000 * epoch_index as u64,
-            (activation_core_height + 100) as u64,
-            (epoch_core_start_height + 100),
-            epoch_index,
-            true,
+            &vec![documents_batch_update_transition.clone()],
+            *platform_state.last_block_info(),
+            &platform_state,
         );
-
-        let document_properties = document.properties_mut();
-        let new_value : platform_value::Value = dpp::platform_value::Value::Text("nameodysseas".to_string()); // +5 bytes on property firstName
-        println!("renaming {} -> {}\n", document_properties.get(&"firstName".to_string()).unwrap().to_string(), new_value.to_string());
-        document_properties.insert("firstName".to_string(), new_value);
-        println!("document_properties: {:?}\n", document_properties);
-
-        let current_epoch_index = platform.state.load().last_block_info().epoch.index;
-        let storage_flags = Some(StorageFlags::new_single_epoch(
-            current_epoch_index,
-            None,
-        ));
-        let storage_flags_cow: Option<Cow<'_, StorageFlags>> = storage_flags.clone().map(Cow::Owned);
-        println!("update_document with storage_flags:{:?}\n", storage_flags.clone());
-
-        platform.drive
-            .update_document_for_contract(
-                &document,
-                &contract,
-                document_type,
-                None,
-                *platform.state.load().last_block_info(),
-                true,
-                storage_flags_cow,
-                None,
-                platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
-            )
-            .expect("should update document");
-
-        println!("document updated @ last_block_info: {:?}\n", platform.state.load().last_block_info());
-
-        println!("final last_block_info: {:?}\n", platform.state.load().last_block_info());
-
         return;
+
+        // epoch_index += 1;
+        // fast_forward_to_block(
+        //     &platform,
+        //     5000 * epoch_index as u64,
+        //     (activation_core_height + 100) as u64,
+        //     (epoch_core_start_height + 100),
+        //     epoch_index,
+        //     true,
+        // );
+        // 
+        // let document_properties = document.properties_mut();
+        // let new_value : platform_value::Value = dpp::platform_value::Value::Text("nameodysseas".to_string()); // +5 bytes on property firstName
+        // println!("renaming {} -> {}\n", document_properties.get(&"firstName".to_string()).unwrap().to_string(), new_value.to_string());
+        // document_properties.insert("firstName".to_string(), new_value);
+        // println!("document_properties: {:?}\n", document_properties);
+        // 
+        // let current_epoch_index = platform.state.load().last_block_info().epoch.index;
+        // let storage_flags = Some(StorageFlags::new_single_epoch(
+        //     current_epoch_index,
+        //     None,
+        // ));
+        // let storage_flags_cow: Option<Cow<'_, StorageFlags>> = storage_flags.clone().map(Cow::Owned);
+        // println!("update_document with storage_flags:{:?}\n", storage_flags.clone());
+        // 
+        // platform.drive
+        //     .update_document_for_contract(
+        //         &document,
+        //         &contract,
+        //         document_type,
+        //         None,
+        //         *platform.state.load().last_block_info(),
+        //         true,
+        //         storage_flags_cow,
+        //         None,
+        //         platform_version,
+        //         Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+        //     )
+        //     .expect("should update document");
+        // 
+        // println!("document updated @ last_block_info: {:?}\n", platform.state.load().last_block_info());
+        // 
+        // println!("final last_block_info: {:?}\n", platform.state.load().last_block_info());
+        // 
+        // return;
     }
 }

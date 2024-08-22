@@ -8,4 +8,4 @@ pub mod transformer;
 pub use state_transitions::*;
 
 #[cfg(test)]
-pub(crate) use state_transitions::tests;
+pub(in crate::execution) use state_transitions::tests;

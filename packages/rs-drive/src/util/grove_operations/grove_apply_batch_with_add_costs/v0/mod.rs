@@ -118,7 +118,7 @@ impl Drive {
                                 format!("drive could not combine storage flags (new flags were bigger): {}",e)
                             )
                         })?;
-                        println!(">added_bytes:{} old:{:?} new:{:?} --> combined:{:?}",cost.added_bytes, maybe_old_storage_flags, new_storage_flags, combined_storage_flags);
+                        println!(">added_bytes:{} old:{} new:{} --> combined:{}",cost.added_bytes, if maybe_old_storage_flags.is_some() { maybe_old_storage_flags.as_ref().unwrap().to_string() } else { "None".to_string()} , new_storage_flags, combined_storage_flags);
                         if combined_storage_flags.epoch_index_map().is_some() {
                             //println!("     --------> bigger_combined_flags:{:?}", combined_storage_flags.epoch_index_map());
                         }
