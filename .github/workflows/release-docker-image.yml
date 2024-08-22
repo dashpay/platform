@@ -26,7 +26,7 @@ on:
         description: Cargo profile. i.e. release, dev
         default: release
 env:
-  DIGEST_NAME: digests-${{ inputs.image_org }}-${{ inputs.image_name }}-${{ github.sha }}
+  DIGEST_NAME: digests-${{ inputs.image_org }}-${{ inputs.image_name }}-${{ inputs.tag }}-${{ inputs.cargo_profile }}-${{ github.sha }}
   DIGEST_DIR_PATH: /tmp/digests
 
 jobs:
