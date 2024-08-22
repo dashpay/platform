@@ -32,6 +32,22 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     #[allow(unreachable_patterns)]
     match check_tx_level {
         CheckTxLevel::FirstTimeCheck => {
+            // Disable contested document create transitions for the first 2 epochs
+            // We doing it very top of state transition validation logic to avoid any unnecessary expenses
+            // for a state transition owner.
+            let result = state_transition.validate_temporary_disabled_contested_documents(
+                platform.state.last_block_info(),
+                platform_version,
+            )?;
+
+            if !result.is_valid() {
+                return Ok(
+                    ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                        result.errors,
+                    ),
+                );
+            }
+
             // Only identity top up and identity create do not have nonces validation
             if state_transition.has_nonces_validation() {
                 let result = state_transition.validate_nonces(
@@ -63,32 +79,6 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         ),
                     );
                 }
-            }
-
-            // Disable contested document create transitions for the first 2 epochs
-            // We doing it very top of state transition validation logic to avoid any unnecessary expenses
-            // for a state transition owner.
-            let result = state_transition.validate_temporary_disabled_contested_documents(
-                platform.state.last_block_info(),
-                platform_version,
-            )?;
-
-            if !result.is_valid() {
-                return Ok(
-                    ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                        result.errors,
-                    ),
-                );
-            }
-
-            let result = state_transition.validate_basic_structure(platform_version)?;
-
-            if !result.is_valid() {
-                return Ok(
-                    ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                        result.errors,
-                    ),
-                );
             }
 
             // Only identity create does not use identity in state validation, because it doesn't yet have the identity in state
