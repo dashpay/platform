@@ -55,7 +55,7 @@ jobs:
           script: |
             const tag = "${{ inputs.tag }}" || context.payload.release.tag_name;
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
-            return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
+            return (tag.includes('-') ? `${major}.${minor}${{steps.suffix.outputs.result}}` : 'latest');
 
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
