@@ -43,13 +43,32 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     // Disable contested document create transitions for the first 2 epochs
     // We doing it very top of state transition validation logic to avoid any unnecessary expenses
     // for a state transition owner.
-    let result = state_transition.validate_temporarily_disabled_contested_documents(
-        platform.state.last_block_info(),
-        platform_version,
-    )?;
+    #[cfg(feature = "testing-config")]
+    if !platform
+        .config
+        .testing_configs
+        .disable_temporarily_disabled_contested_documents_validation
+    {
+        let result = state_transition.validate_temporarily_disabled_contested_documents(
+            platform.state.last_block_info(),
+            platform_version,
+        )?;
 
-    if !result.is_valid() {
-        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        }
+    }
+
+    #[cfg(not(feature = "testing-config"))]
+    {
+        let result = state_transition.validate_temporarily_disabled_contested_documents(
+            platform.state.last_block_info(),
+            platform_version,
+        )?;
+
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        }
     }
 
     // Only identity create does not use identity in state validation, because it doesn't yet have the identity in state

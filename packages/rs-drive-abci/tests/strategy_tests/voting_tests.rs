@@ -34,17 +34,286 @@ mod tests {
     use strategy_tests::{StartIdentities, Strategy};
 
     #[test]
-    fn run_chain_block_two_state_transitions_conflicting_unique_index_inserted_same_block() {
-        // In this test we try to insert two state transitions with the same unique index
-        // We use the DPNS contract, and we insert two documents both with the same "name"
-        // This is a common scenario we should see quite often
+    fn run_chain_with_temporarily_disabled_contested_documents() {
+        let epoch_time_length_s = 60;
+
         let config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 block_signing: false,
                 store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
+                disable_temporarily_disabled_contested_documents_validation: false,
             },
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                //we disable document triggers because we are using dpns and dpns needs a preorder
+                use_document_triggers: false,
+                epoch_time_length_s,
+                ..Default::default()
+            },
+            block_spacing_ms: epoch_time_length_s * 1000,
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let platform_version = PlatformVersion::latest();
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let mut simple_signer = SimpleSigner::default();
+
+        let (identity1, keys1) =
+            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
+                2,
+                &mut rng,
+                platform_version,
+            )
+            .unwrap();
+
+        simple_signer.add_keys(keys1);
+
+        let start_identities = create_state_transitions_for_identities(
+            vec![identity1],
+            &simple_signer,
+            &mut rng,
+            platform_version,
+        );
+
+        let dpns_contract = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns()
+            .as_ref()
+            .clone();
+
+        let document_type = dpns_contract
+            .document_type_for_name("domain")
+            .expect("expected a profile document type")
+            .to_owned_document_type();
+
+        let identity1_id = start_identities.first().unwrap().0.id();
+        let document_op_1 = DocumentOp {
+            contract: dpns_contract.clone(),
+            action: DocumentAction::DocumentActionInsertSpecific(
+                BTreeMap::from([
+                    ("label".into(), "quantum".into()),
+                    ("normalizedLabel".into(), "quantum".into()),
+                    ("normalizedParentDomainName".into(), "dash".into()),
+                    (
+                        "records".into(),
+                        BTreeMap::from([("identity", Value::from(identity1_id))]).into(),
+                    ),
+                ]),
+                Some(start_identities.first().unwrap().0.id()),
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: document_type.clone(),
+        };
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::Document(document_op_1.clone()),
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: StartIdentities {
+                    hard_coded: start_identities.clone(),
+                    ..Default::default()
+                },
+                identity_inserts: Default::default(),
+
+                identity_contract_nonce_gaps: None,
+                signer: Some(simple_signer.clone()),
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let mut voting_signer = Some(SimpleSigner::default());
+
+        let ChainExecutionOutcome {
+            mut abci_app,
+            proposers,
+            validator_quorums,
+            current_validator_quorum_hash,
+            instant_lock_quorums,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            state_transition_results_per_block,
+            identities,
+            ..
+        } = run_chain_for_strategy(
+            &mut platform,
+            2,
+            strategy.clone(),
+            config.clone(),
+            15,
+            &mut voting_signer,
+        );
+
+        let platform_state = abci_app.platform.state.load();
+
+        // On first block we have identity
+        // On second block we have should have documents
+        // but not in our case because we disabled contested documents
+        let state_transitions_block_2 = state_transition_results_per_block
+            .get(&2)
+            .expect("expected to get block 2");
+
+        // Document transaction was rejected
+        assert!(state_transitions_block_2.is_empty());
+
+        assert_eq!(platform_state.last_committed_block_epoch().index, 1);
+
+        // Move over 2nd epochs
+
+        let block_start = platform_state
+            .last_committed_block_info()
+            .as_ref()
+            .unwrap()
+            .basic_info()
+            .height
+            + 1;
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums,
+            current_validator_quorum_hash,
+            instant_lock_quorums,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            state_transition_results_per_block,
+            ..
+        } = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 1,
+                block_count: 2,
+                proposers,
+                validator_quorums,
+                current_validator_quorum_hash,
+                instant_lock_quorums,
+                current_proposer_versions: Some(current_proposer_versions.clone()),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: 1681094380000,
+                current_time_ms: end_time_ms,
+                current_identities: Vec::new(),
+            },
+            NetworkStrategy::default(),
+            config.clone(),
+            StrategyRandomness::SeedEntropy(7),
+        );
+
+        let platform_state = abci_app.platform.state.load();
+
+        assert_eq!(platform_state.last_committed_block_epoch().index, 3);
+
+        // Insert successfully contested document
+
+        let block_start = platform_state
+            .last_committed_block_info()
+            .as_ref()
+            .unwrap()
+            .basic_info()
+            .height
+            + 1;
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                operations: vec![Operation {
+                    op_type: OperationType::Document(document_op_1.clone()),
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                }],
+                signer: Some(simple_signer),
+                ..Default::default()
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let ChainExecutionOutcome {
+            state_transition_results_per_block,
+            ..
+        } = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 1,
+                block_count: 1,
+                proposers,
+                validator_quorums,
+                current_validator_quorum_hash,
+                instant_lock_quorums,
+                current_proposer_versions: Some(current_proposer_versions.clone()),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: 1681094380000,
+                current_time_ms: end_time_ms,
+                current_identities: identities,
+            },
+            strategy,
+            config.clone(),
+            StrategyRandomness::SeedEntropy(7),
+        );
+
+        dbg!(&state_transition_results_per_block);
+
+        let state_transitions_block_5 = state_transition_results_per_block
+            .get(&5)
+            .expect("expected to get block 5");
+
+        // Document transaction was rejected
+        assert_eq!(state_transitions_block_5.len(), 1);
+    }
+
+    #[test]
+    fn run_chain_block_two_state_transitions_conflicting_unique_index_inserted_same_block() {
+        // In this test we try to insert two state transitions with the same unique index
+        // We use the DPNS contract, and we insert two documents both with the same "name"
+        // This is a common scenario we should see quite often
+        let config = PlatformConfig {
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
@@ -315,12 +584,7 @@ mod tests {
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
@@ -537,6 +801,7 @@ mod tests {
                 current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
+                current_identities: Vec::new(),
             },
             NetworkStrategy {
                 strategy: Strategy {
@@ -671,12 +936,7 @@ mod tests {
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
@@ -893,6 +1153,7 @@ mod tests {
                 current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
+                current_identities: Vec::new(),
             },
             NetworkStrategy {
                 strategy: Strategy {
@@ -1038,12 +1299,7 @@ mod tests {
         // We use the DPNS contract, and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
@@ -1275,6 +1531,7 @@ mod tests {
                 current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
+                current_identities: Vec::new(),
             },
             NetworkStrategy {
                 strategy: Strategy {

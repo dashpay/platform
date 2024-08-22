@@ -32,7 +32,7 @@ pub fn validate_temporarily_disabled_contested_documents_v0(
                     block_info.epoch.index,
                     TARGET_EPOCH_INDEX,
                 )
-                    .into(),
+                .into(),
             ]);
         }
     }

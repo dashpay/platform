@@ -58,11 +58,11 @@ use dpp::consensus::signature::SignatureError;
 use dpp::consensus::state::state_error::StateError;
 
 use dpp::consensus::state::data_trigger::DataTriggerError::{
-    DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
+  DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
 };
 use wasm_bindgen::{JsError, JsValue};
 use dpp::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError, InvalidDocumentTypeRequiredSecurityLevelError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
-use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
+use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedError, DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError};
 use dpp::consensus::basic::overflow_error::OverflowError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
@@ -544,6 +544,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::ContestedUniqueIndexWithUniqueIndexError(e) => {
             generic_consensus_error!(ContestedUniqueIndexWithUniqueIndexError, e).into()
+        }
+        BasicError::ContestedDocumentsTemporarilyNotAllowedError(e) => {
+            generic_consensus_error!(ContestedDocumentsTemporarilyNotAllowedError, e).into()
         }
     }
 }

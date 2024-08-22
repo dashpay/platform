@@ -821,6 +821,8 @@ pub struct PlatformTestConfig {
     pub block_commit_signature_verification: bool,
     /// Disable instant lock signature verification
     pub disable_instant_lock_signature_verification: bool,
+    /// Disable temporarily disabled contested documents validation
+    pub disable_temporarily_disabled_contested_documents_validation: bool,
 }
 
 #[cfg(feature = "testing-config")]
@@ -832,6 +834,7 @@ impl PlatformTestConfig {
             store_platform_state: false,
             block_commit_signature_verification: false,
             disable_instant_lock_signature_verification: true,
+            disable_temporarily_disabled_contested_documents_validation: true,
         }
     }
 }
@@ -844,6 +847,7 @@ impl Default for PlatformTestConfig {
             store_platform_state: true,
             block_commit_signature_verification: true,
             disable_instant_lock_signature_verification: false,
+            disable_temporarily_disabled_contested_documents_validation: true,
         }
     }
 }

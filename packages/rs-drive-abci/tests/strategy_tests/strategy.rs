@@ -1662,6 +1662,7 @@ pub struct ChainExecutionParameters {
     pub current_votes: BTreeMap<Identifier, BTreeMap<Identifier, ResourceVoteChoice>>,
     pub start_time_ms: u64,
     pub current_time_ms: u64,
+    pub current_identities: Vec<Identity>,
 }
 
 fn create_signed_instant_asset_lock_proofs_for_identities(
