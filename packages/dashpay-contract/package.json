@@ -9,8 +9,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dashevo/dashpay-contract.git"
+    "url": "git+https://github.com/dashpay/platform.git"
   },
+  "bugs": {
+    "url": "https://github.com/dashpay/platform/issues"
+  },
+  "homepage": "https://github.com/dashpay/platform/tree/v1.1-dev/packages/dashpay-contract#readme",
   "author": "Dash Core Team",
   "contributors": [
     {
@@ -20,10 +24,6 @@
     }
   ],
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/dashevo/dashpay-contract/issues"
-  },
-  "homepage": "https://github.com/dashevo/dashpay-contract#readme",
   "devDependencies": {
     "@dashevo/wasm-dpp": "workspace:*",
     "chai": "^4.3.10",

@@ -12,10 +12,6 @@
     "test:e2e": "mocha --recursive test/e2e",
     "helper": "node scripts/helper.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/dashevo/dashmate.git"
-  },
   "type": "module",
   "bin": "./bin/run.js",
   "contributors": [
@@ -49,10 +45,14 @@
     "node": ">=20"
   },
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/dashevo/dashmate/issues"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashpay/platform.git"
   },
-  "homepage": "https://github.com/dashevo/dashmate#readme",
+  "bugs": {
+    "url": "https://github.com/dashpay/platform/issues"
+  },
+  "homepage": "https://github.com/dashpay/platform/tree/v1.1-dev/packages/dashmate#readme",
   "dependencies": {
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dapi-client": "workspace:*",

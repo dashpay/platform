@@ -29,10 +29,6 @@
     "examples",
     "src"
   ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/dashevo/wallet-lib.git"
-  },
   "keywords": [
     "cryptocurrency",
     "dash",
@@ -40,10 +36,14 @@
   ],
   "author": "Dash Core Team",
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/dashevo/wallet-lib/issues"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashpay/platform.git"
   },
-  "homepage": "https://github.com/dashevo/wallet-lib#readme",
+  "bugs": {
+    "url": "https://github.com/dashpay/platform/issues"
+  },
+  "homepage": "https://github.com/dashpay/platform/tree/v1.1-dev/packages/wallet-lib#readme",
   "dependencies": {
     "@dashevo/dapi-client": "workspace:*",
     "@dashevo/dashcore-lib": "~0.21.3",

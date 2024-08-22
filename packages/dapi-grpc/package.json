@@ -37,13 +37,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dashevo/dapi-grpc.git"
+    "url": "git+https://github.com/dashpay/platform.git"
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/dashevo/dapi-grpc/issues"
+    "url": "https://github.com/dashpay/platform/issues"
   },
-  "homepage": "https://github.com/dashevo/dapi-grpc#readme",
+  "homepage": "https://github.com/dashpay/platform/tree/v1.1-dev/packages/dapi-grpc#readme",
   "dependencies": {
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/protobufjs": "6.10.5",

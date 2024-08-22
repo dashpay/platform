@@ -3,6 +3,14 @@
   "version": "1.1.0-dev.1",
   "description": "Common GRPC library",
   "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashpay/platform.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dashpay/platform/issues"
+  },
+  "homepage": "https://github.com/dashpay/platform/tree/v1.1-dev/packages/js-grpc-common#readme",
   "scripts": {
     "build": "",
     "lint": "eslint .",
