@@ -47,6 +47,35 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set suffix TEST
+        uses: actions/github-script@v6
+        id: suffix
+        with:
+          result-encoding: string
+          script: |
+            const fullTag = '${{ inputs.tag }}';
+            if (fullTag.includes('-')) {
+              const suffixes = fullTag.split('-').slice(1);
+              const firstElements = suffixes.map(suffix => suffix.split('.')[0]);
+              return "${firstElements.join('-')}";
+            } else {
+              return '';
+            }
+
+      - name: Set Docker tags and labels from image TEST
+        id: docker_meta_test
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ inputs.image_org }}/${{ inputs.image_name }}
+          tags: |
+            type=match,pattern=v(\d+),group=1,value=${{ inputs.tag }}
+            type=match,pattern=v(\d+.\d+),group=1,value=${{ inputs.tag }}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{ inputs.tag }}
+            type=match,pattern=v(.*),group=1,value=${{ inputs.tag }},suffix=
+          flavor: |
+            suffix=${{ steps.suffix.outputs.result }},onlatest=true
+            latest=${{ github.event_name == 'release' }}
+
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -110,7 +139,7 @@ jobs:
             if (fullTag.includes('-')) {
               const suffixes = fullTag.split('-').slice(1); // Ignore the version part
               const firstElements = suffixes.map(suffix => suffix.split('.')[0]);
-              return "${firstElements.join('-')}"";
+              return "${firstElements.join('-')}";
             } else {
               return '';
             }
