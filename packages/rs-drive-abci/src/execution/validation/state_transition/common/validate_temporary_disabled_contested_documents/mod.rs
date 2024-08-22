@@ -28,7 +28,7 @@ impl ValidateTemporaryDisabledContestedDocuments for StateTransition {
             .validation_and_processing
             .validate_temporary_disabled_contested_documents
         {
-            0 => Ok(v0::validate_temporary_disabled_contested_documents(
+            0 => Ok(v0::validate_temporary_disabled_contested_documents_v0(
                 self, block_info,
             )),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
