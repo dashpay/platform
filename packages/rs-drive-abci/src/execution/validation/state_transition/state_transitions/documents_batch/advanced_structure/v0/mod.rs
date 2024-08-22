@@ -78,7 +78,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
                         security_levels,
                     ),
                 )
-                    .into()],
+                .into()],
             ));
         }
 

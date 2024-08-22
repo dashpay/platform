@@ -24,6 +24,7 @@ use drive::state_transition_action::StateTransitionAction;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
 use crate::execution::validation::state_transition::common::validate_simple_pre_check_balance::ValidateSimplePreCheckBalance;
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
+use crate::execution::validation::state_transition::common::validate_temporarily_disabled_contested_documents::ValidateTemporarilyDisabledContestedDocuments;
 use crate::execution::validation::state_transition::identity_create::{StateTransitionStateValidationForIdentityCreateTransitionV0, StateTransitionStructureKnownInStateValidationForIdentityCreateTransitionV0};
 use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
 use crate::execution::validation::state_transition::state_transitions::identity_update::advanced_structure::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
@@ -42,7 +43,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     // Disable contested document create transitions for the first 2 epochs
     // We doing it very top of state transition validation logic to avoid any unnecessary expenses
     // for a state transition owner.
-    let result = state_transition.validate_temporary_disabled_contested_documents(
+    let result = state_transition.validate_temporarily_disabled_contested_documents(
         platform.state.last_block_info(),
         platform_version,
     )?;
@@ -471,7 +472,7 @@ pub(crate) trait StateTransitionPrefundedSpecializedBalanceValidationV0 {
 
 /// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionStateValidationV0:
-StateTransitionActionTransformerV0
+    StateTransitionActionTransformerV0
 {
     /// Validates the state transition by analyzing the changes in the platform state after applying the transaction.
     ///

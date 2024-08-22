@@ -8,17 +8,17 @@ use dpp::version::PlatformVersion;
 
 mod v0;
 
-pub trait ValidateTemporaryDisabledContestedDocuments {
-    fn validate_temporary_disabled_contested_documents(
+pub trait ValidateTemporarilyDisabledContestedDocuments {
+    fn validate_temporarily_disabled_contested_documents(
         &self,
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error>;
 }
 
-impl ValidateTemporaryDisabledContestedDocuments for StateTransition {
+impl ValidateTemporarilyDisabledContestedDocuments for StateTransition {
     /// Disable contested document create transitions for the first 2 epochs
-    fn validate_temporary_disabled_contested_documents(
+    fn validate_temporarily_disabled_contested_documents(
         &self,
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
@@ -26,9 +26,9 @@ impl ValidateTemporaryDisabledContestedDocuments for StateTransition {
         match platform_version
             .drive_abci
             .validation_and_processing
-            .validate_temporary_disabled_contested_documents
+            .validate_temporarily_disabled_contested_documents
         {
-            0 => Ok(v0::validate_temporary_disabled_contested_documents_v0(
+            0 => Ok(v0::validate_temporarily_disabled_contested_documents_v0(
                 self, block_info,
             )),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

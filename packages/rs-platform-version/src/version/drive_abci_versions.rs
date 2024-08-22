@@ -95,7 +95,7 @@ pub struct DriveAbciMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciValidationVersions {
-    pub validate_temporary_disabled_contested_documents: FeatureVersion,
+    pub validate_temporarily_disabled_contested_documents: FeatureVersion,
     pub state_transitions: DriveAbciStateTransitionValidationVersions,
     pub process_state_transition: FeatureVersion,
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,

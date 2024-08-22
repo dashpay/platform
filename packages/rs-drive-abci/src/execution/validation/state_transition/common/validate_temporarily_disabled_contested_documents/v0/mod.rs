@@ -10,7 +10,7 @@ use dpp::validation::ConsensusValidationResult;
 pub const TARGET_EPOCH_INDEX: EpochIndex = 2;
 
 #[inline(always)]
-pub fn validate_temporary_disabled_contested_documents_v0(
+pub fn validate_temporarily_disabled_contested_documents_v0(
     state_transition: &StateTransition,
     block_info: &BlockInfo,
 ) -> ConsensusValidationResult<()> {
