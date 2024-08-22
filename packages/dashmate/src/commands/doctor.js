@@ -3,11 +3,25 @@ import { Flags } from '@oclif/core';
 import { Listr } from 'listr2';
 import chalk from 'chalk';
 import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
-import fetchHTTP from '../util/fetchHTTP.js';
 import Report from '../doctor/report.js';
 import { DASHMATE_VERSION } from '../constants.js';
 import sanitizeConfig from '../config/sanitizeConfig.js';
 import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
+
+/**
+ *
+ * @param {string} url
+ * @return {Promise<string>}
+ */
+async function fetchTextOrError(url) {
+  try {
+    const response = await fetch(url);
+
+    return await response.text();
+  } catch (e) {
+    return e.toString();
+  }
+}
 
 export default class DoctorCommand extends ConfigBaseCommand {
   static description = 'Dashmate node diagnostic.  Bring your node to a doctor';
@@ -131,6 +145,13 @@ export default class DoctorCommand extends ConfigBaseCommand {
               port: config.get('platform.drive.tenderdash.rpc.port'),
             });
 
+            // Tenderdash requires to pass all params, so we use basic fetch
+            async function fetchValidators() {
+              const url = `http://${config.get('platform.drive.tenderdash.rpc.host')}:${config.get('platform.drive.tenderdash.rpc.port')}/validators?request_quorum_info=true`;
+              const response = await fetch(url, 'GET');
+              return response.json();
+            }
+
             const [
               status,
               genesis,
@@ -144,7 +165,7 @@ export default class DoctorCommand extends ConfigBaseCommand {
               tenderdashRPCClient.request('net_info', []),
               tenderdashRPCClient.request('abci_info', []),
               tenderdashRPCClient.request('dump_consensus_state', []),
-              fetchHTTP(`http://${config.get('platform.drive.tenderdash.rpc.host')}:${config.get('platform.drive.tenderdash.rpc.port')}/validators?request_quorum_info=true`, 'GET'),
+              fetchValidators(),
             ]);
 
             ctx.report.setServiceInfo('drive_tenderdash', 'status', status);
@@ -161,34 +182,35 @@ export default class DoctorCommand extends ConfigBaseCommand {
           task: async (ctx, task) => {
             if (config.get('platform.drive.tenderdash.metrics.enabled')) {
               // eslint-disable-next-line no-param-reassign
-              task.title = 'Reading Tenderdash metrics';
+              task.output = 'Reading Tenderdash metrics';
 
-              const metrics = (await Promise.allSettled([
-                fetchHTTP(`http://${config.get('platform.drive.tenderdash.rpc.host')}:${config.get('platform.drive.tenderdash.rpc.port')}/metrics`, 'GET')]))
-                .map((e) => e.value || e.reason);
+              const url = `http://${config.get('platform.drive.tenderdash.rpc.host')}:${config.get('platform.drive.tenderdash.rpc.port')}/metrics`;
 
-              ctx.report.setServiceInfo('drive_tenderdash', 'metrics', metrics);
+              const result = fetchTextOrError(url);
+
+              ctx.report.setServiceInfo('drive_tenderdash', 'metrics', result);
             }
 
             if (config.get('platform.drive.abci.metrics.enabled')) {
               // eslint-disable-next-line no-param-reassign
-              task.title = 'Reading Drive metrics';
+              task.output = 'Reading Drive metrics';
 
-              const metrics = (await Promise.allSettled([
-                fetchHTTP(`http://${config.get('platform.drive.abci.rpc.host')}:${config.get('platform.drive.abci.rpc.port')}/metrics`, 'GET')]))
-                .map((e) => e.value || e.reason);
+              const url = `http://${config.get('platform.drive.abci.rpc.host')}:${config.get('platform.drive.abci.rpc.port')}/metrics`;
 
-              ctx.report.setServiceInfo('drive_abci', 'metrics', metrics);
+              const result = fetchTextOrError(url);
+
+              ctx.report.setServiceInfo('drive_abci', 'metrics', result);
             }
 
             if (config.get('platform.gateway.metrics.enabled')) {
               // eslint-disable-next-line no-param-reassign
-              task.title = 'Reading Gateway metrics';
+              task.output = 'Reading Gateway metrics';
 
-              const metrics = (await Promise.allSettled([
-                fetchHTTP(`http://${config.get('platform.gateway.metrics.host')}:${config.get('platform.gateway.metrics.port')}/metrics`, 'GET')]))
-                .map((e) => e.value || e.reason);
-              ctx.report.setServiceInfo('gateway', 'metrics', metrics);
+              const url = `http://${config.get('platform.gateway.metrics.host')}:${config.get('platform.gateway.metrics.port')}/metrics`;
+
+              const result = fetchTextOrError(url);
+
+              ctx.report.setServiceInfo('gateway', 'metrics', result);
             }
           },
         },
