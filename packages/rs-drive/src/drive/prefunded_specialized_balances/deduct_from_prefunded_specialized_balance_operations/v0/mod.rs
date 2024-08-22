@@ -11,7 +11,7 @@ use crate::drive::prefunded_specialized_balances::{
 };
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::{GroveDbOp, KeyInfoPath};
+use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
@@ -60,7 +60,7 @@ impl Drive {
                 ),
             ))?;
         let path_holding_total_credits_vec = prefunded_specialized_balances_for_voting_path_vec();
-        let replace_op = GroveDbOp::replace_op(
+        let replace_op = QualifiedGroveDbOp::replace_op(
             path_holding_total_credits_vec,
             specialized_balance_id.to_vec(),
             Element::new_sum_item(new_total as i64),

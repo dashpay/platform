@@ -114,6 +114,22 @@ pub struct Strategy {
     pub signer: Option<SimpleSigner>,
 }
 
+impl Strategy {
+    pub fn max_document_operation_count_without_inserts(&self) -> u16 {
+        self.operations
+            .iter()
+            .filter(|operation| match &operation.op_type {
+                OperationType::Document(document_op) => match &document_op.action {
+                    DocumentAction::DocumentActionInsertRandom(_, _) => false,
+                    DocumentAction::DocumentActionInsertSpecific(_, _, _, _) => false,
+                    _ => true,
+                },
+                _ => false,
+            })
+            .count() as u16
+    }
+}
+
 /// Config stuff for a Strategy
 #[derive(Clone, Debug, PartialEq)]
 pub struct StrategyConfig {
@@ -719,6 +735,7 @@ impl Strategy {
                                             KeyType::ECDSA_SECP256K1,
                                             KeyType::BLS12_381,
                                         ]),
+                                        false,
                                     )
                                     .expect("expected to get a signing key");
 
@@ -847,6 +864,7 @@ impl Strategy {
                                             KeyType::ECDSA_SECP256K1,
                                             KeyType::BLS12_381,
                                         ]),
+                                        false,
                                     )
                                     .expect("expected to get a signing key");
 
@@ -931,6 +949,7 @@ impl Strategy {
                                     Purpose::AUTHENTICATION,
                                     HashSet::from([SecurityLevel::CRITICAL]),
                                     HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                                    false,
                                 )
                                 .expect("expected to get a signing key");
 
@@ -1385,6 +1404,7 @@ impl Strategy {
                                     Purpose::AUTHENTICATION,
                                     HashSet::from([SecurityLevel::HIGH, SecurityLevel::CRITICAL]),
                                     HashSet::from([KeyType::ECDSA_SECP256K1]),
+                                    false,
                                 )
                                 .expect("Expected to get identity public key in ContractCreate");
                             let mut state_transition =
@@ -1450,6 +1470,7 @@ impl Strategy {
                                                         Purpose::AUTHENTICATION,
                                                         HashSet::from([SecurityLevel::CRITICAL]),
                                                         HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                                                        false
                                                     )
                                                     .expect("expected to get a signing key with CRITICAL security level");
 
@@ -1638,6 +1659,7 @@ impl Strategy {
                     Purpose::AUTHENTICATION,
                     HashSet::from([SecurityLevel::HIGH, SecurityLevel::CRITICAL]),
                     HashSet::from([KeyType::ECDSA_SECP256K1]),
+                    false
                 )
                 .expect("Expected to get identity public key in initial_contract_state_transitions");
                 let key_id = identity_public_key.id();
