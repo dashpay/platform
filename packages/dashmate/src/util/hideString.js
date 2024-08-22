@@ -1,5 +1,5 @@
 export default function hideString(string) {
   return (typeof string === 'string'
-    ? Array.from(string).map(() => '*').join('')
+    ? '*'.repeat(string.length)
     : string);
 }
