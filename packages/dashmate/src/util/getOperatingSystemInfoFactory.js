@@ -1,6 +1,8 @@
 import si from 'systeminformation';
 import * as diskusage from 'diskusage';
 import os from 'os';
+import obfuscateObjectRecursive from './obfuscateObjectRecursive.js';
+import hideString from './hideString.js';
 
 export default function getOperatingSystemInfoFactory(
   docker,
@@ -20,9 +22,13 @@ export default function getOperatingSystemInfoFactory(
 
     // Get System Info
     try {
-      // TODO: Obfuscate home dir because it contains the username
-      //  /home/ivanshumkov/ -> /home/******/)
       result.dockerSystemInfo = await docker.info();
+
+      // hide user
+      obfuscateObjectRecursive(result.dockerSystemInfo, (field, value) => (typeof value === 'string' ? value.replaceAll(
+        process.env.USER,
+        hideString(process.env.USER),
+      ) : value));
     } catch (e) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
