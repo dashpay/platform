@@ -93,12 +93,12 @@ export default function verifySystemRequirementsTaskFactory(
 
           let message = '';
           if (ctx.isHP) {
-            message = `Dash Platform requires more resources than the current system provides.
+            message = chalk`Dash Platform requires more resources than the current system provides.
     Evonode rewards are paid based on block production, and resource-limited
     nodes may not be able to produce blocks quickly enough to receive reward
     payments. Upgrading system resources is recommended before proceeding.
 
-    ${chalk.bold('{This node may not receive Dash Platform reward payments due to its resource limitations.}')}`;
+    {bold This node may not receive Dash Platform reward payments due to its resource limitations.}`;
           } else {
             message = `Limited system resources may impact the performance of the node.
     The node might not provide required services to the network in time and will get PoSe banned.
