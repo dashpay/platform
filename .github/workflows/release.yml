@@ -33,36 +33,6 @@ jobs:
         env:
           TAG_PREFIX: v
 
-      - name: Set suffix
-        uses: actions/github-script@v6
-        id: suffix
-        with:
-          result-encoding: string
-          script: |
-            const fullTag = "${{ inputs.tag }}" || context.payload.release.tag_name;
-            if (fullTag.includes('-')) {
-              const [, fullSuffix] = fullTag.split('-');
-              const [suffix] = fullSuffix.split('.');
-              return suffix;
-            } else {
-              return '';
-            }
-
-      - name: Set NPM release tag
-        uses: actions/github-script@v6
-        id: tag
-        with:
-          result-encoding: string
-          script: |
-            const tag = "${{ inputs.tag }}" || context.payload.release.tag_name;
-            const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
-            return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
-
-      - name: Show NPM release tag
-        run: |
-          echo "NPM suffix: ${{ steps.suffix.outputs.result }}"
-          echo "NPM release tag: ${{ steps.tag.outputs.result }}"
-
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -108,6 +78,36 @@ jobs:
           SCCACHE_REGION: ${{ secrets.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/wasm/wasm32
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+
+      - name: Set suffix
+        uses: actions/github-script@v6
+        id: suffix
+        with:
+          result-encoding: string
+          script: |
+            const fullTag = "${{ inputs.tag }}" || context.payload.release.tag_name;
+            if (fullTag.includes('-')) {
+              const [, fullSuffix] = fullTag.split('-');
+              const [suffix] = fullSuffix.split('.');
+              return suffix;
+            } else {
+              return '';
+            }
+
+      - name: Set NPM release tag
+        uses: actions/github-script@v6
+        id: tag
+        with:
+          result-encoding: string
+          script: |
+            const tag = "${{ inputs.tag }}" || context.payload.release.tag_name;
+            const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
+            return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
+
+      - name: Show NPM release tag
+        run: |
+          echo "NPM suffix: ${{ steps.suffix.outputs.result }}"
+          echo "NPM release tag: ${{ steps.tag.outputs.result }}"
 
       - name: Configure NPM auth token
         run: yarn config set npmAuthToken ${{ secrets.NPM_TOKEN }}
