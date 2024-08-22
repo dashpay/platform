@@ -85,11 +85,10 @@ jobs:
         with:
           result-encoding: string
           script: |
-            const fullTag = context.payload.release.tag_name;
-            if (fullTag.includes('-')) {
-              const [, fullSuffix] = fullTag.split('-');
-              const [suffix] = fullSuffix.split('.');
-              return suffix;
+            const fullTag = "${{ inputs.tag }}" || context.payload.release.tag_name;
+            const firstMinusIndex = fullTag.indexOf('-');
+            if (firstMinusIndex !== -1) {
+              return fullTag.substring(firstMinusIndex);
             } else {
               return '';
             }
@@ -100,7 +99,7 @@ jobs:
         with:
           result-encoding: string
           script: |
-            const tag = inputs.tag || github.event.release.tag_name;
+            const tag = "${{ inputs.tag }}" || context.payload.release.tag_name;
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
             return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
 
@@ -108,7 +107,7 @@ jobs:
         run: yarn config set npmAuthToken ${{ secrets.NPM_TOKEN }}
 
       - name: Publish NPM packages
-        run: yarn workspaces foreach --all --no-private --parallel npm publish --access public --tag ${{ steps.tag.outputs.result }}
+        run: echo yarn workspaces foreach --all --no-private --parallel npm publish --access public --tag ${{ steps.tag.outputs.result }} ;exit 1
 
       - name: Ignore only already cached artifacts
         run: |
