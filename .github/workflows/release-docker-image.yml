@@ -60,7 +60,7 @@ jobs:
         with:
           image_name: ${{ inputs.image_name }}
           image_org: ${{ inputs.image_org }}
-          image_version: ${{ inputs.tag || github.event.release.tag_name }}
+          image_version: ${{ inputs.tag }}
           target: ${{ inputs.target }}
           platform: ${{ matrix.platform }}
           cargo_profile: ${{ inputs.cargo_profile }}
@@ -100,21 +100,13 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Get image version
-        uses: actions/github-script@v6
-        id: version
-        with:
-          result-encoding: string
-          script: |
-            return ( "${{ inputs.tag }}" ||  context.payload.release.tag_name );
-
       - name: Set suffix
         uses: actions/github-script@v6
         id: suffix
         with:
           result-encoding: string
           script: |
-            const fullTag = '${{ steps.version.outputs.result }}';
+            const fullTag = '${{ inputs.tag }}';
             const firstMinusIndex = fullTag.indexOf('-');
             if (firstMinusIndex !== -1) {
               return fullTag.substring(firstMinusIndex);
@@ -128,9 +120,9 @@ jobs:
         with:
           images: ${{ inputs.image_org }}/${{ inputs.image_name }}
           tags: |
-            type=semver,pattern={{version}},priority=950,value=${{ steps.version.outputs.result }},enable=${{ steps.version.outputs.result != '' }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.result }},enable=${{ steps.version.outputs.result != '' }}
-            type=semver,pattern={{major}},value=${{ steps.version.outputs.result }},enable=${{ steps.version.outputs.result != '' }}
+            type=semver,pattern={{version}},priority=950,value=${{ inputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag }}
+            type=semver,pattern={{major}},value=${{ inputs.tag }}
             type=ref,event=pr
           flavor: |
             latest=${{ github.event_name == 'release' && !github.event.release.prerelease && steps.suffix.outputs.result == '' }}
