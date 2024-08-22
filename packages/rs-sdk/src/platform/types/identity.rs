@@ -39,7 +39,7 @@ impl Query<IdentityRequest> for dpp::prelude::Identifier {
         Ok(IdentityRequest::GetIdentity(GetIdentityRequest {
             version: Some(get_identity_request::Version::V0(GetIdentityRequestV0 {
                 id,
-                prove: true,
+                prove,
             })),
         }))
     }
