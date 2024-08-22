@@ -40,9 +40,10 @@ jobs:
           result-encoding: string
           script: |
             const fullTag = "${{ inputs.tag }}" || context.payload.release.tag_name;
-            const firstMinusIndex = fullTag.indexOf('-');
-            if (firstMinusIndex !== -1) {
-              return fullTag.substring(firstMinusIndex);
+            if (fullTag.includes('-')) {
+              const [, fullSuffix] = fullTag.split('-');
+              const [suffix] = fullSuffix.split('.');
+              return suffix;
             } else {
               return '';
             }
@@ -56,6 +57,11 @@ jobs:
             const tag = "${{ inputs.tag }}" || context.payload.release.tag_name;
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
             return (tag.includes('-') ? `${major}.${minor}${{steps.suffix.outputs.result}}` : 'latest');
+
+      - name: Show NPM release tag
+        run: |
+          echo "NPM suffix: ${{ steps.suffix.outputs.result }}"
+          echo "NPM release tag: ${{ steps.tag.outputs.result }}"
 
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
