@@ -269,7 +269,7 @@ export default class DoctorCommand extends ConfigBaseCommand {
             await ctx.report.archive(archivePath);
 
             // eslint-disable-next-line no-param-reassign
-            task.output = chalk`Saved to {bold.cyanBright ${archivePath}/dashmate-report-${ctx.report.date.toISOString()}.tar}`;
+            task.output = chalk`Saved to {bold.cyanBright ${archivePath}/dashmate-report-${ctx.report.date.toISOString()}.tar.gz}`;
           },
           options: {
             persistentOutput: true,
