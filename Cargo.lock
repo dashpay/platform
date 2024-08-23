@@ -2076,7 +2076,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#8fbc18402c9e4ff0a571d1f8e55cfc35a5011a96"
+source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#540d120d1bacaf80797c56a0896ac6f57e7f05ec"
 dependencies = [
  "axum 0.7.5",
  "bincode",
@@ -2109,7 +2109,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#8fbc18402c9e4ff0a571d1f8e55cfc35a5011a96"
+source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#540d120d1bacaf80797c56a0896ac6f57e7f05ec"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2119,7 +2119,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#8fbc18402c9e4ff0a571d1f8e55cfc35a5011a96"
+source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#540d120d1bacaf80797c56a0896ac6f57e7f05ec"
 dependencies = [
  "bincode",
  "blake3",
@@ -2144,12 +2144,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#8fbc18402c9e4ff0a571d1f8e55cfc35a5011a96"
+source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#540d120d1bacaf80797c56a0896ac6f57e7f05ec"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#8fbc18402c9e4ff0a571d1f8e55cfc35a5011a96"
+source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#540d120d1bacaf80797c56a0896ac6f57e7f05ec"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2168,7 +2168,7 @@ dependencies = [
 [[package]]
 name = "grovedb-version"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#8fbc18402c9e4ff0a571d1f8e55cfc35a5011a96"
+source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#540d120d1bacaf80797c56a0896ac6f57e7f05ec"
 dependencies = [
  "thiserror",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2177,7 +2177,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#8fbc18402c9e4ff0a571d1f8e55cfc35a5011a96"
+source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#540d120d1bacaf80797c56a0896ac6f57e7f05ec"
 dependencies = [
  "hex",
  "itertools 0.12.1",
@@ -2186,7 +2186,7 @@ dependencies = [
 [[package]]
 name = "grovedbg-types"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#8fbc18402c9e4ff0a571d1f8e55cfc35a5011a96"
+source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#540d120d1bacaf80797c56a0896ac6f57e7f05ec"
 dependencies = [
  "serde",
  "serde_with 3.9.0",
@@ -3907,9 +3907,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.36"
+version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fa76aaf39101c457836aec0ce2316dbdc3ab723cdda1c6bd4e6ad4208acaca7"
+checksum = "b5b9d34b8991d19d98081b46eacdd8eb58c6f2b201139f7c5f643cc155a633af"
 dependencies = [
  "proc-macro2",
 ]
@@ -4912,9 +4912,9 @@ dependencies = [
 
 [[package]]
 name = "system-configuration"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "658bc6ee10a9b4fcf576e9b0819d95ec16f4d2c02d39fd83ac1c8789785c4a42"
+checksum = "3c879d448e9d986b661742763247d3693ed13609438cf3d006f51f5368a5ba6b"
 dependencies = [
  "bitflags 2.6.0",
  "core-foundation",
