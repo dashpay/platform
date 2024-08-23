@@ -8,7 +8,6 @@ mod refund_tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-    use bs58;
     use dpp::block::block_info::BlockInfo;
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;

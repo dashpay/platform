@@ -2,6 +2,8 @@
 //!
 
 pub mod error;
+mod split_removal_bytes;
+mod update_element_flags;
 
 use crate::error::StorageFlagsError;
 
@@ -136,7 +138,7 @@ impl StorageFlags {
                     match merging_owners_strategy {
                         MergingOwnersStrategy::RaiseIssue => {
                             Err(StorageFlagsError::MergingStorageFlagsFromDifferentOwners(
-                                "can not merge from different owners",
+                                "can not merge from different owners".to_string(),
                             ))
                         }
                         MergingOwnersStrategy::UseOurs => Ok(Some(our_owner_id)),
@@ -246,13 +248,13 @@ impl StorageFlags {
         if let SectionedStorageRemoval(sectioned_bytes_by_identifier) = removed_bytes {
             if sectioned_bytes_by_identifier.len() > 1 {
                 return Err(StorageFlagsError::MergingStorageFlagsFromDifferentOwners(
-                    "can not remove bytes when there is no epoch",
+                    "can not remove bytes when there is no epoch".to_string(),
                 ));
             }
             let identifier = owner_id.copied().unwrap_or_default();
             let sectioned_bytes = sectioned_bytes_by_identifier.get(&identifier).ok_or(
                 StorageFlagsError::MergingStorageFlagsFromDifferentOwners(
-                    "can not remove bytes when there is no epoch",
+                    "can not remove bytes when there is no epoch".to_string(),
                 ),
             )?;
             sectioned_bytes
@@ -260,13 +262,13 @@ impl StorageFlags {
                 .try_for_each(|(epoch, removed_bytes)| {
                     let bytes_added_in_epoch = other_epoch_bytes.get_mut(&(*epoch as u16)).ok_or(
                         StorageFlagsError::RemovingAtEpochWithNoAssociatedStorage(
-                            "can not remove bytes when there is no epoch",
+                            "can not remove bytes when there is no epoch".to_string(),
                         ),
                     )?;
                     *bytes_added_in_epoch = bytes_added_in_epoch
                         .checked_sub(*removed_bytes)
                         .ok_or(StorageFlagsError::StorageFlagsOverflow(
-                            "can't remove more bytes than exist at that epoch",
+                            "can't remove more bytes than exist at that epoch".to_string(),
                         ))?;
                     Ok::<(), StorageFlagsError>(())
                 })?;
@@ -328,7 +330,7 @@ impl StorageFlags {
             }
             Ordering::Greater => Err(
                 StorageFlagsError::MergingStorageFlagsWithDifferentBaseEpoch(
-                    "can not merge with new item in older base epoch",
+                    "can not merge with new item in older base epoch".to_string(),
                 ),
             ),
         }
@@ -350,7 +352,7 @@ impl StorageFlags {
             ),
             Ordering::Greater => Err(
                 StorageFlagsError::MergingStorageFlagsWithDifferentBaseEpoch(
-                    "can not merge with new item in older base epoch",
+                    "can not merge with new item in older base epoch".to_string(),
                 ),
             ),
         }
@@ -501,11 +503,13 @@ impl StorageFlags {
     pub fn deserialize_single_epoch(data: &[u8]) -> Result<Self, StorageFlagsError> {
         if data.len() != 3 {
             Err(StorageFlagsError::StorageFlagsWrongSize(
-                "single epoch must be 3 bytes total",
+                "single epoch must be 3 bytes total".to_string(),
             ))
         } else {
             let epoch = u16::from_be_bytes(data[1..3].try_into().map_err(|_| {
-                StorageFlagsError::StorageFlagsWrongSize("single epoch must be 3 bytes total")
+                StorageFlagsError::StorageFlagsWrongSize(
+                    "single epoch must be 3 bytes total".to_string(),
+                )
             })?);
             Ok(SingleEpoch(epoch))
         }
@@ -516,12 +520,12 @@ impl StorageFlags {
         let len = data.len();
         if len < 6 {
             Err(StorageFlagsError::StorageFlagsWrongSize(
-                "multi epoch must be at least 6 bytes total",
+                "multi epoch must be at least 6 bytes total".to_string(),
             ))
         } else {
             let base_epoch = u16::from_be_bytes(data[1..3].try_into().map_err(|_| {
                 StorageFlagsError::StorageFlagsWrongSize(
-                    "multi epoch must have enough bytes for the base epoch",
+                    "multi epoch must have enough bytes for the base epoch".to_string(),
                 )
             })?);
             let mut offset = 3;
@@ -531,13 +535,14 @@ impl StorageFlags {
                 let epoch_index =
                     u16::from_be_bytes(data[offset..offset + 2].try_into().map_err(|_| {
                         StorageFlagsError::StorageFlagsWrongSize(
-                            "multi epoch must have enough bytes epoch indexes",
+                            "multi epoch must have enough bytes epoch indexes".to_string(),
                         )
                     })?);
                 offset += 2;
                 let (bytes_at_epoch, bytes_used) = u32::decode_var(&data[offset..]).ok_or(
                     StorageFlagsError::StorageFlagsWrongSize(
-                        "multi epoch must have enough bytes for the amount of bytes used",
+                        "multi epoch must have enough bytes for the amount of bytes used"
+                            .to_string(),
                     ),
                 )?;
                 offset += bytes_used;
@@ -551,17 +556,17 @@ impl StorageFlags {
     pub fn deserialize_single_epoch_owned(data: &[u8]) -> Result<Self, StorageFlagsError> {
         if data.len() != 35 {
             Err(StorageFlagsError::StorageFlagsWrongSize(
-                "single epoch owned must be 35 bytes total",
+                "single epoch owned must be 35 bytes total".to_string(),
             ))
         } else {
             let owner_id: OwnerId = data[1..33].try_into().map_err(|_| {
                 StorageFlagsError::StorageFlagsWrongSize(
-                    "single epoch owned must be 35 bytes total for owner id",
+                    "single epoch owned must be 35 bytes total for owner id".to_string(),
                 )
             })?;
             let epoch = u16::from_be_bytes(data[33..35].try_into().map_err(|_| {
                 StorageFlagsError::StorageFlagsWrongSize(
-                    "single epoch owned must be 35 bytes total for epoch",
+                    "single epoch owned must be 35 bytes total for epoch".to_string(),
                 )
             })?);
             Ok(SingleEpochOwned(epoch, owner_id))
@@ -573,17 +578,17 @@ impl StorageFlags {
         let len = data.len();
         if len < 38 {
             Err(StorageFlagsError::StorageFlagsWrongSize(
-                "multi epoch owned must be at least 38 bytes total",
+                "multi epoch owned must be at least 38 bytes total".to_string(),
             ))
         } else {
             let owner_id: OwnerId = data[1..33].try_into().map_err(|_| {
                 StorageFlagsError::StorageFlagsWrongSize(
-                    "multi epoch owned must be 38 bytes total for owner id",
+                    "multi epoch owned must be 38 bytes total for owner id".to_string(),
                 )
             })?;
             let base_epoch = u16::from_be_bytes(data[33..35].try_into().map_err(|_| {
                 StorageFlagsError::StorageFlagsWrongSize(
-                    "multi epoch must have enough bytes for the base epoch",
+                    "multi epoch must have enough bytes for the base epoch".to_string(),
                 )
             })?);
             let mut offset = 35;
@@ -593,13 +598,14 @@ impl StorageFlags {
                 let epoch_index =
                     u16::from_be_bytes(data[offset..offset + 2].try_into().map_err(|_| {
                         StorageFlagsError::StorageFlagsWrongSize(
-                            "multi epoch must have enough bytes epoch indexes",
+                            "multi epoch must have enough bytes epoch indexes".to_string(),
                         )
                     })?);
                 offset += 2;
                 let (bytes_at_epoch, bytes_used) = u32::decode_var(&data[offset..]).ok_or(
                     StorageFlagsError::StorageFlagsWrongSize(
-                        "multi epoch must have enough bytes for the amount of bytes used",
+                        "multi epoch must have enough bytes for the amount of bytes used"
+                            .to_string(),
                     ),
                 )?;
                 offset += bytes_used;
@@ -620,7 +626,7 @@ impl StorageFlags {
                 2 => Ok(Some(Self::deserialize_single_epoch_owned(data)?)),
                 3 => Ok(Some(Self::deserialize_multi_epoch_owned(data)?)),
                 _ => Err(StorageFlagsError::DeserializeUnknownStorageFlagsType(
-                    "unknown storage flags serialization",
+                    "unknown storage flags serialization".to_string(),
                 )),
             },
         }
