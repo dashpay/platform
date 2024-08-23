@@ -55,6 +55,7 @@ platform-version = { path = "../rs-platform-version" }
 platform-versioning = { path = "../rs-platform-versioning" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
+derive_more = { version = "1.0", features = ["from", "display"] }
 ed25519-dalek = { version = "2.1", features = ["rand_core"], optional = true }
 nohash-hasher = "0.2.0"
 rust_decimal = "1.29.1"

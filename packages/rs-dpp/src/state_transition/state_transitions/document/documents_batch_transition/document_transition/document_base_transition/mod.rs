@@ -37,7 +37,7 @@ use std::collections::BTreeMap;
     derive(Serialize, Deserialize)
 )]
 pub enum DocumentBaseTransition {
-    #[display(fmt = "V0({})", "_0")]
+    #[display("V0({})", "_0")]
     V0(DocumentBaseTransitionV0),
 }
 

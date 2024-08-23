@@ -14,6 +14,6 @@ pub use v0::*;
     derive(Serialize, Deserialize)
 )]
 pub enum DocumentPurchaseTransition {
-    #[display(fmt = "V0({})", "_0")]
+    #[display( "V0({})", "_0")]
     V0(DocumentPurchaseTransitionV0),
 }
