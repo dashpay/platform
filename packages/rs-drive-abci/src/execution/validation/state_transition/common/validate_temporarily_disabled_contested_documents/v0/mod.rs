@@ -3,11 +3,10 @@ use dpp::block::epoch::EpochIndex;
 use dpp::consensus::basic::document::ContestedDocumentsTemporarilyNotAllowedError;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use dpp::state_transition::StateTransition;
 use dpp::validation::ConsensusValidationResult;
 
-pub const TARGET_EPOCH_INDEX: EpochIndex = 2;
+pub const TARGET_EPOCH_INDEX: EpochIndex = 3;
 
 #[inline(always)]
 pub fn validate_temporarily_disabled_contested_documents_v0(
@@ -32,7 +31,7 @@ pub fn validate_temporarily_disabled_contested_documents_v0(
                     block_info.epoch.index,
                     TARGET_EPOCH_INDEX,
                 )
-                .into(),
+                    .into(),
             ]);
         }
     }

@@ -72,7 +72,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -213,7 +213,7 @@ mod tests {
             ChainExecutionParameters {
                 block_start,
                 core_height_start: 1,
-                block_count: 2,
+                block_count: 3,
                 proposers,
                 validator_quorums,
                 current_validator_quorum_hash,
@@ -233,7 +233,7 @@ mod tests {
 
         let platform_state = abci_app.platform.state.load();
 
-        assert_eq!(platform_state.last_committed_block_epoch().index, 3);
+        assert_eq!(platform_state.last_committed_block_epoch().index, 4);
 
         // Insert successfully contested document
 
@@ -297,14 +297,12 @@ mod tests {
             StrategyRandomness::SeedEntropy(7),
         );
 
-        dbg!(&state_transition_results_per_block);
-
-        let state_transitions_block_5 = state_transition_results_per_block
-            .get(&5)
-            .expect("expected to get block 5");
+        let state_transitions_block_6 = state_transition_results_per_block
+            .get(&6)
+            .expect("expected to get block 6");
 
         // Document transaction was rejected
-        assert_eq!(state_transitions_block_5.len(), 1);
+        assert_eq!(state_transitions_block_6.len(), 1);
     }
 
     #[test]
@@ -340,7 +338,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -350,7 +348,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys2);
 
@@ -408,7 +406,7 @@ mod tests {
                             "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
-                        .into(),
+                            .into(),
                     ),
                 ]),
                 Some(start_identities.last().unwrap().0.id()),
@@ -611,7 +609,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -621,7 +619,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys2);
 
@@ -679,7 +677,7 @@ mod tests {
                             "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
-                        .into(),
+                            .into(),
                     ),
                 ]),
                 Some(start_identities.last().unwrap().0.id()),
@@ -963,7 +961,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -973,7 +971,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys2);
 
@@ -1031,7 +1029,7 @@ mod tests {
                             "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
-                        .into(),
+                            .into(),
                     ),
                 ]),
                 Some(start_identities.last().unwrap().0.id()),
@@ -1327,7 +1325,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -1337,7 +1335,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys2);
 
@@ -1395,7 +1393,7 @@ mod tests {
                             "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
-                        .into(),
+                            .into(),
                     ),
                 ]),
                 Some(start_identities.last().unwrap().0.id()),
