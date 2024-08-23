@@ -18,7 +18,7 @@ drive-storage-flags = { path = "../rs-drive-storage-flags" }
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 platform-version = { path = "../rs-platform-version" }
 # used to convert integers to bytes, needed in verifier
-integer-encoding = { version = "4.0.2" }
+integer-encoding = { version = "4.0.0" }
 # used for encoding, needed in verifier
 byteorder = { version = "1.4.3" }
 # used for query order by, needed in verifier
