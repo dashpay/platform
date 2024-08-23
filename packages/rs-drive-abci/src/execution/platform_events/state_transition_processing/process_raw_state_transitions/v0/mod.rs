@@ -19,7 +19,6 @@ use crate::platform_types::state_transitions_processing_result::{
     NotExecutedReason, StateTransitionExecutionResult, StateTransitionsProcessingResult,
 };
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use dpp::prelude::TimestampMillis;
 use dpp::util::hash::hash_single;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -83,10 +82,16 @@ where
         let mut processing_result = StateTransitionsProcessingResult::default();
 
         for decoded_state_transition in state_transition_container.into_iter() {
+            // If we propose state transitions, we need to check if we have a time limit for processing
+            // set and if we have exceeded it.
             let execution_result = if proposing_state_transitions
                 && timer.map_or(false, |timer| {
-                    timer.elapsed().as_millis() as TimestampMillis
-                        > self.config.abci.tx_processing_time_limit
+                    timer.elapsed().as_millis()
+                        > self
+                            .config
+                            .abci
+                            .proposer_tx_processing_time_limit
+                            .unwrap_or(u16::MAX) as u128
                 }) {
                 StateTransitionExecutionResult::NotExecuted(NotExecutedReason::ProposerRanOutOfTime)
             } else {

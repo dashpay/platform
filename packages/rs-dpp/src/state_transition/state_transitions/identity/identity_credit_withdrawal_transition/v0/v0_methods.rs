@@ -56,6 +56,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
                     Purpose::TRANSFER,
                     SecurityLevel::full_range().into(),
                     KeyType::all_key_types().into(),
+                    true,
                 )
                 .ok_or_else(|| {
                     ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(

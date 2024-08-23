@@ -7,7 +7,7 @@ use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
 use crate::util::grove_operations::push_drive_operation_result;
 use crate::util::storage_flags::{MergingOwnersStrategy, StorageFlags};
-use grovedb::batch::{BatchApplyOptions, GroveDbOp, OpsByLevelPath};
+use grovedb::batch::{BatchApplyOptions, OpsByLevelPath, QualifiedGroveDbOp};
 use grovedb::TransactionArg;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
 use grovedb_costs::storage_cost::transition::OperationStorageTransitionType;
@@ -24,7 +24,7 @@ impl Drive {
         add_on_operations: impl FnMut(
             &OperationCost,
             &Option<OpsByLevelPath>,
-        ) -> Result<Vec<GroveDbOp>, GroveError>,
+        ) -> Result<Vec<QualifiedGroveDbOp>, GroveError>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -35,7 +35,8 @@ impl Drive {
         }
         // println!("batch {:#?}", ops);
         if self.config.batching_consistency_verification {
-            let consistency_results = GroveDbOp::verify_consistency_of_operations(&ops.operations);
+            let consistency_results =
+                QualifiedGroveDbOp::verify_consistency_of_operations(&ops.operations);
             if !consistency_results.is_empty() {
                 // println!("consistency_results {:#?}", consistency_results);
                 return Err(Error::Drive(DriveError::GroveDBInsertion(
