@@ -113,7 +113,7 @@ export default class DoctorCommand extends ConfigBaseCommand {
 
             const coreCalls = [
               rpcClient.getBestChainLock(),
-              rpcClient.quorum('list'),
+              rpcClient.quorum('listextended'),
               rpcClient.getBlockchainInfo(),
               rpcClient.getPeerInfo(),
             ];
