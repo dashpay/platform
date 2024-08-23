@@ -42,7 +42,7 @@ pub fn validate_allowance_v0<C>(
                 block_info.epoch.index,
                 TARGET_EPOCH_INDEX,
             )
-                .into(),
+            .into(),
         ]);
     }
 
