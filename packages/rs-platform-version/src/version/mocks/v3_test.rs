@@ -699,7 +699,6 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             },
         },
         validation_and_processing: DriveAbciValidationVersions {
-            validate_temporarily_disabled_contested_documents: 0,
             state_transitions: DriveAbciStateTransitionValidationVersions {
                 common_validation_methods: DriveAbciStateTransitionCommonValidationVersions {
                     asset_locks: DriveAbciAssetLockValidationVersions {
@@ -809,6 +808,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                             reject_data_trigger: 0,
                         },
                     },
+                    allowance: 0,
                     document_create_transition_structure_validation: 0,
                     document_delete_transition_structure_validation: 0,
                     document_replace_transition_structure_validation: 0,

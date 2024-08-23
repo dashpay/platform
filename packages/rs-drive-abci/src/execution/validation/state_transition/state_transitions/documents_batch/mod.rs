@@ -1,5 +1,6 @@
 mod action_validation;
 mod advanced_structure;
+mod allowance;
 mod balance;
 mod data_triggers;
 mod identity_contract_nonce;

@@ -24,7 +24,6 @@ use drive::state_transition_action::StateTransitionAction;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
 use crate::execution::validation::state_transition::common::validate_simple_pre_check_balance::ValidateSimplePreCheckBalance;
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
-use crate::execution::validation::state_transition::common::validate_temporarily_disabled_contested_documents::ValidateTemporarilyDisabledContestedDocuments;
 use crate::execution::validation::state_transition::identity_create::{StateTransitionStateValidationForIdentityCreateTransitionV0, StateTransitionStructureKnownInStateValidationForIdentityCreateTransitionV0};
 use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
 use crate::execution::validation::state_transition::state_transitions::identity_update::advanced_structure::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
@@ -40,31 +39,8 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
-    // Disable contested document create transitions for the first 2 epochs
-    // We doing it very top of state transition validation logic to avoid any unnecessary expenses
-    // for a state transition owner.
-    #[cfg(feature = "testing-config")]
-    if !platform
-        .config
-        .testing_configs
-        .disable_temporarily_disabled_contested_documents_validation
-    {
-        let result = state_transition.validate_temporarily_disabled_contested_documents(
-            platform.state.last_block_info(),
-            platform_version,
-        )?;
-
-        if !result.is_valid() {
-            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
-        }
-    }
-
-    #[cfg(not(feature = "testing-config"))]
-    {
-        let result = state_transition.validate_temporarily_disabled_contested_documents(
-            platform.state.last_block_info(),
-            platform_version,
-        )?;
+    if state_transition.has_allowance_validation(platform_version)? {
+        let result = state_transition.validate_allowance(platform, platform_version)?;
 
         if !result.is_valid() {
             return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
@@ -280,6 +256,18 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
             platform_version,
         )
     })
+}
+
+/// A trait for validating state transitions within a blockchain.
+pub(crate) trait StateTransitionAllowanceValidationV0 {
+    /// This means we should validate allowance
+    fn has_allowance_validation(&self, platform_version: &PlatformVersion) -> Result<bool, Error>;
+    /// Preliminary validation for a state transition
+    fn validate_allowance<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<()>, Error>;
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -1000,6 +988,37 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 execution_context,
                 tx,
             ),
+        }
+    }
+}
+
+impl StateTransitionAllowanceValidationV0 for StateTransition {
+    fn has_allowance_validation(&self, platform_version: &PlatformVersion) -> Result<bool, Error> {
+        match self {
+            StateTransition::DocumentsBatch(st) => st.has_allowance_validation(platform_version),
+            StateTransition::DataContractCreate(_)
+            | StateTransition::DataContractUpdate(_)
+            | StateTransition::IdentityCreate(_)
+            | StateTransition::IdentityTopUp(_)
+            | StateTransition::IdentityCreditWithdrawal(_)
+            | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityCreditTransfer(_)
+            | StateTransition::MasternodeVote(_) => Ok(false),
+        }
+    }
+
+    fn validate_allowance<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<()>, Error> {
+        match self {
+            StateTransition::DocumentsBatch(st) => {
+                st.validate_allowance(platform, platform_version)
+            }
+            _ => Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "validate_allowance is not implemented for this state transition",
+            ))),
         }
     }
 }

@@ -15,8 +15,7 @@ use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
-use crate::execution::validation::state_transition::common::validate_temporarily_disabled_contested_documents::ValidateTemporarilyDisabledContestedDocuments;
-use crate::execution::validation::state_transition::processor::v0::{StateTransitionIdentityBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0};
+use crate::execution::validation::state_transition::processor::v0::{StateTransitionIdentityBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0, StateTransitionAllowanceValidationV0};
 use crate::execution::validation::state_transition::ValidationMode;
 
 pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPCLike>(
@@ -33,35 +32,8 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     #[allow(unreachable_patterns)]
     match check_tx_level {
         CheckTxLevel::FirstTimeCheck => {
-            // Disable contested document create transitions for the first 2 epochs
-            // We doing it very top of state transition validation logic to avoid any unnecessary expenses
-            // for a state transition owner.
-            #[cfg(feature = "testing-config")]
-            if !platform
-                .config
-                .testing_configs
-                .disable_temporarily_disabled_contested_documents_validation
-            {
-                let result = state_transition.validate_temporarily_disabled_contested_documents(
-                    platform.state.last_block_info(),
-                    platform_version,
-                )?;
-
-                if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
-                }
-            }
-
-            #[cfg(not(feature = "testing-config"))]
-            {
-                let result = state_transition.validate_temporarily_disabled_contested_documents(
-                    platform.state.last_block_info(),
-                    platform_version,
-                )?;
+            if state_transition.has_allowance_validation(platform_version)? {
+                let result = state_transition.validate_allowance(platform, platform_version)?;
 
                 if !result.is_valid() {
                     return Ok(
