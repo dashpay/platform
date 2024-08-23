@@ -30,7 +30,7 @@
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
 ARG ALPINE_VERSION=3.18
-ARG PROTOC_VERSION=25.2
+ARG PROTOC_VERSION=27.3
 ARG RUSTC_WRAPPER
 
 #
