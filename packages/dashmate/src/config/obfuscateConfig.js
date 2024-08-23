@@ -12,6 +12,8 @@ export default function obfuscateConfig(
 
   // sanitize [password, apiKey, privateKey, externalIp] fields in the dashmate config
   obfuscateObjectRecursive(cloned, (field, value) => (typeof value === 'string' && field === 'password' ? hideString(value) : value));
+  obfuscateObjectRecursive(cloned, (field, value) => (typeof value === 'string' && field === 'id' ? hideString(value) : value));
+  obfuscateObjectRecursive(cloned, (field, value) => (typeof value === 'string' && field === 'key' ? hideString(value) : value));
   obfuscateObjectRecursive(cloned, (field, value) => (typeof value === 'string' && field === 'apiKey' ? hideString(value) : value));
   obfuscateObjectRecursive(cloned, (field, value) => (typeof value === 'string' && field === 'privateKey' ? hideString(value) : value));
   obfuscateObjectRecursive(cloned, (field, value) => (typeof value === 'string' && field === 'externalIp' ? hideString(value) : value));
