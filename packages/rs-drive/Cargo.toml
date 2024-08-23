@@ -40,9 +40,10 @@ ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-nul
 arc-swap = { version = "1.7.0", optional = true }
 serde = { version = "1.0.197", features = ["derive"], optional = true }
 rand = { version = "0.8.4", features = ["small_rng"], optional = true }
-moka = { version = "0.11.1", features = [
+moka = { version = "0.12", features = [
   "future",
   "futures-util",
+  "sync",
 ], optional = true }
 bs58 = { version = "0.5.0", optional = true }
 base64 = { version = "0.22.1", optional = true }
@@ -50,7 +51,7 @@ tempfile = { version = "3", optional = true }
 enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "2.0.0", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
-itertools = { version = "0.11.0", optional = true }
+itertools = { version = "0.13", optional = true }
 grovedb = { git = "https://github.com/dashpay/grovedb", rev = "2c14841e95b4222d489f0655c85238bc05267b91", optional = true, default-features = false }
 grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "2c14841e95b4222d489f0655c85238bc05267b91", optional = true }
 grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "2c14841e95b4222d489f0655c85238bc05267b91" }
@@ -58,7 +59,7 @@ grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "2c14841e9
 grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "2c14841e95b4222d489f0655c85238bc05267b91" }
 
 [dev-dependencies]
-criterion = "0.3.5"
+criterion = "0.5"
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
