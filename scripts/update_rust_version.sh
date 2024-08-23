@@ -1,7 +1,7 @@
 #! /bin/bash -e
 
 # This script updates the rust version to the one provided in the first argument.
-# Requires `yq` to be installed: https://github.com/mikefarah/yq
+
 PROJECT_ROOT="$(realpath "$(dirname "$0")"/..)"
 
 # Check if the first argument is provided
