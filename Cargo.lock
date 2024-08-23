@@ -749,9 +749,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.1.13"
+version = "1.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72db2f7947ecee9b03b510377e8bb9077afa27176fdbff55c51027e976fdcc48"
+checksum = "50d2eb3cd3d1bf4529e31c215ee6f93ec5a3d536d9f578f93d9d33ee19562932"
 dependencies = [
  "jobserver",
  "libc",
@@ -1511,7 +1511,7 @@ dependencies = [
  "drive-storage-flags",
  "enum-map",
  "grovedb",
- "grovedb-costs",
+ "grovedb-costs 1.0.0 (git+https://github.com/dashpay/grovedb?branch=fix/JITfix)",
  "grovedb-path",
  "grovedb-storage",
  "grovedb-version",
@@ -1614,7 +1614,7 @@ dependencies = [
 name = "drive-storage-flags"
 version = "1.1.0-dev.1"
 dependencies = [
- "grovedb-costs",
+ "grovedb-costs 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "hex",
  "integer-encoding",
  "intmap",
@@ -2083,7 +2083,7 @@ dependencies = [
  "bitvec",
  "blake3",
  "derive_more",
- "grovedb-costs",
+ "grovedb-costs 1.0.0 (git+https://github.com/dashpay/grovedb?branch=fix/JITfix)",
  "grovedb-merk",
  "grovedb-path",
  "grovedb-storage",
@@ -2109,6 +2109,17 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63a4e637e5034ab3a9ad0c3b062725296bbab5fc3390939113079832922c4f6f"
+dependencies = [
+ "integer-encoding",
+ "intmap",
+ "thiserror",
+]
+
+[[package]]
+name = "grovedb-costs"
+version = "1.0.0"
 source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#34ee8204dcd84eee789037f34c19b8b9d84c1ab5"
 dependencies = [
  "integer-encoding",
@@ -2127,7 +2138,7 @@ dependencies = [
  "colored",
  "ed",
  "failure",
- "grovedb-costs",
+ "grovedb-costs 1.0.0 (git+https://github.com/dashpay/grovedb?branch=fix/JITfix)",
  "grovedb-path",
  "grovedb-storage",
  "grovedb-version",
@@ -2152,7 +2163,7 @@ version = "1.0.0"
 source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#34ee8204dcd84eee789037f34c19b8b9d84c1ab5"
 dependencies = [
  "blake3",
- "grovedb-costs",
+ "grovedb-costs 1.0.0 (git+https://github.com/dashpay/grovedb?branch=fix/JITfix)",
  "grovedb-path",
  "grovedb-visualize",
  "hex",
