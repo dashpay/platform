@@ -57,7 +57,7 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
                 },
                 {
                   id: '4cb4a8488eb1dbabda7fb79e47ac3c14eec73c4f',
-                  host: '188.166.140.47',
+                  host: '152.42.151.147',
                   port: 26656,
                 },
               ],
@@ -67,10 +67,17 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
               txEnqueueTimeout: '30ms',
               txSendRateLimit: 100,
               txRecvRateLimit: 120,
+              ttlDuration: '24h',
+              ttlNumBlocks: 0,
             },
             genesis: {
               chain_id: 'dash-1',
               validator_quorum_type: 4,
+            },
+          },
+          abci: {
+            proposer: {
+              txProcessingTimeLimit: 5000,
             },
           },
         },

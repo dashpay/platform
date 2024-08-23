@@ -29,6 +29,9 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::DataContract;
 
+    use crate::config::PlatformConfig;
+    use dpp::dashcore::Network;
+    use dpp::prelude::{CoreBlockHeight, TimestampMillis};
     use drive::util::batch::DataContractOperationType;
     use drive::util::batch::DriveOperation::DataContractOperation;
     use platform_version::version::PlatformVersion;
@@ -36,18 +39,21 @@ mod tests {
     use std::sync::Arc;
 
     pub fn setup_platform<'a>(
-        with_genesis_state: bool,
+        with_genesis_state: Option<(TimestampMillis, CoreBlockHeight)>,
+        network: Network,
     ) -> (
         TempPlatform<MockCoreRPCLike>,
         Arc<PlatformState>,
         &'a PlatformVersion,
     ) {
-        let platform = if with_genesis_state {
+        let platform = if let Some((timestamp, activation_core_block_height)) = with_genesis_state {
             TestPlatformBuilder::new()
+                .with_config(PlatformConfig::default_for_network(network))
                 .build_with_mock_rpc()
-                .set_genesis_state()
+                .set_genesis_state_with_activation_info(timestamp, activation_core_block_height)
         } else {
             TestPlatformBuilder::new()
+                .with_config(PlatformConfig::default_for_network(network))
                 .build_with_mock_rpc()
                 .set_initial_state_structure()
         };

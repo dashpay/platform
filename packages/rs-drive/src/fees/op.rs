@@ -9,7 +9,7 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::element::MaxReferenceHop;
 use grovedb::reference_path::ReferencePathType;
-use grovedb::{batch::GroveDbOp, Element, ElementFlags};
+use grovedb::{batch::QualifiedGroveDbOp, Element, ElementFlags};
 use grovedb_costs::OperationCost;
 use itertools::Itertools;
 
@@ -198,7 +198,7 @@ impl FunctionOp {
 #[derive(Debug, Eq, PartialEq)]
 pub enum LowLevelDriveOperation {
     /// Grove operation
-    GroveOperation(GroveDbOp),
+    GroveOperation(QualifiedGroveDbOp),
     /// A drive operation
     FunctionOperation(FunctionOp),
     /// Calculated cost operation
@@ -337,10 +337,10 @@ impl LowLevelDriveOperation {
         )
     }
 
-    /// Filters the groveDB ops from a list of operations and collects them in a `Vec<GroveDbOp>`.
+    /// Filters the groveDB ops from a list of operations and collects them in a `Vec<QualifiedGroveDbOp>`.
     pub fn grovedb_operations_consume(
         insert_operations: Vec<LowLevelDriveOperation>,
-    ) -> Vec<GroveDbOp> {
+    ) -> Vec<QualifiedGroveDbOp> {
         insert_operations
             .into_iter()
             .filter_map(|op| match op {
@@ -404,7 +404,7 @@ impl LowLevelDriveOperation {
         key: Vec<u8>,
         element: Element,
     ) -> Self {
-        GroveOperation(GroveDbOp::insert_op(path, key, element))
+        GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(path, key, element))
     }
 
     /// Sets `GroveOperation` for replacement of an element at the given path and key
@@ -413,7 +413,7 @@ impl LowLevelDriveOperation {
         key: Vec<u8>,
         element: Element,
     ) -> Self {
-        GroveOperation(GroveDbOp::replace_op(path, key, element))
+        GroveOperation(QualifiedGroveDbOp::replace_op(path, key, element))
     }
 
     /// Sets `GroveOperation` for patching of an element at the given path and key
@@ -424,7 +424,12 @@ impl LowLevelDriveOperation {
         element: Element,
         change_in_bytes: i32,
     ) -> Self {
-        GroveOperation(GroveDbOp::patch_op(path, key, element, change_in_bytes))
+        GroveOperation(QualifiedGroveDbOp::patch_op(
+            path,
+            key,
+            element,
+            change_in_bytes,
+        ))
     }
 
     /// Sets `GroveOperation` for inserting an element at an unknown estimated path and key
@@ -433,7 +438,7 @@ impl LowLevelDriveOperation {
         key: KeyInfo,
         element: Element,
     ) -> Self {
-        GroveOperation(GroveDbOp::insert_estimated_op(path, key, element))
+        GroveOperation(QualifiedGroveDbOp::insert_estimated_op(path, key, element))
     }
 
     /// Sets `GroveOperation` for replacement of an element at an unknown estimated path and key
@@ -442,7 +447,7 @@ impl LowLevelDriveOperation {
         key: KeyInfo,
         element: Element,
     ) -> Self {
-        GroveOperation(GroveDbOp::replace_estimated_op(path, key, element))
+        GroveOperation(QualifiedGroveDbOp::replace_estimated_op(path, key, element))
     }
 
     /// Sets `GroveOperation` for refresh of a reference at the given path and key
@@ -454,7 +459,7 @@ impl LowLevelDriveOperation {
         flags: Option<ElementFlags>,
         trust_refresh_reference: bool,
     ) -> Self {
-        GroveOperation(GroveDbOp::refresh_reference_op(
+        GroveOperation(QualifiedGroveDbOp::refresh_reference_op(
             path,
             key,
             reference_path_type,

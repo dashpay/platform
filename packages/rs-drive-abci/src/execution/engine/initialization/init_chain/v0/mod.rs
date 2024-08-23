@@ -58,7 +58,12 @@ where
         };
 
         // Create genesis drive state
-        self.create_genesis_state(genesis_time, Some(transaction), platform_version)?;
+        self.create_genesis_state(
+            core_height,
+            genesis_time,
+            Some(transaction),
+            platform_version,
+        )?;
 
         // Create platform execution state
         let mut initial_platform_state = PlatformState::default_with_protocol_versions(

@@ -56,7 +56,7 @@ pub(crate) mod tests {
     use crate::test::helpers::setup::TempPlatform;
     use dpp::block::block_info::BlockInfo;
     use dpp::fee::Credits;
-    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
+    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyID, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityNonce};
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
@@ -74,8 +74,6 @@ pub(crate) mod tests {
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::{get_contested_resource_vote_state_request_v0, GetContestedResourceVoteStateRequestV0};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::{get_contested_resource_vote_state_response_v0, GetContestedResourceVoteStateResponseV0};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::FinishedVoteInfo;
-    use dpp::block::epoch::Epoch;
-    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
     use dpp::dash_to_credits;
     use dpp::dashcore::{ProTxHash, Txid};
     use dpp::dashcore::hashes::Hash;
@@ -88,6 +86,7 @@ pub(crate) mod tests {
     use dpp::fee::fee_result::FeeResult;
     use dpp::identifier::MasternodeIdentifiers;
     use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::platform_value::{Bytes32, Value};
     use dpp::serialization::PlatformSerializable;
@@ -255,6 +254,51 @@ pub(crate) mod tests {
         (identity, signer, master_key)
     }
 
+    pub(crate) fn setup_add_key_to_identity(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        identity: &mut Identity,
+        signer: &mut SimpleSigner,
+        seed: u64,
+        key_id: KeyID,
+        purpose: Purpose,
+        security_level: SecurityLevel,
+        key_type: KeyType,
+        contract_bounds: Option<ContractBounds>,
+    ) -> IdentityPublicKey {
+        let platform_version = PlatformVersion::latest();
+
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let (key, private_key) = IdentityPublicKey::random_key_with_known_attributes(
+            key_id,
+            &mut rng,
+            purpose,
+            security_level,
+            key_type,
+            contract_bounds,
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        signer.add_key(key.clone(), private_key.clone());
+
+        identity.add_public_key(key.clone());
+
+        platform
+            .drive
+            .add_new_unique_keys_to_identity(
+                identity.id().to_buffer(),
+                vec![key.clone()],
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new key");
+
+        key
+    }
+
     pub(crate) fn setup_identity_with_withdrawal_key_and_system_credits(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
@@ -358,6 +402,8 @@ pub(crate) mod tests {
                 &block_info,
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -905,6 +951,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -935,6 +983,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1185,6 +1235,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1215,6 +1267,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1359,6 +1413,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1386,6 +1442,8 @@ pub(crate) mod tests {
                 ),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1673,6 +1731,8 @@ pub(crate) mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1992,46 +2052,5 @@ pub(crate) mod tests {
             lock_vote_tally,
             finished_vote_info,
         )
-    }
-
-    pub(crate) fn fast_forward_to_block(
-        platform: &TempPlatform<MockCoreRPCLike>,
-        time_ms: u64,
-        height: u64,
-        epoch_index: u16,
-    ) {
-        let platform_state = platform.state.load();
-
-        let mut platform_state = (**platform_state).clone();
-
-        let protocol_version = platform_state.current_protocol_version_in_consensus();
-        let platform_version = PlatformVersion::get(protocol_version).unwrap();
-
-        let block_info = BlockInfo {
-            time_ms, //less than 2 weeks
-            height,
-            core_height: 42,
-            epoch: Epoch::new(epoch_index).unwrap(),
-        };
-
-        platform_state.set_last_committed_block_info(Some(
-            ExtendedBlockInfoV0 {
-                basic_info: block_info,
-                app_hash: platform
-                    .drive
-                    .grove
-                    .root_hash(None, &platform_version.drive.grove_version)
-                    .unwrap()
-                    .unwrap(),
-                quorum_hash: [0u8; 32],
-                block_id_hash: [0u8; 32],
-                proposer_pro_tx_hash: [0u8; 32],
-                signature: [0u8; 96],
-                round: 0,
-            }
-            .into(),
-        ));
-
-        platform.state.store(Arc::new(platform_state));
     }
 }

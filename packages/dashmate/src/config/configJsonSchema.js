@@ -519,6 +519,9 @@ export default {
                       additionalProperties: false,
                       required: ['maxConcurrentStreams'],
                     },
+                    waitForStResultTimeout: {
+                      $ref: '#/definitions/durationInSeconds',
+                    },
                     host: {
                       type: 'string',
                       minLength: 1,
@@ -528,7 +531,7 @@ export default {
                       $ref: '#/definitions/port',
                     },
                   },
-                  required: ['http2', 'host', 'port'],
+                  required: ['http2', 'host', 'port', 'waitForStResultTimeout'],
                   additionalProperties: false,
                 },
               },
@@ -777,8 +780,13 @@ export default {
                   required: ['image', 'build', 'deploy'],
                   additionalProperties: false,
                 },
+                waitForStResultTimeout: {
+                  type: 'integer',
+                  minimum: 1,
+                  description: 'How many millis to wait for state transition result before timeout',
+                },
               },
-              required: ['docker'],
+              required: ['docker', 'waitForStResultTimeout'],
               additionalProperties: false,
             },
           },
@@ -887,9 +895,20 @@ export default {
                 grovedbVisualizer: {
                   $ref: '#/definitions/enabledHostPort',
                 },
+                proposer: {
+                  type: 'object',
+                  properties: {
+                    txProcessingTimeLimit: {
+                      type: ['null', 'integer'],
+                      minimum: 0,
+                    },
+                  },
+                  required: ['txProcessingTimeLimit'],
+                  additionalProperties: false,
+                },
               },
               additionalProperties: false,
-              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics', 'grovedbVisualizer'],
+              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics', 'grovedbVisualizer', 'proposer'],
             },
             tenderdash: {
               type: 'object',
@@ -939,8 +958,16 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    maxConnections: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
+                    maxOutgoingConnections: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
                   },
-                  required: ['host', 'port', 'persistentPeers', 'seeds', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate'],
+                  required: ['host', 'port', 'persistentPeers', 'seeds', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate', 'maxConnections', 'maxOutgoingConnections'],
                   additionalProperties: false,
                 },
                 mempool: {
@@ -976,9 +1003,16 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    ttlDuration: {
+                      $ref: '#/definitions/duration',
+                    },
+                    ttlNumBlocks: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                   },
                   additionalProperties: false,
-                  required: ['size', 'maxTxsBytes', 'cacheSize', 'timeoutCheckTx', 'txEnqueueTimeout', 'txSendRateLimit', 'txRecvRateLimit', 'maxConcurrentCheckTx'],
+                  required: ['size', 'maxTxsBytes', 'cacheSize', 'timeoutCheckTx', 'txEnqueueTimeout', 'txSendRateLimit', 'txRecvRateLimit', 'maxConcurrentCheckTx', 'ttlDuration', 'ttlNumBlocks'],
                 },
                 consensus: {
                   type: 'object',

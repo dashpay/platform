@@ -178,7 +178,7 @@ export default class DoctorCommand extends ConfigBaseCommand {
             obfuscateObjectRecursive(status, (field, value) => (typeof value === 'string'
               ? value.replaceAll(externalIp, hideString(externalIp)) : value));
             obfuscateObjectRecursive(peers, (field, value) => (typeof value === 'string'
-              && field === 'key' ? hideString(value) : value));
+              ? value.replaceAll(externalIp, hideString(externalIp)) : value));
 
             // remove node id and protxhash from the status
             obfuscateObjectRecursive(status, (field, value) => (typeof value === 'string'

@@ -8,7 +8,7 @@ use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 use crate::util::grove_operations::DirectQueryType;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::{GroveDbOp, KeyInfoPath};
+use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::Element::Item;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
@@ -52,7 +52,7 @@ impl Drive {
                 "trying to add an amount that would overflow credits",
             )))?;
         let path_holding_total_credits_vec = misc_path_vec();
-        let replace_op = GroveDbOp::replace_op(
+        let replace_op = QualifiedGroveDbOp::replace_op(
             path_holding_total_credits_vec,
             TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(),
             Item(new_total.encode_var_vec(), None),

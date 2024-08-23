@@ -38,6 +38,8 @@ pub mod tests;
 pub mod asset_lock;
 pub mod balances;
 pub mod block;
+/// Core subsidy
+pub mod core_subsidy;
 pub mod fee;
 pub mod nft;
 pub mod prefunded_specialized_balance;

@@ -4639,6 +4639,123 @@ export namespace GetPrefundedSpecializedBalanceResponse {
   }
 }
 
+export class GetTotalCreditsInPlatformRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0 | undefined;
+  setV0(value?: GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0): void;
+
+  getVersionCase(): GetTotalCreditsInPlatformRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetTotalCreditsInPlatformRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetTotalCreditsInPlatformRequest): GetTotalCreditsInPlatformRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetTotalCreditsInPlatformRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetTotalCreditsInPlatformRequest;
+  static deserializeBinaryFromReader(message: GetTotalCreditsInPlatformRequest, reader: jspb.BinaryReader): GetTotalCreditsInPlatformRequest;
+}
+
+export namespace GetTotalCreditsInPlatformRequest {
+  export type AsObject = {
+    v0?: GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.AsObject,
+  }
+
+  export class GetTotalCreditsInPlatformRequestV0 extends jspb.Message {
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetTotalCreditsInPlatformRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetTotalCreditsInPlatformRequestV0): GetTotalCreditsInPlatformRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetTotalCreditsInPlatformRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetTotalCreditsInPlatformRequestV0;
+    static deserializeBinaryFromReader(message: GetTotalCreditsInPlatformRequestV0, reader: jspb.BinaryReader): GetTotalCreditsInPlatformRequestV0;
+  }
+
+  export namespace GetTotalCreditsInPlatformRequestV0 {
+    export type AsObject = {
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetTotalCreditsInPlatformResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0 | undefined;
+  setV0(value?: GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0): void;
+
+  getVersionCase(): GetTotalCreditsInPlatformResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetTotalCreditsInPlatformResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetTotalCreditsInPlatformResponse): GetTotalCreditsInPlatformResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetTotalCreditsInPlatformResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetTotalCreditsInPlatformResponse;
+  static deserializeBinaryFromReader(message: GetTotalCreditsInPlatformResponse, reader: jspb.BinaryReader): GetTotalCreditsInPlatformResponse;
+}
+
+export namespace GetTotalCreditsInPlatformResponse {
+  export type AsObject = {
+    v0?: GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.AsObject,
+  }
+
+  export class GetTotalCreditsInPlatformResponseV0 extends jspb.Message {
+    hasCredits(): boolean;
+    clearCredits(): void;
+    getCredits(): number;
+    setCredits(value: number): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetTotalCreditsInPlatformResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetTotalCreditsInPlatformResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetTotalCreditsInPlatformResponseV0): GetTotalCreditsInPlatformResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetTotalCreditsInPlatformResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetTotalCreditsInPlatformResponseV0;
+    static deserializeBinaryFromReader(message: GetTotalCreditsInPlatformResponseV0, reader: jspb.BinaryReader): GetTotalCreditsInPlatformResponseV0;
+  }
+
+  export namespace GetTotalCreditsInPlatformResponseV0 {
+    export type AsObject = {
+      credits: number,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      CREDITS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetPathElementsRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;

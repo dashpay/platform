@@ -169,10 +169,11 @@ mod tests {
     use crate::query::tests::{assert_invalid_identifier, setup_platform};
     use dapi_grpc::platform::v0::key_request_type::Request;
     use dapi_grpc::platform::v0::{AllKeys, KeyRequestType, SearchKey, SecurityLevelMap};
+    use dpp::dashcore::Network;
 
     #[test]
     fn test_invalid_identity_id() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 8],
@@ -191,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_invalid_limit_u16_overflow() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -213,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_invalid_limit_max() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -240,7 +241,7 @@ mod tests {
 
     #[test]
     fn test_invalid_offset_u16_overflow() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -262,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_missing_request_type() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -284,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_missing_request() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -306,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_invalid_key_request_type() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -339,7 +340,7 @@ mod tests {
 
     #[test]
     fn test_absent_keys() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],
@@ -366,7 +367,7 @@ mod tests {
 
     #[test]
     fn test_absent_keys_proof() {
-        let (platform, state, version) = setup_platform(false);
+        let (platform, state, version) = setup_platform(None, Network::Testnet);
 
         let request = GetIdentityKeysRequestV0 {
             identity_id: vec![0; 32],

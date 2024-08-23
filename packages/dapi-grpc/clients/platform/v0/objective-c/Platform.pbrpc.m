@@ -635,6 +635,26 @@
              responseClass:[GetPrefundedSpecializedBalanceResponse class]];
 }
 
+#pragma mark getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse)
+
+- (void)getTotalCreditsInPlatformWithRequest:(GetTotalCreditsInPlatformRequest *)request handler:(void(^)(GetTotalCreditsInPlatformResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetTotalCreditsInPlatformWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetTotalCreditsInPlatformWithRequest:(GetTotalCreditsInPlatformRequest *)request handler:(void(^)(GetTotalCreditsInPlatformResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getTotalCreditsInPlatform"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetTotalCreditsInPlatformResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getTotalCreditsInPlatformWithMessage:(GetTotalCreditsInPlatformRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getTotalCreditsInPlatform"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetTotalCreditsInPlatformResponse class]];
+}
+
 #pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
 
 - (void)getPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler{

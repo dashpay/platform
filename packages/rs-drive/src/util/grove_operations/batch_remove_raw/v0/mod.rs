@@ -7,7 +7,7 @@ use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::grove_operations::{push_drive_operation_result, BatchDeleteApplyType};
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::{KeyInfoPath, Op};
+use grovedb::batch::{GroveOp, KeyInfoPath};
 use grovedb::operations::delete::DeleteOptions;
 use grovedb::{Element, GroveDb, TransactionArg};
 use grovedb_path::SubtreePath;
@@ -37,17 +37,17 @@ impl Drive {
 
         let needs_removal_from_state =
             match current_batch_operations.remove_if_insert(path.to_vec(), key) {
-                Some(Op::Insert { element })
-                | Some(Op::Replace { element })
-                | Some(Op::Patch { element, .. }) => return Ok(Some(element)),
-                Some(Op::InsertTreeWithRootHash { .. }) => {
+                Some(GroveOp::InsertOrReplace { element })
+                | Some(GroveOp::Replace { element })
+                | Some(GroveOp::Patch { element, .. }) => return Ok(Some(element)),
+                Some(GroveOp::InsertTreeWithRootHash { .. }) => {
                     return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                         "we should not be seeing internal grovedb operations",
                     )));
                 }
-                Some(Op::Delete { .. })
-                | Some(Op::DeleteTree { .. })
-                | Some(Op::DeleteSumTree { .. }) => false,
+                Some(GroveOp::Delete { .. })
+                | Some(GroveOp::DeleteTree { .. })
+                | Some(GroveOp::DeleteSumTree { .. }) => false,
                 _ => true,
             };
 

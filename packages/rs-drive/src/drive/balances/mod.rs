@@ -19,6 +19,8 @@ mod calculate_total_credits_balance;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::RootTree;
+use crate::query::Query;
+use grovedb::{PathQuery, SizedQuery};
 
 /// Storage fee pool key
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -40,6 +42,19 @@ pub fn total_credits_path_vec() -> Vec<Vec<u8>> {
         vec![RootTree::Misc as u8],
         TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(),
     ]
+}
+
+/// A path query helper to get the total credits on Platform
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn total_credits_on_platform_path_query() -> PathQuery {
+    PathQuery {
+        path: vec![vec![RootTree::Misc as u8]],
+        query: SizedQuery {
+            query: Query::new_single_key(TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec()),
+            limit: Some(1),
+            offset: None,
+        },
+    }
 }
 
 /// The path for the balances tree
