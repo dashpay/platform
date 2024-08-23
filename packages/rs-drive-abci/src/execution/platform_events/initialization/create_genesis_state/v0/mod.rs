@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
-use dpp::platform_value::{platform_value, BinaryData};
+use dpp::platform_value::platform_value;
 use dpp::ProtocolError;
 
 use drive::dpp::identity::TimestampMillis;
@@ -16,9 +16,7 @@ use drive::dpp::system_data_contracts::SystemDataContract;
 use drive::util::batch::{DataContractOperationType, DocumentOperationType, DriveOperation};
 
 use dpp::prelude::CoreBlockHeight;
-use dpp::system_data_contracts::dpns_contract::{
-    DPNS_DASH_TLD_DOCUMENT_ID, DPNS_DASH_TLD_PREORDER_SALT,
-};
+use dpp::system_data_contracts::dpns_contract::DPNS_DASH_TLD_DOCUMENT_ID;
 use drive::query::TransactionArg;
 use drive::util::object_size_info::{
     DataContractInfo, DocumentInfo, DocumentTypeInfo, OwnedDocumentInfo,
@@ -126,9 +124,8 @@ impl<C> Platform<C> {
             "normalizedLabel" : domain,
             "parentDomainName" : "",
             "normalizedParentDomainName" : "",
-            "preorderSalt" : BinaryData::new(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
             "records" : {
-                "dashAliasIdentityId" : contract.owner_id(),
+                "identity" : contract.owner_id(),
             },
             "subdomainRules": {
                 "allowSubdomains": true,
@@ -205,7 +202,7 @@ mod tests {
 
             assert_eq!(
                 hex::encode(root_hash),
-                "8163884a9eef0d3b306bd6f426806e7ff41d7b09f030c4ff2b79b3b4c646dfca"
+                "dc5b0d4be407428adda2315db7d782e64015cbe2d2b7df963f05622390dc3c9f"
             )
         }
     }
