@@ -19,7 +19,7 @@ dump = ["mocks"]
 offline-testing = []
 
 [dependencies]
-backon = "0.4.1"
+backon = "0.5"
 dapi-grpc = { path = "../dapi-grpc" }
 futures = "0.3.28"
 http-serde = { version = "2.1", optional = true }
