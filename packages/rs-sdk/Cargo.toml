@@ -16,8 +16,8 @@ drive = { path = "../rs-drive", default-features = false, features = [
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 thiserror = "1.0.58"
-tokio = { version = "1.36.0", features = ["macros"] }
-tokio-util = { version = "0.7.10" }
+tokio = { version = "1.39", features = ["macros"] }
+tokio-util = { version = "0.7" }
 async-trait = { version = "0.1.79" }
 http = { version = "0.2.12" }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
@@ -26,7 +26,7 @@ serde = { version = "1.0.197", default-features = false, features = [
 ], optional = true }
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 tracing = { version = "0.1.40" }
-hex = { version = "0.4.3"}
+hex = { version = "0.4.3" }
 dotenvy = { version = "0.15.7", optional = true }
 envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.30" }
@@ -38,7 +38,7 @@ bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter",
 pollster = { version = "0.3.0" }
 
 [dev-dependencies]
-tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.39", features = ["macros", "rt-multi-thread"] }
 rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks"] }
 base64 = { version = "0.22.1" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
