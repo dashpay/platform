@@ -33,8 +33,8 @@ dpp = { path = "../rs-dpp", features = ["abci"] }
 simple-signer = { path = "../simple-signer" }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
-mockall = { version = "0.11", optional = true }
-prost = { version = "0.12", default-features = false }
+mockall = { version = "0.13", optional = true }
+prost = { version = "0.13", default-features = false }
 tracing = { version = "0.1.37", default-features = false, features = [] }
 clap = { version = "4.4.10", features = ["derive"] }
 envy = { version = "0.4.2" }
@@ -54,13 +54,13 @@ tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", versi
   "grpc",
 ] }
 lazy_static = "1.4.0"
-itertools = { version = "0.10.5" }
+itertools = { version = "0.13" }
 file-rotate = { version = "0.7.3" }
 reopen = { version = "1.0.3" }
-delegate = { version = "0.9.0" }
+delegate = { version = "0.12" }
 regex = { version = "1.8.1" }
-metrics = { version = "0.22.3" }
-metrics-exporter-prometheus = { version = "0.14.0" }
+metrics = { version = "0.23" }
+metrics-exporter-prometheus = { version = "0.15" }
 url = { version = "2.3.1" }
 ureq = { "version" = "2.6.2" }
 tokio = { version = "1.39", features = [
@@ -72,7 +72,7 @@ tokio = { version = "1.39", features = [
 tokio-util = { version = "0.7" }
 derive_more = "0.99.17"
 async-trait = "0.1.77"
-console-subscriber = { version = "0.2.0", optional = true }
+console-subscriber = { version = "0.4", optional = true }
 
 [dev-dependencies]
 base64 = "0.22.1"
