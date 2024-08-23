@@ -9,8 +9,8 @@ description = "Macros used by dapi-grpc. Internal use only."
 proc-macro = true
 
 [dependencies]
-quote = "1.0.33"
-syn = "2.0.38"
+quote = "1.0.37"
+syn = "2.0.75"
 heck = "0.5.0"
 
 [dev-dependencies]
