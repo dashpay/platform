@@ -10,8 +10,8 @@ use grovedb::TransactionArg;
 
 mod v0;
 
-pub use v0::*;
 use crate::util::storage_flags::StorageFlags;
+pub use v0::*;
 
 /// Represents the outcome of a query to retrieve documents.
 ///
@@ -28,13 +28,13 @@ pub enum QueryDocumentsWithFlagsOutcome {
 }
 
 impl QueryDocumentsWithFlagsOutcomeV0Methods for QueryDocumentsWithFlagsOutcome {
-    fn documents(&self) -> &Vec<(Document,Option<StorageFlags>)> {
+    fn documents(&self) -> &Vec<(Document, Option<StorageFlags>)> {
         match self {
             QueryDocumentsWithFlagsOutcome::V0(outcome) => outcome.documents(),
         }
     }
 
-    fn documents_owned(self) -> Vec<(Document,Option<StorageFlags>)> {
+    fn documents_owned(self) -> Vec<(Document, Option<StorageFlags>)> {
         match self {
             QueryDocumentsWithFlagsOutcome::V0(outcome) => outcome.documents_owned(),
         }
@@ -89,7 +89,13 @@ impl Drive {
             .query
             .query_documents_with_flags
         {
-            0 => self.query_documents_with_flags_v0(query, epoch, dry_run, transaction, platform_version),
+            0 => self.query_documents_with_flags_v0(
+                query,
+                epoch,
+                dry_run,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "query_documents_with_flags".to_string(),
                 known_versions: vec![0],

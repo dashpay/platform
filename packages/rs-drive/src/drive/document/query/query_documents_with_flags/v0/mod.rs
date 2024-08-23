@@ -1,15 +1,15 @@
-use grovedb::query_result_type::QueryResultType;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::query::DriveDocumentQuery;
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+use grovedb::query_result_type::QueryResultType;
 use grovedb::TransactionArg;
-use crate::util::storage_flags::StorageFlags;
 
 /// The outcome of a query
 #[derive(Debug, Default)]
@@ -92,11 +92,13 @@ impl Drive {
             &mut drive_operations,
             platform_version,
         )?;
-        let documents = items.to_elements()
+        let documents = items
+            .to_elements()
             .into_iter()
             .map(|element| {
                 let serialized_item = element.as_item_bytes()?;
-                let document = Document::from_bytes(serialized_item, query.document_type, platform_version)?;
+                let document =
+                    Document::from_bytes(serialized_item, query.document_type, platform_version)?;
                 let storage_flags = StorageFlags::map_some_element_flags_ref(element.get_flags())?;
                 Ok((document, storage_flags))
             })

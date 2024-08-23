@@ -50,13 +50,13 @@ pub use grovedb::{
     Element, Error as GroveError, TransactionArg,
 };
 
+use dpp::document;
+use dpp::prelude::Identifier;
 #[cfg(feature = "server")]
 use {
     crate::{drive::Drive, error::Error::GroveDB, fees::op::LowLevelDriveOperation},
     dpp::block::block_info::BlockInfo,
 };
-use dpp::document;
-use dpp::prelude::Identifier;
 // Crate-local unconditional imports
 use crate::config::DriveConfig;
 // Crate-local unconditional imports
@@ -306,10 +306,13 @@ pub struct DriveDocumentQuery<'a> {
 }
 
 impl<'a> DriveDocumentQuery<'a> {
-
     /// Gets a document by their primary key
     #[cfg(any(feature = "server", feature = "verify"))]
-    pub fn new_primary_key_single_item_query(contract: &'a DataContract, document_type: DocumentTypeRef<'a>, id: Identifier) -> Self {
+    pub fn new_primary_key_single_item_query(
+        contract: &'a DataContract,
+        document_type: DocumentTypeRef<'a>,
+        id: Identifier,
+    ) -> Self {
         DriveDocumentQuery {
             contract,
             document_type,
@@ -332,7 +335,7 @@ impl<'a> DriveDocumentQuery<'a> {
             block_time_ms: None,
         }
     }
-    
+
     #[cfg(feature = "server")]
     /// Returns any item
     pub fn any_item_query(contract: &'a DataContract, document_type: DocumentTypeRef<'a>) -> Self {

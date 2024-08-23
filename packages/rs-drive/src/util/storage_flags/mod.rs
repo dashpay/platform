@@ -2,6 +2,10 @@
 //!
 
 #[cfg(feature = "server")]
+use crate::error::storage_flags::StorageFlagsError;
+#[cfg(feature = "server")]
+use crate::error::Error;
+#[cfg(feature = "server")]
 use crate::util::storage_flags::StorageFlags::{
     MultiEpoch, MultiEpochOwned, SingleEpoch, SingleEpochOwned,
 };
@@ -9,6 +13,7 @@ use crate::util::storage_flags::StorageFlags::{
 use crate::util::type_constants::DEFAULT_HASH_SIZE;
 #[cfg(feature = "server")]
 use grovedb::ElementFlags;
+use grovedb_costs::storage_cost::removal::StorageRemovedBytes::NoStorageRemoval;
 #[cfg(feature = "server")]
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::SectionedStorageRemoval;
 #[cfg(feature = "server")]
@@ -26,10 +31,6 @@ use std::cmp::Ordering;
 #[cfg(any(feature = "server", feature = "verify"))]
 use std::collections::BTreeMap;
 use std::{fmt, mem};
-#[cfg(feature = "server")]
-use crate::error::storage_flags::StorageFlagsError;
-#[cfg(feature = "server")]
-use crate::error::Error;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 type EpochIndex = u16;
@@ -83,7 +84,12 @@ impl fmt::Display for StorageFlags {
                 write!(f, ")")
             }
             StorageFlags::SingleEpochOwned(base_epoch, owner_id) => {
-                write!(f, "SingleEpochOwned(BaseEpoch: {}, OwnerId: {})", base_epoch, hex::encode(owner_id))
+                write!(
+                    f,
+                    "SingleEpochOwned(BaseEpoch: {}, OwnerId: {})",
+                    base_epoch,
+                    hex::encode(owner_id)
+                )
             }
             StorageFlags::MultiEpochOwned(base_epoch, epochs, owner_id) => {
                 write!(f, "MultiEpochOwned(BaseEpoch: {}, Epochs: ", base_epoch)?;
@@ -118,12 +124,11 @@ impl StorageFlags {
             Some(owner_id) => SingleEpochOwned(epoch, owner_id),
         }
     }
-    
+
     /// Sets the owner id if we have owned storage flags
     pub fn set_owner_id(&mut self, owner_id: OwnerId) {
         match self {
-            SingleEpochOwned(_, previous_owner_id) |
-            MultiEpochOwned(_, _, previous_owner_id) => {
+            SingleEpochOwned(_, previous_owner_id) | MultiEpochOwned(_, _, previous_owner_id) => {
                 *previous_owner_id = owner_id;
             }
             _ => {}
@@ -222,7 +227,13 @@ impl StorageFlags {
                 other_epoch_bytes.insert(*epoch_with_adding_bytes, original_bytes + added_bytes)
             }
         };
-        println!("         >combine_with_higher_base_epoch added_bytes:{} self:{:?} & rhs:{:?} -> {:?}", added_bytes, self.epoch_index_map(), rhs.epoch_index_map(), other_epoch_bytes);
+        println!(
+            "         >combine_with_higher_base_epoch added_bytes:{} self:{:?} & rhs:{:?} -> {:?}",
+            added_bytes,
+            self.epoch_index_map(),
+            rhs.epoch_index_map(),
+            other_epoch_bytes
+        );
 
         match owner_id {
             None => Ok(MultiEpoch(base_epoch, other_epoch_bytes)),
@@ -279,7 +290,12 @@ impl StorageFlags {
                     Ok::<(), Error>(())
                 })?;
         }
-        println!("         >combine_with_higher_base_epoch_remove_bytes: self:{:?} & rhs:{:?} -> {:?}", self.epoch_index_map(), rhs.epoch_index_map(), other_epoch_bytes);
+        println!(
+            "         >combine_with_higher_base_epoch_remove_bytes: self:{:?} & rhs:{:?} -> {:?}",
+            self.epoch_index_map(),
+            rhs.epoch_index_map(),
+            other_epoch_bytes
+        );
 
         match owner_id {
             None => Ok(MultiEpoch(base_epoch, other_epoch_bytes)),
@@ -716,6 +732,9 @@ impl StorageFlags {
             base_epoch: &BaseEpoch,
             owner_id: Option<&OwnerId>,
         ) -> StorageRemovedBytes {
+            if removed_bytes == 0 {
+                return NoStorageRemoval;
+            }
             let bytes_left = removed_bytes;
             let mut sectioned_storage_removal: IntMap<u32> = IntMap::default();
             if bytes_left > 0 {
@@ -740,29 +759,37 @@ impl StorageFlags {
             other_epoch_bytes: &BTreeMap<EpochIndex, BytesAddedInEpoch>,
             owner_id: Option<&OwnerId>,
         ) -> StorageRemovedBytes {
+            if removed_bytes == 0 {
+                return NoStorageRemoval;
+            }
             let mut bytes_left = removed_bytes;
             let mut rev_iter = other_epoch_bytes.iter().rev();
             let mut sectioned_storage_removal: IntMap<u32> = IntMap::default();
+
             while bytes_left > 0 {
-                if let Some((epoch_index, bytes_in_epoch)) = rev_iter.next_back() {
-                    if *bytes_in_epoch < bytes_left {
-                        bytes_left -= bytes_in_epoch;
+                if let Some((epoch_index, bytes_in_epoch)) = rev_iter.next() {
+                    if *bytes_in_epoch <= bytes_left {
                         sectioned_storage_removal.insert(*epoch_index as u64, *bytes_in_epoch);
-                    } else if *bytes_in_epoch >= bytes_left {
-                        //take all bytes
-                        bytes_left = 0;
+                        bytes_left -= *bytes_in_epoch;
+                    } else {
+                        // Correctly take only the required bytes_left from this epoch
                         sectioned_storage_removal.insert(*epoch_index as u64, bytes_left);
+                        bytes_left = 0; // All required bytes have been removed, stop processing
+                        break; // Exit the loop as there's no need to process further epochs
                     }
                 } else {
                     break;
                 }
             }
+
             if bytes_left > 0 {
-                // We need to take some from the base epoch
+                // If there are still bytes left, take them from the base epoch
                 sectioned_storage_removal.insert(*base_epoch as u64, bytes_left);
             }
+
             let mut sectioned_storage_removal_by_identifier: StorageRemovalPerEpochByIdentifier =
                 BTreeMap::new();
+
             if let Some(owner_id) = owner_id {
                 sectioned_storage_removal_by_identifier
                     .insert(*owner_id, sectioned_storage_removal);
@@ -770,54 +797,47 @@ impl StorageFlags {
                 let default = [0u8; 32];
                 sectioned_storage_removal_by_identifier.insert(default, sectioned_storage_removal);
             }
+
             SectionedStorageRemoval(sectioned_storage_removal_by_identifier)
         }
-        match self {
+
+        // If key bytes are being removed, it implies a delete; thus, we should remove all relevant storage bytes
+        let key_storage_removal = if removed_key_bytes > 0 {
+            match self {
+                // For any variant, always take the key's removed bytes from the base epoch
+                SingleEpoch(base_epoch) | MultiEpoch(base_epoch, _) => {
+                    single_storage_removal(removed_key_bytes, base_epoch, None)
+                }
+                SingleEpochOwned(base_epoch, owner_id)
+                | MultiEpochOwned(base_epoch, _, owner_id) => {
+                    single_storage_removal(removed_key_bytes, base_epoch, Some(owner_id))
+                }
+            }
+        } else {
+            StorageRemovedBytes::default()
+        };
+
+        // For normal logic, we only need to process the value-related bytes.
+        let value_storage_removal = match self {
             SingleEpoch(base_epoch) => {
-                let value_storage_removal =
-                    single_storage_removal(removed_value_bytes, base_epoch, None);
-                let key_storage_removal =
-                    single_storage_removal(removed_key_bytes, base_epoch, None);
-                Ok((key_storage_removal, value_storage_removal))
+                single_storage_removal(removed_value_bytes, base_epoch, None)
             }
             SingleEpochOwned(base_epoch, owner_id) => {
-                let value_storage_removal =
-                    single_storage_removal(removed_value_bytes, base_epoch, Some(owner_id));
-                let key_storage_removal =
-                    single_storage_removal(removed_key_bytes, base_epoch, Some(owner_id));
-                Ok((key_storage_removal, value_storage_removal))
+                single_storage_removal(removed_value_bytes, base_epoch, Some(owner_id))
             }
             MultiEpoch(base_epoch, other_epoch_bytes) => {
-                let value_storage_removal = sectioned_storage_removal(
-                    removed_value_bytes,
-                    base_epoch,
-                    other_epoch_bytes,
-                    None,
-                );
-                let key_storage_removal = sectioned_storage_removal(
-                    removed_key_bytes,
-                    base_epoch,
-                    other_epoch_bytes,
-                    None,
-                );
-                Ok((key_storage_removal, value_storage_removal))
+                sectioned_storage_removal(removed_value_bytes, base_epoch, other_epoch_bytes, None)
             }
-            MultiEpochOwned(base_epoch, other_epoch_bytes, owner_id) => {
-                let value_storage_removal = sectioned_storage_removal(
-                    removed_value_bytes,
-                    base_epoch,
-                    other_epoch_bytes,
-                    Some(owner_id),
-                );
-                let key_storage_removal = sectioned_storage_removal(
-                    removed_key_bytes,
-                    base_epoch,
-                    other_epoch_bytes,
-                    Some(owner_id),
-                );
-                Ok((key_storage_removal, value_storage_removal))
-            }
-        }
+            MultiEpochOwned(base_epoch, other_epoch_bytes, owner_id) => sectioned_storage_removal(
+                removed_value_bytes,
+                base_epoch,
+                other_epoch_bytes,
+                Some(owner_id),
+            ),
+        };
+
+        // For key removal, simply return the empty removal since it's an update does not modify the key.
+        Ok((key_storage_removal, value_storage_removal))
     }
 
     /// Wrap Storage Flags into optional owned cow
@@ -828,9 +848,13 @@ impl StorageFlags {
 
 #[cfg(test)]
 mod storage_flags_tests {
-    use grovedb_costs::storage_cost::removal::StorageRemovedBytes;
-    use crate::util::storage_flags::{BaseEpoch, BytesAddedInEpoch, MergingOwnersStrategy};
     use crate::util::storage_flags::StorageFlags;
+    use crate::util::storage_flags::{
+        BaseEpoch, BytesAddedInEpoch, MergingOwnersStrategy, OwnerId,
+    };
+    use grovedb_costs::storage_cost::removal::StorageRemovedBytes;
+    use intmap::IntMap;
+    use std::collections::BTreeMap;
     #[test]
     fn test_storage_flags_combine() {
         {
@@ -840,8 +864,15 @@ mod storage_flags_tests {
             let right_flag = StorageFlags::new_single_epoch(common_base_index, None);
 
             let added_bytes: BytesAddedInEpoch = 10;
-            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
-            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+            let combined_flag = left_flag.clone().combine_added_bytes(
+                right_flag.clone(),
+                added_bytes,
+                MergingOwnersStrategy::UseOurs,
+            );
+            println!(
+                "{:?} & {:?} added_bytes:{} --> {:?}\n",
+                left_flag, right_flag, added_bytes, combined_flag
+            );
         }
         /*{
             // Same SingleEpoch - RemovedBytes
@@ -861,8 +892,15 @@ mod storage_flags_tests {
             let right_flag = StorageFlags::new_single_epoch(right_base_index, None);
 
             let added_bytes: BytesAddedInEpoch = 10;
-            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
-            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+            let combined_flag = left_flag.clone().combine_added_bytes(
+                right_flag.clone(),
+                added_bytes,
+                MergingOwnersStrategy::UseOurs,
+            );
+            println!(
+                "{:?} & {:?} added_bytes:{} --> {:?}\n",
+                left_flag, right_flag, added_bytes, combined_flag
+            );
         }
         {
             // Different-Lesser SingleEpoch - AdditionBytes
@@ -872,29 +910,56 @@ mod storage_flags_tests {
             let right_flag = StorageFlags::new_single_epoch(right_base_index, None);
 
             let added_bytes: BytesAddedInEpoch = 10;
-            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
-            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+            let combined_flag = left_flag.clone().combine_added_bytes(
+                right_flag.clone(),
+                added_bytes,
+                MergingOwnersStrategy::UseOurs,
+            );
+            println!(
+                "{:?} & {:?} added_bytes:{} --> {:?}\n",
+                left_flag, right_flag, added_bytes, combined_flag
+            );
         }
         {
             // SingleEpoch-MultiEpoch same BaseEpoch - AdditionBytes
             let common_base_index: BaseEpoch = 1;
             let left_flag = StorageFlags::new_single_epoch(common_base_index, None);
-            let right_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 5)].iter().cloned().collect());
+            let right_flag = StorageFlags::MultiEpoch(
+                common_base_index,
+                [(common_base_index + 1, 5)].iter().cloned().collect(),
+            );
 
             let added_bytes: BytesAddedInEpoch = 10;
-            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
-            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+            let combined_flag = left_flag.clone().combine_added_bytes(
+                right_flag.clone(),
+                added_bytes,
+                MergingOwnersStrategy::UseOurs,
+            );
+            println!(
+                "{:?} & {:?} added_bytes:{} --> {:?}\n",
+                left_flag, right_flag, added_bytes, combined_flag
+            );
         }
         {
             // SingleEpoch-MultiEpoch higher BaseEpoch - AdditionBytes
             let left_base_index: BaseEpoch = 1;
             let right_base_index: BaseEpoch = 2;
             let left_flag = StorageFlags::new_single_epoch(left_base_index, None);
-            let right_flag = StorageFlags::MultiEpoch(right_base_index, [(right_base_index + 1, 5)].iter().cloned().collect());
+            let right_flag = StorageFlags::MultiEpoch(
+                right_base_index,
+                [(right_base_index + 1, 5)].iter().cloned().collect(),
+            );
 
             let added_bytes: BytesAddedInEpoch = 10;
-            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
-            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+            let combined_flag = left_flag.clone().combine_added_bytes(
+                right_flag.clone(),
+                added_bytes,
+                MergingOwnersStrategy::UseOurs,
+            );
+            println!(
+                "{:?} & {:?} added_bytes:{} --> {:?}\n",
+                left_flag, right_flag, added_bytes, combined_flag
+            );
         }
         /*{
             // SingleEpoch-MultiEpoch same BaseEpoch - RemovedBytes (positive difference)
@@ -941,62 +1006,482 @@ mod storage_flags_tests {
         {
             // MultiEpochs same BaseEpoch - AdditionBytes #1
             let common_base_index: BaseEpoch = 1;
-            let left_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 7)].iter().cloned().collect());
-            let right_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 5)].iter().cloned().collect());
+            let left_flag = StorageFlags::MultiEpoch(
+                common_base_index,
+                [(common_base_index + 1, 7)].iter().cloned().collect(),
+            );
+            let right_flag = StorageFlags::MultiEpoch(
+                common_base_index,
+                [(common_base_index + 1, 5)].iter().cloned().collect(),
+            );
 
             let added_bytes: BytesAddedInEpoch = 10;
-            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
-            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+            let combined_flag = left_flag.clone().combine_added_bytes(
+                right_flag.clone(),
+                added_bytes,
+                MergingOwnersStrategy::UseOurs,
+            );
+            println!(
+                "{:?} & {:?} added_bytes:{} --> {:?}\n",
+                left_flag, right_flag, added_bytes, combined_flag
+            );
         }
         {
             // MultiEpochs same BaseEpoch - AdditionBytes #2
             let common_base_index: BaseEpoch = 1;
-            let left_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 7)].iter().cloned().collect());
-            let right_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 2, 5)].iter().cloned().collect());
+            let left_flag = StorageFlags::MultiEpoch(
+                common_base_index,
+                [(common_base_index + 1, 7)].iter().cloned().collect(),
+            );
+            let right_flag = StorageFlags::MultiEpoch(
+                common_base_index,
+                [(common_base_index + 2, 5)].iter().cloned().collect(),
+            );
 
             let added_bytes: BytesAddedInEpoch = 10;
-            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
-            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+            let combined_flag = left_flag.clone().combine_added_bytes(
+                right_flag.clone(),
+                added_bytes,
+                MergingOwnersStrategy::UseOurs,
+            );
+            println!(
+                "{:?} & {:?} added_bytes:{} --> {:?}\n",
+                left_flag, right_flag, added_bytes, combined_flag
+            );
         }
         {
             // MultiEpochs same BaseEpoch - AdditionBytes #3
             let common_base_index: BaseEpoch = 1;
-            let left_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 7)].iter().cloned().collect());
-            let right_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 3),(common_base_index + 2, 5)].iter().cloned().collect());
+            let left_flag = StorageFlags::MultiEpoch(
+                common_base_index,
+                [(common_base_index + 1, 7)].iter().cloned().collect(),
+            );
+            let right_flag = StorageFlags::MultiEpoch(
+                common_base_index,
+                [(common_base_index + 1, 3), (common_base_index + 2, 5)]
+                    .iter()
+                    .cloned()
+                    .collect(),
+            );
 
             let added_bytes: BytesAddedInEpoch = 10;
-            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
-            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+            let combined_flag = left_flag.clone().combine_added_bytes(
+                right_flag.clone(),
+                added_bytes,
+                MergingOwnersStrategy::UseOurs,
+            );
+            println!(
+                "{:?} & {:?} added_bytes:{} --> {:?}\n",
+                left_flag, right_flag, added_bytes, combined_flag
+            );
         }
         {
             // MultiEpochs higher BaseEpoch - AdditionBytes #1
             let common_base_index: BaseEpoch = 1;
-            let left_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 7)].iter().cloned().collect());
-            let right_flag = StorageFlags::MultiEpoch(common_base_index + 1, [(common_base_index + 1, 5)].iter().cloned().collect());
+            let left_flag = StorageFlags::MultiEpoch(
+                common_base_index,
+                [(common_base_index + 1, 7)].iter().cloned().collect(),
+            );
+            let right_flag = StorageFlags::MultiEpoch(
+                common_base_index + 1,
+                [(common_base_index + 1, 5)].iter().cloned().collect(),
+            );
 
             let added_bytes: BytesAddedInEpoch = 10;
-            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
-            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+            let combined_flag = left_flag.clone().combine_added_bytes(
+                right_flag.clone(),
+                added_bytes,
+                MergingOwnersStrategy::UseOurs,
+            );
+            println!(
+                "{:?} & {:?} added_bytes:{} --> {:?}\n",
+                left_flag, right_flag, added_bytes, combined_flag
+            );
         }
         {
             // MultiEpochs higher BaseEpoch - AdditionBytes #2
             let common_base_index: BaseEpoch = 1;
-            let left_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 7)].iter().cloned().collect());
-            let right_flag = StorageFlags::MultiEpoch(common_base_index + 1, [(common_base_index + 2, 5)].iter().cloned().collect());
+            let left_flag = StorageFlags::MultiEpoch(
+                common_base_index,
+                [(common_base_index + 1, 7)].iter().cloned().collect(),
+            );
+            let right_flag = StorageFlags::MultiEpoch(
+                common_base_index + 1,
+                [(common_base_index + 2, 5)].iter().cloned().collect(),
+            );
 
             let added_bytes: BytesAddedInEpoch = 10;
-            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
-            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+            let combined_flag = left_flag.clone().combine_added_bytes(
+                right_flag.clone(),
+                added_bytes,
+                MergingOwnersStrategy::UseOurs,
+            );
+            println!(
+                "{:?} & {:?} added_bytes:{} --> {:?}\n",
+                left_flag, right_flag, added_bytes, combined_flag
+            );
         }
         {
             // MultiEpochs higher BaseEpoch - AdditionBytes #3
             let common_base_index: BaseEpoch = 1;
-            let left_flag = StorageFlags::MultiEpoch(common_base_index, [(common_base_index + 1, 7)].iter().cloned().collect());
-            let right_flag = StorageFlags::MultiEpoch(common_base_index + 1, [(common_base_index + 2, 3),(common_base_index + 3, 5)].iter().cloned().collect());
+            let left_flag = StorageFlags::MultiEpoch(
+                common_base_index,
+                [(common_base_index + 1, 7)].iter().cloned().collect(),
+            );
+            let right_flag = StorageFlags::MultiEpoch(
+                common_base_index + 1,
+                [(common_base_index + 2, 3), (common_base_index + 3, 5)]
+                    .iter()
+                    .cloned()
+                    .collect(),
+            );
 
             let added_bytes: BytesAddedInEpoch = 10;
-            let combined_flag = left_flag.clone().combine_added_bytes(right_flag.clone(), added_bytes, MergingOwnersStrategy::UseOurs);
-            println!("{:?} & {:?} added_bytes:{} --> {:?}\n", left_flag, right_flag, added_bytes, combined_flag);
+            let combined_flag = left_flag.clone().combine_added_bytes(
+                right_flag.clone(),
+                added_bytes,
+                MergingOwnersStrategy::UseOurs,
+            );
+            println!(
+                "{:?} & {:?} added_bytes:{} --> {:?}\n",
+                left_flag, right_flag, added_bytes, combined_flag
+            );
         }
+    }
+
+    fn create_epoch_map(epoch: u16, bytes: u32) -> BTreeMap<u16, u32> {
+        let mut map = BTreeMap::new();
+        map.insert(epoch, bytes);
+        map
+    }
+
+    fn default_owner_id() -> OwnerId {
+        [0u8; 32]
+    }
+
+    /// Tests the case when using SingleEpoch flags, ensuring that the correct storage removal is calculated.
+    #[test]
+    fn test_single_epoch_removal() {
+        let flags = StorageFlags::SingleEpoch(5);
+        let (key_removal, value_removal) = flags
+            .split_storage_removed_bytes(100, 200)
+            .expect("expected successful split");
+
+        assert_eq!(
+            key_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(default_owner_id(), IntMap::from_iter([(5u64, 100)]));
+                map
+            })
+        );
+        assert_eq!(
+            value_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(default_owner_id(), IntMap::from_iter([(5u64, 200)]));
+                map
+            })
+        );
+    }
+
+    /// Tests SingleEpochOwned flags where the removal is done under an OwnerId
+    #[test]
+    fn test_single_epoch_owned_removal() {
+        let owner_id = [1u8; 32];
+        let flags = StorageFlags::SingleEpochOwned(5, owner_id);
+        let (key_removal, value_removal) = flags
+            .split_storage_removed_bytes(50, 150)
+            .expect("expected successful split");
+
+        assert_eq!(
+            key_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(owner_id, IntMap::from_iter([(5u64, 50)]));
+                map
+            })
+        );
+        assert_eq!(
+            value_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(owner_id, IntMap::from_iter([(5u64, 150)]));
+                map
+            })
+        );
+    }
+
+    /// Tests the case where multiple epochs are used and the total removal doesn’t exceed the extra epoch bytes
+    #[test]
+    fn test_multi_epoch_removal_no_remaining_base() {
+        let mut other_epochs = create_epoch_map(6, 100);
+        other_epochs.insert(7, 200);
+
+        let flags = StorageFlags::MultiEpoch(5, other_epochs);
+        let (_key_removal, value_removal) = flags
+            .split_storage_removed_bytes(0, 250)
+            .expect("expected successful split");
+
+        assert_eq!(
+            value_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(
+                    default_owner_id(),
+                    IntMap::from_iter([(7u64, 200), (6u64, 50)]),
+                );
+                map
+            })
+        );
+    }
+
+    /// Similar to the previous test, but this time the base epoch is also used due to insufficient bytes in the extra epochs
+    #[test]
+    fn test_multi_epoch_removal_with_remaining_base() {
+        let mut other_epochs = create_epoch_map(6, 100);
+        other_epochs.insert(7, 50);
+
+        let flags = StorageFlags::MultiEpoch(5, other_epochs);
+        let (key_removal, value_removal) = flags
+            .split_storage_removed_bytes(250, 250)
+            .expect("expected successful split");
+
+        assert_eq!(
+            key_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(default_owner_id(), IntMap::from_iter([(5u64, 250)]));
+                map
+            })
+        );
+        assert_eq!(
+            value_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(
+                    default_owner_id(),
+                    IntMap::from_iter([(7u64, 50), (6u64, 100), (5u64, 100)]),
+                );
+                map
+            })
+        );
+    }
+
+    /// Same as last test but for owned flags with OwnerId
+    #[test]
+    fn test_multi_epoch_owned_removal_with_remaining_base() {
+        let owner_id = [2u8; 32];
+        let mut other_epochs = create_epoch_map(6, 100);
+        other_epochs.insert(7, 50);
+
+        let flags = StorageFlags::MultiEpochOwned(5, other_epochs, owner_id);
+        let (key_removal, value_removal) = flags
+            .split_storage_removed_bytes(250, 250)
+            .expect("expected successful split");
+
+        assert_eq!(
+            key_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(owner_id, IntMap::from_iter([(5u64, 250)]));
+                map
+            })
+        );
+        assert_eq!(
+            value_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(
+                    owner_id,
+                    IntMap::from_iter([(7u64, 50), (6u64, 100), (5u64, 100)]),
+                );
+                map
+            })
+        );
+    }
+
+    /// Tests the function when zero bytes are to be removed, expecting an empty removal result
+    #[test]
+    fn test_single_epoch_removal_zero_bytes() {
+        let flags = StorageFlags::SingleEpoch(5);
+        let (key_removal, value_removal) = flags
+            .split_storage_removed_bytes(0, 0)
+            .expect("expected successful split");
+
+        assert_eq!(key_removal, StorageRemovedBytes::NoStorageRemoval);
+        assert_eq!(value_removal, StorageRemovedBytes::NoStorageRemoval);
+    }
+
+    /// Tests the removal of only part of the bytes using SingleEpochOwned
+    #[test]
+    fn test_single_epoch_owned_removal_partial_bytes() {
+        let owner_id = [3u8; 32];
+        let flags = StorageFlags::SingleEpochOwned(5, owner_id);
+        let (key_removal, value_removal) = flags
+            .split_storage_removed_bytes(100, 50)
+            .expect("expected successful split");
+
+        assert_eq!(
+            key_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(owner_id, IntMap::from_iter([(5u64, 100)]));
+                map
+            })
+        );
+        assert_eq!(
+            value_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(owner_id, IntMap::from_iter([(5u64, 50)]));
+                map
+            })
+        );
+    }
+
+    /// Ensures that the function correctly handles when there are more bytes to be removed than are available in the epoch map, requiring the base epoch to be used
+    #[test]
+    fn test_multi_epoch_removal_excess_bytes() {
+        let mut other_epochs = create_epoch_map(6, 100);
+        other_epochs.insert(7, 200);
+
+        let flags = StorageFlags::MultiEpoch(5, other_epochs);
+        let (key_removal, value_removal) = flags
+            .split_storage_removed_bytes(400, 300)
+            .expect("expected successful split");
+
+        assert_eq!(
+            key_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(default_owner_id(), IntMap::from_iter([(5u64, 400)]));
+                map
+            })
+        );
+        assert_eq!(
+            value_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(
+                    default_owner_id(),
+                    IntMap::from_iter([(7u64, 200), (6u64, 100)]),
+                );
+                map
+            })
+        );
+    }
+
+    /// Similar to the previous test, but for owned flags with OwnerId
+    #[test]
+    fn test_multi_epoch_owned_removal_excess_bytes() {
+        let owner_id = [4u8; 32];
+        let mut other_epochs = create_epoch_map(6, 100);
+        other_epochs.insert(7, 200);
+
+        let flags = StorageFlags::MultiEpochOwned(5, other_epochs, owner_id);
+        let (key_removal, value_removal) = flags
+            .split_storage_removed_bytes(450, 350)
+            .expect("expected successful split");
+
+        assert_eq!(
+            key_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(owner_id, IntMap::from_iter([(5u64, 450)]));
+                map
+            })
+        );
+        assert_eq!(
+            value_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(
+                    owner_id,
+                    IntMap::from_iter([(7u64, 200), (6u64, 100), (5u64, 50)]),
+                );
+                map
+            })
+        );
+    }
+
+    #[test]
+    /// This test verifies the `split_storage_removed_bytes` function when all required bytes
+    /// are taken from non-base epochs during the removal process.
+    ///
+    /// The scenario:
+    /// - The test initializes a `StorageFlags::MultiEpochOwned` with a `BaseEpoch` of 5.
+    /// - Two additional epochs, 6 and 7, are provided with 300 and 400 bytes respectively.
+    /// - The function is then called to remove 700 bytes from the value, while no bytes are removed
+    ///   from the key.
+    ///
+    /// The expected behavior:
+    /// - For key removal: No bytes should be removed since the key removal request is zero.
+    /// - For value removal: It should consume all 400 bytes from epoch 7 (LIFO order) and the
+    ///   remaining 300 bytes from epoch 6.
+    fn test_multi_epoch_owned_removal_all_bytes_taken_from_non_base_epoch() {
+        // Define the owner ID as a 32-byte array filled with 5s.
+        let owner_id = [5u8; 32];
+
+        // Create a map for additional epochs with 300 bytes in epoch 6.
+        let mut other_epochs = create_epoch_map(6, 300);
+
+        // Insert 400 bytes for epoch 7 into the map.
+        other_epochs.insert(7, 400);
+
+        // Initialize the `StorageFlags::MultiEpochOwned` with base epoch 5, additional epochs,
+        // and the owner ID.
+        let flags = StorageFlags::MultiEpochOwned(5, other_epochs, owner_id);
+
+        // Call the function to split the storage removal bytes, expecting to remove 700 bytes
+        // from the value.
+        let (key_removal, value_removal) = flags
+            .split_storage_removed_bytes(0, 700)
+            .expect("expected successful split");
+
+        // Verify that no bytes are removed from the key.
+        assert_eq!(key_removal, StorageRemovedBytes::NoStorageRemoval);
+
+        // Verify that 700 bytes are removed from the value, consuming 400 bytes from epoch 7
+        // and 300 bytes from epoch 6.
+        assert_eq!(
+            value_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(owner_id, IntMap::from_iter([(6u64, 300), (7u64, 400)]));
+                map
+            })
+        );
+    }
+
+    #[test]
+    fn test_multi_epoch_removal_remaining_base_epoch() {
+        let mut other_epochs = create_epoch_map(6, 300);
+        other_epochs.insert(7, 100);
+
+        let flags = StorageFlags::MultiEpoch(5, other_epochs);
+        let (key_removal, value_removal) = flags
+            .split_storage_removed_bytes(400, 500)
+            .expect("expected successful split");
+
+        assert_eq!(
+            key_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(default_owner_id(), IntMap::from_iter([(5u64, 400)]));
+                map
+            })
+        );
+        assert_eq!(
+            value_removal,
+            StorageRemovedBytes::SectionedStorageRemoval({
+                let mut map = BTreeMap::new();
+                map.insert(
+                    default_owner_id(),
+                    IntMap::from_iter([(7u64, 100), (6u64, 300), (5u64, 100)]),
+                );
+                map
+            })
+        );
     }
 }

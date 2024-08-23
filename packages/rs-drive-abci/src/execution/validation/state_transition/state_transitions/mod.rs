@@ -279,7 +279,7 @@ pub(in crate::execution) mod tests {
             contract_bounds,
             platform_version,
         )
-            .expect("expected to get key pair");
+        .expect("expected to get key pair");
 
         signer.add_key(key.clone(), private_key.clone());
 
@@ -299,7 +299,7 @@ pub(in crate::execution) mod tests {
 
         key
     }
-    
+
     pub(in crate::execution) fn setup_identity_with_withdrawal_key_and_system_credits(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
@@ -429,7 +429,11 @@ pub(in crate::execution) mod tests {
             }),
             epoch_info: EpochInfo::V0(EpochInfoV0 {
                 current_epoch_index: block_info.epoch.index,
-                previous_epoch_index: if block_info.epoch.index > 0 { Some(block_info.epoch.index - 1)} else { None},
+                previous_epoch_index: if block_info.epoch.index > 0 {
+                    Some(block_info.epoch.index - 1)
+                } else {
+                    None
+                },
                 is_epoch_change: false,
             }),
             hpmn_count: 0,

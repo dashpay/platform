@@ -260,12 +260,12 @@ mod tests {
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use dpp::tests::json_document::json_document_to_contract;
     use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+    use drive::drive::document::query::QueryDocumentsWithFlagsOutcomeV0Methods;
     use drive::query::DriveDocumentQuery;
     use drive::util::storage_flags::StorageFlags;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
-    use drive::drive::document::query::QueryDocumentsWithFlagsOutcomeV0Methods;
 
     mod creation_tests {
         use rand::Rng;
@@ -1371,11 +1371,11 @@ mod tests {
     }
 
     mod replacement_tests {
-        use std::collections::BTreeMap;
-        use dpp::identifier::Identifier;
-        use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
         use super::*;
         use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
+        use dpp::identifier::Identifier;
+        use dpp::prelude::IdentityNonce;
+        use std::collections::BTreeMap;
 
         #[test]
         fn test_document_replace_on_document_type_that_is_mutable() {
@@ -1533,8 +1533,10 @@ mod tests {
             );
         }
 
-        
-        fn perform_document_replace_on_profile_after_epoch_change(original_name: &str, new_name: &str, mut expected_flags: StorageFlags) {
+        fn perform_document_replace_on_profile_after_epoch_change(
+            original_name: &str,
+            new_names: Vec<(&str, StorageFlags)>,
+        ) {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -1571,11 +1573,6 @@ mod tests {
             document.set("displayName", original_name.into());
             document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
-            let mut altered_document = document.clone();
-
-            altered_document.increment_revision().unwrap();
-            altered_document.set("displayName", new_name.into());
-
             let documents_batch_create_transition =
                 DocumentsBatchTransition::new_document_creation_transition_from_document(
                     document.clone(),
@@ -1590,7 +1587,7 @@ mod tests {
                     None,
                     None,
                 )
-                    .expect("expect to create documents batch transition");
+                .expect("expect to create documents batch transition");
 
             let documents_batch_create_serialized_transition = documents_batch_create_transition
                 .serialize_to_bytes()
@@ -1620,83 +1617,251 @@ mod tests {
                 .unwrap()
                 .expect("expected to commit transaction");
 
-            fast_forward_to_block(&platform, 500_000_000, 900, 42, 1, true); //less than a week
+            for (i, (new_name, mut expected_flags)) in new_names.into_iter().enumerate() {
+                document.increment_revision().unwrap();
+                document.set("displayName", new_name.into());
 
-            let documents_batch_update_transition =
-                DocumentsBatchTransition::new_document_replacement_transition_from_document(
-                    altered_document,
-                    profile,
-                    &key,
-                    3,
-                    0,
-                    &signer,
-                    platform_version,
-                    None,
-                    None,
-                    None,
-                )
+                fast_forward_to_block(
+                    &platform,
+                    500_000_000 + i as u64 * 1000,
+                    900 + i as u64,
+                    42,
+                    1 + i as u16,
+                    true,
+                ); //less than a week
+
+                let documents_batch_update_transition =
+                    DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                        document.clone(),
+                        profile,
+                        &key,
+                        3 + i as IdentityNonce,
+                        0,
+                        &signer,
+                        platform_version,
+                        None,
+                        None,
+                        None,
+                    )
                     .expect("expect to create documents batch transition");
 
-            let documents_batch_update_serialized_transition = documents_batch_update_transition
-                .serialize_to_bytes()
-                .expect("expected documents batch serialized state transition");
+                let documents_batch_update_serialized_transition =
+                    documents_batch_update_transition
+                        .serialize_to_bytes()
+                        .expect("expected documents batch serialized state transition");
 
-            let transaction = platform.drive.grove.start_transaction();
+                let transaction = platform.drive.grove.start_transaction();
 
-            let platform_state = platform.state.load();
+                let platform_state = platform.state.load();
 
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![documents_batch_update_serialized_transition.clone()],
-                    &platform_state,
-                    platform_state.last_block_info(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
-                )
-                .expect("expected to process state transition");
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &vec![documents_batch_update_serialized_transition.clone()],
+                        &platform_state,
+                        platform_state.last_block_info(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
 
-            platform
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                assert_eq!(processing_result.invalid_paid_count(), 0);
+
+                assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+                assert_eq!(processing_result.valid_count(), 1);
+
+                let drive_query = DriveDocumentQuery::new_primary_key_single_item_query(
+                    &dashpay,
+                    profile,
+                    document.id(),
+                );
+
+                let mut documents = platform
+                    .drive
+                    .query_documents_with_flags(drive_query, None, false, None, None)
+                    .expect("expected to get back documents")
+                    .documents_owned();
+
+                let (_first_document, storage_flags) = documents.remove(0);
+
+                let storage_flags = storage_flags.expect("expected storage flags");
+
+                expected_flags.set_owner_id(identity.id().to_buffer());
+
+                assert_eq!(storage_flags, expected_flags);
+            }
+
+            let issues = platform
                 .drive
                 .grove
-                .commit_transaction(transaction)
-                .unwrap()
-                .expect("expected to commit transaction");
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to have no issues");
 
-            assert_eq!(processing_result.invalid_paid_count(), 0);
-
-            assert_eq!(processing_result.invalid_unpaid_count(), 0);
-
-            assert_eq!(processing_result.valid_count(), 1);
-
-            let drive_query = DriveDocumentQuery::new_primary_key_single_item_query(&dashpay, profile, document.id());
-
-            let mut documents = platform
-                .drive
-                .query_documents_with_flags(drive_query, None, false, None, None)
-                .expect("expected to get back documents")
-                .documents_owned();
-            
-            let (_first_document, storage_flags) = documents.remove(0);
-            
-            let storage_flags = storage_flags.expect("expected storage flags");
-
-            expected_flags.set_owner_id(identity.id().to_buffer());
-            
-            assert_eq!(storage_flags, expected_flags);
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
-
 
         #[test]
         fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size() {
-            perform_document_replace_on_profile_after_epoch_change("Sam", "Samuel", StorageFlags::MultiEpochOwned(0, BTreeMap::from([(1,6)]), Identifier::default().to_buffer()));
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![(
+                    "Samuel",
+                    StorageFlags::MultiEpochOwned(
+                        0,
+                        BTreeMap::from([(1, 6)]),
+                        Identifier::default().to_buffer(),
+                    ),
+                )],
+            );
         }
 
         #[test]
         fn test_document_replace_on_document_type_that_is_mutable_different_epoch_smaller_size() {
-            perform_document_replace_on_profile_after_epoch_change("Sam", "S", StorageFlags::SingleEpochOwned(0, Identifier::default().to_buffer()));
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![(
+                    "S",
+                    StorageFlags::SingleEpochOwned(0, Identifier::default().to_buffer()),
+                )],
+            );
+        }
+
+        #[test]
+        fn test_document_replace_on_document_type_that_is_mutable_different_epoch_same_size() {
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![(
+                    "Max",
+                    StorageFlags::SingleEpochOwned(0, Identifier::default().to_buffer()),
+                )],
+            );
+        }
+
+        #[test]
+        fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_bigger_size(
+        ) {
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![
+                    (
+                        "Samuel",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 6)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                    (
+                        "SamuelW",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 6), (2, 4)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                ],
+            );
+        }
+
+        #[test]
+        fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_bigger_size_by_3_bytes(
+        ) {
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![
+                    (
+                        "Samuel",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 6)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                    (
+                        "SamuelWes",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 6), (2, 6)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                ],
+            );
+        }
+
+        #[test]
+        fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_smaller_size(
+        ) {
+            // In this case we start with the size Samuell Base epoch 0 epoch 1 added 7 bytes
+            // Then we try to update it to         Sami    Base epoch 2
+            // Epoch 1 added 7 bytes is itself 3 bytes
+            // Sami is 3 bytes less than Samuell
+            // First iteration will say we should remove 6 bytes
+            // We need to start by calculating the cost of the original storage flags, in this case 5 bytes
+            // Then we need to calculate the cost of the new storage flags, in this case 2 bytes
+            // We should do the difference, then apply that difference in the combination function
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![
+                    (
+                        "Samuell",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 7)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                    (
+                        "Sami",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 4)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                ],
+            );
+        }
+
+        #[test]
+        fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_back_to_original(
+        ) {
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![
+                    (
+                        "Samuel",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 6)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                    (
+                        "Sam",
+                        StorageFlags::SingleEpochOwned(0, Identifier::default().to_buffer()),
+                    ),
+                ],
+            );
         }
 
         #[test]

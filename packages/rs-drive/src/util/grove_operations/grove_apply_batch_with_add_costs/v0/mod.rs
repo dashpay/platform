@@ -75,12 +75,13 @@ impl Drive {
             }),
             |cost, old_flags, new_flags| {
                 // if there were no flags before then the new flags are used
-                if old_flags.is_none() {
+                let Some(old_flags) = old_flags else {
                     return Ok(false);
-                }
+                };
+
                 // This could be none only because the old element didn't exist
                 // If they were empty we get an error
-                let maybe_old_storage_flags = StorageFlags::map_some_element_flags_ref(&old_flags)
+                let maybe_old_storage_flags = StorageFlags::from_element_flags_ref(&old_flags)
                     .map_err(|e| {
                         GroveError::JustInTimeElementFlagsClientError(
                             format!("drive did not understand flags of old item being updated: {}", e)
@@ -95,6 +96,7 @@ impl Drive {
                     .ok_or(GroveError::JustInTimeElementFlagsClientError(
                         "removing flags from an item with flags is not allowed".to_string()
                     ))?;
+                let change_in_storage_flags_size = new_flags.len() as i64 - old_flags.len() as i64;
                 let binding = maybe_old_storage_flags.clone().unwrap();
                 let old_epoch_index_map = binding.epoch_index_map();
                 let new_epoch_index_map = new_storage_flags.epoch_index_map();
@@ -161,6 +163,15 @@ impl Drive {
                             Ok(true)
                         }
                     }
+                    OperationStorageTransitionType::OperationUpdateSameSize => {
+                        if let Some(old_storage_flags) = maybe_old_storage_flags {
+                            // if there were old storage flags we should just keep them
+                            *new_flags = old_storage_flags.to_element_flags();
+                            Ok(true)
+                        } else {
+                            Ok(false)
+                        }
+                    }
                     _ => Ok(false),
                 }
             },
@@ -171,7 +182,7 @@ impl Drive {
                             format!("drive did not understand flags of item being updated: {}",e)
                         )
                     })?;
-                // if there were no flags before then the new flags are used
+                // if we removed key bytes then we removed the entire value
                 match maybe_storage_flags {
                     None => Ok((
                         BasicStorageRemoval(removed_key_bytes),
