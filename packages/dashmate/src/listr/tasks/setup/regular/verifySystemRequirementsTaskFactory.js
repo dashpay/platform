@@ -1,16 +1,18 @@
 import chalk from 'chalk';
 import { Listr } from 'listr2';
-import os from 'os';
-import * as diskusage from 'diskusage';
-import si from 'systeminformation';
 
 /**
  *
  * @param {Docker} docker
  * @param {DockerCompose} dockerCompose
+ * @param {getOperatingSystemInfo} getOperatingSystemInfo
  * @return {verifySystemRequirementsTask}
  */
-export default function verifySystemRequirementsTaskFactory(docker, dockerCompose) {
+export default function verifySystemRequirementsTaskFactory(
+  docker,
+  dockerCompose,
+  getOperatingSystemInfo,
+) {
   /**
    * @typedef {function} verifySystemRequirementsTask
    * @returns {Listr}
@@ -29,21 +31,14 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
 
           const warnings = [];
 
-          // Get system info
-          let systemInfo;
-          try {
-            systemInfo = await docker.info();
-          } catch (e) {
-            if (process.env.DEBUG) {
-              // eslint-disable-next-line no-console
-              console.warn(`Can't get docker info: ${e}`);
-            }
-          }
+          const {
+            dockerSystemInfo, cpu, memory, diskSpace,
+          } = await getOperatingSystemInfo();
 
-          if (systemInfo) {
-            if (Number.isInteger(systemInfo.NCPU)) {
+          if (dockerSystemInfo) {
+            if (Number.isInteger(dockerSystemInfo.NCPU)) {
               // Check CPU cores
-              const cpuCores = systemInfo.NCPU;
+              const cpuCores = dockerSystemInfo.NCPU;
 
               if (cpuCores < MINIMUM_CPU_CORES) {
                 warnings.push(`${cpuCores} CPU cores detected. At least ${MINIMUM_CPU_CORES} are required`);
@@ -54,8 +49,8 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
             }
 
             // Check RAM
-            if (Number.isInteger(systemInfo.MemTotal)) {
-              const memoryGb = systemInfo.MemTotal / (1024 ** 3); // Convert to GB
+            if (Number.isInteger(dockerSystemInfo.MemTotal)) {
+              const memoryGb = dockerSystemInfo.MemTotal / (1024 ** 3); // Convert to GB
 
               if (memoryGb < MINIMUM_RAM) {
                 warnings.push(`${memoryGb.toFixed(2)}GB RAM detected. At least ${MINIMUM_RAM}GB is required`);
@@ -67,40 +62,20 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
           }
 
           // Check CPU frequency
-          let hostCpu;
-          try {
-            hostCpu = await si.cpu();
-          } catch {
-            if (process.env.DEBUG) {
-              // eslint-disable-next-line no-console
-              console.warn('Can\'t get CPU info');
-            }
-          }
-
-          if (hostCpu) {
-            if (hostCpu.speed === 0) {
+          if (cpu) {
+            if (cpu.speed === 0) {
               if (process.env.DEBUG) {
                 // eslint-disable-next-line no-console
                 console.warn('Can\'t get CPU frequency');
               }
-            } else if (hostCpu.speed < MINIMUM_CPU_FREQUENCY) {
-              warnings.push(`${hostCpu.speed.toFixed(1)}GHz CPU frequency detected. At least ${MINIMUM_CPU_FREQUENCY}GHz is required`);
+            } else if (cpu.speed < MINIMUM_CPU_FREQUENCY) {
+              warnings.push(`${cpu.speed.toFixed(1)}GHz CPU frequency detected. At least ${MINIMUM_CPU_FREQUENCY}GHz is required`);
             }
           }
 
           // Check swap information
-          let swap;
-          try {
-            swap = await si.mem();
-          } catch (e) {
-            if (process.env.DEBUG) {
-              // eslint-disable-next-line no-console
-              console.warn(`Can't get swap info: ${e}`);
-            }
-          }
-
-          if (swap) {
-            const swapTotalGb = (swap.swaptotal / (1024 ** 3)); // Convert bytes to GB
+          if (memory) {
+            const swapTotalGb = (memory.swaptotal / (1024 ** 3)); // Convert bytes to GB
 
             if (swapTotalGb < 2) {
               warnings.push(`Swap space is ${swapTotalGb.toFixed(2)}GB. 2GB is recommended`);
@@ -108,32 +83,8 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
           }
 
           // Get disk usage info
-          let diskInfo;
-
-          if (systemInfo) {
-            try {
-              diskInfo = await diskusage.check(systemInfo.DockerRootDir);
-            } catch (e) {
-              if (process.env.DEBUG) {
-                // eslint-disable-next-line no-console
-                console.warn(`Can't get disk usage for '${systemInfo.DockerRootDir}': ${e}`);
-              }
-            }
-          }
-
-          if (!diskInfo) {
-            try {
-              diskInfo = await diskusage.check(os.platform() === 'win32' ? 'c:' : '/');
-            } catch (e) {
-              if (process.env.DEBUG) {
-                // eslint-disable-next-line no-console
-                console.warn(`Can't get disk usage for root directory: ${e}`);
-              }
-            }
-          }
-
-          if (diskInfo) {
-            const availableDiskSpace = diskInfo.available / (1024 ** 3); // Convert to GB
+          if (diskSpace) {
+            const availableDiskSpace = diskSpace.available / (1024 ** 3); // Convert to GB
 
             if (availableDiskSpace < MINIMUM_DISK_SPACE) {
               warnings.push(`${availableDiskSpace.toFixed(2)}GB available disk space detected. At least ${MINIMUM_DISK_SPACE}GB is required`);
@@ -142,7 +93,7 @@ export default function verifySystemRequirementsTaskFactory(docker, dockerCompos
 
           let message = '';
           if (ctx.isHP) {
-            message = `Dash Platform requires more resources than the current system provides.
+            message = chalk`Dash Platform requires more resources than the current system provides.
     Evonode rewards are paid based on block production, and resource-limited
     nodes may not be able to produce blocks quickly enough to receive reward
     payments. Upgrading system resources is recommended before proceeding.
