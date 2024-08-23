@@ -22,7 +22,7 @@ function check {
 }
 
 echo Update the rust version in the Cargo.toml file
-sed -i "s/^rust-version = \".*\"/rust-version = \"${VERSION}\"/" "${PROJECT_ROOT}"/*/*/Cargo.toml
+sed -i "s/^rust-version = \".*\"/rust-version = \"${VERSION}\"/" "${PROJECT_ROOT}"/Cargo.toml
 check "${PROJECT_ROOT}"/Cargo.toml
 
 echo Update the rust version in the README.md
