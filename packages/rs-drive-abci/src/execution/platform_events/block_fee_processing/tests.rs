@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod refund_tests {
     use crate::execution::validation::state_transition::tests::{
-        fetch_expected_identity_balance, process_state_transitions, setup_identity,
+        fetch_expected_identity_balance, process_state_transitions,
         setup_identity_with_system_credits,
     };
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -10,17 +10,13 @@ mod refund_tests {
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use bs58;
     use dpp::block::block_info::BlockInfo;
-    use dpp::block::epoch::EpochIndex;
     use dpp::dash_to_credits;
-    use dpp::dashcore::Network;
-    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::{
         CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
     };
     use dpp::data_contract::document_type::DocumentTypeRef;
-    use dpp::data_contract::DataContract;
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
@@ -28,24 +24,17 @@ mod refund_tests {
     use dpp::fee::fee_result::FeeResult;
     use dpp::fee::Credits;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
-    use dpp::platform_value;
-    use dpp::platform_value::{platform_value, Bytes32, Value};
+    use dpp::platform_value::Bytes32;
     use dpp::prelude::CoreBlockHeight;
-    use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
-    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
-    use drive::util::object_size_info::OwnedDocumentInfo;
-    use drive::util::storage_flags::StorageFlags;
     use drive::util::test_helpers::setup_contract;
     use once_cell::sync::Lazy;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
-    use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::ops::Deref;
 

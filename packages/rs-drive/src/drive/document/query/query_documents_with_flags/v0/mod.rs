@@ -7,7 +7,6 @@ use dpp::block::epoch::Epoch;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::TransactionArg;
 
