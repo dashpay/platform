@@ -29,7 +29,7 @@
 # 3. Github Actions have shared networking configured, so we need to set a random
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
-ARG ALPINE_VERSION=3.18
+ARG ALPINE_VERSION=3.20
 ARG PROTOC_VERSION=25.2
 ARG RUSTC_WRAPPER
 
@@ -48,6 +48,7 @@ RUN apk add --no-cache \
         ca-certificates \
         clang-static clang-dev \
         cmake \
+        curl \
         git \
         libc-dev \
         linux-headers \
