@@ -68,13 +68,17 @@ RUN npm config set --global audit false
 
 ARG TARGETARCH
 
+WORKDIR /platform
+
+
 # TODO: It doesn't sharing PATH between stages, so we need "source $HOME/.cargo/env" everywhere
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
-    --profile minimal \
-    -y \
-    # Rust version the same as in /README.md
-    --default-toolchain 1.76 \
-    --target wasm32-unknown-unknown
+COPY rust-toolchain.toml .
+RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | tr -d '"')" && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
+        --profile minimal \
+        -y \
+        --default-toolchain "${TOOLCHAIN_VERSION}" \
+        --target wasm32-unknown-unknown
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
