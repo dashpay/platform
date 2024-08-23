@@ -149,7 +149,7 @@ ARG AWS_SECRET_ACCESS_KEY
 FROM deps-${RUSTC_WRAPPER:-base} AS deps
 
 ARG SCCACHE_S3_KEY_PREFIX
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl-alpine${ALPINE_VERSION}
 
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
@@ -188,7 +188,7 @@ RUN touch /platform/packages/dapi-grpc/build.rs
 FROM sources AS build-drive-abci
 
 ARG SCCACHE_S3_KEY_PREFIX
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl-alpine${ALPINE_VERSION}
 
 RUN mkdir /artifacts
 
@@ -212,7 +212,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 FROM sources AS build-js
 
 ARG SCCACHE_S3_KEY_PREFIX
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/wasm/wasm32
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/wasm/wasm32-alpine${ALPINE_VERSION}
 
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
