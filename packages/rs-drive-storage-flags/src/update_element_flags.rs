@@ -78,6 +78,16 @@ impl StorageFlags {
                 }
             }
             OperationStorageTransitionType::OperationUpdateSmallerSize => {
+                println!(
+                    ">removing_bytes:{:?} old:{} new:{}",
+                    cost.removed_bytes,
+                    if maybe_old_storage_flags.is_some() {
+                        maybe_old_storage_flags.as_ref().unwrap().to_string()
+                    } else {
+                        "None".to_string()
+                    },
+                    new_storage_flags,
+                );
                 // In the case that the owners do not match up this means that there has been a transfer
                 //  of ownership of the underlying document, the value held is transferred to the new owner
                 let combined_storage_flags = StorageFlags::optional_combine_removed_bytes(

@@ -44,6 +44,9 @@ type OwnerId = [u8; 32];
 /// The size of single epoch flags
 pub const SINGLE_EPOCH_FLAGS_SIZE: u32 = 3;
 
+/// The minimum size of the non-base flags
+pub const MINIMUM_NON_BASE_FLAGS_SIZE: u32 = 3;
+
 /// Storage flags
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StorageFlags {
@@ -257,21 +260,41 @@ impl StorageFlags {
                     "can not remove bytes when there is no epoch".to_string(),
                 ),
             )?;
+            let mut keys_to_remove = Vec::new(); // To store the keys that need to be removed
+
             sectioned_bytes
                 .iter()
                 .try_for_each(|(epoch, removed_bytes)| {
+                    if *epoch == base_epoch as u64 {
+                        return Ok::<(), StorageFlagsError>(());
+                    }
                     let bytes_added_in_epoch = other_epoch_bytes.get_mut(&(*epoch as u16)).ok_or(
-                        StorageFlagsError::RemovingAtEpochWithNoAssociatedStorage(
-                            "can not remove bytes when there is no epoch".to_string(),
-                        ),
+                        StorageFlagsError::RemovingAtEpochWithNoAssociatedStorage(format!(
+                            "can not remove bytes when there is no epoch number [{}]",
+                            *epoch
+                        )),
                     )?;
-                    *bytes_added_in_epoch = bytes_added_in_epoch
+
+                    let desired_bytes_in_epoch = bytes_added_in_epoch
                         .checked_sub(*removed_bytes)
                         .ok_or(StorageFlagsError::StorageFlagsOverflow(
-                            "can't remove more bytes than exist at that epoch".to_string(),
-                        ))?;
+                        "can't remove more bytes than exist at that epoch".to_string(),
+                    ))?;
+
+                    if desired_bytes_in_epoch <= MINIMUM_NON_BASE_FLAGS_SIZE {
+                        // Collect the key to remove later
+                        keys_to_remove.push(*epoch as u16);
+                    } else {
+                        *bytes_added_in_epoch = desired_bytes_in_epoch;
+                    }
+
                     Ok::<(), StorageFlagsError>(())
                 })?;
+
+            // Now remove the keys after the iteration
+            for key in keys_to_remove {
+                other_epoch_bytes.remove(&key);
+            }
         }
         println!(
             "         >combine_with_higher_base_epoch_remove_bytes: self:{:?} & rhs:{:?} -> {:?}",
@@ -280,9 +303,16 @@ impl StorageFlags {
             other_epoch_bytes
         );
 
-        match owner_id {
-            None => Ok(MultiEpoch(base_epoch, other_epoch_bytes)),
-            Some(owner_id) => Ok(MultiEpochOwned(base_epoch, other_epoch_bytes, *owner_id)),
+        if other_epoch_bytes.is_empty() {
+            match owner_id {
+                None => Ok(SingleEpoch(base_epoch)),
+                Some(owner_id) => Ok(SingleEpochOwned(base_epoch, *owner_id)),
+            }
+        } else {
+            match owner_id {
+                None => Ok(MultiEpoch(base_epoch, other_epoch_bytes)),
+                Some(owner_id) => Ok(MultiEpochOwned(base_epoch, other_epoch_bytes, *owner_id)),
+            }
         }
     }
 
@@ -747,9 +777,12 @@ impl StorageFlags {
 
             while bytes_left > 0 {
                 if let Some((epoch_index, bytes_in_epoch)) = rev_iter.next() {
-                    if *bytes_in_epoch <= bytes_left {
-                        sectioned_storage_removal.insert(*epoch_index as u64, *bytes_in_epoch);
-                        bytes_left -= *bytes_in_epoch;
+                    if *bytes_in_epoch <= bytes_left + MINIMUM_NON_BASE_FLAGS_SIZE {
+                        sectioned_storage_removal.insert(
+                            *epoch_index as u64,
+                            *bytes_in_epoch - MINIMUM_NON_BASE_FLAGS_SIZE,
+                        );
+                        bytes_left -= *bytes_in_epoch - MINIMUM_NON_BASE_FLAGS_SIZE;
                     } else {
                         // Correctly take only the required bytes_left from this epoch
                         sectioned_storage_removal.insert(*epoch_index as u64, bytes_left);
@@ -827,9 +860,11 @@ impl StorageFlags {
 
 #[cfg(test)]
 mod storage_flags_tests {
-    use crate::StorageFlags;
     use crate::{BaseEpoch, BytesAddedInEpoch, MergingOwnersStrategy, OwnerId};
-    use grovedb_costs::storage_cost::removal::StorageRemovedBytes;
+    use crate::{StorageFlags, MINIMUM_NON_BASE_FLAGS_SIZE};
+    use grovedb_costs::storage_cost::removal::{
+        StorageRemovalPerEpochByIdentifier, StorageRemovedBytes,
+    };
     use intmap::IntMap;
     use std::collections::BTreeMap;
     #[test]
@@ -1136,6 +1171,91 @@ mod storage_flags_tests {
         [0u8; 32]
     }
 
+    fn single_epoch_removed_bytes_map(
+        owner_id: [u8; 32],
+        epoch_index: u64,
+        bytes_removed: u32,
+    ) -> StorageRemovalPerEpochByIdentifier {
+        let mut removed_bytes = StorageRemovalPerEpochByIdentifier::default();
+        let mut removed_bytes_for_identity = IntMap::new();
+        removed_bytes_for_identity.insert(epoch_index, bytes_removed);
+        removed_bytes.insert(owner_id, removed_bytes_for_identity);
+        removed_bytes
+    }
+
+    fn multi_epoch_removed_bytes_map(
+        owner_id: [u8; 32],
+        removed_bytes_per_epoch: IntMap<u32>,
+    ) -> StorageRemovalPerEpochByIdentifier {
+        let mut removed_bytes = StorageRemovalPerEpochByIdentifier::default();
+        removed_bytes.insert(owner_id, removed_bytes_per_epoch);
+        removed_bytes
+    }
+
+    #[test]
+    fn test_combine_that_would_remove_the_epoch_completely() {
+        let owner_id = [2; 32];
+        let left_base_index: BaseEpoch = 0;
+        let right_base_index: BaseEpoch = 1;
+        let other_epochs = create_epoch_map(1, 5);
+        let left_flag = StorageFlags::MultiEpochOwned(left_base_index, other_epochs, owner_id);
+        let right_flag = StorageFlags::new_single_epoch(right_base_index, Some(owner_id));
+
+        let removed_bytes = single_epoch_removed_bytes_map(owner_id, 1, 3);
+        let combined_flag = left_flag
+            .clone()
+            .combine_removed_bytes(
+                right_flag.clone(),
+                &StorageRemovedBytes::SectionedStorageRemoval(removed_bytes.clone()),
+                MergingOwnersStrategy::UseOurs,
+            )
+            .expect("expected to combine flags");
+
+        assert_eq!(
+            combined_flag,
+            StorageFlags::SingleEpochOwned(left_base_index, owner_id)
+        );
+        println!(
+            "{:?} & {:?} removed:{:?} --> {:?}\n",
+            left_flag, right_flag, removed_bytes, combined_flag
+        );
+    }
+
+    #[test]
+    fn test_combine_that_would_remove_the_epoch_completely_with_many_entries() {
+        let owner_id = [2; 32];
+        let left_base_index: BaseEpoch = 0;
+        let right_base_index: BaseEpoch = 1;
+        let mut other_epochs = BTreeMap::new();
+        let mut removed_bytes = IntMap::new();
+        for i in 1..200 {
+            other_epochs.insert(i, MINIMUM_NON_BASE_FLAGS_SIZE + 1);
+            removed_bytes.insert(i as u64, 1); //anything between 1 and MINIMUM_NON_BASE_FLAGS_SIZE + 1 would be the same
+        }
+
+        let left_flag = StorageFlags::MultiEpochOwned(left_base_index, other_epochs, owner_id);
+        let right_flag = StorageFlags::new_single_epoch(right_base_index, Some(owner_id));
+
+        let removed_bytes = multi_epoch_removed_bytes_map(owner_id, removed_bytes);
+        let combined_flag = left_flag
+            .clone()
+            .combine_removed_bytes(
+                right_flag.clone(),
+                &StorageRemovedBytes::SectionedStorageRemoval(removed_bytes.clone()),
+                MergingOwnersStrategy::UseOurs,
+            )
+            .expect("expected to combine flags");
+
+        assert_eq!(
+            combined_flag,
+            StorageFlags::SingleEpochOwned(left_base_index, owner_id)
+        );
+        println!(
+            "{:?} & {:?} removed:{:?} --> {:?}\n",
+            left_flag, right_flag, removed_bytes, combined_flag
+        );
+    }
+
     /// Tests the case when using SingleEpoch flags, ensuring that the correct storage removal is calculated.
     #[test]
     fn test_single_epoch_removal() {
@@ -1200,7 +1320,7 @@ mod storage_flags_tests {
                 let mut map = BTreeMap::new();
                 map.insert(
                     default_owner_id(),
-                    IntMap::from_iter([(7u64, 200), (6u64, 50)]),
+                    IntMap::from_iter([(7u64, 197), (6u64, 53)]),
                 );
                 map
             })
@@ -1230,7 +1350,7 @@ mod storage_flags_tests {
                 let mut map = BTreeMap::new();
                 map.insert(
                     default_owner_id(),
-                    IntMap::from_iter([(7u64, 50), (6u64, 100), (5u64, 100)]),
+                    IntMap::from_iter([(7u64, 47), (6u64, 97), (5u64, 106)]),
                 );
                 map
             })
@@ -1261,7 +1381,7 @@ mod storage_flags_tests {
                 let mut map = BTreeMap::new();
                 map.insert(
                     owner_id,
-                    IntMap::from_iter([(7u64, 50), (6u64, 100), (5u64, 100)]),
+                    IntMap::from_iter([(7u64, 47), (6u64, 97), (5u64, 106)]),
                 );
                 map
             })
@@ -1326,7 +1446,7 @@ mod storage_flags_tests {
                 let mut map = BTreeMap::new();
                 map.insert(
                     default_owner_id(),
-                    IntMap::from_iter([(7u64, 200), (6u64, 100)]),
+                    IntMap::from_iter([(7u64, 197), (6u64, 97), (5u64, 6)]),
                 );
                 map
             })
@@ -1357,7 +1477,7 @@ mod storage_flags_tests {
                 let mut map = BTreeMap::new();
                 map.insert(
                     owner_id,
-                    IntMap::from_iter([(7u64, 200), (6u64, 100), (5u64, 50)]),
+                    IntMap::from_iter([(7u64, 197), (6u64, 97), (5u64, 56)]),
                 );
                 map
             })
@@ -1405,7 +1525,10 @@ mod storage_flags_tests {
             value_removal,
             StorageRemovedBytes::SectionedStorageRemoval({
                 let mut map = BTreeMap::new();
-                map.insert(owner_id, IntMap::from_iter([(6u64, 300), (7u64, 400)]));
+                map.insert(
+                    owner_id,
+                    IntMap::from_iter([(5u64, 6), (6u64, 297), (7u64, 397)]),
+                );
                 map
             })
         );
@@ -1433,7 +1556,7 @@ mod storage_flags_tests {
                 let mut map = BTreeMap::new();
                 map.insert(
                     default_owner_id(),
-                    IntMap::from_iter([(7u64, 100), (6u64, 300), (5u64, 100)]),
+                    IntMap::from_iter([(7u64, 97), (6u64, 297), (5u64, 106)]),
                 );
                 map
             })

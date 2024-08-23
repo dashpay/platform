@@ -1678,7 +1678,12 @@ mod tests {
 
                 assert_eq!(processing_result.invalid_unpaid_count(), 0);
 
-                assert_eq!(processing_result.valid_count(), 1);
+                assert_eq!(
+                    processing_result.valid_count(),
+                    1,
+                    "{:?}",
+                    processing_result.execution_results()
+                );
 
                 let drive_query = DriveDocumentQuery::new_primary_key_single_item_query(
                     &dashpay,
