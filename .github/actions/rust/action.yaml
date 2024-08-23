@@ -3,9 +3,8 @@ name: "Rust Dependencies"
 description: "Install dependencies"
 inputs:
   toolchain:
-    description: Rust toolchain to use, stable / nightly / beta, or exact version
-    # The same as in /README.md
-    default: "1.76"
+    description: Rust toolchain to use, stable / nightly / beta, or exact version; uses rust-toolchain.toml if not specified
+    default: ""
   target:
     description: Target Rust platform
     required: false
@@ -21,11 +20,24 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Extract Rust toolchain version from rust-toolchain.toml
+      shell: bash
+      id: rust_toolchain
+      run: |
+        TOOLCHAIN_VERSION="${{ inputs.toolchain }}"
+        if [[ -z "$TOOLCHAIN_VERSION" ]]; then
+          TOOLCHAIN_VERSION=$(grep channel rust-toolchain.toml | awk '{print $3}' | tr -d '"')
+        fi
+
+        echo "TOOLCHAIN_VERSION=$TOOLCHAIN_VERSION" >> $GITHUB_ENV
+        echo "::set-output name=version::$TOOLCHAIN_VERSION"
+
     # TODO: Move to AMI and build every day
     - uses: dtolnay/rust-toolchain@master
       name: Install Rust toolchain
+      id: install_rust
       with:
-        toolchain: ${{ inputs.toolchain }}
+        toolchain: ${{ steps.rust_toolchain.outputs.version }}
         target: ${{ inputs.target }}
         components: ${{ inputs.components }}
 
