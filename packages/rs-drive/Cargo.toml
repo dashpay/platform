@@ -31,7 +31,7 @@ dpp = { path = "../rs-dpp", features = [
 ], default-features = false, optional = true }
 thiserror = { version = "1.0.59" }
 tracing = { version = "0.1.37", default-features = false, features = [] }
-derive_more = { version = "0.99.17" }
+derive_more = { version = "1.0", features = ["from"] }
 hex = { version = "0.4.3" }
 
 # optional dependencies
