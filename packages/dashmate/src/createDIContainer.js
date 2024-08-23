@@ -75,6 +75,7 @@ import reindexNodeTaskFactory from './listr/tasks/reindexNodeTaskFactory.js';
 import updateNodeFactory from './update/updateNodeFactory.js';
 
 import generateHDPrivateKeys from './util/generateHDPrivateKeys.js';
+import getOperatingSystemInfoFactory from './util/getOperatingSystemInfoFactory.js';
 
 import obtainZeroSSLCertificateTaskFactory from './listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory.js';
 import VerificationServer from './listr/tasks/ssl/VerificationServer.js';
@@ -170,6 +171,7 @@ export default async function createDIContainer(options = {}) {
    */
   container.register({
     generateHDPrivateKeys: asValue(generateHDPrivateKeys),
+    getOperatingSystemInfo: asFunction(getOperatingSystemInfoFactory),
   });
 
   /**

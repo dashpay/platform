@@ -479,6 +479,22 @@ export default class DockerCompose {
   }
 
   /**
+   * Logs
+   *
+   * @param {Config} config
+   * @return {Promise<void>}
+   */
+  async logs(config, services = []) {
+    await this.throwErrorIfNotInstalled();
+
+    try {
+      return dockerCompose.logs(services, this.#createOptions(config));
+    } catch (e) {
+      throw new DockerComposeError(e);
+    }
+  }
+
+  /**
    * @return {Promise<void>}
    */
   async throwErrorIfNotInstalled() {

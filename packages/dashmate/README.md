@@ -345,6 +345,29 @@ It is also possible to start a full node instead of a masternode. Modify the con
 ```bash
 dashmate config set core.masternode.enable false
 ```
+### Doctor
+
+The `doctor` command collects all useful debugging info into a .tar archive in your current working directory.
+
+Archive will contain all core and platform debugging data and logs for each running service.
+
+```
+USAGE
+  $ dashmate doctor [--config <value>] [-v]
+
+FLAGS
+  -v, --verbose         use verbose mode for output
+      --config=<value>  configuration name to use
+
+DESCRIPTION
+  Generate a report about masternode
+```
+
+### Full node
+It is also possible to start a full node instead of a masternode. Modify the config setting as follows:
+```bash
+dashmate config set core.masternode.enable false
+```
 
 
 ### Node groups
