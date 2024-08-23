@@ -100,7 +100,7 @@ drive-abci = { path = ".", features = ["testing-config"] }
 
 # For tests of grovedb verify
 rocksdb = { version = "0.22.0" }
-integer-encoding = { version = "4.0.0" }
+integer-encoding = { version = "4.0.2" }
 
 [features]
 # TODO: Remove console for production

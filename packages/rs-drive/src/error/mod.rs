@@ -2,11 +2,11 @@ use self::drive::DriveError;
 use crate::error::cache::CacheError;
 use crate::error::contract::DataContractError;
 use crate::error::proof::ProofError;
-use crate::error::storage_flags::StorageFlagsError;
 use document::DocumentError;
 use dpp::data_contract::errors::DataContractError as ProtocolDataContractError;
 use dpp::platform_value::Error as ValueError;
 use dpp::ProtocolError;
+use drive_storage_flags::error::StorageFlagsError;
 use fee::FeeError;
 use identity::IdentityError;
 use query::QuerySyntaxError;
@@ -27,8 +27,6 @@ pub mod identity;
 pub mod proof;
 /// Query module
 pub mod query;
-/// Storage flags module
-pub mod storage_flags;
 
 /// Errors
 #[derive(Debug, thiserror::Error)]

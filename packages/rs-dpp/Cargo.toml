@@ -33,7 +33,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
 env_logger = { version = "0.9" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
-integer-encoding = { version = "4.0.0" }
+integer-encoding = { version = "4.0.2" }
 itertools = { version = "0.12.1" }
 jsonschema = { git = "https://github.com/dashpay/jsonschema-rs", branch = "configure_regexp", default-features = false, features = [
   "draft202012",

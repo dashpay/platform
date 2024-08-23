@@ -30,7 +30,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 #[cfg(any(feature = "server", feature = "verify"))]
 use std::collections::BTreeMap;
-use std::{fmt, mem};
+use std::fmt;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 type EpochIndex = u16;

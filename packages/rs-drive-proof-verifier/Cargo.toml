@@ -19,7 +19,7 @@ mocks = [
 
 [dependencies]
 
-thiserror = { version = "1.0.59" }
+thiserror = { version = "1.0.63" }
 dapi-grpc = { path = "../dapi-grpc" }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",

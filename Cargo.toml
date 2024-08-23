@@ -27,7 +27,7 @@ members = [
     "packages/strategy-tests",
     "packages/simple-signer",
     "packages/rs-json-schema-compatibility-validator",
-    "packages/check-features",
+    "packages/check-features", "packages/rs-drive-storage-flags",
 ]
 
 [patch.crates-io]
