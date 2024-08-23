@@ -1511,7 +1511,7 @@ dependencies = [
  "drive-storage-flags",
  "enum-map",
  "grovedb",
- "grovedb-costs 1.0.0 (git+https://github.com/dashpay/grovedb?branch=fix/JITfix)",
+ "grovedb-costs 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "grovedb-path",
  "grovedb-storage",
  "grovedb-version",
