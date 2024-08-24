@@ -42,7 +42,7 @@ pub fn validate_is_allowed_v0<C>(
                 block_info.epoch.index,
                 TARGET_EPOCH_INDEX,
             )
-                .into(),
+            .into(),
         ]);
     }
 
