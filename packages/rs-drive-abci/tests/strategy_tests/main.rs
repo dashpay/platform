@@ -314,6 +314,7 @@ mod tests {
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
+                current_identities: Vec::new(),
             },
             strategy,
             config,
@@ -456,6 +457,7 @@ mod tests {
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
+                current_identities: Vec::new(),
             },
             strategy,
             config,
@@ -505,12 +507,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1160,12 +1157,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -1252,12 +1244,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1463,12 +1450,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1653,12 +1635,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let block_count = 120;
@@ -1767,12 +1744,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let block_count = 120;
@@ -1900,12 +1872,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -2035,12 +2002,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -2401,12 +2363,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let block_count = 30;
@@ -2539,12 +2496,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let block_count = 21;
@@ -2695,12 +2647,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let block_count = 21;
@@ -2841,12 +2788,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let block_count = 30;
@@ -3011,12 +2953,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let block_count = 30;
@@ -3168,12 +3105,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -3258,12 +3190,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -3361,12 +3288,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -3506,6 +3428,7 @@ mod tests {
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms,
                     instant_lock_quorums,
+                    current_identities: Vec::new(),
                 },
                 strategy.clone(),
                 config.clone(),
@@ -3590,6 +3513,7 @@ mod tests {
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                     instant_lock_quorums,
+                    current_identities: Vec::new(),
                 },
                 strategy.clone(),
                 config.clone(),
@@ -3705,6 +3629,7 @@ mod tests {
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                     instant_lock_quorums,
+                    current_identities: Vec::new(),
                 },
                 strategy.clone(),
                 config.clone(),
@@ -3814,6 +3739,7 @@ mod tests {
                     start_time_ms: GENESIS_TIME_MS,
                     current_time_ms: end_time_ms + 1000,
                     instant_lock_quorums,
+                    current_identities: Vec::new(),
                 },
                 strategy.clone(),
                 config.clone(),
@@ -4310,12 +4236,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform_a = TestPlatformBuilder::new()
@@ -4560,6 +4481,7 @@ mod tests {
                 current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
+                current_identities: Vec::new(),
             },
             strategy,
             config,
@@ -4622,12 +4544,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -4684,12 +4601,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()

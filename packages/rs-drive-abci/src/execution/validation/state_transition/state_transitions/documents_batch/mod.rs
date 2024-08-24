@@ -3,6 +3,7 @@ mod advanced_structure;
 mod balance;
 mod data_triggers;
 mod identity_contract_nonce;
+mod is_allowed;
 mod state;
 mod transformer;
 
