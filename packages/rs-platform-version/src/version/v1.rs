@@ -807,7 +807,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                             reject_data_trigger: 0,
                         },
                     },
-                    allowance: 0,
+                    is_allowed: 0,
                     document_create_transition_structure_validation: 0,
                     document_delete_transition_structure_validation: 0,
                     document_replace_transition_structure_validation: 0,

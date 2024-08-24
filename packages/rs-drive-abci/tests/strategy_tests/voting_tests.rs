@@ -45,7 +45,7 @@ mod tests {
                 store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
-                disable_contested_documents_allowance_validation: false,
+                disable_contested_documents_is_allowed_validation: false,
             },
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
@@ -74,7 +74,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -153,7 +153,7 @@ mod tests {
         let mut voting_signer = Some(SimpleSigner::default());
 
         let ChainExecutionOutcome {
-            mut abci_app,
+            abci_app,
             proposers,
             validator_quorums,
             current_validator_quorum_hash,
@@ -208,7 +208,6 @@ mod tests {
             end_time_ms,
             identity_nonce_counter,
             identity_contract_nonce_counter,
-            state_transition_results_per_block,
             ..
         } = continue_chain_for_strategy(
             abci_app,
@@ -348,7 +347,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -358,7 +357,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys2);
 
@@ -416,7 +415,7 @@ mod tests {
                             "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
-                        .into(),
+                            .into(),
                     ),
                 ]),
                 Some(start_identities.last().unwrap().0.id()),
@@ -619,7 +618,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -629,7 +628,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys2);
 
@@ -687,7 +686,7 @@ mod tests {
                             "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
-                        .into(),
+                            .into(),
                     ),
                 ]),
                 Some(start_identities.last().unwrap().0.id()),
@@ -971,7 +970,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -981,7 +980,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys2);
 
@@ -1039,7 +1038,7 @@ mod tests {
                             "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
-                        .into(),
+                            .into(),
                     ),
                 ]),
                 Some(start_identities.last().unwrap().0.id()),
@@ -1335,7 +1334,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -1345,7 +1344,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys2);
 
@@ -1403,7 +1402,7 @@ mod tests {
                             "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
-                        .into(),
+                            .into(),
                     ),
                 ]),
                 Some(start_identities.last().unwrap().0.id()),

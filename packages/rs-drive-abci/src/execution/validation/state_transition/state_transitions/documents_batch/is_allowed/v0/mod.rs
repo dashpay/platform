@@ -10,7 +10,7 @@ use dpp::validation::ConsensusValidationResult;
 pub const TARGET_EPOCH_INDEX: EpochIndex = 3;
 
 #[inline(always)]
-pub fn validate_allowance_v0<C>(
+pub fn validate_is_allowed_v0<C>(
     state_transition: &DocumentsBatchTransition,
     platform: &PlatformRef<C>,
 ) -> ConsensusValidationResult<()> {
@@ -18,7 +18,7 @@ pub fn validate_allowance_v0<C>(
     if platform
         .config
         .testing_configs
-        .disable_contested_documents_allowance_validation
+        .disable_contested_documents_is_allowed_validation
     {
         return ConsensusValidationResult::new();
     }
@@ -42,7 +42,7 @@ pub fn validate_allowance_v0<C>(
                 block_info.epoch.index,
                 TARGET_EPOCH_INDEX,
             )
-            .into(),
+                .into(),
         ]);
     }
 
