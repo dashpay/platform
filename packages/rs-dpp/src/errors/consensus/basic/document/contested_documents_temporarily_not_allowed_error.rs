@@ -4,8 +4,6 @@ use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::prelude::Identifier;
-
 use crate::block::epoch::EpochIndex;
 use bincode::{Decode, Encode};
 

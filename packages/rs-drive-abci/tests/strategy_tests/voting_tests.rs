@@ -16,6 +16,7 @@ mod tests {
     use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
+    use assert_matches::assert_matches;
     use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
@@ -24,6 +25,7 @@ mod tests {
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::finished_vote_info::FinishedVoteOutcome;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::state_transition::StateTransition;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use drive::util::object_size_info::DataContractOwnedResolvedInfo;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
@@ -72,7 +74,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -301,8 +303,16 @@ mod tests {
             .get(&6)
             .expect("expected to get block 6");
 
-        // Document transaction was rejected
+        // Contested document was created
         assert_eq!(state_transitions_block_6.len(), 1);
+
+        let (state_transition, execution_result) = state_transitions_block_6
+            .first()
+            .expect("expected a document insert");
+
+        assert_matches!(state_transition, StateTransition::DocumentsBatch(_));
+
+        assert_eq!(execution_result.code, 0);
     }
 
     #[test]
@@ -338,7 +348,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -348,7 +358,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys2);
 
@@ -406,7 +416,7 @@ mod tests {
                             "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
-                        .into(),
+                            .into(),
                     ),
                 ]),
                 Some(start_identities.last().unwrap().0.id()),
@@ -609,7 +619,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -619,7 +629,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys2);
 
@@ -677,7 +687,7 @@ mod tests {
                             "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
-                        .into(),
+                            .into(),
                     ),
                 ]),
                 Some(start_identities.last().unwrap().0.id()),
@@ -961,7 +971,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -971,7 +981,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys2);
 
@@ -1029,7 +1039,7 @@ mod tests {
                             "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
-                        .into(),
+                            .into(),
                     ),
                 ]),
                 Some(start_identities.last().unwrap().0.id()),
@@ -1325,7 +1335,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys1);
 
@@ -1335,7 +1345,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
-            .unwrap();
+                .unwrap();
 
         simple_signer.add_keys(keys2);
 
@@ -1393,7 +1403,7 @@ mod tests {
                             "identity",
                             Value::from(start_identities.last().unwrap().0.id()),
                         )])
-                        .into(),
+                            .into(),
                     ),
                 ]),
                 Some(start_identities.last().unwrap().0.id()),
