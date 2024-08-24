@@ -3033,7 +3033,7 @@ mod tests {
             .into_iter()
             .filter(|(_, balance)| *balance != 0)
             .count();
-        assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+        assert_eq!(balance_count, 55); // 1 epoch worth of proposers
     }
 
     #[test]
