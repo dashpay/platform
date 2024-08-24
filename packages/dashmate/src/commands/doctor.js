@@ -103,7 +103,6 @@ export default class DoctorCommand extends ConfigBaseCommand {
         {
           title: 'Core status',
           task: async (ctx) => {
-            const externalIp = config.get('externalIp');
             const rpcClient = createRpcClient({
               port: config.get('core.rpc.port'),
               user: 'dashmate',
@@ -113,7 +112,7 @@ export default class DoctorCommand extends ConfigBaseCommand {
 
             const coreCalls = [
               rpcClient.getBestChainLock(),
-              rpcClient.quorum('list'),
+              rpcClient.quorum('listextended'),
               rpcClient.getBlockchainInfo(),
               rpcClient.getPeerInfo(),
             ];
@@ -130,10 +129,6 @@ export default class DoctorCommand extends ConfigBaseCommand {
               masternodeStatus,
             ] = (await Promise.allSettled(coreCalls)).map((e) => e.value?.result || e.reason);
 
-            // remove external ip address from peers
-            obfuscateObjectRecursive(getPeerInfo, (field, value) => (typeof value === 'string'
-              ? value.replaceAll(externalIp, hideString(externalIp)) : value));
-
             ctx.report.setServiceInfo('core', 'bestChainLock', getBestChainLock);
             ctx.report.setServiceInfo('core', 'quorums', quorums);
             ctx.report.setServiceInfo('core', 'blockchainInfo', getBlockchainInfo);
@@ -145,7 +140,6 @@ export default class DoctorCommand extends ConfigBaseCommand {
           title: 'Tenderdash status',
           enabled: () => config.get('platform.enable'),
           task: async (ctx) => {
-            const externalIp = config.get('externalIp');
             const tenderdashRPCClient = createTenderdashRpcClient({
               host: config.get('platform.drive.tenderdash.rpc.host'),
               port: config.get('platform.drive.tenderdash.rpc.port'),
@@ -173,12 +167,6 @@ export default class DoctorCommand extends ConfigBaseCommand {
               tenderdashRPCClient.request('dump_consensus_state', []),
               fetchValidators(),
             ]);
-
-            // remove external ip address from status & peers
-            obfuscateObjectRecursive(status, (field, value) => (typeof value === 'string'
-              ? value.replaceAll(externalIp, hideString(externalIp)) : value));
-            obfuscateObjectRecursive(peers, (field, value) => (typeof value === 'string'
-              ? value.replaceAll(externalIp, hideString(externalIp)) : value));
 
             ctx.report.setServiceInfo('drive_tenderdash', 'status', status);
             ctx.report.setServiceInfo('drive_tenderdash', 'validators', validators);
@@ -229,7 +217,6 @@ export default class DoctorCommand extends ConfigBaseCommand {
         {
           title: 'Logs',
           task: async (ctx, task) => {
-            const externalIp = config.get('externalIp');
             const services = await getServiceList(config);
 
             // eslint-disable-next-line no-param-reassign
@@ -244,15 +231,11 @@ export default class DoctorCommand extends ConfigBaseCommand {
 
                 // Hide username & external ip from logs
                 logs.out = logs.out.replaceAll(process.env.USER, hideString(process.env.USER));
-                logs.out = logs.out.replaceAll(externalIp, hideString(externalIp));
                 logs.err = logs.err.replaceAll(process.env.USER, hideString(process.env.USER));
-                logs.err = logs.err.replaceAll(externalIp, hideString(externalIp));
 
                 // Hide username & external ip from inspect
-                obfuscateObjectRecursive(inspect, (field, value) => (typeof value === 'string'
+                obfuscateObjectRecursive(inspect, (_field, value) => (typeof value === 'string'
                   ? value.replaceAll(process.env.USER, hideString(process.env.USER)) : value));
-                obfuscateObjectRecursive(inspect, (field, value) => (typeof value === 'string'
-                  ? value.replaceAll(externalIp, hideString(externalIp)) : value));
 
                 ctx.report.setServiceInfo(service.name, 'stdOut', logs.out);
                 ctx.report.setServiceInfo(service.name, 'stdErr', logs.err);
@@ -269,7 +252,7 @@ export default class DoctorCommand extends ConfigBaseCommand {
             await ctx.report.archive(archivePath);
 
             // eslint-disable-next-line no-param-reassign
-            task.output = chalk`Saved to {bold.cyanBright ${archivePath}/dashmate-report-${ctx.report.date.toISOString()}.tar}`;
+            task.output = chalk`Saved to {bold.cyanBright ${archivePath}/dashmate-report-${ctx.report.date.toISOString()}.tar.gz}`;
           },
           options: {
             persistentOutput: true,
