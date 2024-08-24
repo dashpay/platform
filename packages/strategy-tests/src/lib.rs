@@ -1542,7 +1542,7 @@ impl Strategy {
         if block_info.height == config.start_block_height
             && self.start_identities.number_of_identities > 0
         {
-            let mut new_transitions = crate::transitions::create_identities_state_transitions(
+            let new_transitions = crate::transitions::create_identities_state_transitions(
                 self.start_identities.number_of_identities.into(),
                 self.start_identities.keys_per_identity.into(),
                 &self.start_identities.extra_keys,
@@ -1552,7 +1552,20 @@ impl Strategy {
                 asset_lock_proofs,
                 platform_version,
             );
-            state_transitions.append(&mut new_transitions);
+
+            // Process the results
+            for transition_result in new_transitions {
+                match transition_result {
+                    Ok((identity, state_transition)) => {
+                        state_transitions.push((identity, state_transition));
+                    }
+                    Err(e) => {
+                        // Handle or log the error and return it if needed
+                        tracing::error!("Error creating start identity state transition: {:?}", e);
+                        return Err(e);
+                    }
+                }
+            }
         }
 
         // Add identities_inserts
@@ -1562,7 +1575,7 @@ impl Strategy {
             if frequency.check_hit(rng) {
                 let count = frequency.events(rng); // number of identities to create
 
-                let mut new_transitions = crate::transitions::create_identities_state_transitions(
+                let new_transitions = crate::transitions::create_identities_state_transitions(
                     count,
                     self.identity_inserts.start_keys as KeyID,
                     &self.identity_inserts.extra_keys,
@@ -1572,7 +1585,23 @@ impl Strategy {
                     asset_lock_proofs,
                     platform_version,
                 );
-                state_transitions.append(&mut new_transitions);
+
+                // Process the results
+                for transition_result in new_transitions {
+                    match transition_result {
+                        Ok((identity, state_transition)) => {
+                            state_transitions.push((identity, state_transition));
+                        }
+                        Err(e) => {
+                            // Handle or log the error and return it if needed
+                            tracing::error!(
+                                "Error creating identity insert state transition: {:?}",
+                                e
+                            );
+                            return Err(e);
+                        }
+                    }
+                }
             }
         }
 
