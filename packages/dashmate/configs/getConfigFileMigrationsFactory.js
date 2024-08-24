@@ -790,9 +790,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
-      '1.1.0-dev.2': (configFile) => {
+      '1.1.0': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.abci.proposer = {
                 txProcessingTimeLimit: 5000,
