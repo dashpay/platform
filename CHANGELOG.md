@@ -1,3 +1,46 @@
+## [1.1.0](https://github.com/dashpay/platform/compare/v1.1.0-dev.1...v1.1.0) (2024-08-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** just in time fee update fixes (#2075)
+* do not allow contested documents for the first three epochs (#2066)
+* **drive-abci:** fix wrong fields in dash top level domain  (#2065)
+* **platform:** fix reference of items between epochs (#2064)
+* **sdk:** mock sdk cannot find quorum keys in offline mode (#2061)
+* **sdk:** overflow when using &&sdk in DapiRequestExecutor (#2060)
+
+### Features
+
+* **dashmate:** add `dashmate doctor` command ([#2024](https://github.com/dashpay/platform/issues/2024))
+* **dashmate:** compress doctor report and other improvements ([#2071](https://github.com/dashpay/platform/issues/2071))
+* **dashmate:** configure proposer and tx limits ([#2057](https://github.com/dashpay/platform/issues/2057))
+* **dpp:** function for getting enabled matching public keys in identities ([#2052](https://github.com/dashpay/platform/issues/2052))
+* where clauses recognize nested properties
+
+
+### Bug Fixes
+
+* add back the matches on system properties
+* **dapi:** getTotalCreditsOnPlatform missing parts ([#2059](https://github.com/dashpay/platform/issues/2059))
+* **dashmate:** core reindex command not working ([#2054](https://github.com/dashpay/platform/issues/2054))
+* **dashmate:** the reset platform command doesn't remove data ([#2053](https://github.com/dashpay/platform/issues/2053))
+* **drive-abci:** fix wrong fields in dash top level domain  ([#2065](https://github.com/dashpay/platform/issues/2065))
+* **drive:** just in time fee update fixes ([#2075](https://github.com/dashpay/platform/issues/2075))
+* **platform:** fix reference of items between epochs ([#2064](https://github.com/dashpay/platform/issues/2064))
+* **sdk:** mock sdk cannot find quorum keys in offline mode ([#2061](https://github.com/dashpay/platform/issues/2061))
+* **sdk:** overflow when using &&sdk in DapiRequestExecutor ([#2060](https://github.com/dashpay/platform/issues/2060))
+
+
+### Code Refactoring
+
+* rename getTotalCreditsOnPlatform ([#2056](https://github.com/dashpay/platform/issues/2056))
+
+
+### Miscellaneous Chores
+
+* do not allow contested documents for the first three epochs ([#2066](https://github.com/dashpay/platform/issues/2066))
+
 ## [1.1.0-dev.1](https://github.com/dashpay/platform/compare/v1.0.2...v1.1.0-dev.1) (2024-08-13)
 
 
