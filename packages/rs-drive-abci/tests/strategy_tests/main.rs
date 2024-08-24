@@ -2791,21 +2791,21 @@ mod tests {
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
-        let block_count = 30;
+        let block_count = 100;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
         let outcome =
             run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
-        assert_eq!(outcome.identities.len() as u64, 83);
+        assert_eq!(outcome.identities.len() as u64, 296);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
             .into_iter()
             .filter(|(_, balance)| *balance != 0)
             .count();
-        assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+        assert_eq!(balance_count, 92); // 1 epoch worth of proposers
 
         let issues = outcome
             .abci_app
@@ -2887,7 +2887,7 @@ mod tests {
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
                         frequency: Frequency {
-                            times_per_block_range: 1..40,
+                            times_per_block_range: 1..10,
                             chance_per_block: None,
                         },
                     },
@@ -2956,21 +2956,21 @@ mod tests {
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
-        let block_count = 30;
+        let block_count = 70;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
         let outcome =
             run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
-        assert_eq!(outcome.identities.len() as u64, 79);
+        assert_eq!(outcome.identities.len() as u64, 201);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
             .into_iter()
             .filter(|(_, balance)| *balance != 0)
             .count();
-        assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+        assert_eq!(balance_count, 55); // 1 epoch worth of proposers
     }
 
     #[test]

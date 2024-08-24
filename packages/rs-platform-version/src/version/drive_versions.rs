@@ -348,6 +348,7 @@ pub struct DriveDocumentMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
     pub query_documents: FeatureVersion,
+    pub query_documents_with_flags: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

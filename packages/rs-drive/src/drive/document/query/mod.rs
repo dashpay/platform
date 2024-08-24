@@ -5,8 +5,10 @@
 
 mod query_contested_documents_vote_state;
 mod query_documents;
+mod query_documents_with_flags;
 
 pub use query_documents::*;
+pub use query_documents_with_flags::*;
 
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use dpp::block::block_info::BlockInfo;

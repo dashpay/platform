@@ -50,12 +50,13 @@ pub use grovedb::{
     Element, Error as GroveError, TransactionArg,
 };
 
+use dpp::document;
+use dpp::prelude::Identifier;
 #[cfg(feature = "server")]
 use {
     crate::{drive::Drive, error::Error::GroveDB, fees::op::LowLevelDriveOperation},
     dpp::block::block_info::BlockInfo,
 };
-
 // Crate-local unconditional imports
 use crate::config::DriveConfig;
 // Crate-local unconditional imports
@@ -305,6 +306,36 @@ pub struct DriveDocumentQuery<'a> {
 }
 
 impl<'a> DriveDocumentQuery<'a> {
+    /// Gets a document by their primary key
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn new_primary_key_single_item_query(
+        contract: &'a DataContract,
+        document_type: DocumentTypeRef<'a>,
+        id: Identifier,
+    ) -> Self {
+        DriveDocumentQuery {
+            contract,
+            document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: Some(WhereClause {
+                    field: document::property_names::ID.to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(id.to_buffer()),
+                }),
+                in_clause: None,
+                range_clause: None,
+                equal_clauses: Default::default(),
+            },
+            offset: None,
+            limit: None,
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+        }
+    }
+
     #[cfg(feature = "server")]
     /// Returns any item
     pub fn any_item_query(contract: &'a DataContract, document_type: DocumentTypeRef<'a>) -> Self {
@@ -1831,7 +1862,6 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(feature = "server")]
-    #[allow(unused)]
     /// Executes an internal query with no proof and returns the values and skipped items.
     pub(crate) fn execute_no_proof_internal(
         &self,
