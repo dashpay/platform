@@ -1,4 +1,4 @@
-## [1.1.0-dev.2](https://github.com/dashpay/platform/compare/v1.1.0-dev.1...v1.1.0-dev.2) (2024-08-24)
+## [1.1.0](https://github.com/dashpay/platform/compare/v1.1.0-dev.1...v1.1.0) (2024-08-24)
 
 
 ### ⚠ BREAKING CHANGES
