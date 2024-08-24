@@ -483,7 +483,7 @@ dependencies = [
  "bitflags 2.6.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "lazy_static",
  "lazycell",
  "proc-macro2",
@@ -1508,10 +1508,10 @@ dependencies = [
  "criterion",
  "derive_more",
  "dpp",
- "drive-storage-flags",
  "enum-map",
  "grovedb",
  "grovedb-costs",
+ "grovedb-epoch-based-storage-flags",
  "grovedb-path",
  "grovedb-storage",
  "grovedb-version",
@@ -1608,17 +1608,6 @@ dependencies = [
  "tenderdash-abci",
  "thiserror",
  "tracing",
-]
-
-[[package]]
-name = "drive-storage-flags"
-version = "1.1.0-dev.1"
-dependencies = [
- "grovedb-costs",
- "hex",
- "integer-encoding",
- "intmap",
- "thiserror",
 ]
 
 [[package]]
@@ -2075,8 +2064,8 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "grovedb"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#9242fd43368ddf39763de526ed6781aee15e0ec4"
+version = "1.1.0"
+source = "git+https://github.com/dashpay/grovedb?rev=3684f1501f09b129cc33583260930e3011a8ed78#3684f1501f09b129cc33583260930e3011a8ed78"
 dependencies = [
  "axum 0.7.5",
  "bincode",
@@ -2108,8 +2097,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-costs"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#9242fd43368ddf39763de526ed6781aee15e0ec4"
+version = "1.1.0"
+source = "git+https://github.com/dashpay/grovedb?rev=3684f1501f09b129cc33583260930e3011a8ed78#3684f1501f09b129cc33583260930e3011a8ed78"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2117,9 +2106,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "grovedb-epoch-based-storage-flags"
+version = "1.1.0"
+source = "git+https://github.com/dashpay/grovedb?rev=3684f1501f09b129cc33583260930e3011a8ed78#3684f1501f09b129cc33583260930e3011a8ed78"
+dependencies = [
+ "grovedb-costs",
+ "hex",
+ "integer-encoding",
+ "intmap",
+ "thiserror",
+]
+
+[[package]]
 name = "grovedb-merk"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#9242fd43368ddf39763de526ed6781aee15e0ec4"
+version = "1.1.0"
+source = "git+https://github.com/dashpay/grovedb?rev=3684f1501f09b129cc33583260930e3011a8ed78#3684f1501f09b129cc33583260930e3011a8ed78"
 dependencies = [
  "bincode",
  "blake3",
@@ -2143,13 +2144,13 @@ dependencies = [
 
 [[package]]
 name = "grovedb-path"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#9242fd43368ddf39763de526ed6781aee15e0ec4"
+version = "1.1.0"
+source = "git+https://github.com/dashpay/grovedb?rev=3684f1501f09b129cc33583260930e3011a8ed78#3684f1501f09b129cc33583260930e3011a8ed78"
 
 [[package]]
 name = "grovedb-storage"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#9242fd43368ddf39763de526ed6781aee15e0ec4"
+version = "1.1.0"
+source = "git+https://github.com/dashpay/grovedb?rev=3684f1501f09b129cc33583260930e3011a8ed78#3684f1501f09b129cc33583260930e3011a8ed78"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2167,8 +2168,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-version"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#9242fd43368ddf39763de526ed6781aee15e0ec4"
+version = "1.1.0"
+source = "git+https://github.com/dashpay/grovedb?rev=3684f1501f09b129cc33583260930e3011a8ed78#3684f1501f09b129cc33583260930e3011a8ed78"
 dependencies = [
  "thiserror",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2176,8 +2177,8 @@ dependencies = [
 
 [[package]]
 name = "grovedb-visualize"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#9242fd43368ddf39763de526ed6781aee15e0ec4"
+version = "1.1.0"
+source = "git+https://github.com/dashpay/grovedb?rev=3684f1501f09b129cc33583260930e3011a8ed78#3684f1501f09b129cc33583260930e3011a8ed78"
 dependencies = [
  "hex",
  "itertools 0.12.1",
@@ -2185,8 +2186,8 @@ dependencies = [
 
 [[package]]
 name = "grovedbg-types"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/JITfix#9242fd43368ddf39763de526ed6781aee15e0ec4"
+version = "1.1.0"
+source = "git+https://github.com/dashpay/grovedb?rev=3684f1501f09b129cc33583260930e3011a8ed78#3684f1501f09b129cc33583260930e3011a8ed78"
 dependencies = [
  "serde",
  "serde_with 3.9.0",
@@ -2447,7 +2448,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.7",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -3786,7 +3787,7 @@ checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
  "heck 0.5.0",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "log",
  "multimap 0.10.0",
  "once_cell",
@@ -3819,7 +3820,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.75",

@@ -427,15 +427,7 @@ pub(in crate::execution) mod tests {
                 block_hash: None,
                 app_hash: None,
             }),
-            epoch_info: EpochInfo::V0(EpochInfoV0 {
-                current_epoch_index: block_info.epoch.index,
-                previous_epoch_index: if block_info.epoch.index > 0 {
-                    Some(block_info.epoch.index - 1)
-                } else {
-                    None
-                },
-                is_epoch_change: false,
-            }),
+            epoch_info: EpochInfo::V0(EpochInfoV0::default()),
             hpmn_count: 0,
             unsigned_withdrawal_transactions: Default::default(),
             block_platform_state: platform_state.clone(),

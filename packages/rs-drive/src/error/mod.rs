@@ -6,8 +6,8 @@ use document::DocumentError;
 use dpp::data_contract::errors::DataContractError as ProtocolDataContractError;
 use dpp::platform_value::Error as ValueError;
 use dpp::ProtocolError;
-use drive_storage_flags::error::StorageFlagsError;
 use fee::FeeError;
+use grovedb_epoch_based_storage_flags::error::StorageFlagsError;
 use identity::IdentityError;
 use query::QuerySyntaxError;
 
