@@ -1,3 +1,27 @@
+### [1.1.1](https://github.com/dashpay/platform/compare/v1.1.0...v1.1.1) (2024-08-25)
+
+
+### Features
+
+* **dashmate:** update testnet config ([#2079](https://github.com/dashpay/platform/issues/2079))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash version to 1.2.0 ([#2078](https://github.com/dashpay/platform/issues/2078))
+
+### [0.25.22](https://github.com/dashpay/platform/compare/v1.0.0-dev.3...v0.25.22) (2024-01-19)
+
+
+### Bug Fixes
+
+* **dashmate:** dapi kills host machine on container stop ([#1670](https://github.com/dashpay/platform/issues/1670))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 0.25.22 ([#1677](https://github.com/dashpay/platform/issues/1677))
+
 ## [1.1.0](https://github.com/dashpay/platform/compare/v1.1.0-dev.1...v1.1.0) (2024-08-24)
 
 
