@@ -115,6 +115,7 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
             genesis: {
               chain_id: 'dash-testnet-49',
               validator_quorum_type: 6,
+              initial_core_chain_locked_height: 918609,
             },
           },
         },

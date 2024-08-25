@@ -39,6 +39,14 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
+    if state_transition.has_is_allowed_validation(platform_version)? {
+        let result = state_transition.validate_is_allowed(platform, platform_version)?;
+
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        }
+    }
+
     // Only identity create does not use identity in state validation, because it doesn't yet have the identity in state
     let mut maybe_identity = if state_transition.uses_identity_in_state() {
         // Validating signature for identity based state transitions (all those except identity create and identity top up)
@@ -248,6 +256,18 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
             platform_version,
         )
     })
+}
+
+/// A trait for validating state transitions within a blockchain.
+pub(crate) trait StateTransitionIsAllowedValidationV0 {
+    /// This means we should validate is state transition is allowed
+    fn has_is_allowed_validation(&self, platform_version: &PlatformVersion) -> Result<bool, Error>;
+    /// Preliminary validation for a state transition
+    fn validate_is_allowed<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<()>, Error>;
 }
 
 /// A trait for validating state transitions within a blockchain.
@@ -968,6 +988,37 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 execution_context,
                 tx,
             ),
+        }
+    }
+}
+
+impl StateTransitionIsAllowedValidationV0 for StateTransition {
+    fn has_is_allowed_validation(&self, platform_version: &PlatformVersion) -> Result<bool, Error> {
+        match self {
+            StateTransition::DocumentsBatch(st) => st.has_is_allowed_validation(platform_version),
+            StateTransition::DataContractCreate(_)
+            | StateTransition::DataContractUpdate(_)
+            | StateTransition::IdentityCreate(_)
+            | StateTransition::IdentityTopUp(_)
+            | StateTransition::IdentityCreditWithdrawal(_)
+            | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityCreditTransfer(_)
+            | StateTransition::MasternodeVote(_) => Ok(false),
+        }
+    }
+
+    fn validate_is_allowed<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<()>, Error> {
+        match self {
+            StateTransition::DocumentsBatch(st) => {
+                st.validate_is_allowed(platform, platform_version)
+            }
+            _ => Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "validate_is_allowed is not implemented for this state transition",
+            ))),
         }
     }
 }

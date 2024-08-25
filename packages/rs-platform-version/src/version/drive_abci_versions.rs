@@ -132,6 +132,7 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
+    pub is_allowed: FeatureVersion,
     pub document_create_transition_structure_validation: FeatureVersion,
     pub document_delete_transition_structure_validation: FeatureVersion,
     pub document_replace_transition_structure_validation: FeatureVersion,
