@@ -833,10 +833,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.1.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.2.0';
 
-            if (options.network === 'testnet') {
-              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis.chain_id = 'dash-testnet-51';
             }
           });
         return configFile;
