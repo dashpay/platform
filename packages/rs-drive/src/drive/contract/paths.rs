@@ -103,7 +103,7 @@ pub fn contract_storage_path_vec(contract_id: &[u8]) -> Vec<Vec<u8>> {
 }
 
 /// Takes a contract ID and returns the contract's storage history path.
-pub fn contract_keeping_history_storage_path_vec(contract_id: &[u8]) -> Vec<Vec<u8>> {
+pub fn contract_keeping_history_root_path_vec(contract_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
         Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
         contract_id.to_vec(),
@@ -112,7 +112,7 @@ pub fn contract_keeping_history_storage_path_vec(contract_id: &[u8]) -> Vec<Vec<
 }
 
 /// Takes a contract ID and returns the contract's storage history path.
-pub fn contract_keeping_history_storage_path(contract_id: &[u8]) -> [&[u8]; 3] {
+pub fn contract_keeping_history_root_path(contract_id: &[u8]) -> [&[u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
         contract_id,

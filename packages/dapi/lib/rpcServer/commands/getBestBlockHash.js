@@ -1,8 +1,19 @@
 /**
  * @param {Object} coreAPI
+ * @param {ZmqClient} coreZmqClient
  * @return {getBestBlockHash}
  */
-const getBestBlockHashFactory = (coreAPI) => {
+const getBestBlockHashFactory = (coreAPI, coreZmqClient) => {
+  let hash = null;
+
+  // Reset height on a new block, so it will be obtain again on a user request
+  coreZmqClient.on(
+    coreZmqClient.topics.hashblock,
+    () => {
+      hash = null;
+    },
+  );
+
   /**
    * Layer 1 endpoint
    * Returns block hash of the chaintip
@@ -10,7 +21,11 @@ const getBestBlockHashFactory = (coreAPI) => {
    * @return {Promise<string>} - latest block hash
    */
   async function getBestBlockHash() {
-    return coreAPI.getBestBlockHash();
+    if (hash === null) {
+      hash = await coreAPI.getBestBlockHash();
+    }
+
+    return hash;
   }
 
   return getBestBlockHash;

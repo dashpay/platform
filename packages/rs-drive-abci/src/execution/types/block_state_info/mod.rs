@@ -11,7 +11,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 
 /// The versioned block state info
-#[derive(Debug, From)]
+#[derive(Debug, From, Clone, Eq, PartialEq)]
 pub enum BlockStateInfo {
     /// Version 0
     V0(v0::BlockStateInfoV0),

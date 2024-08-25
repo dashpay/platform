@@ -1,11 +1,11 @@
 use crate::drive::contract::{paths, DataContractFetchInfo};
 
-use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
+use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::DataContract;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
@@ -42,6 +42,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the contract fetching or fee calculation fails.
+    #[inline(always)]
     pub(super) fn fetch_contract_v0(
         &self,
         contract_id: [u8; 32],
@@ -55,10 +56,11 @@ impl Drive {
         // We need to pass allow cache to false
         let (value, mut cost) = if known_keeps_history.unwrap_or_default() {
             let CostContext { value, cost } = self.grove.get_caching_optional(
-                (&paths::contract_keeping_history_storage_path(&contract_id)).into(),
+                (&paths::contract_keeping_history_root_path(&contract_id)).into(),
                 &[0],
                 false,
                 transaction,
+                &platform_version.drive.grove_version,
             );
             (value, cost)
         } else {
@@ -67,6 +69,7 @@ impl Drive {
                 &[0],
                 false,
                 transaction,
+                &platform_version.drive.grove_version,
             );
             (value, cost)
         };
@@ -91,7 +94,8 @@ impl Drive {
                             Some(vec![drive_operation]),
                             epoch,
                             self.config.epochs_per_era,
-                            platform_version
+                            platform_version,
+                            None,
                         )
                     ))
                 } else {
@@ -101,6 +105,7 @@ impl Drive {
                 let storage_flags = cost_return_on_error_no_add!(
                     &cost,
                     StorageFlags::map_some_element_flags_ref(&element_flag)
+                        .map_err(Error::StorageFlags)
                 );
                 let contract_fetch_info = Arc::new(DataContractFetchInfo {
                     contract,
@@ -117,10 +122,11 @@ impl Drive {
                     value,
                     cost: secondary_cost,
                 } = self.grove.get_caching_optional(
-                    (&paths::contract_keeping_history_storage_path(&contract_id)).into(),
+                    (&paths::contract_keeping_history_root_path(&contract_id)).into(),
                     &[0],
                     false,
                     transaction,
+                    &platform_version.drive.grove_version,
                 );
 
                 cost.add_assign(secondary_cost);
@@ -145,7 +151,8 @@ impl Drive {
                                     Some(vec![drive_operation]),
                                     epoch,
                                     self.config.epochs_per_era,
-                                    platform_version
+                                    platform_version,
+                                    None,
                                 )
                             ))
                         } else {
@@ -155,6 +162,7 @@ impl Drive {
                         let storage_flags = cost_return_on_error_no_add!(
                             &cost,
                             StorageFlags::map_some_element_flags_ref(&element_flag)
+                                .map_err(Error::StorageFlags)
                         );
 
                         let contract_fetch_info = Arc::new(DataContractFetchInfo {
@@ -192,6 +200,7 @@ impl Drive {
     }
 
     /// Fetch contract from database and add operations
+    #[inline(always)]
     pub(super) fn fetch_contract_and_add_operations_v0(
         &self,
         contract_id: [u8; 32],

@@ -15,10 +15,13 @@ pub(in crate::execution) mod processed_block_fees_outcome;
 /// Proposer payouts
 pub(in crate::execution) mod proposer_payouts;
 /// A structure representing the context of the execution of a state transition
-pub(in crate::execution) mod state_transition_execution_context;
+pub mod state_transition_execution_context;
 /// A structure used in the distribution of storage fees
 pub(in crate::execution) mod storage_fee_distribution_outcome;
 /// A structure representing an unpaid epoch
 pub(in crate::execution) mod unpaid_epoch;
 /// A structure representing the outcome of updating a masternode list in the state
 pub(in crate::execution) mod update_state_masternode_list_outcome;
+
+/// A container for the state transitions
+pub(in crate::execution) mod state_transition_container;

@@ -8,7 +8,7 @@ use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
-use crate::prelude::DataContract;
+use crate::prelude::{DataContract, IdentityNonce};
 #[cfg(feature = "data-contract-cbor-conversion")]
 use crate::util::cbor_serializer::serializable_value_to_cbor;
 use crate::version::PlatformVersion;
@@ -65,12 +65,12 @@ pub fn json_document_to_cbor(
 #[cfg(feature = "data-contract-json-conversion")]
 pub fn json_document_to_contract(
     path: impl AsRef<Path>,
-    validate: bool,
+    full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;
 
-    DataContract::from_json(value, validate, platform_version)
+    DataContract::from_json(value, full_validation, platform_version)
 }
 
 #[cfg(all(
@@ -80,14 +80,15 @@ pub fn json_document_to_contract(
 /// Reads a JSON file and converts it a contract.
 pub fn json_document_to_created_contract(
     path: impl AsRef<Path>,
-    validate: bool,
+    identity_nonce: IdentityNonce,
+    full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<CreatedDataContract, ProtocolError> {
-    let data_contract = json_document_to_contract(path, validate, platform_version)?;
+    let data_contract = json_document_to_contract(path, full_validation, platform_version)?;
 
     Ok(CreatedDataContractV0 {
         data_contract,
-        entropy_used: Default::default(),
+        identity_nonce,
     }
     .into())
 }
@@ -98,12 +99,12 @@ pub fn json_document_to_contract_with_ids(
     path: impl AsRef<Path>,
     id: Option<Identifier>,
     owner_id: Option<Identifier>,
-    validate: bool,
+    full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;
 
-    let mut contract = DataContract::from_json(value, validate, platform_version)?;
+    let mut contract = DataContract::from_json(value, full_validation, platform_version)?;
 
     if let Some(id) = id {
         contract.set_id(id);
@@ -139,6 +140,14 @@ pub fn json_document_to_document(
         revision: data.remove_optional_integer("$revision")?,
         created_at: data.remove_optional_integer("$createdAt")?,
         updated_at: data.remove_optional_integer("$updatedAt")?,
+        transferred_at: data.remove_optional_integer("$transferredAt")?,
+        created_at_block_height: data.remove_optional_integer("$createdAtBlockHeight")?,
+        updated_at_block_height: data.remove_optional_integer("$updatedAtBlockHeight")?,
+        transferred_at_block_height: data.remove_optional_integer("$transferredAtBlockHeight")?,
+        created_at_core_block_height: data.remove_optional_integer("$createdAtCoreBlockHeight")?,
+        updated_at_core_block_height: data.remove_optional_integer("$updatedAtCoreBlockHeight")?,
+        transferred_at_core_block_height: data
+            .remove_optional_integer("$transferredAtCoreBlockHeight")?,
     };
 
     data.replace_at_paths(

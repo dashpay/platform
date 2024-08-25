@@ -14,20 +14,14 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let path_query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
-        self.grove_get_proved_path_query(
-            &path_query,
-            false,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )
+        self.grove_get_proved_path_query(&path_query, transaction, &mut vec![], drive_version)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -60,10 +54,8 @@ mod tests {
             .values()
             .find(|public_key| public_key.key_type().is_unique_key_type())
             .expect("expected a unique key")
-            .hash()
-            .expect("expected to hash data")
-            .try_into()
-            .expect("expected to be 20 bytes");
+            .public_key_hash()
+            .expect("expected to hash data");
 
         let proof = drive
             .prove_identity_id_by_unique_public_key_hash_v0(

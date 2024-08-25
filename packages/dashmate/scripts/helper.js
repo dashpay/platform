@@ -47,8 +47,8 @@ import createDIContainer from '../src/createDIContainer.js';
     configFile: asValue(configFile),
   });
 
-  const provider = config.get('platform.dapi.envoy.ssl.provider');
-  const isEnabled = config.get('platform.dapi.envoy.ssl.enabled');
+  const provider = config.get('platform.gateway.ssl.provider');
+  const isEnabled = config.get('platform.gateway.ssl.enabled');
 
   if (isEnabled && provider === 'zerossl') {
     const scheduleRenewZeroSslCertificate = container.resolve('scheduleRenewZeroSslCertificate');

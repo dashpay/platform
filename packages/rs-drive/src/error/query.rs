@@ -1,3 +1,5 @@
+use sqlparser::parser::ParserError;
+
 /// Query errors
 #[derive(Debug, thiserror::Error)]
 pub enum QuerySyntaxError {
@@ -8,8 +10,11 @@ pub enum QuerySyntaxError {
     #[error("unsupported error: {0}")]
     Unsupported(String),
     /// Invalid SQL error
+    #[error("sql parsing error: {0}")]
+    SQLParsingError(#[from] ParserError),
+    /// Invalid SQL error
     #[error("invalid sql error: {0}")]
-    InvalidSQL(&'static str),
+    InvalidSQL(String),
 
     /// We asked for nothing
     #[error("no query items error: {0}")]
@@ -39,7 +44,7 @@ pub enum QuerySyntaxError {
     InvalidBetweenClause(&'static str),
     /// Invalid in clause error
     #[error("invalid IN clause error: {0}")]
-    InvalidInClause(&'static str),
+    InvalidInClause(String),
     /// Invalid starts with clause error
     #[error("invalid STARTSWITH clause error: {0}")]
     InvalidStartsWithClause(&'static str),
@@ -91,7 +96,7 @@ pub enum QuerySyntaxError {
 
     /// Where clause on non indexed property error
     #[error("where clause on non indexed property error: {0}")]
-    WhereClauseOnNonIndexedProperty(&'static str),
+    WhereClauseOnNonIndexedProperty(String),
     /// Query is too far from index error
     #[error("query is too far from index: {0}")]
     QueryTooFarFromIndex(&'static str),
@@ -127,4 +132,16 @@ pub enum QuerySyntaxError {
     /// Invalid identity prove request error
     #[error("invalid identity prove request error: {0}")]
     InvalidIdentityProveRequest(&'static str),
+
+    /// Requesting proof with offset error
+    #[error("requesting proof with offset error: {0}")]
+    RequestingProofWithOffset(String),
+
+    /// Unknown index error
+    #[error("unknown error: {0}")]
+    UnknownIndex(String),
+
+    /// Missing index values for query
+    #[error("incorrect index values error: {0}")]
+    IndexValuesError(String),
 }

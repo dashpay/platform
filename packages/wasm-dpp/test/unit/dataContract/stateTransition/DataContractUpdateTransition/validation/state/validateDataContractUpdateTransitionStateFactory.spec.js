@@ -97,7 +97,7 @@ describe.skip('validateDataContractUpdateTransitionStateFactory', () => {
 
     const [error] = result.getErrors();
     expect(error).to.be.an.instanceOf(InvalidDataContractVersionError);
-    expect(error.getCode()).to.equal(1050);
+    expect(error.getCode()).to.equal(10212);
   });
 
   it('should return valid result', async () => {

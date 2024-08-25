@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
@@ -30,6 +31,7 @@ where
     ///
     /// * Result<(), Error> - Returns Ok(()) if the update is successful. Returns an error if
     /// there is a problem updating the masternode list, quorum information, or the state.
+    #[inline(always)]
     pub(super) fn update_core_info_v0(
         &self,
         platform_state: Option<&PlatformState>,
@@ -40,6 +42,12 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // the core height of the block platform state is the last committed
+        if !is_init_chain && block_platform_state.last_committed_core_height() == core_block_height
+        {
+            // if we get the same height that we know we do not need to update core info
+            return Ok(());
+        }
         self.update_masternode_list(
             platform_state,
             block_platform_state,
@@ -51,6 +59,7 @@ where
         )?;
 
         self.update_quorum_info(
+            platform_state,
             block_platform_state,
             core_block_height,
             false,

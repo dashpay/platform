@@ -115,8 +115,8 @@ export default function reindexNodeTaskFactory(
           // Wait until Core is started
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
-            user: config.get('core.rpc.user'),
-            pass: config.get('core.rpc.password'),
+            user: 'dashmate',
+            pass: config.get('core.rpc.users.dashmate.password'),
             host: await getConnectionHost(config, 'core', 'core.rpc.host'),
           });
 
@@ -128,7 +128,7 @@ export default function reindexNodeTaskFactory(
 
           ctx.coreService = new CoreService(config, rpcClient, container);
 
-          await waitForCoreStart(ctx.coreService);
+          await waitForCoreStart(ctx.coreService, 300, 2000);
 
           // When Core is started remove reindex=1 from dashd.conf
           // rendering service templates without additional variables
@@ -146,7 +146,7 @@ export default function reindexNodeTaskFactory(
           await waitForCoreSync(ctx.coreService, (verificationProgress) => {
             const { percent, blocks, headers } = verificationProgress;
 
-            observer.next(`${(percent * 100).toFixed(4)}%, ${blocks} / ${headers}`);
+            observer.next(`${(percent * 100).toFixed(1)}%, ${blocks} / ${headers}`);
           });
 
           await new Promise((res) => { setTimeout(res, 2000); });

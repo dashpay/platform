@@ -2,6 +2,8 @@ const { expect } = require('chai');
 
 const { Identifier } = require('@dashevo/wasm-dpp');
 
+const { contractId: dpnsContractIdString } = require('@dashevo/dpns-contract/lib/systemIds');
+
 const {
   Networks,
 } = require('@dashevo/dashcore-lib');
@@ -17,7 +19,7 @@ describe('SDK', function suite() {
   let clientInstance;
 
   beforeEach(async () => {
-    dpnsContractId = Identifier.from(process.env.DPNS_CONTRACT_ID);
+    dpnsContractId = Identifier.from(dpnsContractIdString);
 
     const clientOpts = {
       seeds: process.env.DAPI_SEED.split(','),

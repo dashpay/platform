@@ -1,19 +1,32 @@
 pub mod from_document;
 pub mod v0_methods;
 
+#[cfg(feature = "state-transition-value-conversion")]
 use std::collections::BTreeMap;
 
 use bincode::{Decode, Encode};
 use derive_more::Display;
 
+#[cfg(feature = "state-transition-value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+#[cfg(feature = "state-transition-value-conversion")]
 use platform_value::Value;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "state-transition-json-conversion")]
 use serde_json::Value as JsonValue;
 
+#[cfg(feature = "state-transition-value-conversion")]
 use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::identifier::Identifier;
+use crate::prelude::IdentityNonce;
+#[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::documents_batch_transition::document_base_transition::property_names;
-use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Identifier};
+#[cfg(any(
+    feature = "state-transition-json-conversion",
+    feature = "state-transition-value-conversion"
+))]
+use crate::{data_contract::DataContract, errors::ProtocolError};
 
 #[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display)]
 #[cfg_attr(
@@ -31,6 +44,11 @@ pub struct DocumentBaseTransitionV0 {
     /// The document ID
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$id"))]
     pub id: Identifier,
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(rename = "$identity-contract-nonce")
+    )]
+    pub identity_contract_nonce: IdentityNonce,
     /// Name of document type found int the data contract associated with the `data_contract_id`
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$type"))]
     pub document_type_name: String,
@@ -47,12 +65,14 @@ impl DocumentBaseTransitionV0 {
     pub fn from_value_map_consume(
         map: &mut BTreeMap<String, Value>,
         data_contract: DataContract,
+        identity_contract_nonce: IdentityNonce,
     ) -> Result<DocumentBaseTransitionV0, ProtocolError> {
         Ok(DocumentBaseTransitionV0 {
             id: Identifier::from(
                 map.remove_hash256_bytes(property_names::ID)
                     .map_err(ProtocolError::ValueError)?,
             ),
+            identity_contract_nonce,
             document_type_name: map
                 .remove_string(property_names::DOCUMENT_TYPE)
                 .map_err(ProtocolError::ValueError)?,

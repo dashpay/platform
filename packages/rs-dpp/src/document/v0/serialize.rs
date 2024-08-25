@@ -1,7 +1,14 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 
-use crate::document::property_names::{CREATED_AT, UPDATED_AT};
+use crate::document::property_names::{
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, PRICE, TRANSFERRED_AT,
+    TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
+    UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
+};
+
+#[cfg(feature = "validation")]
+use crate::prelude::ConsensusValidationResult;
 
 use crate::prelude::Revision;
 
@@ -22,6 +29,11 @@ use platform_version::version::FeatureVersion;
 
 use std::collections::BTreeMap;
 
+use crate::consensus::basic::decode::DecodingError;
+#[cfg(feature = "validation")]
+use crate::consensus::basic::BasicError;
+#[cfg(feature = "validation")]
+use crate::consensus::ConsensusError;
 use std::io::{BufReader, Read};
 
 impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
@@ -45,43 +57,152 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             buffer.extend((1 as Revision).encode_var_vec())
         }
 
+        let mut bitwise_exists_flag: u16 = 0;
+
+        let mut time_fields_data_buffer = vec![];
+
         // $createdAt
         if let Some(created_at) = &self.created_at {
-            if !document_type.required_fields().contains(CREATED_AT) {
-                buffer.push(1);
-            }
+            bitwise_exists_flag |= 1;
             // dbg!("we pushed created at {}", hex::encode(created_at.to_be_bytes()));
-            buffer.extend(created_at.to_be_bytes());
+            time_fields_data_buffer.extend(created_at.to_be_bytes());
         } else if document_type.required_fields().contains(CREATED_AT) {
             return Err(ProtocolError::DataContractError(
                 DataContractError::MissingRequiredKey(
                     "created at field is not present".to_string(),
                 ),
             ));
-        } else {
-            // dbg!("we pushed created at with 0");
-            // We don't have the created_at that wasn't required
-            buffer.push(0);
         }
 
         // $updatedAt
         if let Some(updated_at) = &self.updated_at {
-            if !document_type.required_fields().contains(UPDATED_AT) {
-                // dbg!("we added 1", field_name);
-                buffer.push(1);
-            }
+            bitwise_exists_flag |= 2;
             // dbg!("we pushed updated at {}", hex::encode(updated_at.to_be_bytes()));
-            buffer.extend(updated_at.to_be_bytes());
+            time_fields_data_buffer.extend(updated_at.to_be_bytes());
         } else if document_type.required_fields().contains(UPDATED_AT) {
             return Err(ProtocolError::DataContractError(
                 DataContractError::MissingRequiredKey(
                     "updated at field is not present".to_string(),
                 ),
             ));
-        } else {
-            // dbg!("we pushed updated at with 0");
-            // We don't have the updated_at that wasn't required
-            buffer.push(0);
+        }
+
+        // $transferredAt
+        if let Some(transferred_at) = &self.transferred_at {
+            bitwise_exists_flag |= 4;
+            // dbg!("we pushed transferred at {}", hex::encode(transferred_at.to_be_bytes()));
+            time_fields_data_buffer.extend(transferred_at.to_be_bytes());
+        } else if document_type.required_fields().contains(TRANSFERRED_AT) {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred at field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $createdAtBlockHeight
+        if let Some(created_at_block_height) = &self.created_at_block_height {
+            bitwise_exists_flag |= 8;
+            time_fields_data_buffer.extend(created_at_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(CREATED_AT_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "created_at_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $updatedAtBlockHeight
+        if let Some(updated_at_block_height) = &self.updated_at_block_height {
+            bitwise_exists_flag |= 16;
+            time_fields_data_buffer.extend(updated_at_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(UPDATED_AT_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "updated_at_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $transferredAtBlockHeight
+        if let Some(transferred_at_block_height) = &self.transferred_at_block_height {
+            bitwise_exists_flag |= 32;
+            time_fields_data_buffer.extend(transferred_at_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(TRANSFERRED_AT_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred_at_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $createdAtCoreBlockHeight
+        if let Some(created_at_core_block_height) = &self.created_at_core_block_height {
+            bitwise_exists_flag |= 64;
+            time_fields_data_buffer.extend(created_at_core_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(CREATED_AT_CORE_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "created_at_core_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $updatedAtCoreBlockHeight
+        if let Some(updated_at_core_block_height) = &self.updated_at_core_block_height {
+            bitwise_exists_flag |= 128;
+            time_fields_data_buffer.extend(updated_at_core_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(UPDATED_AT_CORE_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "updated_at_core_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $transferredAtCoreBlockHeight
+        if let Some(transferred_at_core_block_height) = &self.transferred_at_core_block_height {
+            bitwise_exists_flag |= 256;
+            time_fields_data_buffer.extend(transferred_at_core_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(TRANSFERRED_AT_CORE_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred_at_core_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        buffer.extend(bitwise_exists_flag.to_be_bytes().as_slice());
+        buffer.append(&mut time_fields_data_buffer);
+
+        // Now we serialize the price which might not be necessary unless called for by the document type
+
+        if document_type.trade_mode().seller_sets_price() {
+            if let Some(price) = self.properties.get(PRICE) {
+                buffer.push(1);
+                let price_as_u64: u64 = price.to_integer().map_err(ProtocolError::ValueError)?;
+                buffer.append(&mut price_as_u64.to_be_bytes().to_vec());
+            } else {
+                buffer.push(0);
+            }
         }
 
         // User defined properties
@@ -91,7 +212,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
             .try_for_each(|(field_name, property)| {
                 if let Some(value) = self.properties.get(field_name) {
                     if value.is_null() {
-                        if property.required {
+                        if property.required && !property.transient {
                             Err(ProtocolError::DataContractError(
                                 DataContractError::MissingRequiredKey(
                                     "a required field is not present".to_string(),
@@ -104,7 +225,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                             Ok(())
                         }
                     } else {
-                        if !property.required {
+                        if !property.required || property.transient {
                             // dbg!("we added 1", field_name);
                             buffer.push(1);
                         }
@@ -115,7 +236,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                         buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if property.required {
+                } else if property.required && !property.transient {
                     Err(ProtocolError::DataContractError(
                         DataContractError::MissingRequiredKey(format!(
                             "a required field {field_name} is not present"
@@ -152,44 +273,152 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         if let Some(revision) = self.revision {
             buffer.extend(revision.to_be_bytes())
         }
+        let mut bitwise_exists_flag: u16 = 0;
+
+        let mut time_fields_data_buffer = vec![];
 
         // $createdAt
-        if let Some(created_at) = self.created_at {
-            if !document_type.required_fields().contains(CREATED_AT) {
-                buffer.push(1);
-            }
+        if let Some(created_at) = &self.created_at {
+            bitwise_exists_flag |= 1;
             // dbg!("we pushed created at {}", hex::encode(created_at.to_be_bytes()));
-            buffer.extend(created_at.to_be_bytes());
+            time_fields_data_buffer.extend(created_at.to_be_bytes());
         } else if document_type.required_fields().contains(CREATED_AT) {
             return Err(ProtocolError::DataContractError(
                 DataContractError::MissingRequiredKey(
                     "created at field is not present".to_string(),
                 ),
             ));
-        } else {
-            // dbg!("we pushed created at with 0");
-            // We don't have the created_at that wasn't required
-            buffer.push(0);
         }
 
         // $updatedAt
-        if let Some(updated_at) = self.updated_at {
-            if !document_type.required_fields().contains(UPDATED_AT) {
-                // dbg!("we added 1", field_name);
-                buffer.push(1);
-            }
+        if let Some(updated_at) = &self.updated_at {
+            bitwise_exists_flag |= 2;
             // dbg!("we pushed updated at {}", hex::encode(updated_at.to_be_bytes()));
-            buffer.extend(updated_at.to_be_bytes());
+            time_fields_data_buffer.extend(updated_at.to_be_bytes());
         } else if document_type.required_fields().contains(UPDATED_AT) {
             return Err(ProtocolError::DataContractError(
                 DataContractError::MissingRequiredKey(
                     "updated at field is not present".to_string(),
                 ),
             ));
-        } else {
-            // dbg!("we pushed updated at with 0");
-            // We don't have the updated_at that wasn't required
-            buffer.push(0);
+        }
+
+        // $transferredAt
+        if let Some(transferred_at) = &self.transferred_at {
+            bitwise_exists_flag |= 4;
+            // dbg!("we pushed transferred at {}", hex::encode(transferred_at.to_be_bytes()));
+            time_fields_data_buffer.extend(transferred_at.to_be_bytes());
+        } else if document_type.required_fields().contains(TRANSFERRED_AT) {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred at field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $createdAtBlockHeight
+        if let Some(created_at_block_height) = &self.created_at_block_height {
+            bitwise_exists_flag |= 8;
+            time_fields_data_buffer.extend(created_at_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(CREATED_AT_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "created_at_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $updatedAtBlockHeight
+        if let Some(updated_at_block_height) = &self.updated_at_block_height {
+            bitwise_exists_flag |= 16;
+            time_fields_data_buffer.extend(updated_at_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(UPDATED_AT_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "updated_at_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $transferredAtBlockHeight
+        if let Some(transferred_at_block_height) = &self.transferred_at_block_height {
+            bitwise_exists_flag |= 32;
+            time_fields_data_buffer.extend(transferred_at_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(TRANSFERRED_AT_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred_at_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $createdAtCoreBlockHeight
+        if let Some(created_at_core_block_height) = &self.created_at_core_block_height {
+            bitwise_exists_flag |= 64;
+            time_fields_data_buffer.extend(created_at_core_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(CREATED_AT_CORE_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "created_at_core_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $updatedAtCoreBlockHeight
+        if let Some(updated_at_core_block_height) = &self.updated_at_core_block_height {
+            bitwise_exists_flag |= 128;
+            time_fields_data_buffer.extend(updated_at_core_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(UPDATED_AT_CORE_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "updated_at_core_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        // $transferredAtCoreBlockHeight
+        if let Some(transferred_at_core_block_height) = &self.transferred_at_core_block_height {
+            bitwise_exists_flag |= 256;
+            time_fields_data_buffer.extend(transferred_at_core_block_height.to_be_bytes());
+        } else if document_type
+            .required_fields()
+            .contains(TRANSFERRED_AT_CORE_BLOCK_HEIGHT)
+        {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "transferred_at_core_block_height field is not present".to_string(),
+                ),
+            ));
+        }
+
+        buffer.extend(bitwise_exists_flag.to_be_bytes().as_slice());
+        buffer.append(&mut time_fields_data_buffer);
+
+        // Now we serialize the price which might not be necessary unless called for by the document type
+
+        if document_type.trade_mode().seller_sets_price() {
+            if let Some(price) = self.properties.get(PRICE) {
+                buffer.push(1);
+                let price_as_u64: u64 = price.to_integer().map_err(ProtocolError::ValueError)?;
+                buffer.append(&mut price_as_u64.to_be_bytes().to_vec());
+            } else {
+                buffer.push(0);
+            }
         }
 
         // User defined properties
@@ -212,7 +441,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                             Ok(())
                         }
                     } else {
-                        if !property.required {
+                        if !property.required || property.transient {
                             // dbg!("we added 1", field_name);
                             buffer.push(1);
                         }
@@ -223,7 +452,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                         buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if property.required {
+                } else if property.required && !property.transient {
                     Err(ProtocolError::DataContractError(
                         DataContractError::MissingRequiredKey(format!(
                             "a required field {field_name} is not present"
@@ -247,59 +476,177 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
         serialized_document: &[u8],
         document_type: DocumentTypeRef,
         _platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, DataContractError> {
         let mut buf = BufReader::new(serialized_document);
         if serialized_document.len() < 64 {
-            return Err(ProtocolError::DecodingError(
-                "serialized document is too small, must have id and owner id".to_string(),
+            return Err(DataContractError::DecodingDocumentError(
+                DecodingError::new(
+                    "serialized document is too small, must have id and owner id".to_string(),
+                ),
             ));
         }
 
         // $id
         let mut id = [0; 32];
         buf.read_exact(&mut id).map_err(|_| {
-            ProtocolError::DecodingError(
+            DataContractError::DecodingDocumentError(DecodingError::new(
                 "error reading from serialized document for id".to_string(),
-            )
+            ))
         })?;
 
         // $ownerId
         let mut owner_id = [0; 32];
         buf.read_exact(&mut owner_id).map_err(|_| {
-            ProtocolError::DecodingError(
+            DataContractError::DecodingDocumentError(DecodingError::new(
                 "error reading from serialized document for owner id".to_string(),
-            )
+            ))
         })?;
 
         // $revision
         // if the document type is mutable then we should deserialize the revision
         let revision: Option<Revision> = if document_type.requires_revision() {
             let revision = buf.read_varint().map_err(|_| {
-                ProtocolError::DecodingError(
+                DataContractError::DecodingDocumentError(DecodingError::new(
                     "error reading revision from serialized document for revision".to_string(),
-                )
+                ))
             })?;
             Some(revision)
         } else {
             None
         };
 
-        // $createdAt
-        let created_at = read_timestamp(&mut buf, document_type, CREATED_AT)?;
-        let updated_at = read_timestamp(&mut buf, document_type, UPDATED_AT)?;
+        let timestamp_flags = buf.read_u16::<BigEndian>().map_err(|_| {
+            DataContractError::CorruptedSerialization(
+                "error reading timestamp flags from serialized document".to_string(),
+            )
+        })?;
+
+        let created_at = if timestamp_flags & 1 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading created_at timestamp from serialized document".to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let updated_at = if timestamp_flags & 2 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading updated_at timestamp from serialized document".to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let transferred_at = if timestamp_flags & 4 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading transferred_at timestamp from serialized document".to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let created_at_block_height = if timestamp_flags & 8 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading created_at_block_height from serialized document".to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let updated_at_block_height = if timestamp_flags & 16 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading updated_at_block_height from serialized document".to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let transferred_at_block_height = if timestamp_flags & 32 > 0 {
+            Some(buf.read_u64::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading transferred_at_block_height from serialized document"
+                        .to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let created_at_core_block_height = if timestamp_flags & 64 > 0 {
+            Some(buf.read_u32::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading created_at_core_block_height from serialized document"
+                        .to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let updated_at_core_block_height = if timestamp_flags & 128 > 0 {
+            Some(buf.read_u32::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading updated_at_core_block_height from serialized document"
+                        .to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        let transferred_at_core_block_height = if timestamp_flags & 256 > 0 {
+            Some(buf.read_u32::<BigEndian>().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading updated_at_core_block_height from serialized document"
+                        .to_string(),
+                )
+            })?)
+        } else {
+            None
+        };
+
+        // Now we deserialize the price which might not be necessary unless called for by the document type
+
+        let price = if document_type.trade_mode().seller_sets_price() {
+            let has_price = buf.read_u8().map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading has price bool from serialized document".to_string(),
+                )
+            })?;
+            if has_price > 0 {
+                let price = buf.read_u64::<BigEndian>().map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading price u64 from serialized document".to_string(),
+                    )
+                })?;
+                Some(price)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let mut finished_buffer = false;
 
-        let properties = document_type
+        let mut properties = document_type
             .properties()
             .iter()
             .filter_map(|(key, property)| {
                 if finished_buffer {
-                    return if property.required {
-                        Some(Err(ProtocolError::DataContractError(
-                            DataContractError::CorruptedSerialization(
-                                "required field after finished buffer",
-                            ),
+                    return if property.required && !property.transient {
+                        Some(Err(DataContractError::CorruptedSerialization(
+                            "required field after finished buffer".to_string(),
                         )))
                     } else {
                         None
@@ -307,7 +654,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                 }
                 let read_value = property
                     .property_type
-                    .read_optionally_from(&mut buf, property.required);
+                    .read_optionally_from(&mut buf, property.required & !property.transient);
 
                 match read_value {
                     Ok(read_value) => {
@@ -317,7 +664,11 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                     Err(e) => Some(Err(e)),
                 }
             })
-            .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()?;
+            .collect::<Result<BTreeMap<String, Value>, DataContractError>>()?;
+
+        if let Some(price) = price {
+            properties.insert(PRICE.to_string(), price.into());
+        }
 
         Ok(DocumentV0 {
             id: Identifier::new(id),
@@ -326,34 +677,15 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             revision,
             created_at,
             updated_at,
+            transferred_at,
+            created_at_block_height,
+            updated_at_block_height,
+            transferred_at_block_height,
+            created_at_core_block_height,
+            updated_at_core_block_height,
+            transferred_at_core_block_height,
         })
     }
-}
-
-fn read_timestamp(
-    buf: &mut BufReader<&[u8]>,
-    document_type: DocumentTypeRef,
-    property_name: &str,
-) -> Result<Option<u64>, ProtocolError> {
-    if !document_type.required_fields().contains(property_name) {
-        let marker = buf.read_u8().map_err(|_| {
-            ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                "error reading created at optional byte from serialized document",
-            ))
-        })?;
-
-        if marker == 0 {
-            return Ok(None);
-        }
-    }
-
-    let timestamp = buf.read_u64::<BigEndian>().map_err(|_| {
-        ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-            "error reading created at from serialized document",
-        ))
-    })?;
-
-    Ok(Some(timestamp))
 }
 
 impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
@@ -427,12 +759,46 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let serialized_version = serialized_document.read_varint().map_err(|_| {
-            ProtocolError::DecodingError(
+            DataContractError::DecodingDocumentError(DecodingError::new(
                 "error reading revision from serialized document for revision".to_string(),
-            )
+            ))
         })?;
         match serialized_version {
-            0 => DocumentV0::from_bytes_v0(serialized_document, document_type, platform_version),
+            0 => DocumentV0::from_bytes_v0(serialized_document, document_type, platform_version)
+                .map_err(ProtocolError::DataContractError),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::from_bytes (deserialization)".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Reads a serialized document and creates a DocumentV0 from it.
+    #[cfg(feature = "validation")]
+    fn from_bytes_in_consensus(
+        mut serialized_document: &[u8],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<Self>, ProtocolError> {
+        let serialized_version = serialized_document.read_varint().map_err(|_| {
+            DataContractError::DecodingDocumentError(DecodingError::new(
+                "error reading revision from serialized document for revision".to_string(),
+            ))
+        })?;
+        match serialized_version {
+            0 => {
+                match DocumentV0::from_bytes_v0(
+                    serialized_document,
+                    document_type,
+                    platform_version,
+                ) {
+                    Ok(document) => Ok(ConsensusValidationResult::new_with_data(document)),
+                    Err(err) => Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::BasicError(BasicError::ContractError(err)),
+                    )),
+                }
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "Document::from_bytes (deserialization)".to_string(),
                 known_versions: vec![0],

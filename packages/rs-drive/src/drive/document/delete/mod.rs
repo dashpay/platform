@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Delete Documents.
 //!
 //! This module implements functions in Drive for deleting documents.
@@ -35,92 +6,88 @@
 // Module: delete_document_for_contract
 // This module contains functionality for deleting a document associated with a given contract
 mod delete_document_for_contract;
-pub use delete_document_for_contract::*;
 
 // Module: delete_document_for_contract_id
 // This module contains functionality for deleting a document associated with a given contract id
 mod delete_document_for_contract_id;
-pub use delete_document_for_contract_id::*;
 
 // Module: delete_document_for_contract_apply_and_add_to_operations
 // This module contains functionality to apply a delete operation and add to the operations of a contract
 mod delete_document_for_contract_apply_and_add_to_operations;
-pub use delete_document_for_contract_apply_and_add_to_operations::*;
 
 // Module: remove_document_from_primary_storage
 // This module contains functionality to remove a document from primary storage
 mod remove_document_from_primary_storage;
-pub use remove_document_from_primary_storage::*;
 
 // Module: remove_reference_for_index_level_for_contract_operations
 // This module contains functionality to remove a reference for an index level for contract operations
 mod remove_reference_for_index_level_for_contract_operations;
-pub use remove_reference_for_index_level_for_contract_operations::*;
 
 // Module: remove_indices_for_index_level_for_contract_operations
 // This module contains functionality to remove indices for an index level for contract operations
 mod remove_indices_for_index_level_for_contract_operations;
-pub use remove_indices_for_index_level_for_contract_operations::*;
 
 // Module: remove_indices_for_top_index_level_for_contract_operations
 // This module contains functionality to remove indices for the top index level for contract operations
 mod remove_indices_for_top_index_level_for_contract_operations;
-pub use remove_indices_for_top_index_level_for_contract_operations::*;
 
 // Module: delete_document_for_contract_id_with_named_type_operations
 // This module contains functionality to delete a document for a contract id with named type operations
 mod delete_document_for_contract_id_with_named_type_operations;
-pub use delete_document_for_contract_id_with_named_type_operations::*;
 
 // Module: delete_document_for_contract_with_named_type_operations
 // This module contains functionality to delete a document for a contract with named type operations
 mod delete_document_for_contract_with_named_type_operations;
-pub use delete_document_for_contract_with_named_type_operations::*;
 
 // Module: delete_document_for_contract_operations
 // This module contains functionality to delete a document for contract operations
 mod delete_document_for_contract_operations;
-pub use delete_document_for_contract_operations::*;
 
 mod internal;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use dpp::balances::credits::Creditable;
     use dpp::block::block_info::BlockInfo;
     use rand::Rng;
 
+    use once_cell::sync::Lazy;
     use std::borrow::Cow;
+    use std::collections::BTreeMap;
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    use crate::common::setup_contract;
-    use crate::drive::config::DriveConfig;
+    use crate::config::DriveConfig;
     use crate::drive::document::tests::setup_dashpay;
-    use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
-    use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup_contract;
 
-    use crate::query::DriveQuery;
+    use crate::query::DriveDocumentQuery;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::Document;
-    use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
+
+    static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
 
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {
         let tmp_dir = TempDir::new().unwrap();
+
+        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
         let platform_version = PlatformVersion::latest();
-        let drive: Drive = Drive::open(tmp_dir, None, platform_version)
-            .expect("expected to open Drive successfully");
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -164,13 +131,15 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
 
         let sql_string =
             "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
-            .expect("should build query");
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -199,6 +168,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -255,6 +225,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -266,8 +237,9 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
-            .expect("should build query");
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -298,6 +270,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -393,6 +366,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -427,6 +401,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -438,8 +413,9 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
-            .expect("should build query");
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -465,6 +441,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -476,8 +453,9 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
-            .expect("should build query");
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -503,6 +481,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -514,8 +493,9 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
-            .expect("should build query");
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -570,6 +550,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -600,6 +581,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -611,8 +593,9 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
-            .expect("should build query");
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -638,6 +621,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -668,6 +652,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -690,6 +675,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -709,6 +695,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -720,8 +707,9 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
-            .expect("should build query");
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -766,6 +754,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to insert a document successfully");
 
@@ -785,6 +774,7 @@ mod tests {
                 true,
                 None,
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
     }
@@ -838,15 +828,17 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
 
         let added_bytes = fee_result.storage_fee
-            / Epoch::new(0)
-                .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        // We added 1557 bytes
-        assert_eq!(added_bytes, 1557);
+            / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+                StorageDiskUsageCreditPerByte,
+            );
+        // We added 1559 bytes
+        assert_eq!(added_bytes, 1559);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()
@@ -865,6 +857,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
@@ -875,14 +868,15 @@ mod tests {
             .get(&0)
             .unwrap();
 
-        assert_eq!(*removed_credits, 41827688);
+        assert_eq!(*removed_credits, 41881536);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
-            / Epoch::new(0)
-                .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+                StorageDiskUsageCreditPerByte,
+            );
 
         assert!(added_bytes > refund_equivalent_bytes);
-        assert_eq!(refund_equivalent_bytes, 1549); // we refunded 1549 instead of 1556
+        assert_eq!(refund_equivalent_bytes, 1551); // we refunded 1551 instead of 1559
     }
 
     #[test]
@@ -934,15 +928,17 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
+                None,
             )
             .expect("expected to insert a document successfully");
 
         let added_bytes = fee_result.storage_fee
-            / Epoch::new(0)
-                .unwrap()
-                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        // We added 1553 bytes
-        assert_eq!(added_bytes, 1557);
+            / Epoch::new(0).unwrap().cost_for_known_cost_item(
+                &EPOCH_CHANGE_FEE_VERSION_TEST,
+                StorageDiskUsageCreditPerByte,
+            );
+        // We added 1558 bytes
+        assert_eq!(added_bytes, 1559);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()
@@ -961,11 +957,12 @@ mod tests {
                 false,
                 Some(&db_transaction),
                 platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
 
         assert!(fee_result.fee_refunds.0.is_empty());
         assert_eq!(fee_result.storage_fee, 0);
-        assert_eq!(fee_result.processing_fee, 145470580);
+        assert_eq!(fee_result.processing_fee, 71994700);
     }
 }

@@ -1,7 +1,7 @@
 use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use grovedb::query_result_type::QueryResultType;
 

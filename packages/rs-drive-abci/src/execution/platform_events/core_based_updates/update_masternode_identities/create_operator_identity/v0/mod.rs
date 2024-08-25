@@ -10,6 +10,7 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
+    #[inline(always)]
     pub(super) fn create_operator_identity_v0(
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,

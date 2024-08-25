@@ -10,7 +10,7 @@ pub enum PurposeWasm {
     /// this key cannot be used for signing documents
     DECRYPTION = 2,
     /// this key cannot be used for signing documents
-    WITHDRAW = 3,
+    TRANSFER = 3,
     /// this key cannot be used for signing documents
     SYSTEM = 4,
     /// this key cannot be used for signing documents
@@ -23,7 +23,7 @@ impl From<Purpose> for PurposeWasm {
             Purpose::AUTHENTICATION => PurposeWasm::AUTHENTICATION,
             Purpose::ENCRYPTION => PurposeWasm::ENCRYPTION,
             Purpose::DECRYPTION => PurposeWasm::DECRYPTION,
-            Purpose::WITHDRAW => PurposeWasm::WITHDRAW,
+            Purpose::TRANSFER => PurposeWasm::TRANSFER,
             Purpose::SYSTEM => PurposeWasm::SYSTEM,
             Purpose::VOTING => PurposeWasm::VOTING,
         }

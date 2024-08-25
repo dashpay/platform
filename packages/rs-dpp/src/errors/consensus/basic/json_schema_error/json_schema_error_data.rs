@@ -142,7 +142,7 @@ impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
                     keyword,
                     params,
                     property_name,
-                    error_message,
+                    error_message: _,
                 } = JsonSchemaErrorData::from(error.deref());
 
                 builder
@@ -175,6 +175,13 @@ impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
             ValidationErrorKind::Resolver { url, error: _ } => builder
                 .set_keyword("resolver")
                 .add_param("url", url.to_string().into())
+                .build(),
+            ValidationErrorKind::Custom { message } => {
+                builder.set_error_message(message.to_owned()).build()
+            }
+            ValidationErrorKind::UnevaluatedProperties { unexpected } => builder
+                .set_keyword("unevaluatedProperties")
+                .add_param("unexpected", unexpected.clone().into())
                 .build(),
         }
     }

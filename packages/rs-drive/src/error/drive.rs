@@ -1,4 +1,5 @@
 use crate::drive::contract::MAX_CONTRACT_HISTORY_FETCH_LIMIT;
+use dpp::fee::Credits;
 use dpp::version::FeatureVersion;
 
 /// Drive errors
@@ -73,6 +74,14 @@ pub enum DriveError {
     ChangingContractKeepsHistory(&'static str),
 
     /// Error
+    #[error("contested index not found error: {0}")]
+    ContestedIndexNotFound(&'static str),
+
+    /// Error
+    #[error("contested document missing owner error: {0}")]
+    ContestedDocumentMissingOwnerId(&'static str),
+
+    /// Error
     #[error("updating contract with history error: {0}")]
     UpdatingContractWithHistoryError(&'static str),
 
@@ -88,6 +97,10 @@ pub enum DriveError {
     /// Error
     #[error("changing document type keeps history error: {0}")]
     ChangingDocumentTypeKeepsHistory(&'static str),
+
+    /// Error
+    #[error("invalid path error: {0}")]
+    InvalidPath(&'static str),
 
     /// Error
     #[error("corrupted contract path error: {0}")]
@@ -153,8 +166,8 @@ pub enum DriveError {
     CorruptedGenesisTimeInvalidItemLength(String),
 
     /// Error
-    #[error("batch is empty")]
-    BatchIsEmpty(),
+    #[error("batch is empty: {0}")]
+    BatchIsEmpty(String),
 
     /// Error
     #[error("unexpected element type: {0}")]
@@ -163,4 +176,16 @@ pub enum DriveError {
     /// Error
     #[error("invalid contract history fetch limit: {0}. The limit must be between 1 and {MAX_CONTRACT_HISTORY_FETCH_LIMIT}")]
     InvalidContractHistoryFetchLimit(u16),
+
+    /// Error
+    #[error("prefunded specialized balance does not exist: {0}")]
+    PrefundedSpecializedBalanceDoesNotExist(String),
+
+    /// Error
+    #[error("prefunded specialized balance does not have enough credits: we have {0}, we want to deduct {1}")]
+    PrefundedSpecializedBalanceNotEnough(Credits, Credits),
+
+    /// Data Contract not found
+    #[error("data contract not found: {0}")]
+    DataContractNotFound(String),
 }

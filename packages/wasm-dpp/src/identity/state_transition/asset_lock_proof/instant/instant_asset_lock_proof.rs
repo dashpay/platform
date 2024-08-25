@@ -10,12 +10,7 @@ use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
 use crate::utils::WithJsError;
-use crate::{
-    buffer::Buffer,
-    errors::{from_dpp_err, RustConversionError},
-    identifier::IdentifierWrapper,
-    with_js_error,
-};
+use crate::{buffer::Buffer, errors::from_dpp_err, identifier::IdentifierWrapper, with_js_error};
 use dpp::identity::state_transition::asset_lock_proof::instant::{
     InstantAssetLockProof, RawInstantLockProof,
 };
@@ -102,10 +97,7 @@ impl InstantAssetLockProofWasm {
 
     #[wasm_bindgen(js_name=createIdentifier)]
     pub fn create_identifier(&self) -> Result<IdentifierWrapper, JsValue> {
-        let identifier = self
-            .0
-            .create_identifier()
-            .map_err(|e| from_dpp_err(e.into()))?;
+        let identifier = self.0.create_identifier().map_err(from_dpp_err)?;
         Ok(identifier.into())
     }
 

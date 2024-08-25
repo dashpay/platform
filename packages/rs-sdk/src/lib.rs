@@ -15,7 +15,7 @@
 //! 2. [`Data Contract`](crate::platform::DataContract)
 //! 3. [`Document`](crate::platform::Document)
 //!
-//! To define document search conditions, you can use [`DriveQuery`](crate::platform::DriveQuery) and convert it
+//! To define document search conditions, you can use [`DriveQuery`](crate::platform::DriveDocumentQuery) and convert it
 //! to [`DocumentQuery`](crate::platform::DocumentQuery) with the [`From`] trait.
 //!
 //! Basic DPP objects are re-exported in the [`platform`] module.
@@ -34,7 +34,7 @@
 //! 2. [`DocumentQuery`](crate::platform::DocumentQuery) - fetches documents based on search conditions; see
 //! [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
 //! for more details.
-//! 3. [`DriveQuery`](crate::platform::DriveQuery) - can be used to build more complex queries
+//! 3. [`DriveQuery`](crate::platform::DriveDocumentQuery) - can be used to build more complex queries
 //!
 //! ## Testability
 //!
@@ -44,7 +44,7 @@
 //!
 //! ## Error handling
 //!
-//! Errors of type [Error] are returned by the rs-sdk. Note that missing objects ("not found") are not
+//! Errors of type [Error] are returned by the dash-platform-sdk. Note that missing objects ("not found") are not
 //! treated as errors; `Ok(None)` is returned instead.
 //!
 //! Mocking functions often panic instead of returning an error.
@@ -57,16 +57,24 @@
 //! To enable logging, you can use the `tracing_subscriber` crate which allows applications to customize how events are processed and recorded.
 //! An example can be found in `tests/common.rs:setup_logs()`.
 //!
-#![warn(missing_docs)]
+// TODO re-enable when docs are complete
+// #![warn(missing_docs)]
 #![allow(rustdoc::private_intra_doc_links)]
 
 pub mod core;
+#[cfg(feature = "mocks")]
+mod core_client;
 pub mod error;
+mod internal_cache;
 pub mod mock;
 pub mod platform;
 pub mod sdk;
+
 pub use error::Error;
-pub use sdk::{Sdk, SdkBuilder};
+pub use sdk::{RequestSettings, Sdk, SdkBuilder};
+
+pub use dpp;
+pub use rs_dapi_client as dapi_client;
 
 /// Version of the SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

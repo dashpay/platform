@@ -1,4 +1,4 @@
-use dpp::document::{generate_document_id, Document};
+use dpp::document::Document;
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};

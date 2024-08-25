@@ -6,37 +6,39 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 
 use std::collections::HashMap;
 
-use crate::drive::document::contract_documents_primary_key_path;
-use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DocumentInfo::{
+use crate::drive::document::paths::contract_documents_primary_key_path;
+use crate::util::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentOwnedInfo,
 };
+use crate::util::storage_flags::StorageFlags;
 
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
-use crate::drive::grove_operations::DirectQueryType;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
+use crate::util::grove_operations::DirectQueryType;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
 use crate::error::drive::DriveError;
 
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::identifier::Identifier;
 
 use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Prepares the operations for deleting a document.
+    #[inline(always)]
     pub(super) fn delete_document_for_contract_operations_v0(
         &self,
-        document_id: [u8; 32],
+        document_id: Identifier,
         contract: &DataContract,
         document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
@@ -48,7 +50,7 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        if !document_type.documents_mutable() {
+        if !document_type.documents_can_be_deleted() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "this document type is not mutable and can not be deleted",
             )));

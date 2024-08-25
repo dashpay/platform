@@ -1,9 +1,8 @@
 use ::serde::{Deserialize, Serialize};
 use platform_value::Value;
 use std::convert::TryFrom;
-use std::io;
 
-use crate::util::hash::hash;
+use crate::util::hash::hash_double;
 use crate::{identifier::Identifier, ProtocolError};
 pub use bincode::{Decode, Encode};
 use dashcore::OutPoint;
@@ -44,14 +43,11 @@ impl ChainAssetLockProof {
     }
 
     /// Create identifier
-    pub fn create_identifier(&self) -> Result<Identifier, ProtocolError> {
-        let output_vec: Vec<u8> = self
-            .out_point
-            .try_into()
-            .map_err(|e: io::Error| ProtocolError::EncodingError(e.to_string()))?;
+    pub fn create_identifier(&self) -> Identifier {
+        let outpoint_bytes: [u8; 36] = self.out_point.into();
 
-        let hash = hash(output_vec);
+        let hash = hash_double(outpoint_bytes.as_slice());
 
-        Ok(Identifier::new(hash))
+        Identifier::new(hash)
     }
 }

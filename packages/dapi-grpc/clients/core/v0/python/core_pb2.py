@@ -19,14 +19,49 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\ncore.proto\x12\x19org.dash.platform.dapi.v0\"\x12\n\x10GetStatusRequest\"\x8e\n\n\x11GetStatusResponse\x12\x45\n\x07version\x18\x01 \x01(\x0b\x32\x34.org.dash.platform.dapi.v0.GetStatusResponse.Version\x12?\n\x04time\x18\x02 \x01(\x0b\x32\x31.org.dash.platform.dapi.v0.GetStatusResponse.Time\x12\x43\n\x06status\x18\x03 \x01(\x0e\x32\x33.org.dash.platform.dapi.v0.GetStatusResponse.Status\x12\x15\n\rsync_progress\x18\x04 \x01(\x01\x12\x41\n\x05\x63hain\x18\x05 \x01(\x0b\x32\x32.org.dash.platform.dapi.v0.GetStatusResponse.Chain\x12K\n\nmasternode\x18\x06 \x01(\x0b\x32\x37.org.dash.platform.dapi.v0.GetStatusResponse.Masternode\x12\x45\n\x07network\x18\x07 \x01(\x0b\x32\x34.org.dash.platform.dapi.v0.GetStatusResponse.Network\x1a<\n\x07Version\x12\x10\n\x08protocol\x18\x01 \x01(\r\x12\x10\n\x08software\x18\x02 \x01(\r\x12\r\n\x05\x61gent\x18\x03 \x01(\t\x1a\x33\n\x04Time\x12\x0b\n\x03now\x18\x01 \x01(\r\x12\x0e\n\x06offset\x18\x02 \x01(\x05\x12\x0e\n\x06median\x18\x03 \x01(\r\x1a\xad\x01\n\x05\x43hain\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x15\n\rheaders_count\x18\x02 \x01(\r\x12\x14\n\x0c\x62locks_count\x18\x03 \x01(\r\x12\x17\n\x0f\x62\x65st_block_hash\x18\x04 \x01(\x0c\x12\x12\n\ndifficulty\x18\x05 \x01(\x01\x12\x12\n\nchain_work\x18\x06 \x01(\x0c\x12\x11\n\tis_synced\x18\x07 \x01(\x08\x12\x15\n\rsync_progress\x18\x08 \x01(\x01\x1a\xc4\x02\n\nMasternode\x12N\n\x06status\x18\x01 \x01(\x0e\x32>.org.dash.platform.dapi.v0.GetStatusResponse.Masternode.Status\x12\x13\n\x0bpro_tx_hash\x18\x02 \x01(\x0c\x12\x14\n\x0cpose_penalty\x18\x03 \x01(\r\x12\x11\n\tis_synced\x18\x04 \x01(\x08\x12\x15\n\rsync_progress\x18\x05 \x01(\x01\"\x90\x01\n\x06Status\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x15\n\x11WAITING_FOR_PROTX\x10\x01\x12\x0f\n\x0bPOSE_BANNED\x10\x02\x12\x0b\n\x07REMOVED\x10\x03\x12\x18\n\x14OPERATOR_KEY_CHANGED\x10\x04\x12\x14\n\x10PROTX_IP_CHANGED\x10\x05\x12\t\n\x05READY\x10\x06\x12\t\n\x05\x45RROR\x10\x07\x1a\x30\n\nNetworkFee\x12\r\n\x05relay\x18\x01 \x01(\x01\x12\x13\n\x0bincremental\x18\x02 \x01(\x01\x1a\x64\n\x07Network\x12\x13\n\x0bpeers_count\x18\x01 \x01(\r\x12\x44\n\x03\x66\x65\x65\x18\x02 \x01(\x0b\x32\x37.org.dash.platform.dapi.v0.GetStatusResponse.NetworkFee\"<\n\x06Status\x12\x0f\n\x0bNOT_STARTED\x10\x00\x12\x0b\n\x07SYNCING\x10\x01\x12\t\n\x05READY\x10\x02\x12\t\n\x05\x45RROR\x10\x03\"<\n\x0fGetBlockRequest\x12\x10\n\x06height\x18\x01 \x01(\rH\x00\x12\x0e\n\x04hash\x18\x02 \x01(\tH\x00\x42\x07\n\x05\x62lock\"!\n\x10GetBlockResponse\x12\r\n\x05\x62lock\x18\x01 \x01(\x0c\"b\n\x1b\x42roadcastTransactionRequest\x12\x13\n\x0btransaction\x18\x01 \x01(\x0c\x12\x17\n\x0f\x61llow_high_fees\x18\x02 \x01(\x08\x12\x15\n\rbypass_limits\x18\x03 \x01(\x08\"6\n\x1c\x42roadcastTransactionResponse\x12\x16\n\x0etransaction_id\x18\x01 \x01(\t\"#\n\x15GetTransactionRequest\x12\n\n\x02id\x18\x01 \x01(\t\"\x9c\x01\n\x16GetTransactionResponse\x12\x13\n\x0btransaction\x18\x01 \x01(\x0c\x12\x12\n\nblock_hash\x18\x02 \x01(\x0c\x12\x0e\n\x06height\x18\x03 \x01(\r\x12\x15\n\rconfirmations\x18\x04 \x01(\r\x12\x19\n\x11is_instant_locked\x18\x05 \x01(\x08\x12\x17\n\x0fis_chain_locked\x18\x06 \x01(\x08\"x\n!BlockHeadersWithChainLocksRequest\x12\x19\n\x0f\x66rom_block_hash\x18\x01 \x01(\x0cH\x00\x12\x1b\n\x11\x66rom_block_height\x18\x02 \x01(\rH\x00\x12\r\n\x05\x63ount\x18\x03 \x01(\rB\x0c\n\nfrom_block\"\x89\x01\n\"BlockHeadersWithChainLocksResponse\x12@\n\rblock_headers\x18\x01 \x01(\x0b\x32\'.org.dash.platform.dapi.v0.BlockHeadersH\x00\x12\x14\n\nchain_lock\x18\x02 \x01(\x0cH\x00\x42\x0b\n\tresponses\"\x1f\n\x0c\x42lockHeaders\x12\x0f\n\x07headers\x18\x01 \x03(\x0c\"3\n!GetEstimatedTransactionFeeRequest\x12\x0e\n\x06\x62locks\x18\x01 \x01(\r\"1\n\"GetEstimatedTransactionFeeResponse\x12\x0b\n\x03\x66\x65\x65\x18\x01 \x01(\x01\"\xd3\x01\n\x1dTransactionsWithProofsRequest\x12<\n\x0c\x62loom_filter\x18\x01 \x01(\x0b\x32&.org.dash.platform.dapi.v0.BloomFilter\x12\x19\n\x0f\x66rom_block_hash\x18\x02 \x01(\x0cH\x00\x12\x1b\n\x11\x66rom_block_height\x18\x03 \x01(\rH\x00\x12\r\n\x05\x63ount\x18\x04 \x01(\r\x12\x1f\n\x17send_transaction_hashes\x18\x05 \x01(\x08\x42\x0c\n\nfrom_block\"U\n\x0b\x42loomFilter\x12\x0e\n\x06v_data\x18\x01 \x01(\x0c\x12\x14\n\x0cn_hash_funcs\x18\x02 \x01(\r\x12\x0f\n\x07n_tweak\x18\x03 \x01(\r\x12\x0f\n\x07n_flags\x18\x04 \x01(\r\"\xeb\x01\n\x1eTransactionsWithProofsResponse\x12\x46\n\x10raw_transactions\x18\x01 \x01(\x0b\x32*.org.dash.platform.dapi.v0.RawTransactionsH\x00\x12X\n\x1ainstant_send_lock_messages\x18\x02 \x01(\x0b\x32\x32.org.dash.platform.dapi.v0.InstantSendLockMessagesH\x00\x12\x1a\n\x10raw_merkle_block\x18\x03 \x01(\x0cH\x00\x42\x0b\n\tresponses\"\'\n\x0fRawTransactions\x12\x14\n\x0ctransactions\x18\x01 \x03(\x0c\"+\n\x17InstantSendLockMessages\x12\x10\n\x08messages\x18\x01 \x03(\x0c\x32\xb6\x07\n\x04\x43ore\x12\x66\n\tgetStatus\x12+.org.dash.platform.dapi.v0.GetStatusRequest\x1a,.org.dash.platform.dapi.v0.GetStatusResponse\x12\x63\n\x08getBlock\x12*.org.dash.platform.dapi.v0.GetBlockRequest\x1a+.org.dash.platform.dapi.v0.GetBlockResponse\x12\x87\x01\n\x14\x62roadcastTransaction\x12\x36.org.dash.platform.dapi.v0.BroadcastTransactionRequest\x1a\x37.org.dash.platform.dapi.v0.BroadcastTransactionResponse\x12u\n\x0egetTransaction\x12\x30.org.dash.platform.dapi.v0.GetTransactionRequest\x1a\x31.org.dash.platform.dapi.v0.GetTransactionResponse\x12\x99\x01\n\x1agetEstimatedTransactionFee\x12<.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeRequest\x1a=.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeResponse\x12\xa6\x01\n%subscribeToBlockHeadersWithChainLocks\x12<.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksRequest\x1a=.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksResponse0\x01\x12\x9a\x01\n!subscribeToTransactionsWithProofs\x12\x38.org.dash.platform.dapi.v0.TransactionsWithProofsRequest\x1a\x39.org.dash.platform.dapi.v0.TransactionsWithProofsResponse0\x01\x62\x06proto3'
+  serialized_pb=b'\n\ncore.proto\x12\x19org.dash.platform.dapi.v0\"\x1c\n\x1aGetBlockchainStatusRequest\"\xc0\x07\n\x1bGetBlockchainStatusResponse\x12O\n\x07version\x18\x01 \x01(\x0b\x32>.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version\x12I\n\x04time\x18\x02 \x01(\x0b\x32;.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time\x12M\n\x06status\x18\x03 \x01(\x0e\x32=.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Status\x12\x15\n\rsync_progress\x18\x04 \x01(\x01\x12K\n\x05\x63hain\x18\x05 \x01(\x0b\x32<.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain\x12O\n\x07network\x18\x07 \x01(\x0b\x32>.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network\x1a<\n\x07Version\x12\x10\n\x08protocol\x18\x01 \x01(\r\x12\x10\n\x08software\x18\x02 \x01(\r\x12\r\n\x05\x61gent\x18\x03 \x01(\t\x1a\x33\n\x04Time\x12\x0b\n\x03now\x18\x01 \x01(\r\x12\x0e\n\x06offset\x18\x02 \x01(\x05\x12\x0e\n\x06median\x18\x03 \x01(\r\x1a\xad\x01\n\x05\x43hain\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x15\n\rheaders_count\x18\x02 \x01(\r\x12\x14\n\x0c\x62locks_count\x18\x03 \x01(\r\x12\x17\n\x0f\x62\x65st_block_hash\x18\x04 \x01(\x0c\x12\x12\n\ndifficulty\x18\x05 \x01(\x01\x12\x12\n\nchain_work\x18\x06 \x01(\x0c\x12\x11\n\tis_synced\x18\x07 \x01(\x08\x12\x15\n\rsync_progress\x18\x08 \x01(\x01\x1a\x30\n\nNetworkFee\x12\r\n\x05relay\x18\x01 \x01(\x01\x12\x13\n\x0bincremental\x18\x02 \x01(\x01\x1an\n\x07Network\x12\x13\n\x0bpeers_count\x18\x01 \x01(\r\x12N\n\x03\x66\x65\x65\x18\x02 \x01(\x0b\x32\x41.org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee\"<\n\x06Status\x12\x0f\n\x0bNOT_STARTED\x10\x00\x12\x0b\n\x07SYNCING\x10\x01\x12\t\n\x05READY\x10\x02\x12\t\n\x05\x45RROR\x10\x03\"\x1c\n\x1aGetMasternodeStatusRequest\"\xd4\x02\n\x1bGetMasternodeStatusResponse\x12M\n\x06status\x18\x01 \x01(\x0e\x32=.org.dash.platform.dapi.v0.GetMasternodeStatusResponse.Status\x12\x13\n\x0bpro_tx_hash\x18\x02 \x01(\x0c\x12\x14\n\x0cpose_penalty\x18\x03 \x01(\r\x12\x11\n\tis_synced\x18\x04 \x01(\x08\x12\x15\n\rsync_progress\x18\x05 \x01(\x01\"\x90\x01\n\x06Status\x12\x0b\n\x07UNKNOWN\x10\x00\x12\x15\n\x11WAITING_FOR_PROTX\x10\x01\x12\x0f\n\x0bPOSE_BANNED\x10\x02\x12\x0b\n\x07REMOVED\x10\x03\x12\x18\n\x14OPERATOR_KEY_CHANGED\x10\x04\x12\x14\n\x10PROTX_IP_CHANGED\x10\x05\x12\t\n\x05READY\x10\x06\x12\t\n\x05\x45RROR\x10\x07\"<\n\x0fGetBlockRequest\x12\x10\n\x06height\x18\x01 \x01(\rH\x00\x12\x0e\n\x04hash\x18\x02 \x01(\tH\x00\x42\x07\n\x05\x62lock\"!\n\x10GetBlockResponse\x12\r\n\x05\x62lock\x18\x01 \x01(\x0c\"\x1b\n\x19GetBestBlockHeightRequest\",\n\x1aGetBestBlockHeightResponse\x12\x0e\n\x06height\x18\x01 \x01(\r\"b\n\x1b\x42roadcastTransactionRequest\x12\x13\n\x0btransaction\x18\x01 \x01(\x0c\x12\x17\n\x0f\x61llow_high_fees\x18\x02 \x01(\x08\x12\x15\n\rbypass_limits\x18\x03 \x01(\x08\"6\n\x1c\x42roadcastTransactionResponse\x12\x16\n\x0etransaction_id\x18\x01 \x01(\t\"#\n\x15GetTransactionRequest\x12\n\n\x02id\x18\x01 \x01(\t\"\x9c\x01\n\x16GetTransactionResponse\x12\x13\n\x0btransaction\x18\x01 \x01(\x0c\x12\x12\n\nblock_hash\x18\x02 \x01(\x0c\x12\x0e\n\x06height\x18\x03 \x01(\r\x12\x15\n\rconfirmations\x18\x04 \x01(\r\x12\x19\n\x11is_instant_locked\x18\x05 \x01(\x08\x12\x17\n\x0fis_chain_locked\x18\x06 \x01(\x08\"x\n!BlockHeadersWithChainLocksRequest\x12\x19\n\x0f\x66rom_block_hash\x18\x01 \x01(\x0cH\x00\x12\x1b\n\x11\x66rom_block_height\x18\x02 \x01(\rH\x00\x12\r\n\x05\x63ount\x18\x03 \x01(\rB\x0c\n\nfrom_block\"\x89\x01\n\"BlockHeadersWithChainLocksResponse\x12@\n\rblock_headers\x18\x01 \x01(\x0b\x32\'.org.dash.platform.dapi.v0.BlockHeadersH\x00\x12\x14\n\nchain_lock\x18\x02 \x01(\x0cH\x00\x42\x0b\n\tresponses\"\x1f\n\x0c\x42lockHeaders\x12\x0f\n\x07headers\x18\x01 \x03(\x0c\"3\n!GetEstimatedTransactionFeeRequest\x12\x0e\n\x06\x62locks\x18\x01 \x01(\r\"1\n\"GetEstimatedTransactionFeeResponse\x12\x0b\n\x03\x66\x65\x65\x18\x01 \x01(\x01\"\xd3\x01\n\x1dTransactionsWithProofsRequest\x12<\n\x0c\x62loom_filter\x18\x01 \x01(\x0b\x32&.org.dash.platform.dapi.v0.BloomFilter\x12\x19\n\x0f\x66rom_block_hash\x18\x02 \x01(\x0cH\x00\x12\x1b\n\x11\x66rom_block_height\x18\x03 \x01(\rH\x00\x12\r\n\x05\x63ount\x18\x04 \x01(\r\x12\x1f\n\x17send_transaction_hashes\x18\x05 \x01(\x08\x42\x0c\n\nfrom_block\"U\n\x0b\x42loomFilter\x12\x0e\n\x06v_data\x18\x01 \x01(\x0c\x12\x14\n\x0cn_hash_funcs\x18\x02 \x01(\r\x12\x0f\n\x07n_tweak\x18\x03 \x01(\r\x12\x0f\n\x07n_flags\x18\x04 \x01(\r\"\xeb\x01\n\x1eTransactionsWithProofsResponse\x12\x46\n\x10raw_transactions\x18\x01 \x01(\x0b\x32*.org.dash.platform.dapi.v0.RawTransactionsH\x00\x12X\n\x1ainstant_send_lock_messages\x18\x02 \x01(\x0b\x32\x32.org.dash.platform.dapi.v0.InstantSendLockMessagesH\x00\x12\x1a\n\x10raw_merkle_block\x18\x03 \x01(\x0cH\x00\x42\x0b\n\tresponses\"\'\n\x0fRawTransactions\x12\x14\n\x0ctransactions\x18\x01 \x03(\x0c\"+\n\x17InstantSendLockMessages\x12\x10\n\x08messages\x18\x01 \x03(\x0c\"\x17\n\x15MasternodeListRequest\"6\n\x16MasternodeListResponse\x12\x1c\n\x14masternode_list_diff\x18\x01 \x01(\x0c\x32\xe5\n\n\x04\x43ore\x12\x84\x01\n\x13getBlockchainStatus\x12\x35.org.dash.platform.dapi.v0.GetBlockchainStatusRequest\x1a\x36.org.dash.platform.dapi.v0.GetBlockchainStatusResponse\x12\x84\x01\n\x13getMasternodeStatus\x12\x35.org.dash.platform.dapi.v0.GetMasternodeStatusRequest\x1a\x36.org.dash.platform.dapi.v0.GetMasternodeStatusResponse\x12\x63\n\x08getBlock\x12*.org.dash.platform.dapi.v0.GetBlockRequest\x1a+.org.dash.platform.dapi.v0.GetBlockResponse\x12\x81\x01\n\x12getBestBlockHeight\x12\x34.org.dash.platform.dapi.v0.GetBestBlockHeightRequest\x1a\x35.org.dash.platform.dapi.v0.GetBestBlockHeightResponse\x12\x87\x01\n\x14\x62roadcastTransaction\x12\x36.org.dash.platform.dapi.v0.BroadcastTransactionRequest\x1a\x37.org.dash.platform.dapi.v0.BroadcastTransactionResponse\x12u\n\x0egetTransaction\x12\x30.org.dash.platform.dapi.v0.GetTransactionRequest\x1a\x31.org.dash.platform.dapi.v0.GetTransactionResponse\x12\x99\x01\n\x1agetEstimatedTransactionFee\x12<.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeRequest\x1a=.org.dash.platform.dapi.v0.GetEstimatedTransactionFeeResponse\x12\xa6\x01\n%subscribeToBlockHeadersWithChainLocks\x12<.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksRequest\x1a=.org.dash.platform.dapi.v0.BlockHeadersWithChainLocksResponse0\x01\x12\x9a\x01\n!subscribeToTransactionsWithProofs\x12\x38.org.dash.platform.dapi.v0.TransactionsWithProofsRequest\x1a\x39.org.dash.platform.dapi.v0.TransactionsWithProofsResponse0\x01\x12\x82\x01\n\x19subscribeToMasternodeList\x12\x30.org.dash.platform.dapi.v0.MasternodeListRequest\x1a\x31.org.dash.platform.dapi.v0.MasternodeListResponse0\x01\x62\x06proto3'
 )
 
 
 
-_GETSTATUSRESPONSE_MASTERNODE_STATUS = _descriptor.EnumDescriptor(
+_GETBLOCKCHAINSTATUSRESPONSE_STATUS = _descriptor.EnumDescriptor(
   name='Status',
-  full_name='org.dash.platform.dapi.v0.GetStatusResponse.Masternode.Status',
+  full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Status',
+  filename=None,
+  file=DESCRIPTOR,
+  create_key=_descriptor._internal_create_key,
+  values=[
+    _descriptor.EnumValueDescriptor(
+      name='NOT_STARTED', index=0, number=0,
+      serialized_options=None,
+      type=None,
+      create_key=_descriptor._internal_create_key),
+    _descriptor.EnumValueDescriptor(
+      name='SYNCING', index=1, number=1,
+      serialized_options=None,
+      type=None,
+      create_key=_descriptor._internal_create_key),
+    _descriptor.EnumValueDescriptor(
+      name='READY', index=2, number=2,
+      serialized_options=None,
+      type=None,
+      create_key=_descriptor._internal_create_key),
+    _descriptor.EnumValueDescriptor(
+      name='ERROR', index=3, number=3,
+      serialized_options=None,
+      type=None,
+      create_key=_descriptor._internal_create_key),
+  ],
+  containing_type=None,
+  serialized_options=None,
+  serialized_start=972,
+  serialized_end=1032,
+)
+_sym_db.RegisterEnumDescriptor(_GETBLOCKCHAINSTATUSRESPONSE_STATUS)
+
+_GETMASTERNODESTATUSRESPONSE_STATUS = _descriptor.EnumDescriptor(
+  name='Status',
+  full_name='org.dash.platform.dapi.v0.GetMasternodeStatusResponse.Status',
   filename=None,
   file=DESCRIPTOR,
   create_key=_descriptor._internal_create_key,
@@ -74,50 +109,15 @@ _GETSTATUSRESPONSE_MASTERNODE_STATUS = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=998,
-  serialized_end=1142,
+  serialized_start=1261,
+  serialized_end=1405,
 )
-_sym_db.RegisterEnumDescriptor(_GETSTATUSRESPONSE_MASTERNODE_STATUS)
-
-_GETSTATUSRESPONSE_STATUS = _descriptor.EnumDescriptor(
-  name='Status',
-  full_name='org.dash.platform.dapi.v0.GetStatusResponse.Status',
-  filename=None,
-  file=DESCRIPTOR,
-  create_key=_descriptor._internal_create_key,
-  values=[
-    _descriptor.EnumValueDescriptor(
-      name='NOT_STARTED', index=0, number=0,
-      serialized_options=None,
-      type=None,
-      create_key=_descriptor._internal_create_key),
-    _descriptor.EnumValueDescriptor(
-      name='SYNCING', index=1, number=1,
-      serialized_options=None,
-      type=None,
-      create_key=_descriptor._internal_create_key),
-    _descriptor.EnumValueDescriptor(
-      name='READY', index=2, number=2,
-      serialized_options=None,
-      type=None,
-      create_key=_descriptor._internal_create_key),
-    _descriptor.EnumValueDescriptor(
-      name='ERROR', index=3, number=3,
-      serialized_options=None,
-      type=None,
-      create_key=_descriptor._internal_create_key),
-  ],
-  containing_type=None,
-  serialized_options=None,
-  serialized_start=1296,
-  serialized_end=1356,
-)
-_sym_db.RegisterEnumDescriptor(_GETSTATUSRESPONSE_STATUS)
+_sym_db.RegisterEnumDescriptor(_GETMASTERNODESTATUSRESPONSE_STATUS)
 
 
-_GETSTATUSREQUEST = _descriptor.Descriptor(
-  name='GetStatusRequest',
-  full_name='org.dash.platform.dapi.v0.GetStatusRequest',
+_GETBLOCKCHAINSTATUSREQUEST = _descriptor.Descriptor(
+  name='GetBlockchainStatusRequest',
+  full_name='org.dash.platform.dapi.v0.GetBlockchainStatusRequest',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
@@ -136,34 +136,34 @@ _GETSTATUSREQUEST = _descriptor.Descriptor(
   oneofs=[
   ],
   serialized_start=41,
-  serialized_end=59,
+  serialized_end=69,
 )
 
 
-_GETSTATUSRESPONSE_VERSION = _descriptor.Descriptor(
+_GETBLOCKCHAINSTATUSRESPONSE_VERSION = _descriptor.Descriptor(
   name='Version',
-  full_name='org.dash.platform.dapi.v0.GetStatusResponse.Version',
+  full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='protocol', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Version.protocol', index=0,
+      name='protocol', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version.protocol', index=0,
       number=1, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='software', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Version.software', index=1,
+      name='software', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version.software', index=1,
       number=2, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='agent', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Version.agent', index=2,
+      name='agent', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version.agent', index=2,
       number=3, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=b"".decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
@@ -181,34 +181,34 @@ _GETSTATUSRESPONSE_VERSION = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=526,
-  serialized_end=586,
+  serialized_start=519,
+  serialized_end=579,
 )
 
-_GETSTATUSRESPONSE_TIME = _descriptor.Descriptor(
+_GETBLOCKCHAINSTATUSRESPONSE_TIME = _descriptor.Descriptor(
   name='Time',
-  full_name='org.dash.platform.dapi.v0.GetStatusResponse.Time',
+  full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='now', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Time.now', index=0,
+      name='now', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time.now', index=0,
       number=1, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='offset', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Time.offset', index=1,
+      name='offset', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time.offset', index=1,
       number=2, type=5, cpp_type=1, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='median', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Time.median', index=2,
+      name='median', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time.median', index=2,
       number=3, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
@@ -226,69 +226,69 @@ _GETSTATUSRESPONSE_TIME = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=588,
-  serialized_end=639,
+  serialized_start=581,
+  serialized_end=632,
 )
 
-_GETSTATUSRESPONSE_CHAIN = _descriptor.Descriptor(
+_GETBLOCKCHAINSTATUSRESPONSE_CHAIN = _descriptor.Descriptor(
   name='Chain',
-  full_name='org.dash.platform.dapi.v0.GetStatusResponse.Chain',
+  full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='name', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Chain.name', index=0,
+      name='name', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.name', index=0,
       number=1, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=b"".decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='headers_count', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Chain.headers_count', index=1,
+      name='headers_count', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.headers_count', index=1,
       number=2, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='blocks_count', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Chain.blocks_count', index=2,
+      name='blocks_count', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.blocks_count', index=2,
       number=3, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='best_block_hash', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Chain.best_block_hash', index=3,
+      name='best_block_hash', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.best_block_hash', index=3,
       number=4, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='difficulty', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Chain.difficulty', index=4,
+      name='difficulty', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.difficulty', index=4,
       number=5, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='chain_work', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Chain.chain_work', index=5,
+      name='chain_work', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.chain_work', index=5,
       number=6, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='is_synced', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Chain.is_synced', index=6,
+      name='is_synced', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.is_synced', index=6,
       number=7, type=8, cpp_type=7, label=1,
       has_default_value=False, default_value=False,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='sync_progress', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Chain.sync_progress', index=7,
+      name='sync_progress', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain.sync_progress', index=7,
       number=8, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
@@ -306,87 +306,27 @@ _GETSTATUSRESPONSE_CHAIN = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=642,
-  serialized_end=815,
+  serialized_start=635,
+  serialized_end=808,
 )
 
-_GETSTATUSRESPONSE_MASTERNODE = _descriptor.Descriptor(
-  name='Masternode',
-  full_name='org.dash.platform.dapi.v0.GetStatusResponse.Masternode',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='status', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Masternode.status', index=0,
-      number=1, type=14, cpp_type=8, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='pro_tx_hash', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Masternode.pro_tx_hash', index=1,
-      number=2, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='pose_penalty', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Masternode.pose_penalty', index=2,
-      number=3, type=13, cpp_type=3, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='is_synced', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Masternode.is_synced', index=3,
-      number=4, type=8, cpp_type=7, label=1,
-      has_default_value=False, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='sync_progress', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Masternode.sync_progress', index=4,
-      number=5, type=1, cpp_type=5, label=1,
-      has_default_value=False, default_value=float(0),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-    _GETSTATUSRESPONSE_MASTERNODE_STATUS,
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=818,
-  serialized_end=1142,
-)
-
-_GETSTATUSRESPONSE_NETWORKFEE = _descriptor.Descriptor(
+_GETBLOCKCHAINSTATUSRESPONSE_NETWORKFEE = _descriptor.Descriptor(
   name='NetworkFee',
-  full_name='org.dash.platform.dapi.v0.GetStatusResponse.NetworkFee',
+  full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='relay', full_name='org.dash.platform.dapi.v0.GetStatusResponse.NetworkFee.relay', index=0,
+      name='relay', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee.relay', index=0,
       number=1, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='incremental', full_name='org.dash.platform.dapi.v0.GetStatusResponse.NetworkFee.incremental', index=1,
+      name='incremental', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee.incremental', index=1,
       number=2, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
@@ -404,27 +344,27 @@ _GETSTATUSRESPONSE_NETWORKFEE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1144,
-  serialized_end=1192,
+  serialized_start=810,
+  serialized_end=858,
 )
 
-_GETSTATUSRESPONSE_NETWORK = _descriptor.Descriptor(
+_GETBLOCKCHAINSTATUSRESPONSE_NETWORK = _descriptor.Descriptor(
   name='Network',
-  full_name='org.dash.platform.dapi.v0.GetStatusResponse.Network',
+  full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='peers_count', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Network.peers_count', index=0,
+      name='peers_count', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network.peers_count', index=0,
       number=1, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='fee', full_name='org.dash.platform.dapi.v0.GetStatusResponse.Network.fee', index=1,
+      name='fee', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network.fee', index=1,
       number=2, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
@@ -442,62 +382,55 @@ _GETSTATUSRESPONSE_NETWORK = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1194,
-  serialized_end=1294,
+  serialized_start=860,
+  serialized_end=970,
 )
 
-_GETSTATUSRESPONSE = _descriptor.Descriptor(
-  name='GetStatusResponse',
-  full_name='org.dash.platform.dapi.v0.GetStatusResponse',
+_GETBLOCKCHAINSTATUSRESPONSE = _descriptor.Descriptor(
+  name='GetBlockchainStatusResponse',
+  full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='version', full_name='org.dash.platform.dapi.v0.GetStatusResponse.version', index=0,
+      name='version', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.version', index=0,
       number=1, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='time', full_name='org.dash.platform.dapi.v0.GetStatusResponse.time', index=1,
+      name='time', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.time', index=1,
       number=2, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='status', full_name='org.dash.platform.dapi.v0.GetStatusResponse.status', index=2,
+      name='status', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.status', index=2,
       number=3, type=14, cpp_type=8, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='sync_progress', full_name='org.dash.platform.dapi.v0.GetStatusResponse.sync_progress', index=3,
+      name='sync_progress', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.sync_progress', index=3,
       number=4, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='chain', full_name='org.dash.platform.dapi.v0.GetStatusResponse.chain', index=4,
+      name='chain', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.chain', index=4,
       number=5, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='masternode', full_name='org.dash.platform.dapi.v0.GetStatusResponse.masternode', index=5,
-      number=6, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='network', full_name='org.dash.platform.dapi.v0.GetStatusResponse.network', index=6,
+      name='network', full_name='org.dash.platform.dapi.v0.GetBlockchainStatusResponse.network', index=5,
       number=7, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
@@ -506,9 +439,9 @@ _GETSTATUSRESPONSE = _descriptor.Descriptor(
   ],
   extensions=[
   ],
-  nested_types=[_GETSTATUSRESPONSE_VERSION, _GETSTATUSRESPONSE_TIME, _GETSTATUSRESPONSE_CHAIN, _GETSTATUSRESPONSE_MASTERNODE, _GETSTATUSRESPONSE_NETWORKFEE, _GETSTATUSRESPONSE_NETWORK, ],
+  nested_types=[_GETBLOCKCHAINSTATUSRESPONSE_VERSION, _GETBLOCKCHAINSTATUSRESPONSE_TIME, _GETBLOCKCHAINSTATUSRESPONSE_CHAIN, _GETBLOCKCHAINSTATUSRESPONSE_NETWORKFEE, _GETBLOCKCHAINSTATUSRESPONSE_NETWORK, ],
   enum_types=[
-    _GETSTATUSRESPONSE_STATUS,
+    _GETBLOCKCHAINSTATUSRESPONSE_STATUS,
   ],
   serialized_options=None,
   is_extendable=False,
@@ -516,8 +449,94 @@ _GETSTATUSRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=62,
-  serialized_end=1356,
+  serialized_start=72,
+  serialized_end=1032,
+)
+
+
+_GETMASTERNODESTATUSREQUEST = _descriptor.Descriptor(
+  name='GetMasternodeStatusRequest',
+  full_name='org.dash.platform.dapi.v0.GetMasternodeStatusRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  create_key=_descriptor._internal_create_key,
+  fields=[
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=1034,
+  serialized_end=1062,
+)
+
+
+_GETMASTERNODESTATUSRESPONSE = _descriptor.Descriptor(
+  name='GetMasternodeStatusResponse',
+  full_name='org.dash.platform.dapi.v0.GetMasternodeStatusResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  create_key=_descriptor._internal_create_key,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='status', full_name='org.dash.platform.dapi.v0.GetMasternodeStatusResponse.status', index=0,
+      number=1, type=14, cpp_type=8, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='pro_tx_hash', full_name='org.dash.platform.dapi.v0.GetMasternodeStatusResponse.pro_tx_hash', index=1,
+      number=2, type=12, cpp_type=9, label=1,
+      has_default_value=False, default_value=b"",
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='pose_penalty', full_name='org.dash.platform.dapi.v0.GetMasternodeStatusResponse.pose_penalty', index=2,
+      number=3, type=13, cpp_type=3, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='is_synced', full_name='org.dash.platform.dapi.v0.GetMasternodeStatusResponse.is_synced', index=3,
+      number=4, type=8, cpp_type=7, label=1,
+      has_default_value=False, default_value=False,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='sync_progress', full_name='org.dash.platform.dapi.v0.GetMasternodeStatusResponse.sync_progress', index=4,
+      number=5, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+    _GETMASTERNODESTATUSRESPONSE_STATUS,
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=1065,
+  serialized_end=1405,
 )
 
 
@@ -560,8 +579,8 @@ _GETBLOCKREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=1358,
-  serialized_end=1418,
+  serialized_start=1407,
+  serialized_end=1467,
 )
 
 
@@ -592,8 +611,65 @@ _GETBLOCKRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1420,
-  serialized_end=1453,
+  serialized_start=1469,
+  serialized_end=1502,
+)
+
+
+_GETBESTBLOCKHEIGHTREQUEST = _descriptor.Descriptor(
+  name='GetBestBlockHeightRequest',
+  full_name='org.dash.platform.dapi.v0.GetBestBlockHeightRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  create_key=_descriptor._internal_create_key,
+  fields=[
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=1504,
+  serialized_end=1531,
+)
+
+
+_GETBESTBLOCKHEIGHTRESPONSE = _descriptor.Descriptor(
+  name='GetBestBlockHeightResponse',
+  full_name='org.dash.platform.dapi.v0.GetBestBlockHeightResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  create_key=_descriptor._internal_create_key,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='height', full_name='org.dash.platform.dapi.v0.GetBestBlockHeightResponse.height', index=0,
+      number=1, type=13, cpp_type=3, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=1533,
+  serialized_end=1577,
 )
 
 
@@ -638,8 +714,8 @@ _BROADCASTTRANSACTIONREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1455,
-  serialized_end=1553,
+  serialized_start=1579,
+  serialized_end=1677,
 )
 
 
@@ -670,8 +746,8 @@ _BROADCASTTRANSACTIONRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1555,
-  serialized_end=1609,
+  serialized_start=1679,
+  serialized_end=1733,
 )
 
 
@@ -702,8 +778,8 @@ _GETTRANSACTIONREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1611,
-  serialized_end=1646,
+  serialized_start=1735,
+  serialized_end=1770,
 )
 
 
@@ -769,8 +845,8 @@ _GETTRANSACTIONRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1649,
-  serialized_end=1805,
+  serialized_start=1773,
+  serialized_end=1929,
 )
 
 
@@ -820,8 +896,8 @@ _BLOCKHEADERSWITHCHAINLOCKSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=1807,
-  serialized_end=1927,
+  serialized_start=1931,
+  serialized_end=2051,
 )
 
 
@@ -864,8 +940,8 @@ _BLOCKHEADERSWITHCHAINLOCKSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=1930,
-  serialized_end=2067,
+  serialized_start=2054,
+  serialized_end=2191,
 )
 
 
@@ -896,8 +972,8 @@ _BLOCKHEADERS = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2069,
-  serialized_end=2100,
+  serialized_start=2193,
+  serialized_end=2224,
 )
 
 
@@ -928,8 +1004,8 @@ _GETESTIMATEDTRANSACTIONFEEREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2102,
-  serialized_end=2153,
+  serialized_start=2226,
+  serialized_end=2277,
 )
 
 
@@ -960,8 +1036,8 @@ _GETESTIMATEDTRANSACTIONFEERESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2155,
-  serialized_end=2204,
+  serialized_start=2279,
+  serialized_end=2328,
 )
 
 
@@ -1025,8 +1101,8 @@ _TRANSACTIONSWITHPROOFSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=2207,
-  serialized_end=2418,
+  serialized_start=2331,
+  serialized_end=2542,
 )
 
 
@@ -1078,8 +1154,8 @@ _BLOOMFILTER = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2420,
-  serialized_end=2505,
+  serialized_start=2544,
+  serialized_end=2629,
 )
 
 
@@ -1129,8 +1205,8 @@ _TRANSACTIONSWITHPROOFSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=2508,
-  serialized_end=2743,
+  serialized_start=2632,
+  serialized_end=2867,
 )
 
 
@@ -1161,8 +1237,8 @@ _RAWTRANSACTIONS = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2745,
-  serialized_end=2784,
+  serialized_start=2869,
+  serialized_end=2908,
 )
 
 
@@ -1193,26 +1269,81 @@ _INSTANTSENDLOCKMESSAGES = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2786,
-  serialized_end=2829,
+  serialized_start=2910,
+  serialized_end=2953,
 )
 
-_GETSTATUSRESPONSE_VERSION.containing_type = _GETSTATUSRESPONSE
-_GETSTATUSRESPONSE_TIME.containing_type = _GETSTATUSRESPONSE
-_GETSTATUSRESPONSE_CHAIN.containing_type = _GETSTATUSRESPONSE
-_GETSTATUSRESPONSE_MASTERNODE.fields_by_name['status'].enum_type = _GETSTATUSRESPONSE_MASTERNODE_STATUS
-_GETSTATUSRESPONSE_MASTERNODE.containing_type = _GETSTATUSRESPONSE
-_GETSTATUSRESPONSE_MASTERNODE_STATUS.containing_type = _GETSTATUSRESPONSE_MASTERNODE
-_GETSTATUSRESPONSE_NETWORKFEE.containing_type = _GETSTATUSRESPONSE
-_GETSTATUSRESPONSE_NETWORK.fields_by_name['fee'].message_type = _GETSTATUSRESPONSE_NETWORKFEE
-_GETSTATUSRESPONSE_NETWORK.containing_type = _GETSTATUSRESPONSE
-_GETSTATUSRESPONSE.fields_by_name['version'].message_type = _GETSTATUSRESPONSE_VERSION
-_GETSTATUSRESPONSE.fields_by_name['time'].message_type = _GETSTATUSRESPONSE_TIME
-_GETSTATUSRESPONSE.fields_by_name['status'].enum_type = _GETSTATUSRESPONSE_STATUS
-_GETSTATUSRESPONSE.fields_by_name['chain'].message_type = _GETSTATUSRESPONSE_CHAIN
-_GETSTATUSRESPONSE.fields_by_name['masternode'].message_type = _GETSTATUSRESPONSE_MASTERNODE
-_GETSTATUSRESPONSE.fields_by_name['network'].message_type = _GETSTATUSRESPONSE_NETWORK
-_GETSTATUSRESPONSE_STATUS.containing_type = _GETSTATUSRESPONSE
+
+_MASTERNODELISTREQUEST = _descriptor.Descriptor(
+  name='MasternodeListRequest',
+  full_name='org.dash.platform.dapi.v0.MasternodeListRequest',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  create_key=_descriptor._internal_create_key,
+  fields=[
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=2955,
+  serialized_end=2978,
+)
+
+
+_MASTERNODELISTRESPONSE = _descriptor.Descriptor(
+  name='MasternodeListResponse',
+  full_name='org.dash.platform.dapi.v0.MasternodeListResponse',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  create_key=_descriptor._internal_create_key,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='masternode_list_diff', full_name='org.dash.platform.dapi.v0.MasternodeListResponse.masternode_list_diff', index=0,
+      number=1, type=12, cpp_type=9, label=1,
+      has_default_value=False, default_value=b"",
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=2980,
+  serialized_end=3034,
+)
+
+_GETBLOCKCHAINSTATUSRESPONSE_VERSION.containing_type = _GETBLOCKCHAINSTATUSRESPONSE
+_GETBLOCKCHAINSTATUSRESPONSE_TIME.containing_type = _GETBLOCKCHAINSTATUSRESPONSE
+_GETBLOCKCHAINSTATUSRESPONSE_CHAIN.containing_type = _GETBLOCKCHAINSTATUSRESPONSE
+_GETBLOCKCHAINSTATUSRESPONSE_NETWORKFEE.containing_type = _GETBLOCKCHAINSTATUSRESPONSE
+_GETBLOCKCHAINSTATUSRESPONSE_NETWORK.fields_by_name['fee'].message_type = _GETBLOCKCHAINSTATUSRESPONSE_NETWORKFEE
+_GETBLOCKCHAINSTATUSRESPONSE_NETWORK.containing_type = _GETBLOCKCHAINSTATUSRESPONSE
+_GETBLOCKCHAINSTATUSRESPONSE.fields_by_name['version'].message_type = _GETBLOCKCHAINSTATUSRESPONSE_VERSION
+_GETBLOCKCHAINSTATUSRESPONSE.fields_by_name['time'].message_type = _GETBLOCKCHAINSTATUSRESPONSE_TIME
+_GETBLOCKCHAINSTATUSRESPONSE.fields_by_name['status'].enum_type = _GETBLOCKCHAINSTATUSRESPONSE_STATUS
+_GETBLOCKCHAINSTATUSRESPONSE.fields_by_name['chain'].message_type = _GETBLOCKCHAINSTATUSRESPONSE_CHAIN
+_GETBLOCKCHAINSTATUSRESPONSE.fields_by_name['network'].message_type = _GETBLOCKCHAINSTATUSRESPONSE_NETWORK
+_GETBLOCKCHAINSTATUSRESPONSE_STATUS.containing_type = _GETBLOCKCHAINSTATUSRESPONSE
+_GETMASTERNODESTATUSRESPONSE.fields_by_name['status'].enum_type = _GETMASTERNODESTATUSRESPONSE_STATUS
+_GETMASTERNODESTATUSRESPONSE_STATUS.containing_type = _GETMASTERNODESTATUSRESPONSE
 _GETBLOCKREQUEST.oneofs_by_name['block'].fields.append(
   _GETBLOCKREQUEST.fields_by_name['height'])
 _GETBLOCKREQUEST.fields_by_name['height'].containing_oneof = _GETBLOCKREQUEST.oneofs_by_name['block']
@@ -1250,10 +1381,14 @@ _TRANSACTIONSWITHPROOFSRESPONSE.fields_by_name['instant_send_lock_messages'].con
 _TRANSACTIONSWITHPROOFSRESPONSE.oneofs_by_name['responses'].fields.append(
   _TRANSACTIONSWITHPROOFSRESPONSE.fields_by_name['raw_merkle_block'])
 _TRANSACTIONSWITHPROOFSRESPONSE.fields_by_name['raw_merkle_block'].containing_oneof = _TRANSACTIONSWITHPROOFSRESPONSE.oneofs_by_name['responses']
-DESCRIPTOR.message_types_by_name['GetStatusRequest'] = _GETSTATUSREQUEST
-DESCRIPTOR.message_types_by_name['GetStatusResponse'] = _GETSTATUSRESPONSE
+DESCRIPTOR.message_types_by_name['GetBlockchainStatusRequest'] = _GETBLOCKCHAINSTATUSREQUEST
+DESCRIPTOR.message_types_by_name['GetBlockchainStatusResponse'] = _GETBLOCKCHAINSTATUSRESPONSE
+DESCRIPTOR.message_types_by_name['GetMasternodeStatusRequest'] = _GETMASTERNODESTATUSREQUEST
+DESCRIPTOR.message_types_by_name['GetMasternodeStatusResponse'] = _GETMASTERNODESTATUSRESPONSE
 DESCRIPTOR.message_types_by_name['GetBlockRequest'] = _GETBLOCKREQUEST
 DESCRIPTOR.message_types_by_name['GetBlockResponse'] = _GETBLOCKRESPONSE
+DESCRIPTOR.message_types_by_name['GetBestBlockHeightRequest'] = _GETBESTBLOCKHEIGHTREQUEST
+DESCRIPTOR.message_types_by_name['GetBestBlockHeightResponse'] = _GETBESTBLOCKHEIGHTRESPONSE
 DESCRIPTOR.message_types_by_name['BroadcastTransactionRequest'] = _BROADCASTTRANSACTIONREQUEST
 DESCRIPTOR.message_types_by_name['BroadcastTransactionResponse'] = _BROADCASTTRANSACTIONRESPONSE
 DESCRIPTOR.message_types_by_name['GetTransactionRequest'] = _GETTRANSACTIONREQUEST
@@ -1268,69 +1403,77 @@ DESCRIPTOR.message_types_by_name['BloomFilter'] = _BLOOMFILTER
 DESCRIPTOR.message_types_by_name['TransactionsWithProofsResponse'] = _TRANSACTIONSWITHPROOFSRESPONSE
 DESCRIPTOR.message_types_by_name['RawTransactions'] = _RAWTRANSACTIONS
 DESCRIPTOR.message_types_by_name['InstantSendLockMessages'] = _INSTANTSENDLOCKMESSAGES
+DESCRIPTOR.message_types_by_name['MasternodeListRequest'] = _MASTERNODELISTREQUEST
+DESCRIPTOR.message_types_by_name['MasternodeListResponse'] = _MASTERNODELISTRESPONSE
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
-GetStatusRequest = _reflection.GeneratedProtocolMessageType('GetStatusRequest', (_message.Message,), {
-  'DESCRIPTOR' : _GETSTATUSREQUEST,
+GetBlockchainStatusRequest = _reflection.GeneratedProtocolMessageType('GetBlockchainStatusRequest', (_message.Message,), {
+  'DESCRIPTOR' : _GETBLOCKCHAINSTATUSREQUEST,
   '__module__' : 'core_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetStatusRequest)
+  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetBlockchainStatusRequest)
   })
-_sym_db.RegisterMessage(GetStatusRequest)
+_sym_db.RegisterMessage(GetBlockchainStatusRequest)
 
-GetStatusResponse = _reflection.GeneratedProtocolMessageType('GetStatusResponse', (_message.Message,), {
+GetBlockchainStatusResponse = _reflection.GeneratedProtocolMessageType('GetBlockchainStatusResponse', (_message.Message,), {
 
   'Version' : _reflection.GeneratedProtocolMessageType('Version', (_message.Message,), {
-    'DESCRIPTOR' : _GETSTATUSRESPONSE_VERSION,
+    'DESCRIPTOR' : _GETBLOCKCHAINSTATUSRESPONSE_VERSION,
     '__module__' : 'core_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetStatusResponse.Version)
+    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Version)
     })
   ,
 
   'Time' : _reflection.GeneratedProtocolMessageType('Time', (_message.Message,), {
-    'DESCRIPTOR' : _GETSTATUSRESPONSE_TIME,
+    'DESCRIPTOR' : _GETBLOCKCHAINSTATUSRESPONSE_TIME,
     '__module__' : 'core_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetStatusResponse.Time)
+    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Time)
     })
   ,
 
   'Chain' : _reflection.GeneratedProtocolMessageType('Chain', (_message.Message,), {
-    'DESCRIPTOR' : _GETSTATUSRESPONSE_CHAIN,
+    'DESCRIPTOR' : _GETBLOCKCHAINSTATUSRESPONSE_CHAIN,
     '__module__' : 'core_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetStatusResponse.Chain)
-    })
-  ,
-
-  'Masternode' : _reflection.GeneratedProtocolMessageType('Masternode', (_message.Message,), {
-    'DESCRIPTOR' : _GETSTATUSRESPONSE_MASTERNODE,
-    '__module__' : 'core_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetStatusResponse.Masternode)
+    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Chain)
     })
   ,
 
   'NetworkFee' : _reflection.GeneratedProtocolMessageType('NetworkFee', (_message.Message,), {
-    'DESCRIPTOR' : _GETSTATUSRESPONSE_NETWORKFEE,
+    'DESCRIPTOR' : _GETBLOCKCHAINSTATUSRESPONSE_NETWORKFEE,
     '__module__' : 'core_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetStatusResponse.NetworkFee)
+    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetBlockchainStatusResponse.NetworkFee)
     })
   ,
 
   'Network' : _reflection.GeneratedProtocolMessageType('Network', (_message.Message,), {
-    'DESCRIPTOR' : _GETSTATUSRESPONSE_NETWORK,
+    'DESCRIPTOR' : _GETBLOCKCHAINSTATUSRESPONSE_NETWORK,
     '__module__' : 'core_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetStatusResponse.Network)
+    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetBlockchainStatusResponse.Network)
     })
   ,
-  'DESCRIPTOR' : _GETSTATUSRESPONSE,
+  'DESCRIPTOR' : _GETBLOCKCHAINSTATUSRESPONSE,
   '__module__' : 'core_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetStatusResponse)
+  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetBlockchainStatusResponse)
   })
-_sym_db.RegisterMessage(GetStatusResponse)
-_sym_db.RegisterMessage(GetStatusResponse.Version)
-_sym_db.RegisterMessage(GetStatusResponse.Time)
-_sym_db.RegisterMessage(GetStatusResponse.Chain)
-_sym_db.RegisterMessage(GetStatusResponse.Masternode)
-_sym_db.RegisterMessage(GetStatusResponse.NetworkFee)
-_sym_db.RegisterMessage(GetStatusResponse.Network)
+_sym_db.RegisterMessage(GetBlockchainStatusResponse)
+_sym_db.RegisterMessage(GetBlockchainStatusResponse.Version)
+_sym_db.RegisterMessage(GetBlockchainStatusResponse.Time)
+_sym_db.RegisterMessage(GetBlockchainStatusResponse.Chain)
+_sym_db.RegisterMessage(GetBlockchainStatusResponse.NetworkFee)
+_sym_db.RegisterMessage(GetBlockchainStatusResponse.Network)
+
+GetMasternodeStatusRequest = _reflection.GeneratedProtocolMessageType('GetMasternodeStatusRequest', (_message.Message,), {
+  'DESCRIPTOR' : _GETMASTERNODESTATUSREQUEST,
+  '__module__' : 'core_pb2'
+  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetMasternodeStatusRequest)
+  })
+_sym_db.RegisterMessage(GetMasternodeStatusRequest)
+
+GetMasternodeStatusResponse = _reflection.GeneratedProtocolMessageType('GetMasternodeStatusResponse', (_message.Message,), {
+  'DESCRIPTOR' : _GETMASTERNODESTATUSRESPONSE,
+  '__module__' : 'core_pb2'
+  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetMasternodeStatusResponse)
+  })
+_sym_db.RegisterMessage(GetMasternodeStatusResponse)
 
 GetBlockRequest = _reflection.GeneratedProtocolMessageType('GetBlockRequest', (_message.Message,), {
   'DESCRIPTOR' : _GETBLOCKREQUEST,
@@ -1345,6 +1488,20 @@ GetBlockResponse = _reflection.GeneratedProtocolMessageType('GetBlockResponse', 
   # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetBlockResponse)
   })
 _sym_db.RegisterMessage(GetBlockResponse)
+
+GetBestBlockHeightRequest = _reflection.GeneratedProtocolMessageType('GetBestBlockHeightRequest', (_message.Message,), {
+  'DESCRIPTOR' : _GETBESTBLOCKHEIGHTREQUEST,
+  '__module__' : 'core_pb2'
+  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetBestBlockHeightRequest)
+  })
+_sym_db.RegisterMessage(GetBestBlockHeightRequest)
+
+GetBestBlockHeightResponse = _reflection.GeneratedProtocolMessageType('GetBestBlockHeightResponse', (_message.Message,), {
+  'DESCRIPTOR' : _GETBESTBLOCKHEIGHTRESPONSE,
+  '__module__' : 'core_pb2'
+  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetBestBlockHeightResponse)
+  })
+_sym_db.RegisterMessage(GetBestBlockHeightResponse)
 
 BroadcastTransactionRequest = _reflection.GeneratedProtocolMessageType('BroadcastTransactionRequest', (_message.Message,), {
   'DESCRIPTOR' : _BROADCASTTRANSACTIONREQUEST,
@@ -1444,6 +1601,20 @@ InstantSendLockMessages = _reflection.GeneratedProtocolMessageType('InstantSendL
   })
 _sym_db.RegisterMessage(InstantSendLockMessages)
 
+MasternodeListRequest = _reflection.GeneratedProtocolMessageType('MasternodeListRequest', (_message.Message,), {
+  'DESCRIPTOR' : _MASTERNODELISTREQUEST,
+  '__module__' : 'core_pb2'
+  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.MasternodeListRequest)
+  })
+_sym_db.RegisterMessage(MasternodeListRequest)
+
+MasternodeListResponse = _reflection.GeneratedProtocolMessageType('MasternodeListResponse', (_message.Message,), {
+  'DESCRIPTOR' : _MASTERNODELISTRESPONSE,
+  '__module__' : 'core_pb2'
+  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.MasternodeListResponse)
+  })
+_sym_db.RegisterMessage(MasternodeListResponse)
+
 
 
 _CORE = _descriptor.ServiceDescriptor(
@@ -1453,23 +1624,33 @@ _CORE = _descriptor.ServiceDescriptor(
   index=0,
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_start=2832,
-  serialized_end=3782,
+  serialized_start=3037,
+  serialized_end=4418,
   methods=[
   _descriptor.MethodDescriptor(
-    name='getStatus',
-    full_name='org.dash.platform.dapi.v0.Core.getStatus',
+    name='getBlockchainStatus',
+    full_name='org.dash.platform.dapi.v0.Core.getBlockchainStatus',
     index=0,
     containing_service=None,
-    input_type=_GETSTATUSREQUEST,
-    output_type=_GETSTATUSRESPONSE,
+    input_type=_GETBLOCKCHAINSTATUSREQUEST,
+    output_type=_GETBLOCKCHAINSTATUSRESPONSE,
+    serialized_options=None,
+    create_key=_descriptor._internal_create_key,
+  ),
+  _descriptor.MethodDescriptor(
+    name='getMasternodeStatus',
+    full_name='org.dash.platform.dapi.v0.Core.getMasternodeStatus',
+    index=1,
+    containing_service=None,
+    input_type=_GETMASTERNODESTATUSREQUEST,
+    output_type=_GETMASTERNODESTATUSRESPONSE,
     serialized_options=None,
     create_key=_descriptor._internal_create_key,
   ),
   _descriptor.MethodDescriptor(
     name='getBlock',
     full_name='org.dash.platform.dapi.v0.Core.getBlock',
-    index=1,
+    index=2,
     containing_service=None,
     input_type=_GETBLOCKREQUEST,
     output_type=_GETBLOCKRESPONSE,
@@ -1477,9 +1658,19 @@ _CORE = _descriptor.ServiceDescriptor(
     create_key=_descriptor._internal_create_key,
   ),
   _descriptor.MethodDescriptor(
+    name='getBestBlockHeight',
+    full_name='org.dash.platform.dapi.v0.Core.getBestBlockHeight',
+    index=3,
+    containing_service=None,
+    input_type=_GETBESTBLOCKHEIGHTREQUEST,
+    output_type=_GETBESTBLOCKHEIGHTRESPONSE,
+    serialized_options=None,
+    create_key=_descriptor._internal_create_key,
+  ),
+  _descriptor.MethodDescriptor(
     name='broadcastTransaction',
     full_name='org.dash.platform.dapi.v0.Core.broadcastTransaction',
-    index=2,
+    index=4,
     containing_service=None,
     input_type=_BROADCASTTRANSACTIONREQUEST,
     output_type=_BROADCASTTRANSACTIONRESPONSE,
@@ -1489,7 +1680,7 @@ _CORE = _descriptor.ServiceDescriptor(
   _descriptor.MethodDescriptor(
     name='getTransaction',
     full_name='org.dash.platform.dapi.v0.Core.getTransaction',
-    index=3,
+    index=5,
     containing_service=None,
     input_type=_GETTRANSACTIONREQUEST,
     output_type=_GETTRANSACTIONRESPONSE,
@@ -1499,7 +1690,7 @@ _CORE = _descriptor.ServiceDescriptor(
   _descriptor.MethodDescriptor(
     name='getEstimatedTransactionFee',
     full_name='org.dash.platform.dapi.v0.Core.getEstimatedTransactionFee',
-    index=4,
+    index=6,
     containing_service=None,
     input_type=_GETESTIMATEDTRANSACTIONFEEREQUEST,
     output_type=_GETESTIMATEDTRANSACTIONFEERESPONSE,
@@ -1509,7 +1700,7 @@ _CORE = _descriptor.ServiceDescriptor(
   _descriptor.MethodDescriptor(
     name='subscribeToBlockHeadersWithChainLocks',
     full_name='org.dash.platform.dapi.v0.Core.subscribeToBlockHeadersWithChainLocks',
-    index=5,
+    index=7,
     containing_service=None,
     input_type=_BLOCKHEADERSWITHCHAINLOCKSREQUEST,
     output_type=_BLOCKHEADERSWITHCHAINLOCKSRESPONSE,
@@ -1519,10 +1710,20 @@ _CORE = _descriptor.ServiceDescriptor(
   _descriptor.MethodDescriptor(
     name='subscribeToTransactionsWithProofs',
     full_name='org.dash.platform.dapi.v0.Core.subscribeToTransactionsWithProofs',
-    index=6,
+    index=8,
     containing_service=None,
     input_type=_TRANSACTIONSWITHPROOFSREQUEST,
     output_type=_TRANSACTIONSWITHPROOFSRESPONSE,
+    serialized_options=None,
+    create_key=_descriptor._internal_create_key,
+  ),
+  _descriptor.MethodDescriptor(
+    name='subscribeToMasternodeList',
+    full_name='org.dash.platform.dapi.v0.Core.subscribeToMasternodeList',
+    index=9,
+    containing_service=None,
+    input_type=_MASTERNODELISTREQUEST,
+    output_type=_MASTERNODELISTRESPONSE,
     serialized_options=None,
     create_key=_descriptor._internal_create_key,
   ),

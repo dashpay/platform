@@ -1,7 +1,4 @@
-use crate::drive::protocol_upgrade::{
-    desired_version_for_validators_path, desired_version_for_validators_path_vec,
-    versions_counter_path_vec,
-};
+use crate::drive::protocol_upgrade::desired_version_for_validators_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
 use std::ops::RangeFull;
@@ -38,12 +35,6 @@ impl Drive {
             SizedQuery::new(Query::new_single_query_item(query_item), Some(count), None),
         );
 
-        self.grove_get_proved_path_query(
-            &path_query,
-            false,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )
+        self.grove_get_proved_path_query(&path_query, transaction, &mut vec![], drive_version)
     }
 }

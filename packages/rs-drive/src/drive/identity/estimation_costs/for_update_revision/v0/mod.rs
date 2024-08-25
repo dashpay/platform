@@ -1,4 +1,4 @@
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 use crate::drive::{identity_tree_path, Drive};
 
@@ -57,11 +57,11 @@ impl Drive {
         );
 
         // In this layer we have
-        //                   Keys
-        //              /         \
-        //DataContract Info         Revision
-        //       /                   /
-        //  Negative Credit      Query Keys
+        //                              Keys
+        //              /                               \
+        //           Nonce                             Revision
+        //    /              \                          /
+        // DataContract Info   Negative Credit      Query Keys
 
         // we then need to insert the identity layer for fee refunds
         estimated_costs_only_with_layer_info.insert(

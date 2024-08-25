@@ -1,10 +1,9 @@
-use crate::identity::TimestampMillis;
-
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransitionV0;
 
 use platform_value::Value;
 
+use crate::fee::Credits;
 use std::collections::BTreeMap;
 
 pub trait DocumentCreateTransitionV0Methods {
@@ -31,26 +30,6 @@ pub trait DocumentCreateTransitionV0Methods {
     /// * `entropy` - An array of 32 bytes to set.
     fn set_entropy(&mut self, entropy: [u8; 32]);
 
-    /// Returns a reference to the `created_at` field of the `DocumentCreateTransitionV0`.
-    fn created_at(&self) -> Option<TimestampMillis>;
-
-    /// Sets the value of the `created_at` field in the `DocumentCreateTransitionV0`.
-    ///
-    /// # Arguments
-    ///
-    /// * `created_at` - An `Option` containing a `TimestampMillis` value to set.
-    fn set_created_at(&mut self, created_at: Option<TimestampMillis>);
-
-    /// Returns a reference to the `updated_at` field of the `DocumentCreateTransitionV0`.
-    fn updated_at(&self) -> Option<TimestampMillis>;
-
-    /// Sets the value of the `updated_at` field in the `DocumentCreateTransitionV0`.
-    ///
-    /// # Arguments
-    ///
-    /// * `updated_at` - An `Option` containing a `TimestampMillis` value to set.
-    fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>);
-
     /// Returns an optional reference to the `data` field of the `DocumentCreateTransitionV0`.
     fn data(&self) -> &BTreeMap<String, Value>;
 
@@ -63,6 +42,10 @@ pub trait DocumentCreateTransitionV0Methods {
     ///
     /// * `data` - An `Option` containing a `BTreeMap<String, Value>` to set.
     fn set_data(&mut self, data: BTreeMap<String, Value>);
+    fn prefunded_voting_balance(&self) -> &Option<(String, Credits)>;
+    fn prefunded_voting_balances_mut(&mut self) -> &mut Option<(String, Credits)>;
+    fn set_prefunded_voting_balance(&mut self, index_name: String, amount: Credits);
+    fn clear_prefunded_voting_balance(&mut self);
 }
 
 impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
@@ -86,22 +69,6 @@ impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
         self.entropy = entropy;
     }
 
-    fn created_at(&self) -> Option<TimestampMillis> {
-        self.created_at
-    }
-
-    fn set_created_at(&mut self, created_at: Option<TimestampMillis>) {
-        self.created_at = created_at;
-    }
-
-    fn updated_at(&self) -> Option<TimestampMillis> {
-        self.updated_at
-    }
-
-    fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>) {
-        self.updated_at = updated_at;
-    }
-
     fn data(&self) -> &BTreeMap<String, Value> {
         &self.data
     }
@@ -112,5 +79,20 @@ impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
 
     fn set_data(&mut self, data: BTreeMap<String, Value>) {
         self.data = data;
+    }
+
+    fn prefunded_voting_balance(&self) -> &Option<(String, Credits)> {
+        &self.prefunded_voting_balance
+    }
+
+    fn prefunded_voting_balances_mut(&mut self) -> &mut Option<(String, Credits)> {
+        &mut self.prefunded_voting_balance
+    }
+
+    fn set_prefunded_voting_balance(&mut self, index_name: String, amount: Credits) {
+        self.prefunded_voting_balance = Some((index_name, amount));
+    }
+    fn clear_prefunded_voting_balance(&mut self) {
+        self.prefunded_voting_balance = None;
     }
 }

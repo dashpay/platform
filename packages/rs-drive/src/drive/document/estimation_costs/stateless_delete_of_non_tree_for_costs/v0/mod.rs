@@ -1,6 +1,6 @@
-use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 
-use crate::drive::grove_operations::{BatchDeleteUpTreeApplyType, IsSubTree, IsSumSubTree};
+use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, IsSubTree, IsSumSubTree};
 
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
@@ -37,6 +37,7 @@ impl Drive {
     /// # Errors
     /// Returns an `Error::Fee(FeeError::CorruptedEstimatedLayerInfoMissing)` if the required layer
     /// information is missing in the provided estimated costs.
+    #[inline(always)]
     pub(super) fn stateless_delete_of_non_tree_for_costs_v0(
         element_estimated_sizes: EstimatedLayerSizes,
         key_info_path: &KeyInfoPath,

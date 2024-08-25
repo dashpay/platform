@@ -37,10 +37,10 @@ export default function obtainZeroSSLCertificateTaskFactory(
    */
   async function obtainZeroSSLCertificateTask(config) {
     // Make sure that required config options are set
-    const apiKey = config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', true);
+    const apiKey = config.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey', true);
     const externalIp = config.get('externalIp', true);
 
-    const sslConfigDir = homeDir.joinPath(config.getName(), 'platform', 'dapi', 'envoy', 'ssl');
+    const sslConfigDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
     const csrFilePath = path.join(sslConfigDir, 'csr.pem');
     const privateKeyFilePath = path.join(sslConfigDir, 'private.key');
     const bundleFilePath = path.join(sslConfigDir, 'bundle.crt');
@@ -54,7 +54,7 @@ export default function obtainZeroSSLCertificateTaskFactory(
         // Skips the check if force flag is set
         skip: (ctx) => ctx.force,
         task: async (ctx, task) => {
-          const certificateId = await config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.id');
+          const certificateId = await config.get('platform.gateway.ssl.providerConfigs.zerossl.id');
 
           if (!certificateId) {
             // Certificate is not configured
@@ -179,9 +179,9 @@ export default function obtainZeroSSLCertificateTaskFactory(
             apiKey,
           );
 
-          config.set('platform.dapi.envoy.ssl.enabled', true);
-          config.set('platform.dapi.envoy.ssl.provider', 'zerossl');
-          config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.id', ctx.certificate.id);
+          config.set('platform.gateway.ssl.enabled', true);
+          config.set('platform.gateway.ssl.provider', 'zerossl');
+          config.set('platform.gateway.ssl.providerConfigs.zerossl.id', ctx.certificate.id);
         },
       },
       {

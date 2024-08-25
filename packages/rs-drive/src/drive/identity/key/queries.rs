@@ -3,6 +3,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
 use grovedb::PathQuery;
+use grovedb_version::version::GroveVersion;
 
 impl Drive {
     /// Fetches the path queries for all keys associated with the specified identities.
@@ -30,6 +31,7 @@ impl Drive {
         &self,
         identity_ids: &[[u8; 32]],
         limit: Option<u16>,
+        grove_version: &GroveVersion,
     ) -> Result<PathQuery, Error> {
         let path_queries = identity_ids
             .iter()
@@ -39,6 +41,6 @@ impl Drive {
             })
             .collect::<Vec<_>>();
 
-        PathQuery::merge(path_queries.iter().collect()).map_err(GroveDB)
+        PathQuery::merge(path_queries.iter().collect(), grove_version).map_err(GroveDB)
     }
 }

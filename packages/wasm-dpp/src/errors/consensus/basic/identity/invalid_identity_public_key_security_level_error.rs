@@ -1,10 +1,8 @@
 use dpp::consensus::basic::identity::InvalidIdentityPublicKeySecurityLevelError;
 use dpp::errors::consensus::codes::ErrorWithCode;
 
-use crate::buffer::Buffer;
-use dpp::consensus::ConsensusError;
 use dpp::errors::consensus::ConsensusError as DPPConsensusError;
-use dpp::serialization::PlatformSerializable;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidIdentityPublicKeySecurityLevelError)]

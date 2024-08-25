@@ -1,7 +1,7 @@
-use crate::drive::object_size_info::DocumentAndContractInfo;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::object_size_info::DocumentAndContractInfo;
 use dpp::block::block_info::BlockInfo;
 
 use dpp::version::PlatformVersion;
@@ -11,6 +11,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Performs the operations to add a document to a contract.
+    #[inline(always)]
     pub(super) fn add_document_for_contract_apply_and_add_to_operations_v0(
         &self,
         document_and_contract_info: DocumentAndContractInfo,

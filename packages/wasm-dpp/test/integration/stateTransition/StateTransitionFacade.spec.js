@@ -97,8 +97,13 @@ describe('StateTransitionFacade', () => {
     identityPublicKey.setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION);
     identityPublicKey.setReadOnly(false);
 
+    const documents = await getDocumentsFixture(dataContract);
     documentsBatchTransition = documentFactory.createStateTransition({
-      create: await getDocumentsFixture(dataContract),
+      create: documents,
+    }, {
+      [documents[0].getOwnerId().toString()]: {
+        [documents[0].getDataContractId().toString()]: 0,
+      },
     });
     await documentsBatchTransition.sign(identityPublicKey, privateKey);
 

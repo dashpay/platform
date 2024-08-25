@@ -1,36 +1,52 @@
-use crate::{
-    prelude::Identifier, state_transition::StateTransitionType, BlsModule, NonConsensusError,
-    ProtocolError,
-};
+use crate::{prelude::Identifier, state_transition::StateTransitionType};
+#[cfg(feature = "state-transition-signing")]
+use crate::{BlsModule, ProtocolError};
 
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::state_transition::AssetLockProved;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyType::ECDSA_HASH160;
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
+#[cfg(feature = "state-transition-signing")]
+use crate::prelude::UserFeeIncrease;
+#[cfg(feature = "state-transition-signing")]
 use crate::serialization::Signable;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
+#[cfg(feature = "state-transition-signing")]
 use crate::version::PlatformVersion;
 
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity_with_signer<S: Signer>(
-        identity: Identity,
+        identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
         signer: &S,
         bls: &impl BlsModule,
+        user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
-        let mut identity_create_transition = IdentityCreateTransitionV0::default();
+        let mut identity_create_transition = IdentityCreateTransitionV0 {
+            user_fee_increase,
+            ..Default::default()
+        };
         let public_keys = identity
             .public_keys()
             .iter()
@@ -76,6 +92,11 @@ impl IdentityCreateTransitionAccessorsV0 for IdentityCreateTransitionV0 {
     /// Get identity public keys
     fn public_keys(&self) -> &[IdentityPublicKeyInCreation] {
         &self.public_keys
+    }
+
+    /// Get identity public keys
+    fn public_keys_mut(&mut self) -> &mut Vec<IdentityPublicKeyInCreation> {
+        &mut self.public_keys
     }
 
     /// Replaces existing set of public keys with a new one

@@ -1,6 +1,6 @@
 use dpp::identifier::Identifier;
-use dpp::identity::KeyID;
-use dpp::validation::SimpleConsensusValidationResult;
+use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::validation::ConsensusValidationResult;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use dpp::version::PlatformVersion;
@@ -18,7 +18,7 @@ pub(crate) fn validate_identity_public_key_ids_exist_in_state(
     execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
-) -> Result<SimpleConsensusValidationResult, Error> {
+) -> Result<ConsensusValidationResult<Vec<IdentityPublicKey>>, Error> {
     match platform_version
         .drive_abci
         .validation_and_processing

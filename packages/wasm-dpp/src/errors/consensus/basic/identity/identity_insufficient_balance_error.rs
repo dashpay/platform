@@ -1,10 +1,7 @@
-use crate::buffer::Buffer;
 use crate::identifier::IdentifierWrapper;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
-use dpp::serialization::PlatformSerializable;
-use std::ops::Deref;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IdentityInsufficientBalanceError)]

@@ -8,6 +8,7 @@ use std::fmt;
 
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "json")]
 use serde_json::Value as JsonValue;
 
 use crate::string_encoding::Encoding;
@@ -43,6 +44,16 @@ impl platform_serialization::PlatformVersionEncode for Identifier {
         _: &platform_version::version::PlatformVersion,
     ) -> Result<(), EncodeError> {
         self.0 .0.encode(encoder)
+    }
+}
+
+impl platform_serialization::PlatformVersionedDecode for Identifier {
+    fn platform_versioned_decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+        _platform_version: &platform_version::version::PlatformVersion,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let bytes = <[u8; 32]>::decode(decoder)?;
+        Ok(Identifier::new(bytes))
     }
 }
 
@@ -172,7 +183,7 @@ impl Identifier {
     pub fn from_bytes(bytes: &[u8]) -> Result<Identifier, Error> {
         if bytes.len() != 32 {
             return Err(Error::ByteLengthNot32BytesError(String::from(
-                "Identifier must be 32 bytes long",
+                "Identifier must be 32 bytes long from bytes",
             )));
         }
 
@@ -180,6 +191,18 @@ impl Identifier {
         Ok(Identifier::new(bytes.try_into().unwrap()))
     }
 
+    pub fn from_vec(vec: Vec<u8>) -> Result<Identifier, Error> {
+        if vec.len() != 32 {
+            return Err(Error::ByteLengthNot32BytesError(String::from(
+                "Identifier must be 32 bytes long from vec",
+            )));
+        }
+
+        // Since we checked that vector size is 32, we can use unwrap
+        Ok(Identifier::new(vec.try_into().unwrap()))
+    }
+
+    #[cfg(feature = "json")]
     pub fn to_json_value_vec(&self) -> Vec<JsonValue> {
         self.to_buffer()
             .iter()
@@ -225,6 +248,14 @@ impl TryFrom<&[u8]> for Identifier {
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::from_bytes(bytes)
+    }
+}
+
+impl TryFrom<&Vec<u8>> for Identifier {
+    type Error = Error;
+
+    fn try_from(bytes: &Vec<u8>) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes.as_slice())
     }
 }
 

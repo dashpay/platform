@@ -1,8 +1,8 @@
 use crate::drive::identity::identity_key_tree_path;
-use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
 use dpp::identity::IdentityPublicKey;
 use dpp::serialization::PlatformSerializable;
 use grovedb::Element;
@@ -10,6 +10,7 @@ use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Generates a vector of operations for inserting key to storage.
+    #[inline(always)]
     pub(super) fn insert_key_to_storage_operations_v0(
         &self,
         identity_id: [u8; 32],

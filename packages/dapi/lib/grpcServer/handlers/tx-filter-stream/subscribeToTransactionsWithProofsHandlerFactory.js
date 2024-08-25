@@ -83,6 +83,7 @@ async function sendInstantLockResponse(call, instantLock) {
  * @param {testFunction} testTransactionAgainstFilter
  * @param {CoreRpcClient} coreAPI
  * @param {getMemPoolTransactions} getMemPoolTransactions
+ * @param {ChainDataProvider} chainDataProvider
  * @return {subscribeToTransactionsWithProofsHandler}
  */
 function subscribeToTransactionsWithProofsHandlerFactory(
@@ -92,6 +93,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
   testTransactionAgainstFilter,
   coreAPI,
   getMemPoolTransactions,
+  chainDataProvider,
 ) {
   /**
    * @typedef subscribeToTransactionsWithProofsHandler
@@ -159,7 +161,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     mediator.on(
       ProcessMediator.EVENTS.TRANSACTION,
       async (tx) => {
-        requestLogger.debug(`send transaction ${tx.hash}`);
+        requestLogger.debug(`sent transaction ${tx.hash}`);
 
         await sendTransactionsResponse(acknowledgingCall, [tx]);
       },
@@ -168,7 +170,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
     mediator.on(
       ProcessMediator.EVENTS.MERKLE_BLOCK,
       async (merkleBlock) => {
-        requestLogger.debug('send merkle block');
+        requestLogger.debug(`sent merkle block ${merkleBlock.header.hash}`);
 
         await sendMerkleBlockResponse(acknowledgingCall, merkleBlock);
       },
@@ -179,7 +181,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       async (instantLock) => {
         requestLogger.debug({
           instantLock,
-        }, `send instant lock for ${instantLock.txid}`);
+        }, `sent instant lock for ${instantLock.txid}`);
 
         await sendInstantLockResponse(acknowledgingCall, instantLock);
       },
@@ -208,7 +210,7 @@ function subscribeToTransactionsWithProofsHandlerFactory(
       throw e;
     }
 
-    const bestBlockHeight = await coreAPI.getBestBlockHeight();
+    const bestBlockHeight = chainDataProvider.getChainHeight();
 
     let historicalCount = count;
 

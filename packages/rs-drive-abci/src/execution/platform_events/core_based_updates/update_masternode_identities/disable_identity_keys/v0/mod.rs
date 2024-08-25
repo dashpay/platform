@@ -4,15 +4,15 @@ use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::Purpose::WITHDRAW;
+use dpp::identity::Purpose::TRANSFER;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
-use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::DisableIdentityKeys;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
 };
 use drive::grovedb::Transaction;
+use drive::util::batch::DriveOperation;
+use drive::util::batch::DriveOperation::IdentityOperation;
+use drive::util::batch::IdentityOperationType::DisableIdentityKeys;
 
 impl<C> Platform<C>
 where
@@ -40,14 +40,14 @@ where
             Self::get_voter_identifier_from_masternode_list_item(old_masternode, platform_version)?;
 
         let operator_key_request = IdentityKeysRequest {
-            identity_id: operator_identifier,
+            identity_id: operator_identifier.into_buffer(),
             request_type: KeyRequestType::AllKeys,
             limit: None,
             offset: None,
         };
 
         let voter_key_request = IdentityKeysRequest {
-            identity_id: voter_identifier,
+            identity_id: voter_identifier.into_buffer(),
             request_type: KeyRequestType::AllKeys,
             limit: None,
             offset: None,
@@ -62,7 +62,7 @@ where
             )?
             .into_iter()
             .filter_map(|(key_id, key)| {
-                if key.is_disabled() || key.purpose() == WITHDRAW {
+                if key.is_disabled() || key.purpose() == TRANSFER {
                     None // Don't disable withdrawal keys
                 } else {
                     Some(key_id)
@@ -95,9 +95,8 @@ where
         );
 
         drive_operations.push(IdentityOperation(DisableIdentityKeys {
-            identity_id: operator_identifier,
+            identity_id: operator_identifier.into_buffer(),
             keys_ids: operator_identity_keys,
-            disable_at: block_info.time_ms,
         }));
 
         tracing::trace!(
@@ -109,9 +108,8 @@ where
         );
 
         drive_operations.push(IdentityOperation(DisableIdentityKeys {
-            identity_id: voter_identifier,
+            identity_id: voter_identifier.into_buffer(),
             keys_ids: voter_identity_keys,
-            disable_at: block_info.time_ms,
         }));
 
         Ok(())

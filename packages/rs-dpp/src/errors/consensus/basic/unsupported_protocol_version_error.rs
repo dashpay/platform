@@ -3,8 +3,7 @@ use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-use platform_value::Value;
-use std::convert::TryFrom;
+
 use thiserror::Error;
 
 #[derive(

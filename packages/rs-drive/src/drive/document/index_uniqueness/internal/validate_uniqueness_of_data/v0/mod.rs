@@ -3,11 +3,11 @@ use crate::drive::Drive;
 use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequest;
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::error::Error;
-use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::document::DocumentV0Getters;
+use dpp::document::{property_names, DocumentV0Getters};
 use dpp::platform_value::platform_value;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -34,6 +34,7 @@ impl Drive {
     ///
     /// * Contains a validation result indicating if the data is unique or not, or
     /// * An error that occurred during the operation.
+    #[inline(always)]
     pub(super) fn validate_uniqueness_of_data_v0(
         &self,
         request: UniquenessOfDataRequest,
@@ -48,15 +49,22 @@ impl Drive {
             allow_original,
             created_at,
             updated_at,
+            transferred_at,
+            created_at_block_height,
+            updated_at_block_height,
+            transferred_at_block_height,
+            created_at_core_block_height,
+            updated_at_core_block_height,
+            transferred_at_core_block_height,
             data,
         } = request;
 
         let validation_results = document_type
-            .indices()
-            .iter()
+            .indexes()
+            .values()
             .filter_map(|index| {
                 if !index.unique {
-                    // if a index is not unique there is no issue
+                    // if an index is not unique there is no issue
                     None
                 } else {
                     let where_queries = index
@@ -64,24 +72,80 @@ impl Drive {
                         .iter()
                         .filter_map(|property| {
                             let value = match property.name.as_str() {
-                                "$ownerId" => {
+                                property_names::OWNER_ID => {
                                     platform_value!(owner_id)
                                 }
-                                "$createdAt" => {
+                                property_names::CREATED_AT => {
                                     if let Some(created_at) = created_at {
                                         platform_value!(created_at)
                                     } else {
                                         return None;
                                     }
                                 }
-                                "$updatedAt" => {
+                                property_names::UPDATED_AT => {
                                     if let Some(updated_at) = updated_at {
                                         platform_value!(updated_at)
                                     } else {
                                         return None;
                                     }
                                 }
-
+                                property_names::TRANSFERRED_AT => {
+                                    if let Some(transferred_at) = transferred_at {
+                                        platform_value!(transferred_at)
+                                    } else {
+                                        return None;
+                                    }
+                                }
+                                property_names::CREATED_AT_BLOCK_HEIGHT => {
+                                    if let Some(created_at_block_height) = created_at_block_height {
+                                        platform_value!(created_at_block_height)
+                                    } else {
+                                        return None;
+                                    }
+                                }
+                                property_names::UPDATED_AT_BLOCK_HEIGHT => {
+                                    if let Some(updated_at_block_height) = updated_at_block_height {
+                                        platform_value!(updated_at_block_height)
+                                    } else {
+                                        return None;
+                                    }
+                                }
+                                property_names::TRANSFERRED_AT_BLOCK_HEIGHT => {
+                                    if let Some(transferred_at_block_height) =
+                                        transferred_at_block_height
+                                    {
+                                        platform_value!(transferred_at_block_height)
+                                    } else {
+                                        return None;
+                                    }
+                                }
+                                property_names::CREATED_AT_CORE_BLOCK_HEIGHT => {
+                                    if let Some(created_at_core_block_height) =
+                                        created_at_core_block_height
+                                    {
+                                        platform_value!(created_at_core_block_height)
+                                    } else {
+                                        return None;
+                                    }
+                                }
+                                property_names::UPDATED_AT_CORE_BLOCK_HEIGHT => {
+                                    if let Some(updated_at_core_block_height) =
+                                        updated_at_core_block_height
+                                    {
+                                        platform_value!(updated_at_core_block_height)
+                                    } else {
+                                        return None;
+                                    }
+                                }
+                                property_names::TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
+                                    if let Some(transferred_at_core_block_height) =
+                                        transferred_at_core_block_height
+                                    {
+                                        platform_value!(transferred_at_core_block_height)
+                                    } else {
+                                        return None;
+                                    }
+                                }
                                 _ => {
                                     if let Some(value) = data.get(property.name.as_str()) {
                                         value.clone()
@@ -105,7 +169,7 @@ impl Drive {
                         // there are empty fields, which means that the index is no longer unique
                         None
                     } else {
-                        let query = DriveQuery {
+                        let query = DriveDocumentQuery {
                             contract,
                             document_type,
                             internal_clauses: InternalClauses {

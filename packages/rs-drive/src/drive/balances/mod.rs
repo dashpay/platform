@@ -2,40 +2,32 @@
 //! Functions include inserting verifying balances between various trees.
 //!
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod add_to_system_credits;
-#[cfg(feature = "full")]
-pub use add_to_system_credits::*;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod add_to_system_credits_operations;
-#[cfg(feature = "full")]
-pub use add_to_system_credits_operations::*;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod remove_from_system_credits;
-#[cfg(feature = "full")]
-pub use remove_from_system_credits::*;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod remove_from_system_credits_operations;
-#[cfg(feature = "full")]
-pub use remove_from_system_credits_operations::*;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 mod calculate_total_credits_balance;
-#[cfg(feature = "full")]
-pub use calculate_total_credits_balance::*;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::RootTree;
+use crate::query::Query;
+use grovedb::{PathQuery, SizedQuery};
 
 /// Storage fee pool key
-#[cfg(feature = "full")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub const TOTAL_SYSTEM_CREDITS_STORAGE_KEY: &[u8; 1] = b"D";
 
 /// The path for all the credits in the system
-#[cfg(feature = "full")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub fn total_credits_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::Misc),
@@ -43,24 +35,46 @@ pub fn total_credits_path() -> [&'static [u8]; 2] {
     ]
 }
 
+/// The path as a vec for all the credits in the system
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn total_credits_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Misc as u8],
+        TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(),
+    ]
+}
+
+/// A path query helper to get the total credits on Platform
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn total_credits_on_platform_path_query() -> PathQuery {
+    PathQuery {
+        path: vec![vec![RootTree::Misc as u8]],
+        query: SizedQuery {
+            query: Query::new_single_key(TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec()),
+            limit: Some(1),
+            offset: None,
+        },
+    }
+}
+
 /// The path for the balances tree
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn balance_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(RootTree::Balances)]
 }
 
 /// The path for the balances tree
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
     vec![Into::<&[u8; 1]>::into(RootTree::Balances).to_vec()]
 }
 
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
 
     #[test]

@@ -22,6 +22,7 @@ pub trait ValueMapHelper {
     fn remove_optional_key_if_null(&mut self, search_key: &str);
     fn remove_optional_key_if_empty_array(&mut self, search_key: &str);
     fn remove_optional_key_value(&mut self, search_key_value: &Value) -> Option<Value>;
+    fn from_btree_map<K: Into<Value> + Ord, V: Into<Value>>(btree_map: BTreeMap<K, V>) -> Self;
 }
 
 impl ValueMapHelper for ValueMap {
@@ -214,6 +215,12 @@ impl ValueMapHelper for ValueMap {
             .position(|(key, _)| search_key_value == key)
             .map(|pos| self.remove(pos).1)
     }
+    fn from_btree_map<K: Into<Value> + Ord, V: Into<Value>>(btree_map: BTreeMap<K, V>) -> Self {
+        btree_map
+            .into_iter()
+            .map(|(k, v)| (k.into(), v.into()))
+            .collect()
+    }
 }
 
 impl Value {
@@ -345,9 +352,9 @@ impl Value {
     /// The index map is in the order sorted by the sort key
     /// The type T is the type of the value of the sort key
     /// Returns `Err(Error::Structure("reason"))` otherwise.
-    pub fn map_ref_into_indexed_string_map<'a, 'b, T>(
+    pub fn map_ref_into_indexed_string_map<'a, T>(
         map: &'a ValueMap,
-        sort_key: &'b str,
+        sort_key: &str,
     ) -> Result<IndexMap<String, &'a Value>, Error>
     where
         T: TryFrom<i128>

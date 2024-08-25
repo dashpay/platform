@@ -2,7 +2,7 @@ use dpp::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMism
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
-use dpp::serialization::PlatformSerializable;
+
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;

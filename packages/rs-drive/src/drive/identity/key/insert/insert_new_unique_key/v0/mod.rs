@@ -1,10 +1,10 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, Purpose};
-use dpp::version::drive_versions::DriveVersion;
+
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Insert a new key into an identity operations
+    #[inline(always)]
     pub(super) fn insert_new_unique_key_operations_v0(
         &self,
         identity_id: [u8; 32],
@@ -58,7 +59,7 @@ impl Drive {
         if with_searchable_inner_references
             && matches!(
                 identity_key.purpose(),
-                Purpose::AUTHENTICATION | Purpose::WITHDRAW
+                Purpose::AUTHENTICATION | Purpose::TRANSFER | Purpose::VOTING
             )
         {
             self.insert_key_searchable_references_operations(

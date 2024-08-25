@@ -5,9 +5,7 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::consensus::signature::IdentityNotFoundError;
-use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
-use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
@@ -61,29 +59,6 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
             ));
         }
 
-        let Some(revision) = platform.drive.fetch_identity_revision(
-            self.identity_id().to_buffer(),
-            true,
-            tx,
-            platform_version,
-        )?
-        else {
-            return Ok(ConsensusValidationResult::new_with_error(
-                IdentityNotFoundError::new(self.identity_id()).into(),
-            ));
-        };
-
-        // Check revision
-        if revision + 1 != self.revision() {
-            return Ok(ConsensusValidationResult::new_with_error(
-                StateError::InvalidIdentityRevisionError(InvalidIdentityRevisionError::new(
-                    self.identity_id(),
-                    revision,
-                ))
-                .into(),
-            ));
-        }
-
         self.transform_into_action_v0(platform)
     }
 
@@ -91,11 +66,13 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
         &self,
         platform: &PlatformRef<C>,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let last_block_time = platform.state.last_block_time_ms().ok_or(Error::Execution(
-            ExecutionError::StateNotInitialized(
-                "expected a last platform block during identity update validation",
-            ),
-        ))?;
+        let last_block_time =
+            platform
+                .state
+                .last_committed_block_time_ms()
+                .ok_or(Error::Execution(ExecutionError::StateNotInitialized(
+                    "expected a last platform block during identity update validation",
+                )))?;
 
         Ok(ConsensusValidationResult::new_with_data(
             IdentityCreditWithdrawalTransitionAction::from_identity_credit_withdrawal(

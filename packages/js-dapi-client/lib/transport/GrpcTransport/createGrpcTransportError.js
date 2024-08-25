@@ -118,7 +118,7 @@ async function createGrpcTransportError(grpcError, dapiAddress) {
   }
 
   // DPP consensus errors
-  if (code >= 1000 && code < 5000) {
+  if (code >= 10000 && code < 50000) {
     const consensusError = deserializeConsensusError(data.serializedError || []);
 
     delete data.serializedError;

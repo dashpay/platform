@@ -8,6 +8,7 @@ pub mod v0;
 impl IdentityPublicKeyInCreation {
     pub fn validate_identity_public_keys_structure(
         identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
+        in_create_identity: bool,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
@@ -18,6 +19,7 @@ impl IdentityPublicKeyInCreation {
         {
             0 => Self::validate_identity_public_keys_structure_v0(
                 identity_public_keys_with_witness,
+                in_create_identity,
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {

@@ -2,7 +2,6 @@ const crypto = require('crypto');
 
 const {
   contractId: dpnsContractId,
-  ownerId: dpnsOwnerId,
 } = require('@dashevo/dpns-contract/lib/systemIds');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
@@ -33,8 +32,6 @@ describe('DPNS', () => {
     topLevelDomain = 'dash';
     secondLevelDomain = getRandomDomain();
     client = await createClientWithFundedWallet(1000000);
-
-    await client.platform.identities.topUp(dpnsOwnerId, 300000);
   });
 
   after(async () => {
@@ -52,93 +49,6 @@ describe('DPNS', () => {
     });
   });
 
-  describe('DPNS owner', () => {
-    let createdTLD;
-    let newTopLevelDomain;
-    let ownerClient;
-
-    before(async () => {
-      ownerClient = await createClientWithFundedWallet(
-        10000,
-        process.env.DPNS_OWNER_PRIVATE_KEY,
-      );
-
-      newTopLevelDomain = getRandomDomain();
-      identity = await ownerClient.platform.identities.get(dpnsOwnerId);
-
-      expect(identity).to.exist();
-      await ownerClient.platform.identities.topUp(dpnsOwnerId, 500);
-    });
-
-    after(async () => {
-      if (ownerClient) {
-        await ownerClient.disconnect();
-      }
-    });
-
-    // generate a random one which will be used in tests above
-    // skip if DPNS owner private key is not passed and use `dash` in tests above
-    it('should be able to register a TLD', async () => {
-      createdTLD = await ownerClient.platform.names.register(newTopLevelDomain, {
-        dashAliasIdentityId: identity.getId(),
-      }, identity);
-
-      // Additional wait time to mitigate testnet latency
-      await waitForSTPropagated();
-
-      expect(createdTLD).to.exist();
-      expect(createdTLD.getType()).to.equal('domain');
-      expect(createdTLD.getData().label).to.equal(newTopLevelDomain);
-      expect(createdTLD.getData().normalizedParentDomainName).to.equal('');
-    });
-
-    // TODO(rs-drive-abci): restore
-    //   There are two DataTriggerAction errors now. One is used in rs-drive-abci data trigger (new)
-    //   And other is in dpp data trigger (old). New error is dispatched in this test,
-    //   but it does not have binding yet.
-    //   Decide what to do with rs-dpp data trigger and it's errors,
-    //   and update bindings and test accordingly
-    it.skip('should not be able to update domain', async () => {
-      createdTLD.set('label', 'anotherlabel');
-
-      let broadcastError;
-
-      try {
-        await ownerClient.platform.documents.broadcast({
-          replace: [createdTLD],
-        }, identity);
-      } catch (e) {
-        broadcastError = e;
-      }
-
-      expect(broadcastError).to.exist();
-      expect(broadcastError.message).to.be.equal('Action is not allowed');
-      expect(broadcastError.code).to.equal(4001);
-    });
-
-    // TODO(rs-drive-abci): restore
-    //   There are two DataTriggerAction errors now. One is used in rs-drive-abci data trigger (new)
-    //   And other is in dpp data trigger (old). New error is dispatched in this test,
-    //   but it does not have binding yet.
-    //   Decide what to do with rs-dpp data trigger and it's errors,
-    //   and update bindings and test accordingly
-    it.skip('should not be able to delete domain', async () => {
-      let broadcastError;
-
-      try {
-        await ownerClient.platform.documents.broadcast({
-          delete: [createdTLD],
-        }, identity);
-      } catch (e) {
-        broadcastError = e;
-      }
-
-      expect(broadcastError).to.exist();
-      expect(broadcastError.message).to.be.equal('Action is not allowed');
-      expect(broadcastError.code).to.equal(4001);
-    });
-  });
-
   describe('Any Identity', () => {
     before(async () => {
       identity = await client.platform.identities.register(600000);
@@ -152,16 +62,12 @@ describe('DPNS', () => {
       }
     });
 
-    // TODO(rs-drive-abci): test randomly returns StateTransition already in chain error,
-    //   but it's happening because of retry attempts for the same ST.
-    //   Underlying issue causing retry is different and should be debugged.
-    //   (console.log error in dapi-client's GrpcTransport for more details)
-    it.skip('should not be able to register TLD', async () => {
+    it('should not be able to register TLD', async () => {
       let broadcastError;
 
       try {
         await client.platform.names.register(getRandomDomain(), {
-          dashAliasIdentityId: identity.getId(),
+          identity: identity.getId(),
         }, identity);
       } catch (e) {
         broadcastError = e;
@@ -169,34 +75,30 @@ describe('DPNS', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.message).to.be.equal('Can\'t create top level domain for this identity');
-      expect(broadcastError.code).to.equal(4001);
+      expect(broadcastError.code).to.equal(40500);
     });
 
-    // TODO(rs-drive-abci): test randomly returns StateTransition already in chain error,
-    //   but it's happening because of retry attempts for the same ST.
-    //   Underlying issue causing retry is different and should be debugged.
-    //   (console.log error in dapi-client's GrpcTransport for more details)
-    it.skip('should be able to register a second level domain', async () => {
+    it('should be able to register a second level domain', async () => {
       registeredDomain = await client.platform.names.register(`${secondLevelDomain}0.${topLevelDomain}`, {
-        dashUniqueIdentityId: identity.getId(),
+        identity: identity.getId(),
       }, identity);
 
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
       expect(registeredDomain.getType()).to.equal('domain');
-      expect(registeredDomain.getData().label).to.equal(secondLevelDomain);
+      expect(registeredDomain.getData().label).to.equal(`${secondLevelDomain}0`);
       expect(registeredDomain.getData().normalizedParentDomainName).to.equal(topLevelDomain);
     });
 
-    it.skip('should not be able register similar domain name', async () => {
+    it('should not be able register similar domain name', async () => {
       let broadcastError;
 
       try {
         const domain = `${secondLevelDomain}O.${topLevelDomain}`;
 
         await client.platform.names.register(domain, {
-          dashAliasIdentityId: identity.getId(),
+          identity: identity.getId(),
         }, identity);
 
         expect.fail('should throw error');
@@ -205,22 +107,18 @@ describe('DPNS', () => {
       }
 
       expect(broadcastError).to.exist();
-      expect(broadcastError.code).to.be.equal(4009);
-      expect(broadcastError.message).to.match(/Document \w* has duplicate unique properties \["normalizedLabel", "normalizedParentDomainName"] with other documents/);
+      expect(broadcastError.code).to.be.equal(40105);
+      expect(broadcastError.message).to.match(/Document \w* has duplicate unique properties \["normalizedParentDomainName", "normalizedLabel"] with other documents/);
     });
 
-    // TODO(rs-drive-abci): test randomly returns StateTransition already in chain error,
-    //   but it's happening because of retry attempts for the same ST.
-    //   Underlying issue causing retry is different and should be debugged.
-    //   (console.log error in dapi-client's GrpcTransport for more details)
-    it.skip('should not be able to register a subdomain for parent domain which is not exist', async () => {
+    it('should not be able to register a subdomain for parent domain which is not exist', async () => {
       let broadcastError;
 
       try {
-        const domain = `${getRandomDomain()}.${getRandomDomain()}.${topLevelDomain}`;
+        const domain = `${getRandomDomain()}.${getRandomDomain()}`;
 
         await client.platform.names.register(domain, {
-          dashAliasIdentityId: identity.getId(),
+          identity: identity.getId(),
         }, identity);
 
         expect.fail('should throw error');
@@ -230,43 +128,112 @@ describe('DPNS', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.message).to.be.equal('Parent domain is not present');
-      expect(broadcastError.code).to.equal(4001);
+      expect(broadcastError.code).to.equal(40500);
     });
 
-    // TODO(rs-drive-abci): restore - toObject mismatch (happens randomly)
-    it.skip('should be able to search a domain', async () => {
+    it('should be able to search a domain', async () => {
       const documents = await client.platform.names.search(secondLevelDomain, topLevelDomain);
 
       expect(documents).to.have.lengthOf(1);
 
-      const [document] = documents;
+      const rawDocument = documents[0].toObject();
 
-      expect(document.toObject()).to.deep.equal(registeredDomain.toObject());
+      delete rawDocument.$createdAt;
+      delete rawDocument.$createdAtCoreBlockHeight;
+      delete rawDocument.$createdAtBlockHeight;
+      delete rawDocument.$updatedAt;
+      delete rawDocument.$updatedAtCoreBlockHeight;
+      delete rawDocument.$updatedAtBlockHeight;
+      delete rawDocument.$transferredAt;
+      delete rawDocument.$transferredAtCoreBlockHeight;
+      delete rawDocument.$transferredAtBlockHeight;
+      delete rawDocument.preorderSalt;
+
+      const rawRegisteredDomain = registeredDomain.toObject();
+
+      delete rawRegisteredDomain.$createdAt;
+      delete rawRegisteredDomain.$createdAtCoreBlockHeight;
+      delete rawRegisteredDomain.$createdAtBlockHeight;
+      delete rawRegisteredDomain.$updatedAt;
+      delete rawRegisteredDomain.$updatedAtCoreBlockHeight;
+      delete rawRegisteredDomain.$updatedAtBlockHeight;
+      delete rawRegisteredDomain.$transferredAt;
+      delete rawRegisteredDomain.$transferredAtCoreBlockHeight;
+      delete rawRegisteredDomain.$transferredAtBlockHeight;
+      delete rawRegisteredDomain.preorderSalt;
+
+      expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
 
-    // TODO(rs-drive-abci): restore - toObject mismatch (happens randomly)
-    it.skip('should be able to resolve domain by it\'s name', async () => {
-      const document = await client.platform.names.resolve(`${secondLevelDomain}.${topLevelDomain}`);
+    it('should be able to resolve domain by it\'s name', async () => {
+      const document = await client.platform.names.resolve(`${secondLevelDomain}0.${topLevelDomain}`);
 
-      expect(document.toObject()).to.deep.equal(registeredDomain.toObject());
+      const rawDocument = document.toObject();
+
+      delete rawDocument.$createdAt;
+      delete rawDocument.$createdAtCoreBlockHeight;
+      delete rawDocument.$createdAtBlockHeight;
+      delete rawDocument.$updatedAt;
+      delete rawDocument.$updatedAtCoreBlockHeight;
+      delete rawDocument.$updatedAtBlockHeight;
+      delete rawDocument.$transferredAt;
+      delete rawDocument.$transferredAtCoreBlockHeight;
+      delete rawDocument.$transferredAtBlockHeight;
+      delete rawDocument.preorderSalt;
+
+      const rawRegisteredDomain = registeredDomain.toObject();
+
+      delete rawRegisteredDomain.$createdAt;
+      delete rawRegisteredDomain.$createdAtCoreBlockHeight;
+      delete rawRegisteredDomain.$createdAtBlockHeight;
+      delete rawRegisteredDomain.$updatedAt;
+      delete rawRegisteredDomain.$updatedAtCoreBlockHeight;
+      delete rawRegisteredDomain.$updatedAtBlockHeight;
+      delete rawRegisteredDomain.$transferredAt;
+      delete rawRegisteredDomain.$transferredAtCoreBlockHeight;
+      delete rawRegisteredDomain.$transferredAtBlockHeight;
+      delete rawRegisteredDomain.preorderSalt;
+
+      expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
 
-    // TODO(rs-drive-abci): restore - toObject mismatch (happens randomly)
-    it.skip('should be able to resolve domain by it\'s record', async () => {
+    it('should be able to resolve domain by it\'s record', async () => {
       const [document] = await client.platform.names.resolveByRecord(
-        'dashUniqueIdentityId',
-        registeredDomain.getData().records.dashUniqueIdentityId,
+        'identity',
+        registeredDomain.getData().records.identity,
       );
 
-      expect(document.toObject()).to.deep.equal(registeredDomain.toObject());
+      const rawDocument = document.toObject();
+
+      delete rawDocument.$createdAt;
+      delete rawDocument.$createdAtCoreBlockHeight;
+      delete rawDocument.$createdAtBlockHeight;
+      delete rawDocument.$updatedAt;
+      delete rawDocument.$updatedAtCoreBlockHeight;
+      delete rawDocument.$updatedAtBlockHeight;
+      delete rawDocument.$transferredAt;
+      delete rawDocument.$transferredAtCoreBlockHeight;
+      delete rawDocument.$transferredAtBlockHeight;
+      delete rawDocument.preorderSalt;
+
+      const rawRegisteredDomain = registeredDomain.toObject();
+
+      delete rawRegisteredDomain.$createdAt;
+      delete rawRegisteredDomain.$createdAtCoreBlockHeight;
+      delete rawRegisteredDomain.$createdAtBlockHeight;
+      delete rawRegisteredDomain.$updatedAt;
+      delete rawRegisteredDomain.$updatedAtCoreBlockHeight;
+      delete rawRegisteredDomain.$updatedAtBlockHeight;
+      delete rawRegisteredDomain.$transferredAt;
+      delete rawRegisteredDomain.$transferredAtCoreBlockHeight;
+      delete rawRegisteredDomain.$transferredAtBlockHeight;
+      delete rawRegisteredDomain.preorderSalt;
+
+      expect(rawDocument).to.deep.equal(rawRegisteredDomain);
     });
 
-    // TODO(rs-drive-abci): restore
-    //   There are two DataTriggerAction errors now. One is used in rs-drive-abci data trigger (new)
-    //   And other is in dpp data trigger (old). New error is dispatched in this test,
-    //   but it does not have binding yet.
-    //   Decide what to do with rs-dpp data trigger and it's errors,
-    //   and update bindings and test accordingly
+    // TODO: Enable test when we figure out how to skip a check in the SDK's state transition
+    //  factory
     it.skip('should not be able to update domain', async () => {
       registeredDomain.set('label', 'newlabel');
 
@@ -284,15 +251,10 @@ describe('DPNS', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.message).to.be.equal('Action is not allowed');
-      expect(broadcastError.code).to.equal(4001);
+      expect(broadcastError.code).to.equal(40500);
     });
 
-    // TODO(rs-drive-abci): restore
-    //   There are two DataTriggerAction errors now. One is used in rs-drive-abci data trigger (new)
-    //   And other is in dpp data trigger (old). New error is dispatched in this test,
-    //   but it does not have binding yet.
-    //   Decide what to do with rs-dpp data trigger and it's errors,
-    //   and update bindings and test accordingly
+    // TODO: Enable test when we documentsMutable true fixed and do not prevent from deleting
     it.skip('should not be able to delete domain', async () => {
       let broadcastError;
 
@@ -306,12 +268,12 @@ describe('DPNS', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.message).to.be.equal('Action is not allowed');
-      expect(broadcastError.code).to.equal(4001);
+      expect(broadcastError.code).to.equal(40500);
     });
 
-    it('should not be able to register two domains with same `dashAliasIdentityId` record');
+    it('should not be able to register two domains with same `identity` record');
 
-    it('should be able to register many domains with same `dashAliasIdentityId` record');
+    it('should be able to register many domains with same `identity` record');
 
     it('should not be able to update preorder');
 

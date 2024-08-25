@@ -1,4 +1,3 @@
-use crate::buffer::Buffer;
 use dpp::consensus::basic::UnsupportedVersionError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;

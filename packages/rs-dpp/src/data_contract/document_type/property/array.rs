@@ -122,6 +122,6 @@ impl ArrayItemType {
 
 fn get_field_type_matching_error() -> ProtocolError {
     ProtocolError::DataContractError(DataContractError::ValueWrongType(
-        "document field type doesn't match document value for array",
+        "document field type doesn't match document value for array".to_string(),
     ))
 }

@@ -1,7 +1,8 @@
 use crate::abci::AbciError;
-use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult;
-use dpp::util::deserializer::ProtocolVersion;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
 use dpp::validation::SimpleValidationResult;
+use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
 /// The outcome of the block execution, either by prepare proposal, or process proposal
@@ -11,12 +12,14 @@ pub struct BlockExecutionOutcome {
     /// after the block has been executed
     pub app_hash: [u8; 32],
     /// The results of the execution of each state transition
-    pub state_transition_results: Vec<(Vec<u8>, StateTransitionExecutionResult)>,
+    pub state_transitions_result: StateTransitionsProcessingResult,
     /// The changes to the validator set
     // TODO We should use another DTO, only abci module should deal with Tenderdash proto structures
     pub validator_set_update: Option<ValidatorSetUpdate>,
-    /// Current block protocol version
-    pub protocol_version: ProtocolVersion,
+    /// Current block platform version
+    pub platform_version: &'static PlatformVersion,
+    /// Block execution context
+    pub block_execution_context: BlockExecutionContext,
 }
 
 /// The outcome of the finalization of the block

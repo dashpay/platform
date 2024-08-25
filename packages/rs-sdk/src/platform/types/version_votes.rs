@@ -11,7 +11,7 @@ use drive_proof_verifier::types::{MasternodeProtocolVote, MasternodeProtocolVote
 /// Helper trait for managing MasternodeProtocolVote objects
 #[async_trait]
 pub trait MasternodeProtocolVoteEx<K: Ord> {
-    /// Fetch masternode votes for version update from the platform.
+    /// Fetch masternode votes for version update from Platform.
     ///
     /// ## Parameters
     ///
@@ -26,7 +26,7 @@ pub trait MasternodeProtocolVoteEx<K: Ord> {
     /// - [MasternodeProtocolVote::fetch_many()]
     /// - [MasternodeProtocolVote::fetch_many_with_limit()]
     async fn fetch_votes(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         start_protxhash: Option<ProTxHash>,
         limit: Option<u32>,
     ) -> Result<MasternodeProtocolVotes, Error>;
@@ -35,7 +35,7 @@ pub trait MasternodeProtocolVoteEx<K: Ord> {
 #[async_trait]
 impl MasternodeProtocolVoteEx<ProTxHash> for MasternodeProtocolVote {
     async fn fetch_votes(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         start_protxhash: Option<ProTxHash>,
         limit: Option<u32>,
     ) -> Result<MasternodeProtocolVotes, Error> {
@@ -44,6 +44,7 @@ impl MasternodeProtocolVoteEx<ProTxHash> for MasternodeProtocolVote {
             LimitQuery {
                 query: start_protxhash,
                 limit,
+                start_info: None,
             },
         )
         .await
@@ -53,7 +54,7 @@ impl MasternodeProtocolVoteEx<ProTxHash> for MasternodeProtocolVote {
 #[async_trait]
 impl MasternodeProtocolVoteEx<ProTxHash> for MasternodeProtocolVotes {
     async fn fetch_votes(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         start_protxhash: Option<ProTxHash>,
         limit: Option<u32>,
     ) -> Result<MasternodeProtocolVotes, Error> {

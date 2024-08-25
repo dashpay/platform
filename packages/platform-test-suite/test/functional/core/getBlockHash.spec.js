@@ -8,8 +8,8 @@ describe('Core', () => {
     before(async () => {
       client = createClientWithoutWallet();
 
-      ({ chain: { blocksCount: lastBlockHeight } } = await client
-        .getDAPIClient().core.getStatus());
+      lastBlockHeight = await client
+        .getDAPIClient().core.getBestBlockHeight();
     });
 
     after(async () => {

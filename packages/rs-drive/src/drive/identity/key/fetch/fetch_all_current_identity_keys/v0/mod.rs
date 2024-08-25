@@ -1,7 +1,7 @@
 use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap};
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::identity::{IdentityPublicKey, KeyID};
 
 use dpp::version::PlatformVersion;
@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 impl Drive {
     /// Fetch all the current keys of every kind for a specific Identity
+    #[inline(always)]
     pub(super) fn fetch_all_current_identity_keys_v0(
         &self,
         identity_id: [u8; 32],

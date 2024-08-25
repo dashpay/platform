@@ -16,3 +16,11 @@ pub trait AssetLockProved {
     /// Get asset lock proof
     fn asset_lock_proof(&self) -> &AssetLockProof;
 }
+
+/// Only state transitions funded with Asset Lock Transactions have Asset Lock Proofs
+pub trait OptionallyAssetLockProved {
+    /// Returns asset lock proof if state transition implements it
+    fn optional_asset_lock_proof(&self) -> Option<&AssetLockProof> {
+        None
+    }
+}

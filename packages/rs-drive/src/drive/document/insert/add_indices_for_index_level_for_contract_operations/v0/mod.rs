@@ -1,12 +1,12 @@
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::BatchInsertTreeApplyType;
+use crate::util::object_size_info::DriveKeyInfo::KeyRef;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
+use crate::util::storage_flags::StorageFlags;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::IndexLevel;
 
 use dpp::version::PlatformVersion;
@@ -19,12 +19,14 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds indices for an index level and recurses.
+    #[inline]
     pub(super) fn add_indices_for_index_level_for_contract_operations_v0(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
         index_level: &IndexLevel,
         mut any_fields_null: bool,
+        mut all_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -35,12 +37,13 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        if let Some(unique) = index_level.has_index_with_uniqueness() {
+        if let Some(index_type) = index_level.has_index_with_type() {
             self.add_reference_for_index_level_for_contract_operations(
                 document_and_contract_info,
                 index_path_info.clone(),
-                unique,
+                index_type,
                 any_fields_null,
+                all_fields_null,
                 previous_batch_operations,
                 storage_flags,
                 estimated_costs_only_with_layer_info,
@@ -106,6 +109,7 @@ impl Drive {
             // here we are inserting an empty tree that will have a subtree of all other index properties
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
+                false,
                 *storage_flags,
                 apply_type,
                 transaction,
@@ -153,6 +157,7 @@ impl Drive {
             // here we are inserting an empty tree that will have a subtree of all other index properties
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
+                false,
                 *storage_flags,
                 apply_type,
                 transaction,
@@ -162,16 +167,18 @@ impl Drive {
             )?;
 
             any_fields_null |= document_index_field.is_empty();
+            all_fields_null &= document_index_field.is_empty();
 
             // we push the actual value of the index path
             sub_level_index_path_info.push(document_index_field)?;
             // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
             // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
-            self.add_indices_for_index_level_for_contract_operations(
+            self.add_indices_for_index_level_for_contract_operations_v0(
                 document_and_contract_info,
                 sub_level_index_path_info,
                 sub_level,
                 any_fields_null,
+                all_fields_null,
                 previous_batch_operations,
                 storage_flags,
                 estimated_costs_only_with_layer_info,

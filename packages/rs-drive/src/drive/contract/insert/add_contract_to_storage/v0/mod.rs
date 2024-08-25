@@ -1,16 +1,16 @@
-use crate::common::encode::encode_u64;
 use crate::drive::contract::paths;
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyRefElement, PathKeyElementSize,
-};
-use crate::drive::object_size_info::PathKeyInfo;
 use crate::drive::Drive;
 use crate::drive::LowLevelDriveOperation;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::common::encode::encode_u64;
+use crate::util::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
+use crate::util::object_size_info::DriveKeyInfo::KeyRef;
+use crate::util::object_size_info::PathKeyElementInfo::{
+    PathFixedSizeKeyRefElement, PathKeyElementSize,
+};
+use crate::util::object_size_info::PathKeyInfo;
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
@@ -24,6 +24,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds a contract to storage.
+    #[inline(always)]
     pub(super) fn add_contract_to_storage_v0(
         &self,
         contract_element: Element,
@@ -78,6 +79,7 @@ impl Drive {
 
                 self.batch_insert_empty_tree_if_not_exists(
                     key_info,
+                    false,
                     storage_flags.as_ref().map(|flags| flags.as_ref()),
                     apply_type,
                     transaction,
@@ -89,7 +91,7 @@ impl Drive {
 
             let encoded_time = encode_u64(block_info.time_ms);
             let contract_keeping_history_storage_path =
-                paths::contract_keeping_history_storage_path(contract.id_ref().as_bytes());
+                paths::contract_keeping_history_root_path(contract.id_ref().as_bytes());
 
             if !is_first_insert {
                 // we can use a DirectQueryType::StatefulDirectQuery because if we were stateless we would always think

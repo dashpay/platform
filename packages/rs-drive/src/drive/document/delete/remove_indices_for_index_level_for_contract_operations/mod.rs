@@ -1,11 +1,11 @@
 mod v0;
-use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DocumentAndContractInfo;
-use crate::drive::object_size_info::PathInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::util::object_size_info::DocumentAndContractInfo;
+use crate::util::object_size_info::PathInfo;
+use crate::util::storage_flags::StorageFlags;
 
 use dpp::data_contract::document_type::IndexLevel;
 
@@ -39,6 +39,7 @@ impl Drive {
         index_path_info: PathInfo<0>,
         index_level: &IndexLevel,
         any_fields_null: bool,
+        all_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -61,6 +62,7 @@ impl Drive {
                 index_path_info,
                 index_level,
                 any_fields_null,
+                all_fields_null,
                 storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,

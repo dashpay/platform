@@ -1,11 +1,11 @@
-use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
+use crate::util::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 
 use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;

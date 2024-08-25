@@ -1,3 +1,4 @@
+pub(crate) mod check_tx_verification;
 mod common;
 pub(crate) mod processor;
 mod state_transitions;
@@ -5,3 +6,6 @@ mod state_transitions;
 pub mod transformer;
 
 pub use state_transitions::*;
+
+#[cfg(test)]
+pub(in crate::execution) use state_transitions::tests;

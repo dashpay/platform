@@ -26,6 +26,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the path query generation or proof generation fails.
+    #[inline(always)]
     pub(super) fn prove_contract_history_v0(
         &self,
         contract_id: [u8; 32],
@@ -40,7 +41,6 @@ impl Drive {
 
         self.grove_get_proved_path_query(
             &history_query,
-            false,
             transaction,
             &mut vec![],
             &platform_version.drive,

@@ -3,7 +3,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use dpp::consensus::ConsensusError;
 use dpp::prelude::Revision;
-use dpp::serialization::PlatformSerializable;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidDocumentRevisionError)]

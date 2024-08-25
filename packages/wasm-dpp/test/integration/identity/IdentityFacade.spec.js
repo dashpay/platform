@@ -5,10 +5,12 @@ const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getI
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
 
 const {
+  default: loadWasmDpp,
   Identity, InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
   IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyWithWitness,
   DashPlatformProtocol, ValidationResult,
 } = require('../../..');
+const getIdentityCreditWithdrawalTransitionFixture = require('../../../lib/test/fixtures/getIdentityCreditWithdrawalTransitionFixture');
 
 describe('IdentityFacade', () => {
   let dpp;
@@ -16,6 +18,8 @@ describe('IdentityFacade', () => {
   let identity;
   let instantAssetLockProof;
   let chainAssetLockProof;
+
+  before(loadWasmDpp);
 
   beforeEach(async () => {
     dpp = new DashPlatformProtocol(
@@ -173,6 +177,8 @@ describe('IdentityFacade', () => {
       const stateTransition = dpp.identity
         .createIdentityUpdateTransition(
           identity,
+          // eslint-disable-next-line
+          BigInt(1),
           publicKeys,
         );
 
@@ -186,7 +192,26 @@ describe('IdentityFacade', () => {
         stateTransition.getPublicKeysToAdd().map((pk) => pk.toObject()),
       ).to.deep.equal(publicKeys.add.map((k) => k.toObject()));
       expect(stateTransition.getPublicKeyIdsToDisable()).to.deep.equal([]);
-      expect(stateTransition.getPublicKeysDisabledAt()).to.equal(undefined);
+    });
+  });
+
+  describe('createIdentityCreditWithdrawalTransition', () => {
+    it('should create IdentityCreditWithdrawalTransition', () => {
+      const stateTransitionFixture = getIdentityCreditWithdrawalTransitionFixture();
+      const stateTransition = dpp.identity
+        .createIdentityCreditWithdrawalTransition(
+          stateTransitionFixture.getIdentityId(),
+          stateTransitionFixture.getAmount(),
+          stateTransitionFixture.getCoreFeePerByte(),
+          stateTransitionFixture.getPooling(),
+          stateTransitionFixture.getOutputScript(),
+          stateTransitionFixture.getNonce(),
+        );
+
+      expect(stateTransition.toObject())
+        .to.deep.equal(
+          stateTransitionFixture.toObject(),
+        );
     });
   });
 });

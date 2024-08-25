@@ -7,6 +7,10 @@ pub(crate) mod v0;
 
 pub use fields::{property_names, IDENTIFIER_FIELDS};
 
+#[cfg(any(
+    feature = "document-json-conversion",
+    feature = "document-value-conversion"
+))]
 use crate::data_contract::DataContract;
 use crate::ProtocolError;
 
@@ -14,11 +18,14 @@ use crate::document::extended_document::v0::ExtendedDocumentV0;
 
 #[cfg(feature = "document-json-conversion")]
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
+#[cfg(feature = "document-json-conversion")]
 use serde_json::Value as JsonValue;
+#[cfg(feature = "document-value-conversion")]
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PlatformVersioned)]
@@ -68,7 +75,7 @@ impl ExtendedDocument {
     /// Returns a `ProtocolError` if the document type is not found in the data contract.
     pub fn needs_revision(&self) -> Result<bool, ProtocolError> {
         match self {
-            ExtendedDocument::V0(v0) => v0.needs_revision(),
+            ExtendedDocument::V0(v0) => v0.requires_revision(),
         }
     }
 
@@ -331,6 +338,8 @@ mod test {
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
     use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
     use crate::tests::fixtures::get_dashpay_contract_fixture;
+    use base64::prelude::BASE64_STANDARD;
+    use base64::Engine;
 
     fn init() {
         let _ = env_logger::builder()
@@ -410,8 +419,7 @@ mod test {
     fn test_document_json_deserialize() -> Result<()> {
         init();
         let platform_version = PlatformVersion::latest();
-        let dpns_contract =
-            load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let doc =
             ExtendedDocument::from_json_string(&document_json, dpns_contract, platform_version)?;
@@ -444,12 +452,12 @@ mod test {
         println!(
             "{:?}",
             doc.properties()
-                .get_at_path("records.dashUniqueIdentityId")
+                .get_at_path("records.identity")
                 .expect("expected to get value")
         );
         assert_eq!(
             doc.properties()
-                .get_at_path("records.dashUniqueIdentityId")
+                .get_at_path("records.identity")
                 .expect("expected to get value"),
             &Value::Identifier(
                 bs58::decode("HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn")
@@ -481,6 +489,22 @@ mod test {
 
         assert_eq!(init_doc.created_at(), doc.created_at());
         assert_eq!(init_doc.updated_at(), doc.updated_at());
+        assert_eq!(
+            init_doc.created_at_block_height(),
+            doc.created_at_block_height()
+        );
+        assert_eq!(
+            init_doc.updated_at_block_height(),
+            doc.updated_at_block_height()
+        );
+        assert_eq!(
+            init_doc.created_at_core_block_height(),
+            doc.created_at_core_block_height()
+        );
+        assert_eq!(
+            init_doc.updated_at_core_block_height(),
+            doc.updated_at_core_block_height()
+        );
         assert_eq!(init_doc.id(), doc.id());
         assert_eq!(init_doc.data_contract_id(), doc.data_contract_id());
         assert_eq!(init_doc.owner_id(), doc.owner_id());
@@ -489,11 +513,8 @@ mod test {
     #[test]
     fn test_to_object() {
         init();
-        let dpns_contract = load_system_data_contract(
-            SystemDataContract::DPNS,
-            LATEST_PLATFORM_VERSION.protocol_version,
-        )
-        .unwrap();
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, LATEST_PLATFORM_VERSION).unwrap();
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
         let document = ExtendedDocument::from_json_string(
             &document_json,
@@ -517,10 +538,8 @@ mod test {
     fn test_json_serialize() -> Result<()> {
         init();
 
-        let dpns_contract = load_system_data_contract(
-            SystemDataContract::DPNS,
-            LATEST_PLATFORM_VERSION.protocol_version,
-        )?;
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, LATEST_PLATFORM_VERSION)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let document = ExtendedDocument::from_json_string(
             &document_json,
@@ -530,7 +549,7 @@ mod test {
         let string = serde_json::to_string(&document)?;
 
         assert_eq!(
-            "{\"version\":0,\"$type\":\"domain\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"document\":{\"$version\":\"0\",\"$id\":\"4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E\",\"$ownerId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"$protocolVersion\":0,\"$type\":\"domain\",\"label\":\"user-9999\",\"normalizedLabel\":\"user-9999\",\"normalizedParentDomainName\":\"dash\",\"preorderSalt\":\"BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0=\",\"records\":{\"dashUniqueIdentityId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\"},\"subdomainRules\":{\"allowSubdomains\":false},\"$revision\":1,\"$createdAt\":null,\"$updatedAt\":null}}",
+            "{\"version\":0,\"$type\":\"domain\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"document\":{\"$version\":\"0\",\"$id\":\"4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E\",\"$ownerId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"$protocolVersion\":0,\"$type\":\"domain\",\"label\":\"user-9999\",\"normalizedLabel\":\"user-9999\",\"normalizedParentDomainName\":\"dash\",\"preorderSalt\":\"BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0=\",\"records\":{\"identity\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\"},\"subdomainRules\":{\"allowSubdomains\":false},\"$revision\":1,\"$createdAt\":null,\"$updatedAt\":null,\"$transferredAt\":null,\"$createdAtBlockHeight\":null,\"$updatedAtBlockHeight\":null,\"$transferredAtBlockHeight\":null,\"$createdAtCoreBlockHeight\":null,\"$updatedAtCoreBlockHeight\":null,\"$transferredAtCoreBlockHeight\":null}}",
             string
         );
 
@@ -542,11 +561,8 @@ mod test {
         init();
 
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let dpns_contract = load_system_data_contract(
-            SystemDataContract::DPNS,
-            LATEST_PLATFORM_VERSION.protocol_version,
-        )
-        .unwrap();
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, LATEST_PLATFORM_VERSION).unwrap();
         ExtendedDocument::from_json_string(&document_json, dpns_contract, LATEST_PLATFORM_VERSION)
             .expect("expected extended document");
         Ok(())
@@ -581,8 +597,6 @@ mod test {
             .to_pretty_json(LATEST_PLATFORM_VERSION)
             .expect("no errors");
 
-        println!("{:?}", json_document);
-
         assert_eq!(
             json_document["$id"],
             JsonValue::String(bs58::encode(&id).into_string())
@@ -597,11 +611,11 @@ mod test {
         );
         assert_eq!(
             json_document["alphaBinary"],
-            JsonValue::String(base64::encode(&alpha_value))
+            JsonValue::String(BASE64_STANDARD.encode(&alpha_value))
         );
         assert_eq!(
             json_document["alphaIdentifier"],
-            JsonValue::String(base64::encode(&alpha_value))
+            JsonValue::String(BASE64_STANDARD.encode(&alpha_value))
         );
     }
 
@@ -613,7 +627,7 @@ mod test {
 
     fn new_example_document() -> ExtendedDocument {
         let data_contract =
-            get_dashpay_contract_fixture(None, LATEST_PLATFORM_VERSION.protocol_version)
+            get_dashpay_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version)
                 .data_contract_owned();
         let document_type = data_contract
             .document_type_for_name("profile")

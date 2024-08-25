@@ -1,14 +1,13 @@
-use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path};
-use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
+use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
 
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{DirectQueryType, QueryType};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
+use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
+use crate::util::grove_operations::{DirectQueryType, QueryType};
+use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::string_encoding::Encoding;
@@ -26,6 +25,7 @@ use std::collections::HashMap;
 impl Drive {
     /// Applies a contract and returns the fee for applying.
     /// If the contract already exists, an update is applied, otherwise an insert.
+    #[inline(always)]
     pub(super) fn apply_contract_with_serialization_v0(
         &self,
         contract: &DataContract,
@@ -60,12 +60,14 @@ impl Drive {
             &platform_version.drive,
         )?;
         cost_operations.push(CalculatedCostOperation(fetch_cost));
+
         let fees = Drive::calculate_fee(
             None,
             Some(cost_operations),
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
+            None,
         )?;
         Ok(fees)
     }
@@ -73,6 +75,7 @@ impl Drive {
     /// Gets the operations for applying a contract with it's serialization
     /// If the contract already exists, we get operations for an update
     /// Otherwise we get operations for an insert
+    #[inline(always)]
     pub(super) fn apply_contract_with_serialization_operations_v0(
         &self,
         contract: &DataContract,
@@ -99,12 +102,16 @@ impl Drive {
                 in_tree_using_sums: false,
                 // we can ignore flags as this is just an approximation
                 // and it's doubtful that contracts will always be inserted at max size
-                query_target: QueryTargetValue(CONTRACT_MAX_SERIALIZED_SIZE as u32),
+                query_target: QueryTargetValue(
+                    platform_version
+                        .system_limits
+                        .estimated_contract_max_serialized_size as u32,
+                ),
             }
         };
 
         // We can do a get direct because there are no references involved
-        match self.grove_get_raw(
+        match self.grove_get_raw_optional(
             (&contract_root_path(contract.id_ref().as_bytes())).into(),
             &[0],
             direct_query_type,
@@ -126,9 +133,7 @@ impl Drive {
                         // we need to get the latest of a contract that keeps history, can't be raw since there is a reference
                         let stored_element = self
                             .grove_get(
-                                (&contract_keeping_history_storage_path(
-                                    contract.id_ref().as_bytes(),
-                                ))
+                                (&contract_keeping_history_root_path(contract.id_ref().as_bytes()))
                                     .into(),
                                 &[0],
                                 QueryType::StatefulQuery,

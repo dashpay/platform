@@ -7,12 +7,14 @@ use dpp::balances::credits::Creditable;
 use dpp::fee::epoch::CreditsPerEpoch;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
+use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Fetches all pending epoch refunds
     pub(super) fn fetch_pending_epoch_refunds_v0(
         &self,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<CreditsPerEpoch, Error> {
         let mut query = Query::new();
 
@@ -24,8 +26,10 @@ impl Drive {
                 &PathQuery::new_unsized(pending_epoch_refunds_path_vec(), query),
                 transaction.is_some(),
                 true,
+                true,
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
+                &drive_version.grove_version,
             )
             .unwrap()
             .map_err(Error::GroveDB)?;

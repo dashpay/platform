@@ -1,21 +1,19 @@
 // mod validation;
 
-use std::collections::HashMap;
-
 // pub use validation::*;
 
 use crate::errors::protocol_error::from_protocol_error;
-use dpp::data_contract::JsonValue;
+
 use dpp::errors::consensus::signature::SignatureError;
 use dpp::errors::consensus::ConsensusError;
-use dpp::platform_value::Value;
+
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::StateTransitionIdentitySigned;
-use dpp::state_transition::{JsonStateTransitionSerializationOptions, StateTransitionJsonConvert};
+
 use dpp::state_transition::{StateTransition, StateTransitionValueConvert};
-use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
+use dpp::version::PlatformVersion;
 use dpp::{state_transition::StateTransitionLike, ProtocolError};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -24,7 +22,7 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::data_contract::DataContractWasm;
 use crate::identity::IdentityPublicKeyWasm;
 use crate::utils::{ToSerdeJSONExt, WithJsError};
-use crate::{buffer::Buffer, identifier::IdentifierWrapper, with_js_error};
+use crate::{buffer::Buffer, identifier::IdentifierWrapper};
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name=DataContractCreateTransition)]
@@ -69,9 +67,9 @@ impl DataContractCreateTransitionWasm {
     //     Ok(())
     // }
 
-    #[wasm_bindgen(js_name=getEntropy)]
-    pub fn get_entropy(&self) -> Buffer {
-        Buffer::from_bytes_owned(self.0.entropy().to_vec())
+    #[wasm_bindgen(js_name=getIdentityNonce)]
+    pub fn get_identity_nonce(&self) -> u64 {
+        self.0.identity_nonce()
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -141,6 +139,11 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name=isIdentityStateTransition)]
     pub fn is_identity_state_transition(&self) -> bool {
         self.0.is_identity_state_transition()
+    }
+
+    #[wasm_bindgen(js_name=isVotingStateTransition)]
+    pub fn is_voting_state_transition(&self) -> bool {
+        self.0.is_voting_state_transition()
     }
 
     #[wasm_bindgen(js_name=toObject)]

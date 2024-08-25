@@ -5,13 +5,12 @@ use serde_json::Value as JsonValue;
 
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::{Identifier, Revision, TimestampMillis};
-use dpp::util::json_schema::JsonSchemaExt;
+
 use dpp::util::json_value::JsonValueExt;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
@@ -20,6 +19,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
 use crate::data_contract::DataContractWasm;
+#[allow(deprecated)] // BinaryType is unsed in unused code below
 use crate::document::BinaryType;
 use crate::document::{ConversionOptions, DocumentWasm};
 use crate::errors::RustConversionError;
@@ -191,7 +191,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=set)]
     pub fn set(&mut self, path: String, js_value_to_set: JsValue) -> Result<(), JsValue> {
-        let mut value: Value = js_value_to_set.with_serde_to_platform_value()?;
+        let value: Value = js_value_to_set.with_serde_to_platform_value()?;
         self.0.set_untrusted(&path, value).with_js_error()
     }
 
@@ -260,7 +260,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=getMetadata)]
     pub fn get_metadata(&self) -> Option<MetadataWasm> {
-        self.0.metadata().clone().map(Into::into)
+        (*self.0.metadata()).map(Into::into)
     }
 
     #[wasm_bindgen(js_name=setMetadata)]
@@ -363,6 +363,9 @@ impl ExtendedDocumentWasm {
 }
 
 impl ExtendedDocumentWasm {
+    #[allow(dead_code)]
+    #[deprecated(note = "This function is marked as unused.")]
+    #[allow(deprecated)]
     fn get_binary_type_of_path(&self, path: &String) -> Result<BinaryType, JsValue> {
         let document_type = self.0.document_type().with_js_error()?;
 
