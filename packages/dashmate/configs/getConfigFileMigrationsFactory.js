@@ -834,7 +834,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.2.0';
-
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.tenderdash.genesis.chain_id = 'dash-testnet-51';
             }
