@@ -595,14 +595,14 @@ There are multiple breaking changes that make previously created state invalid:
 
 * make strategy start identities a new struct ([#1764](https://github.com/dashpay/platform/issues/1764))
 * updated descriptions and function names in strategy tests plus readme file ([#1785](https://github.com/dashpay/platform/issues/1785))
-  
+
 
 ### Miscellaneous Chores
 
 * **dashmate:** readme fixes ([#1624](https://github.com/dashpay/platform/issues/1624))
 * fix npm audit for follow-redirects package ([#1781](https://github.com/dashpay/platform/issues/1781))
 * **dapi:** use broadcast_tx instead of deprecated broadcast_tx_sync ([#1775](https://github.com/dashpay/platform/issues/1775))
-  
+
 
 ### Build System
 
@@ -845,6 +845,14 @@ There are multiple breaking changes that make previously created state invalid:
 ### Miscellaneous Chores
 
 * automatic clippy fixes ([#1528](https://github.com/dashpay/platform/issues/1528), [#1602](https://github.com/dashpay/platform/issues/1602))
+
+
+### [0.25.22](https://github.com/dashpay/platform/compare/v0.25.21...v0.25.22) (2024-01-19)
+
+
+### Bug Fixes
+
+* **dashmate:** dapi kills host machine on container stop ([#1670](https://github.com/dashpay/platform/issues/1670))
 
 ### [0.25.21](https://github.com/dashpay/platform/compare/v0.25.20...v0.25.21) (2023-12-28)
 
