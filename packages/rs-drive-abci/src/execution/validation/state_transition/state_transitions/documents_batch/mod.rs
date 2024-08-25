@@ -3,6 +3,7 @@ mod advanced_structure;
 mod balance;
 mod data_triggers;
 mod identity_contract_nonce;
+mod is_allowed;
 mod state;
 mod transformer;
 
@@ -260,6 +261,7 @@ mod tests {
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use dpp::tests::json_document::json_document_to_contract;
     use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+    use drive::drive::document::query::QueryDocumentsWithFlagsOutcomeV0Methods;
     use drive::query::DriveDocumentQuery;
     use drive::util::storage_flags::StorageFlags;
     use platform_version::version::PlatformVersion;
@@ -1371,6 +1373,10 @@ mod tests {
 
     mod replacement_tests {
         use super::*;
+        use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
+        use dpp::identifier::Identifier;
+        use dpp::prelude::IdentityNonce;
+        use std::collections::BTreeMap;
 
         #[test]
         fn test_document_replace_on_document_type_that_is_mutable() {
@@ -1380,6 +1386,8 @@ mod tests {
                 .set_genesis_state();
 
             let mut rng = StdRng::seed_from_u64(433);
+
+            fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
 
             let platform_state = platform.state.load();
 
@@ -1507,6 +1515,359 @@ mod tests {
             assert_eq!(processing_result.valid_count(), 1);
 
             assert_eq!(processing_result.aggregated_fees().processing_fee, 1341740);
+
+            let issues = platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to have no issues");
+
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
+        }
+
+        fn perform_document_replace_on_profile_after_epoch_change(
+            original_name: &str,
+            new_names: Vec<(&str, StorageFlags)>,
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(433);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+            let dashpay_contract = dashpay.clone();
+
+            let profile = dashpay_contract
+                .document_type_for_name("profile")
+                .expect("expected a profile document type");
+
+            assert!(profile.documents_mutable());
+
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut document = profile
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            document.set("displayName", original_name.into());
+            document.set("avatarUrl", "http://test.com/bob.jpg".into());
+
+            let documents_batch_create_transition =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document.clone(),
+                    profile,
+                    entropy.0,
+                    &key,
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            for (i, (new_name, mut expected_flags)) in new_names.into_iter().enumerate() {
+                document.increment_revision().unwrap();
+                document.set("displayName", new_name.into());
+
+                fast_forward_to_block(
+                    &platform,
+                    500_000_000 + i as u64 * 1000,
+                    900 + i as u64,
+                    42,
+                    1 + i as u16,
+                    true,
+                ); //less than a week
+
+                let documents_batch_update_transition =
+                    DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                        document.clone(),
+                        profile,
+                        &key,
+                        3 + i as IdentityNonce,
+                        0,
+                        &signer,
+                        platform_version,
+                        None,
+                        None,
+                        None,
+                    )
+                    .expect("expect to create documents batch transition");
+
+                let documents_batch_update_serialized_transition =
+                    documents_batch_update_transition
+                        .serialize_to_bytes()
+                        .expect("expected documents batch serialized state transition");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let platform_state = platform.state.load();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &vec![documents_batch_update_serialized_transition.clone()],
+                        &platform_state,
+                        platform_state.last_block_info(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                assert_eq!(processing_result.invalid_paid_count(), 0);
+
+                assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+                assert_eq!(
+                    processing_result.valid_count(),
+                    1,
+                    "{:?}",
+                    processing_result.execution_results()
+                );
+
+                let drive_query = DriveDocumentQuery::new_primary_key_single_item_query(
+                    &dashpay,
+                    profile,
+                    document.id(),
+                );
+
+                let mut documents = platform
+                    .drive
+                    .query_documents_with_flags(drive_query, None, false, None, None)
+                    .expect("expected to get back documents")
+                    .documents_owned();
+
+                let (_first_document, storage_flags) = documents.remove(0);
+
+                let storage_flags = storage_flags.expect("expected storage flags");
+
+                expected_flags.set_owner_id(identity.id().to_buffer());
+
+                assert_eq!(storage_flags, expected_flags);
+            }
+
+            let issues = platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to have no issues");
+
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
+        }
+
+        #[test]
+        fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size() {
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![(
+                    "Samuel",
+                    StorageFlags::MultiEpochOwned(
+                        0,
+                        BTreeMap::from([(1, 6)]),
+                        Identifier::default().to_buffer(),
+                    ),
+                )],
+            );
+        }
+
+        #[test]
+        fn test_document_replace_on_document_type_that_is_mutable_different_epoch_smaller_size() {
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![(
+                    "S",
+                    StorageFlags::SingleEpochOwned(0, Identifier::default().to_buffer()),
+                )],
+            );
+        }
+
+        #[test]
+        fn test_document_replace_on_document_type_that_is_mutable_different_epoch_same_size() {
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![(
+                    "Max",
+                    StorageFlags::SingleEpochOwned(0, Identifier::default().to_buffer()),
+                )],
+            );
+        }
+
+        #[test]
+        fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_bigger_size(
+        ) {
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![
+                    (
+                        "Samuel",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 6)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                    (
+                        "SamuelW",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 6), (2, 4)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                ],
+            );
+        }
+
+        #[test]
+        fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_bigger_size_by_3_bytes(
+        ) {
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![
+                    (
+                        "Samuel",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 6)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                    (
+                        "SamuelWes",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 6), (2, 6)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                ],
+            );
+        }
+
+        #[test]
+        fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_smaller_size(
+        ) {
+            // In this case we start with the size Samuell Base epoch 0 epoch 1 added 7 bytes
+            // Then we try to update it to         Sami    Base epoch 2
+            // Epoch 1 added 7 bytes is itself 3 bytes
+            // Sami is 3 bytes less than Samuell
+            // First iteration will say we should remove 6 bytes
+            // We need to start by calculating the cost of the original storage flags, in this case 5 bytes
+            // Then we need to calculate the cost of the new storage flags, in this case 2 bytes
+            // We should do the difference, then apply that difference in the combination function
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![
+                    (
+                        "Samuell",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 7)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                    (
+                        "Sami",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 4)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                ],
+            );
+        }
+
+        #[test]
+        fn test_document_replace_on_document_type_that_is_mutable_different_epoch_bigger_size_then_back_to_original(
+        ) {
+            perform_document_replace_on_profile_after_epoch_change(
+                "Sam",
+                vec![
+                    (
+                        "Samuel",
+                        StorageFlags::MultiEpochOwned(
+                            0,
+                            BTreeMap::from([(1, 6)]),
+                            Identifier::default().to_buffer(),
+                        ),
+                    ),
+                    (
+                        "Sam",
+                        StorageFlags::SingleEpochOwned(0, Identifier::default().to_buffer()),
+                    ),
+                ],
+            );
         }
 
         #[test]
@@ -1941,6 +2302,1005 @@ mod tests {
 
             assert_eq!(processing_result.aggregated_fees().processing_fee, 516040);
         }
+
+        #[test]
+        fn test_double_document_replace() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(433);
+
+            fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+            let dashpay_contract = dashpay.clone();
+
+            let profile = dashpay_contract
+                .document_type_for_name("profile")
+                .expect("expected a profile document type");
+
+            assert!(profile.documents_mutable());
+
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut document = profile
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            document.set("avatarUrl", "http://test.com/bob.jpg".into());
+
+            let mut altered_document = document.clone();
+
+            altered_document.increment_revision().unwrap();
+            altered_document.set("displayName", "Samuel".into());
+            altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
+
+            let mut altered_document_2 = altered_document.clone();
+
+            altered_document_2.increment_revision().unwrap();
+            altered_document_2.set("displayName", "Ody".into());
+            altered_document_2.set("avatarUrl", "http://test.com/drapes.jpg".into());
+
+            let documents_batch_create_transition =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document,
+                    profile,
+                    entropy.0,
+                    &key,
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition.clone()],
+                    &platform_state,
+                    platform_state.last_block_info(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let receiver_documents_sql_string = "select * from profile".to_string();
+
+            let query_documents = DriveDocumentQuery::from_sql_expr(
+                receiver_documents_sql_string.as_str(),
+                &dashpay,
+                Some(&platform.config.drive),
+            )
+            .expect("expected document query");
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(query_documents.clone(), None, false, None, None)
+                .expect("expected query result");
+
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
+
+            assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
+
+            let documents_batch_update_transition_1 =
+                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                    altered_document,
+                    profile,
+                    &key,
+                    3,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_update_serialized_transition_1 =
+                documents_batch_update_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let documents_batch_update_transition_2 =
+                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                    altered_document_2,
+                    profile,
+                    &key,
+                    4,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_update_serialized_transition_2 =
+                documents_batch_update_transition_2
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![
+                        documents_batch_update_serialized_transition_1.clone(),
+                        documents_batch_update_serialized_transition_2.clone(),
+                    ],
+                    &platform_state,
+                    platform_state.last_block_info(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(processing_result.invalid_paid_count(), 0);
+
+            assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+            assert_eq!(processing_result.valid_count(), 2);
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(query_documents.clone(), None, false, None, None)
+                .expect("expected query result");
+
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
+
+            assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] displayName:string Ody publicMessage:string 8XG7KBGNvm2  ");
+
+            let issues = platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to have no issues");
+
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
+        }
+
+        #[test]
+        fn test_double_document_replace_different_height_same_epoch() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(433);
+
+            fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+            let dashpay_contract = dashpay.clone();
+
+            let profile = dashpay_contract
+                .document_type_for_name("profile")
+                .expect("expected a profile document type");
+
+            assert!(profile.documents_mutable());
+
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut document = profile
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            document.set("avatarUrl", "http://test.com/bob.jpg".into());
+
+            let mut altered_document = document.clone();
+
+            altered_document.increment_revision().unwrap();
+            altered_document.set("displayName", "Samuel".into());
+            altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
+
+            let mut altered_document_2 = altered_document.clone();
+
+            altered_document_2.increment_revision().unwrap();
+            altered_document_2.set("displayName", "Ody".into());
+            altered_document_2.set("avatarUrl", "http://test.com/drapes.jpg".into());
+
+            let documents_batch_create_transition =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document,
+                    profile,
+                    entropy.0,
+                    &key,
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition.clone()],
+                    &platform_state,
+                    platform_state.last_block_info(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let receiver_documents_sql_string = "select * from profile".to_string();
+
+            let query_documents = DriveDocumentQuery::from_sql_expr(
+                receiver_documents_sql_string.as_str(),
+                &dashpay,
+                Some(&platform.config.drive),
+            )
+            .expect("expected document query");
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(query_documents.clone(), None, false, None, None)
+                .expect("expected query result");
+
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
+
+            assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
+
+            fast_forward_to_block(&platform, 1_400_000_000, 901, 43, 1, false); //next epoch
+
+            let platform_state = platform.state.load();
+
+            let documents_batch_update_transition_1 =
+                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                    altered_document,
+                    profile,
+                    &key,
+                    3,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_update_serialized_transition_1 =
+                documents_batch_update_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let documents_batch_update_transition_2 =
+                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                    altered_document_2,
+                    profile,
+                    &key,
+                    4,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_update_serialized_transition_2 =
+                documents_batch_update_transition_2
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_update_serialized_transition_1.clone()],
+                    &platform_state,
+                    platform_state.last_block_info(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(processing_result.invalid_paid_count(), 0);
+
+            assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(query_documents.clone(), None, false, None, None)
+                .expect("expected query result");
+
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
+
+            assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] displayName:string Samuel publicMessage:string 8XG7KBGNvm2  ");
+
+            fast_forward_to_block(&platform, 1_600_000_000, 902, 44, 1, false); //next epoch
+
+            let platform_state = platform.state.load();
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_update_serialized_transition_2.clone()],
+                    &platform_state,
+                    platform_state.last_block_info(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(processing_result.invalid_paid_count(), 0);
+
+            assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(query_documents.clone(), None, false, None, None)
+                .expect("expected query result");
+
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
+
+            assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] displayName:string Ody publicMessage:string 8XG7KBGNvm2  ");
+
+            let issues = platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to have no issues");
+
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
+        }
+
+        #[test]
+        fn test_double_document_replace_no_change_different_height_same_epoch() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(433);
+
+            fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+            let dashpay_contract = dashpay.clone();
+
+            let profile = dashpay_contract
+                .document_type_for_name("profile")
+                .expect("expected a profile document type");
+
+            assert!(profile.documents_mutable());
+
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut document = profile
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            document.set("avatarUrl", "http://test.com/bob.jpg".into());
+
+            let mut altered_document = document.clone();
+
+            altered_document.increment_revision().unwrap();
+
+            let mut altered_document_2 = altered_document.clone();
+
+            altered_document_2.increment_revision().unwrap();
+
+            let documents_batch_create_transition =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document,
+                    profile,
+                    entropy.0,
+                    &key,
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition.clone()],
+                    &platform_state,
+                    platform_state.last_block_info(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let receiver_documents_sql_string = "select * from profile".to_string();
+
+            let query_documents = DriveDocumentQuery::from_sql_expr(
+                receiver_documents_sql_string.as_str(),
+                &dashpay,
+                Some(&platform.config.drive),
+            )
+            .expect("expected document query");
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(query_documents.clone(), None, false, None, None)
+                .expect("expected query result");
+
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
+
+            assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
+
+            fast_forward_to_block(&platform, 1_400_000_000, 901, 43, 1, false); //next epoch
+
+            let platform_state = platform.state.load();
+
+            let documents_batch_update_transition_1 =
+                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                    altered_document,
+                    profile,
+                    &key,
+                    3,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_update_serialized_transition_1 =
+                documents_batch_update_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let documents_batch_update_transition_2 =
+                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                    altered_document_2,
+                    profile,
+                    &key,
+                    4,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_update_serialized_transition_2 =
+                documents_batch_update_transition_2
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_update_serialized_transition_1.clone()],
+                    &platform_state,
+                    platform_state.last_block_info(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(processing_result.invalid_paid_count(), 0);
+
+            assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(query_documents.clone(), None, false, None, None)
+                .expect("expected query result");
+
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
+
+            assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
+
+            fast_forward_to_block(&platform, 1_600_000_000, 902, 44, 1, false); //next epoch
+
+            let platform_state = platform.state.load();
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_update_serialized_transition_2.clone()],
+                    &platform_state,
+                    platform_state.last_block_info(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(processing_result.invalid_paid_count(), 0);
+
+            assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(query_documents.clone(), None, false, None, None)
+                .expect("expected query result");
+
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
+
+            assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
+
+            let issues = platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to have no issues");
+
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
+        }
+
+        #[test]
+        fn test_double_document_replace_different_height_different_epoch() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(433);
+
+            fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+            let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+            let dashpay_contract = dashpay.clone();
+
+            let profile = dashpay_contract
+                .document_type_for_name("profile")
+                .expect("expected a profile document type");
+
+            assert!(profile.documents_mutable());
+
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut document = profile
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+
+            document.set("avatarUrl", "http://test.com/bob.jpg".into());
+
+            let mut altered_document = document.clone();
+
+            altered_document.increment_revision().unwrap();
+            altered_document.set("displayName", "Samuel".into());
+            altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
+
+            let mut altered_document_2 = altered_document.clone();
+
+            altered_document_2.increment_revision().unwrap();
+            altered_document_2.set("displayName", "Ody".into());
+            altered_document_2.set("avatarUrl", "http://test.com/drapes.jpg".into());
+
+            let documents_batch_create_transition =
+                DocumentsBatchTransition::new_document_creation_transition_from_document(
+                    document,
+                    profile,
+                    entropy.0,
+                    &key,
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_create_serialized_transition = documents_batch_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_create_serialized_transition.clone()],
+                    &platform_state,
+                    platform_state.last_block_info(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let receiver_documents_sql_string = "select * from profile".to_string();
+
+            let query_documents = DriveDocumentQuery::from_sql_expr(
+                receiver_documents_sql_string.as_str(),
+                &dashpay,
+                Some(&platform.config.drive),
+            )
+            .expect("expected document query");
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(query_documents.clone(), None, false, None, None)
+                .expect("expected query result");
+
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
+
+            assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-14 21:20:00 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/bob.[...(23)] displayName:string QBwBNNXXYCngB0er publicMessage:string 8XG7KBGNvm2  ");
+
+            fast_forward_to_block(&platform, 1_400_000_000, 901, 43, 1, false); //next epoch
+
+            let platform_state = platform.state.load();
+
+            let documents_batch_update_transition_1 =
+                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                    altered_document,
+                    profile,
+                    &key,
+                    3,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_update_serialized_transition_1 =
+                documents_batch_update_transition_1
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let documents_batch_update_transition_2 =
+                DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                    altered_document_2,
+                    profile,
+                    &key,
+                    4,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                    None,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let documents_batch_update_serialized_transition_2 =
+                documents_batch_update_transition_2
+                    .serialize_to_bytes()
+                    .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_update_serialized_transition_1.clone()],
+                    &platform_state,
+                    platform_state.last_block_info(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(processing_result.invalid_paid_count(), 0);
+
+            assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(query_documents.clone(), None, false, None, None)
+                .expect("expected query result");
+
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
+
+            assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-17 04:53:20 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/cat.[...(23)] displayName:string Samuel publicMessage:string 8XG7KBGNvm2  ");
+
+            fast_forward_to_block(&platform, 1_600_000_000, 905, 44, 2, true); //next epoch
+
+            let platform_state = platform.state.load();
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![documents_batch_update_serialized_transition_2.clone()],
+                    &platform_state,
+                    platform_state.last_block_info(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            assert_eq!(processing_result.invalid_paid_count(), 0);
+
+            assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
+            assert_eq!(processing_result.valid_count(), 1);
+
+            let query_sender_results = platform
+                .drive
+                .query_documents(query_documents.clone(), None, false, None, None)
+                .expect("expected query result");
+
+            let document = query_sender_results
+                .documents()
+                .first()
+                .expect("expected a document");
+
+            assert_eq!(document.to_string(), "v0 : id:GcviwUsEr9Ji4rCrnnsgmVAghNaVPDumsfcagvBbBy45 owner_id:CisQdz2ej7EwWv8JbetSXBNsV4xsf8QsSS8tqp4tEf7V created_at:1970-01-14 21:20:00 updated_at:1970-01-19 12:26:40 avatarFingerprint:bytes d7b0e2b357c10312 avatarHash:bytes32 YonaRoE0hMgat53AYt5LTlQlIkKLReGpB7xNAqJ5HM8= avatarUrl:string http://test.com/drap[...(26)] displayName:string Ody publicMessage:string 8XG7KBGNvm2  ");
+
+            let issues = platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to have no issues");
+
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
+        }
     }
 
     mod deletion_tests {
@@ -2083,6 +3443,23 @@ mod tests {
             assert_eq!(processing_result.valid_count(), 1);
 
             assert_eq!(processing_result.aggregated_fees().processing_fee, 1609340);
+
+            let issues = platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to have no issues");
+
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
 
         #[test]
@@ -2413,6 +3790,23 @@ mod tests {
             assert_eq!(processing_result.valid_count(), 1);
 
             assert_eq!(processing_result.aggregated_fees().processing_fee, 2762400);
+
+            let issues = platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to have no issues");
+
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
 
         #[test]
@@ -2814,6 +4208,23 @@ mod tests {
             assert_eq!(processing_result.aggregated_fees().storage_fee, 0); // There is no storage fee, as there are no indexes that will change
 
             assert_eq!(processing_result.aggregated_fees().processing_fee, 1985420);
+
+            let issues = platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to have no issues");
+
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
 
         #[test]
@@ -3024,6 +4435,23 @@ mod tests {
             assert_eq!(query_sender_results.documents().len(), 0);
 
             assert_eq!(query_receiver_results.documents().len(), 1);
+
+            let issues = platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to have no issues");
+
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
 
         #[test]
@@ -3625,6 +5053,23 @@ mod tests {
             assert_eq!(processing_result.valid_count(), 0);
 
             assert_eq!(processing_result.aggregated_fees().processing_fee, 571240);
+
+            let issues = platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to have no issues");
+
+            assert_eq!(
+                issues.len(),
+                0,
+                "issues are {}",
+                issues
+                    .iter()
+                    .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
         }
     }
 

@@ -118,18 +118,20 @@ impl IdentityGettersV0 for Identity {
         }
     }
 
-    /// Get first public key matching a purpose, security levels or key types
+    /// Get first public key matching a purpose, security levels, or key types, optionally allowing disabled keys
     fn get_first_public_key_matching(
         &self,
         purpose: Purpose,
         security_levels: HashSet<SecurityLevel>,
         key_types: HashSet<KeyType>,
+        allow_disabled: bool,
     ) -> Option<&IdentityPublicKey> {
         match self {
             Identity::V0(identity) => identity.public_keys.values().find(|key| {
                 key.purpose() == purpose
                     && security_levels.contains(&key.security_level())
                     && key_types.contains(&key.key_type())
+                    && (allow_disabled || !key.is_disabled())
             }),
         }
     }

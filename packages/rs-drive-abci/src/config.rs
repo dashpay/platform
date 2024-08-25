@@ -1,4 +1,5 @@
 use crate::logging::LogConfigs;
+use crate::utils::from_str_or_number;
 use crate::{abci::config::AbciConfig, error::Error};
 use bincode::{Decode, Encode};
 use dashcore_rpc::json::QuorumType;
@@ -111,18 +112,6 @@ pub struct ExecutionConfig {
         deserialize_with = "from_str_or_number"
     )]
     pub epoch_time_length_s: u64,
-}
-
-fn from_str_or_number<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: serde::Deserialize<'de> + std::str::FromStr,
-    <T as std::str::FromStr>::Err: std::fmt::Display,
-{
-    use serde::de::Error;
-
-    let s = String::deserialize(deserializer)?;
-    s.parse::<T>().map_err(Error::custom)
 }
 
 /// Configuration of Dash Platform.
@@ -821,6 +810,8 @@ pub struct PlatformTestConfig {
     pub block_commit_signature_verification: bool,
     /// Disable instant lock signature verification
     pub disable_instant_lock_signature_verification: bool,
+    /// Disable temporarily disabled contested documents validation
+    pub disable_contested_documents_is_allowed_validation: bool,
 }
 
 #[cfg(feature = "testing-config")]
@@ -832,6 +823,7 @@ impl PlatformTestConfig {
             store_platform_state: false,
             block_commit_signature_verification: false,
             disable_instant_lock_signature_verification: true,
+            disable_contested_documents_is_allowed_validation: true,
         }
     }
 }
@@ -844,6 +836,7 @@ impl Default for PlatformTestConfig {
             store_platform_state: true,
             block_commit_signature_verification: true,
             disable_instant_lock_signature_verification: false,
+            disable_contested_documents_is_allowed_validation: true,
         }
     }
 }

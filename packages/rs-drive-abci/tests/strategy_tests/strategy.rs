@@ -562,6 +562,8 @@ impl NetworkStrategy {
         let mut replaced = vec![];
         let mut transferred = vec![];
         let mut deleted = vec![];
+        let max_document_operation_count_without_inserts =
+            self.strategy.max_document_operation_count_without_inserts();
         for op in &self.strategy.operations {
             if op.frequency.check_hit(rng) {
                 let mut count = rng.gen_range(op.frequency.times_per_block_range.clone());
@@ -657,6 +659,7 @@ impl NetworkStrategy {
                                             KeyType::ECDSA_SECP256K1,
                                             KeyType::BLS12_381,
                                         ]),
+                                        false,
                                     )
                                     .expect("expected to get a signing key");
 
@@ -786,6 +789,7 @@ impl NetworkStrategy {
                                             KeyType::ECDSA_SECP256K1,
                                             KeyType::BLS12_381,
                                         ]),
+                                        false,
                                     )
                                     .expect("expected to get a signing key");
 
@@ -807,8 +811,11 @@ impl NetworkStrategy {
                         document_type,
                         contract,
                     }) => {
-                        let any_item_query =
-                            DriveDocumentQuery::any_item_query(contract, document_type.as_ref());
+                        let any_item_query = DriveDocumentQuery::all_items_query(
+                            contract,
+                            document_type.as_ref(),
+                            Some(max_document_operation_count_without_inserts),
+                        );
                         let mut items = platform
                             .drive
                             .query_documents(
@@ -852,6 +859,7 @@ impl NetworkStrategy {
                                     "the identity should already have a nonce for that contract",
                                 );
                             *identity_contract_nonce += 1;
+
                             let document_delete_transition: DocumentDeleteTransition =
                                 DocumentDeleteTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
@@ -949,6 +957,7 @@ impl NetworkStrategy {
                                     "the identity should already have a nonce for that contract",
                                 );
                             *identity_contract_nonce += 1;
+
                             let document_replace_transition: DocumentReplaceTransition =
                                 DocumentReplaceTransitionV0 {
                                     base: DocumentBaseTransitionV0 {
@@ -1293,6 +1302,7 @@ impl NetworkStrategy {
                                     Purpose::AUTHENTICATION,
                                     HashSet::from([SecurityLevel::CRITICAL]),
                                     HashSet::from([KeyType::ECDSA_SECP256K1]),
+                                    false,
                                 )
                                 .expect("Expected to get identity public key in ContractCreate");
                             let mut state_transition =
@@ -1652,6 +1662,7 @@ pub struct ChainExecutionParameters {
     pub current_votes: BTreeMap<Identifier, BTreeMap<Identifier, ResourceVoteChoice>>,
     pub start_time_ms: u64,
     pub current_time_ms: u64,
+    pub current_identities: Vec<Identity>,
 }
 
 fn create_signed_instant_asset_lock_proofs_for_identities(

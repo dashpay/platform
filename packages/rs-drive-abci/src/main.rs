@@ -333,7 +333,12 @@ fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
     let grovedb = drive::grovedb::GroveDb::open(db_path).expect("open grovedb");
     //todo: get platform version instead of taking latest
     let result = grovedb
-        .visualize_verify_grovedb(true, &PlatformVersion::latest().drive.grove_version)
+        .visualize_verify_grovedb(
+            None,
+            true,
+            true,
+            &PlatformVersion::latest().drive.grove_version,
+        )
         .map_err(|e| e.to_string());
 
     match result {
@@ -481,10 +486,9 @@ mod test {
         let cf_handle = db.cf_handle(cf).unwrap();
         let iter = db.iterator_cf(cf_handle, IteratorMode::Start);
 
-        // let iter = db.iterator(IteratorMode::Start);
         for (i, item) in iter.enumerate() {
             let (key, mut value) = item.unwrap();
-            // println!("{} = {}", hex::encode(&key), hex::encode(value));
+            // println!("{} = {}", hex::encode(&key), hex::encode(&value));
             tracing::trace!(cf, key=?hex::encode(&key), value=hex::encode(&value),"found item in rocksdb");
 
             if i == n {
@@ -509,8 +513,11 @@ mod test {
 
         corrupt_rocksdb_item(&db_path, "roots", 0);
 
-        let result = super::verify_grovedb(&db_path, true);
-        assert!(result.is_err());
+        let result_error = super::verify_grovedb(&db_path, true).expect_err("expected an error");
+        assert_eq!(
+            result_error,
+            "data corruption error: expected merk to contain value at key 0x08 for tree"
+        );
 
         println!("db path: {:?}", &db_path);
     }

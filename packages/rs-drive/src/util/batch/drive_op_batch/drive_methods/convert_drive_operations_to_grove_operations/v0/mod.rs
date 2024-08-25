@@ -7,7 +7,7 @@ use crate::util::batch::{DriveOperation, GroveDbOpBatch};
 use dpp::block::block_info::BlockInfo;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::GroveDbOp;
+use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::TransactionArg;
 use itertools::Itertools;
 
@@ -52,7 +52,7 @@ impl Drive {
                 ))
             })
             .flatten_ok()
-            .collect::<Result<Vec<GroveDbOp>, Error>>()?;
+            .collect::<Result<Vec<QualifiedGroveDbOp>, Error>>()?;
         Ok(GroveDbOpBatch::from_operations(ops))
     }
 }

@@ -509,6 +509,7 @@ pub fn create_identity_withdrawal_transition(
                 KeyType::BIP13_SCRIPT_HASH,
                 KeyType::EDDSA_25519_HASH160,
             ]),
+            false,
         )
         .expect("expected to get a signing key");
 
@@ -580,6 +581,7 @@ pub fn create_identity_credit_transfer_transition(
             Purpose::TRANSFER,
             HashSet::from([SecurityLevel::CRITICAL]),
             HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+            false,
         )
         .expect("expected to get a signing key");
 
