@@ -76,12 +76,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dashevo/dapi.git"
+    "url": "git+https://github.com/dashpay/platform.git"
   },
   "author": "",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/dashevo/dapi/issues"
+    "url": "https://github.com/dashpay/platform/issues"
   },
-  "homepage": "https://github.com/dashevo/dapi#readme"
+  "homepage": "https://github.com/dashpay/platform/tree/v1.1-dev/packages/dapi#readme"
 }

@@ -25,6 +25,14 @@
       "url": "https://github.com/shuplenkov"
     }
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashpay/platform.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dashpay/platform/issues"
+  },
+  "homepage": "https://github.com/dashpay/platform/tree/v1.1-dev/packages/js-dapi-client#readme",
   "dependencies": {
     "@dashevo/dapi-grpc": "workspace:*",
     "@dashevo/dash-spv": "workspace:*",

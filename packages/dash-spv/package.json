@@ -10,6 +10,14 @@
     "lint:fix": "eslint . --fix"
   },
   "author": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashpay/platform.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dashpay/platform/issues"
+  },
+  "homepage": "https://github.com/dashpay/platform/tree/v1.1-dev/packages/dash-spv#readme",
   "license": "MIT",
   "dependencies": {
     "@dashevo/dark-gravity-wave": "^1.1.1",

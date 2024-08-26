@@ -24,6 +24,14 @@
     ]
   },
   "author": "Dash Core Team",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashpay/platform.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dashpay/platform/issues"
+  },
+  "homepage": "https://github.com/dashpay/platform/tree/v1.1-dev/packages/wasm-dpp#readme",
   "contributors": [
     {
       "name": "Anton Suprunchuk",

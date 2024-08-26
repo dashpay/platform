@@ -8,6 +8,14 @@
     "test": "yarn run test:unit",
     "test:unit": "mocha 'test/unit/**/*.spec.js'"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dashpay/platform.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dashpay/platform/issues"
+  },
+  "homepage": "https://github.com/dashpay/platform/tree/v1.1-dev/packages/feature-flags-contract#readme",
   "contributors": [
     {
       "name": "Ivan Shumkov",

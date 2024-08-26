@@ -29,14 +29,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dashevo/DashJS.git"
+    "url": "git+https://github.com/dashpay/platform.git"
   },
+  "bugs": {
+    "url": "https://github.com/dashpay/platform/issues"
+  },
+  "homepage": "https://github.com/dashpay/platform/tree/v1.1-dev/packages/js-dash-sdk#readme",
   "author": "Dash Core Group <contact@dash.org>",
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/dashevo/DashJS/issues"
-  },
-  "homepage": "https://github.com/dashevo/DashJS#readme",
   "dependencies": {
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dapi-client": "workspace:*",
@@ -107,7 +107,7 @@
     "typescript": "^3.9.5",
     "url": "^0.11.3",
     "util": "^0.12.4",
-    "webpack": "^5.76.1",
-    "webpack-cli": "^4.9.1"
+    "webpack": "^5.93.0",
+    "webpack-cli": "^5.1.4"
   }
 }
