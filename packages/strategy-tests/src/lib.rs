@@ -484,12 +484,16 @@ impl Strategy {
         Vec<StateTransition>,
         Vec<FinalizeBlockOperation>,
         Vec<Identity>,
+        Vec<ProtocolError>,
     ) {
         let mut finalize_block_operations = vec![];
+        let mut state_transitions = vec![];
+        let mut identities = vec![];
+        let mut errors = vec![];
 
         // Get identity state transitions
         // Start identities are done on the 1st block, identity inserts are done on 3rd+ blocks
-        let identity_state_transitions = match self.identity_state_transitions_for_block(
+        let identity_state_transition_results = self.identity_state_transitions_for_block(
             block_info,
             self.start_identities.starting_balances,
             signer,
@@ -497,17 +501,21 @@ impl Strategy {
             asset_lock_proofs,
             config,
             platform_version,
-        ) {
-            Ok(transitions) => transitions,
-            Err(e) => {
-                tracing::error!("identity_state_transitions_for_block error: {}", e);
-                return (vec![], finalize_block_operations, vec![]);
-            }
-        };
+        );
 
-        // Create state_transitions vec and identities vec based on identity_state_transitions outcome
-        let (identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
-            identity_state_transitions.into_iter().unzip();
+        // Process each result in the vector of results
+        for result in identity_state_transition_results {
+            match result {
+                Ok((identity, state_transition)) => {
+                    identities.push(identity);
+                    state_transitions.push(state_transition);
+                }
+                Err(e) => {
+                    tracing::error!("Error in identity_state_transitions_for_block: {:?}", e);
+                    errors.push(e);
+                }
+            }
+        }
 
         // Add initial contracts for contracts_with_updates on 2nd block of strategy
         if block_info.height == config.start_block_height + 1 {
@@ -552,7 +560,12 @@ impl Strategy {
             state_transitions.append(&mut initial_contract_update_state_transitions);
         }
 
-        (state_transitions, finalize_block_operations, identities)
+        (
+            state_transitions,
+            finalize_block_operations,
+            identities,
+            errors,
+        )
     }
 
     /// Processes strategy operations to generate state transitions specific to operations for a given block.
@@ -1521,6 +1534,7 @@ impl Strategy {
     ///
     /// # Parameters
     /// - `block_info`: Provides details about the current block, such as height, to guide the generation of state transitions.
+    /// - `amount`: The amount of funds to associate with each identity creation, influencing the identity state.
     /// - `signer`: A mutable reference to a signer instance, used for signing the state transitions of identities.
     /// - `rng`: A mutable reference to a random number generator, for creating randomized elements where necessary.
     /// - `asset_lock_proofs`: A vector of asset lock proofs and associated private keys.
@@ -1528,7 +1542,11 @@ impl Strategy {
     /// - `platform_version`: Specifies the version of the Dash Platform, ensuring compatibility with its features and behaviors.
     ///
     /// # Returns
-    /// A vector of tuples, each containing an `Identity` and its associated `StateTransition`, representing the actions taken by or on behalf of that identity within the block.
+    /// A vector of `Result` values, each either containing:
+    /// - `Ok((Identity, StateTransition))`: A tuple representing a successfully created identity and its corresponding state transition.
+    /// - `Err(ProtocolError)`: An error encountered during the creation of an identity or its state transition.
+    ///
+    /// This return type allows for partial success; even if some state transitions fail, the successful ones will be included in the result.
     ///
     /// # Examples
     /// ```ignore
@@ -1536,12 +1554,24 @@ impl Strategy {
     /// // `asset_lock_proofs`, `config`, and `platform_version` properly initialized:
     /// let identity_transitions = strategy.identity_state_transitions_for_block(
     ///     &block_info,
+    ///     amount,
     ///     &mut signer,
     ///     &mut rng,
-    ///     &mut create_asset_lock,
+    ///     &mut asset_lock_proofs,
     ///     &config,
     ///     &platform_version,
-    /// ).expect("Expected to generate identity state transitions without error");
+    /// );
+    ///
+    /// for result in identity_transitions {
+    ///     match result {
+    ///         Ok((identity, state_transition)) => {
+    ///             // Handle successful transition
+    ///         }
+    ///         Err(e) => {
+    ///             // Handle error
+    ///         }
+    ///     }
+    /// }
     /// ```
     ///
     /// # Notes
@@ -1556,7 +1586,7 @@ impl Strategy {
         asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
+    ) -> Vec<Result<(Identity, StateTransition), ProtocolError>> {
         let mut state_transitions = vec![];
 
         // Add start_identities
@@ -1574,19 +1604,8 @@ impl Strategy {
                 platform_version,
             );
 
-            // Process the results
-            for transition_result in new_transitions {
-                match transition_result {
-                    Ok((identity, state_transition)) => {
-                        state_transitions.push((identity, state_transition));
-                    }
-                    Err(e) => {
-                        // Handle or log the error and return it if needed
-                        tracing::error!("Error creating start identity state transition: {:?}", e);
-                        return Err(e);
-                    }
-                }
-            }
+            // Extend the state_transitions with the results
+            state_transitions.extend(new_transitions);
         }
 
         // Add identities_inserts
@@ -1607,26 +1626,12 @@ impl Strategy {
                     platform_version,
                 );
 
-                // Process the results
-                for transition_result in new_transitions {
-                    match transition_result {
-                        Ok((identity, state_transition)) => {
-                            state_transitions.push((identity, state_transition));
-                        }
-                        Err(e) => {
-                            // Handle or log the error and return it if needed
-                            tracing::error!(
-                                "Error creating identity insert state transition: {:?}",
-                                e
-                            );
-                            return Err(e);
-                        }
-                    }
-                }
+                // Extend the state_transitions with the results
+                state_transitions.extend(new_transitions);
             }
         }
 
-        Ok(state_transitions)
+        state_transitions
     }
 
     /// Initializes contracts and generates their creation state transitions based on the `contracts_with_updates` field.
