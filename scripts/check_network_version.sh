@@ -38,6 +38,7 @@ function load_masternodes_json() {
 
 function grpc_core {
     docker run \
+        --rm \
         -v "${REPO}:/repo" \
         fullstorydev/grpcurl:latest \
         -import-path "/repo/packages/dapi-grpc/protos/core/v0" \
@@ -49,6 +50,7 @@ function grpc_core {
 
 function grpc_platform {
     docker run \
+        --rm \
         -v "${REPO}:/repo" \
         fullstorydev/grpcurl:latest \
         -import-path "/repo/packages/dapi-grpc/protos/platform/v0" \
