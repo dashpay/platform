@@ -113,6 +113,9 @@ import writeConfigTemplatesFactory from './templates/writeConfigTemplatesFactory
 import importCoreDataTaskFactory from './listr/tasks/setup/regular/importCoreDataTaskFactory.js';
 import verifySystemRequirementsTaskFactory
   from './listr/tasks/setup/regular/verifySystemRequirementsTaskFactory.js';
+import analyseSamplesTaskFactory from './listr/tasks/doctor/analyseSamplesTaskFactory.js';
+import collectSamplesTaskFactory from './listr/tasks/doctor/collectSamplesTaskFactory.js';
+import prescriptionTaskFactory from './listr/tasks/doctor/prescriptionTaskFactory.js';
 
 /**
  * @param {Object} [options]
@@ -306,6 +309,9 @@ export default async function createDIContainer(options = {}) {
     importCoreDataTask: asFunction(importCoreDataTaskFactory).singleton(),
     verifySystemRequirementsTask: asFunction(verifySystemRequirementsTaskFactory)
       .singleton(),
+    analyseSamplesTask: asFunction(analyseSamplesTaskFactory).singleton(),
+    collectSamplesTask: asFunction(collectSamplesTaskFactory).singleton(),
+    prescriptionTask: asFunction(prescriptionTaskFactory).singleton(),
   });
 
   /**

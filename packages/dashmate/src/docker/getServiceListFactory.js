@@ -13,7 +13,7 @@ export default function getServiceListFactory(generateEnvs, getConfigProfiles) {
   /**
    * Returns list of services and corresponding docker images from the config
    *
-   * @typedef {getServiceList}
+   * @typedef {function} getServiceList
    * @param {Config} config
    * @return {Object[]}
    */
