@@ -17,7 +17,7 @@ concurrency:
 jobs:
   release-npm:
     name: Release NPM packages
-    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
     timeout-minutes: 15
     if: github.event_name != 'workflow_dispatch'
     steps:
@@ -167,10 +167,62 @@ jobs:
       image_name: dashmate-helper
       target: dashmate-helper
 
+  release-proto-descriptor:
+    name: Release Proto Descriptor for Gateway JSON mapping
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out Platform repo
+        uses: actions/checkout@v4
+        with:
+          path: platform
+          sparse-checkout: "packages/dapi-grpc/protos"
+
+      - name: Check out Google APIs repo
+        uses: actions/checkout@v4
+        with:
+          repository: googleapis/googleapis
+          path: googleapis
+
+      - name: Install protoc
+        if: steps.check-protoc.outputs.protoc_installed == 'false'
+        id: deps-protoc
+        shell: bash
+        run: |
+          curl -Lo /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v25.2/protoc-27.3-linux-x86_64.zip"
+          unzip -o /tmp/protoc.zip -d ${HOME}/.local
+          echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
+          export PATH="${PATH}:${HOME}/.local/bin"
+
+      - name: Generate Core proto descriptor
+        run: |
+          mkdir -p pb && \
+          protoc \
+            -Igoogleapis -Iplatform/packages/dapi-grpc/protos --include_imports --include_source_info \
+            --descriptor_set_out=pb/core.pb \
+            platform/packages/dapi-grpc/protos/core/v0/core.proto
+
+      - name: Generate Platform proto descriptor
+        run: |
+          mkdir -p pb && \
+          protoc \
+            -Igoogleapis -Iplatform/packages/dapi-grpc/protos --include_imports --include_source_info \
+            --descriptor_set_out=pb/platform.pb \
+            platform/packages/dapi-grpc/protos/platform/v0/platform.proto
+
+      - name: Upload proto descriptor
+        uses: actions/upload-artifact@v4
+        with:
+          name: proto-descriptors
+          path: pb/*.pb
+          if-no-files-found: error
+
   release-dashmate-packages:
     name: Release Dashmate packages
     runs-on: ${{ matrix.os }}
-    needs: release-npm
+    needs:
+      - release-npm
+      - release-proto-descriptor
     permissions:
       id-token: write # s3 cache
       contents: write # update release artifacts
@@ -190,7 +242,7 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
         with:
-            fetch-depth: 0
+          fetch-depth: 0
 
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
@@ -198,6 +250,11 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Retrieve proto descriptors
+        uses: actions/download-artifact@v4
+        with:
+          name: proto-descriptors
 
       - name: Retrieve JS build artifacts
         uses: strophy/actions-cache@opendal-update
