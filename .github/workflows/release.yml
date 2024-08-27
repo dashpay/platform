@@ -184,7 +184,6 @@ jobs:
           path: googleapis
 
       - name: Install protoc
-        if: steps.check-protoc.outputs.protoc_installed == 'false'
         id: deps-protoc
         shell: bash
         run: |
