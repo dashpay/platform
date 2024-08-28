@@ -245,6 +245,8 @@ mod tests {
             .expect("expected to get key pair");
 
         signer.add_key(master_key.clone(), master_private_key.clone());
+        
+        println!("master key bytes {}", hex::encode(master_key.clone().serialize_to_bytes().unwrap()));
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -254,6 +256,8 @@ mod tests {
         .expect("expected to get key pair");
 
         signer.add_key(key.clone(), private_key.clone());
+
+        println!("other key bytes {}", hex::encode(key.clone().serialize_to_bytes().unwrap()));
 
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(&mut rng, platform_version)
@@ -268,6 +272,8 @@ mod tests {
             .create_identifier()
             .expect("expected an identifier");
 
+        println!("identifier bytes {}", hex::encode(identifier.as_bytes()));
+
         let identity: Identity = IdentityV0 {
             id: identifier,
             public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
@@ -275,6 +281,8 @@ mod tests {
             revision: 0,
         }
         .into();
+
+        println!("identity {:?}", identity);
 
         let identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer(
@@ -291,6 +299,8 @@ mod tests {
         let identity_create_serialized_transition = identity_create_transition
             .serialize_to_bytes()
             .expect("serialized state transition");
+        
+        println!("{}", hex::encode(&identity_create_serialized_transition));
 
         let transaction = platform.drive.grove.start_transaction();
 

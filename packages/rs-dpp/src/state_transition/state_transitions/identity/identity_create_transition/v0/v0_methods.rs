@@ -62,6 +62,8 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
         let state_transition: StateTransition = identity_create_transition.clone().into();
 
         let key_signable_bytes = state_transition.signable_bytes()?;
+        
+        println!("key signable bytes {}", hex::encode(&key_signable_bytes));
 
         identity_create_transition
             .public_keys
@@ -76,6 +78,11 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
             })?;
 
         let mut state_transition: StateTransition = identity_create_transition.into();
+
+        println!("asset lock private key {}", hex::encode(&asset_lock_proof_private_key));
+
+
+        println!("state transition signable bytes {}", hex::encode(&state_transition.signable_bytes().unwrap()));
 
         state_transition.sign_by_private_key(asset_lock_proof_private_key, ECDSA_HASH160, bls)?;
 
