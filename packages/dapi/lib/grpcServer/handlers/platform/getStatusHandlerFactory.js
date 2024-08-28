@@ -26,11 +26,12 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
 
   /**
    * @typedef {Function} getStatusHandler
-   * @param {Object} call
    * @return {Promise<GetStatusResponse>}
    */
   function getStatusHandler() {
-    if (cachedResponse) {
+    if (cachedResponse !== null) {
+      cachedResponse.getVersion().getTime().setLocal(Date.now());
+
       return cachedResponse;
     }
 
@@ -47,15 +48,13 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
       tenderdashStatusResponse,
       tenderdashNetInfoResponse,
     ] = Promise.allSettled(promises)
-      .then((results) => {
-        return results.map((result) => {
-          if (result.status === 'fulfilled') {
-            return result.value;
-          }
+      .then((results) => results.map((result) => {
+        if (result.status === 'fulfilled') {
+          return result.value;
+        }
 
-          return {};
-        });
-      });
+        return {};
+      }));
 
     let tenderdashStatus = {};
     if (tenderdashStatusResponse.result) {
@@ -64,7 +63,7 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
 
     let tenderdashNetInfo = {};
     if (tenderdashNetInfoResponse.result) {
-      tenderdashNetInfo = tenderdashNetInfoResponse.result
+      tenderdashNetInfo = tenderdashNetInfoResponse.result;
     }
 
     const v0 = new GetStatusResponse
@@ -80,11 +79,11 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
 
     if (tenderdashStatus.node_info?.protocol_version) {
       versionProtocolTenderdash.setBlock(
-        parseInt(tenderdashStatus.node_info.protocol_version.block),
+        Number(tenderdashStatus.node_info.protocol_version.block),
       );
 
       versionProtocolTenderdash.setP2p(
-        parseInt(tenderdashStatus.node_info.protocol_version.p2p),
+        Number(tenderdashStatus.node_info.protocol_version.p2p),
       );
     }
 
@@ -107,9 +106,11 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
 
     versionSoftware.setDapi(dapiSoftwareVersion);
     if (driveStatus.getVersion()?.getSoftware()?.getDrive()) {
-      versionSoftware.setDrive(driveStatus.getVersion()
-        ?.getSoftware()
-        ?.getDrive());
+      versionSoftware.setDrive(
+        driveStatus.getVersion()
+          .getSoftware()
+          .getDrive(),
+      );
     }
     if (tenderdashStatus.node_info?.version) {
       versionSoftware.setTenderdash(tenderdashStatus.node_info?.version);
@@ -153,13 +154,15 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
 
       const stateSync = new GetStatusResponse.GetStatusResponseV0.StateSync();
       stateSync.setTotalSyncedTime(Number(tenderdashStatus.sync_info.total_synced_time));
-      stateSync.setRemainingTime(value: number);
-      stateSync.setTotalSnapshots(value: number);
-      stateSync.setChunkProcessAvgTime(value: number);
-      stateSync.setSnapshotHeight(value: number);
-      stateSync.setSnapshotChunksCount(value: number);
-      stateSync.setBackfilledBlocks(value: number);
-      stateSync.setBackfillBlocksTotal(value: number);
+      stateSync.setRemainingTime(Number(tenderdashStatus.sync_info.remaining_time));
+      stateSync.setTotalSnapshots(Number(tenderdashStatus.sync_info.total_snapshots));
+      stateSync.setChunkProcessAvgTime(
+        Number(tenderdashStatus.sync_info.chunk_processing_avg_time),
+      );
+      stateSync.setSnapshotHeight(Number(tenderdashStatus.sync_info.snapshot_height));
+      stateSync.setSnapshotChunksCount(Number(tenderdashStatus.sync_info.snapshot_chunks_count));
+      stateSync.setBackfilledBlocks(Number(tenderdashStatus.sync_info.backfilled_blocks));
+      stateSync.setBackfillBlocksTotal(Number(tenderdashStatus.sync_info.backfill_blocks_total));
     }
 
     // Network
@@ -176,6 +179,19 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
 
       v0.setNetwork(network);
     }
+
+    // Time
+
+    const time = new GetStatusResponse.GetStatusResponseV0.Time();
+
+    if (driveStatus.getTime()) {
+      time.setBlock(driveStatus?.getTime()?.getBlock());
+      time.setEpoch(driveStatus?.getTime()?.getEpoch());
+    }
+
+    time.setLocal(Date.now());
+
+    v0.setTime(time);
 
     cachedResponse = new GetStatusResponse();
     cachedResponse.setVersion(v0);

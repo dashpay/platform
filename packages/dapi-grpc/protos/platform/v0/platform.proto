@@ -1022,13 +1022,13 @@ message GetStatusResponse {
 
       message Protocol {
         message Tenderdash {
-          int32 p2p = 1;
-          int32 block = 2;
+          uint32 p2p = 1;
+          uint32 block = 2;
         }
 
         message Drive {
-          int32 max = 3;
-          int32 current = 4;
+          uint32 max = 3;
+          uint32 current = 4;
         }
 
         Tenderdash tenderdash = 1;
