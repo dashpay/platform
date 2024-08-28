@@ -203,7 +203,7 @@ mod tests {
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
     use dpp::native_bls::NativeBlsModule;
     use dpp::prelude::Identifier;
-    use dpp::serialization::PlatformSerializable;
+    use dpp::serialization::{PlatformSerializable, ValueConvertible};
     use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
     use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
     use dpp::state_transition::StateTransition;
@@ -247,6 +247,8 @@ mod tests {
         signer.add_key(master_key.clone(), master_private_key.clone());
         
         println!("master key bytes {}", hex::encode(master_key.clone().serialize_to_bytes().unwrap()));
+        println!("master key {}", master_key.clone().into_object().unwrap().try_into_validating_json().unwrap());
+        println!("master private key {}", hex::encode(&master_private_key));
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -258,6 +260,8 @@ mod tests {
         signer.add_key(key.clone(), private_key.clone());
 
         println!("other key bytes {}", hex::encode(key.clone().serialize_to_bytes().unwrap()));
+        println!("other key {}", key.clone().into_object().unwrap().try_into_validating_json().unwrap());
+        println!("other private key {}", hex::encode(&private_key));
 
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(&mut rng, platform_version)
@@ -267,6 +271,8 @@ mod tests {
             Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
             None,
         );
+
+        println!("asset_lock_proof {}", asset_lock_proof.to_raw_object().unwrap().try_into_validating_json().unwrap());
 
         let identifier = asset_lock_proof
             .create_identifier()
@@ -282,7 +288,7 @@ mod tests {
         }
         .into();
 
-        println!("identity {:?}", identity);
+        println!("identity {}", identity.to_object().unwrap().try_into_validating_json().unwrap());
 
         let identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer(
@@ -295,6 +301,8 @@ mod tests {
                 platform_version,
             )
             .expect("expected an identity create transition");
+
+        println!("identity_create_transition {:?}", identity_create_transition);
 
         let identity_create_serialized_transition = identity_create_transition
             .serialize_to_bytes()
