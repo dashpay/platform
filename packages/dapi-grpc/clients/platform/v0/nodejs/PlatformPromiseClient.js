@@ -743,7 +743,7 @@ class PlatformPromiseClient {
       throw new Error('metadata must be an object');
     }
 
-    return this.client.getTotalCreditsInPlatform(
+    return this.client.getStatus(
       getStatusRequest,
       convertObjectToMetadata(metadata),
       {

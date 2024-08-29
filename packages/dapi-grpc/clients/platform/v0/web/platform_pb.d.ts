@@ -5163,6 +5163,9 @@ export namespace GetStatusResponse {
       getBlock(): number;
       setBlock(value: number): void;
 
+      getGenesis(): number;
+      setGenesis(value: number): void;
+
       getEpoch(): number;
       setEpoch(value: number): void;
 
@@ -5180,6 +5183,7 @@ export namespace GetStatusResponse {
       export type AsObject = {
         local: number,
         block: number,
+        genesis: number,
         epoch: number,
       }
     }
@@ -5231,9 +5235,6 @@ export namespace GetStatusResponse {
       getLatestBlockHeight(): number;
       setLatestBlockHeight(value: number): void;
 
-      getLatestBlockTime(): string;
-      setLatestBlockTime(value: string): void;
-
       getEarliestBlockHash(): Uint8Array | string;
       getEarliestBlockHash_asU8(): Uint8Array;
       getEarliestBlockHash_asB64(): string;
@@ -5246,9 +5247,6 @@ export namespace GetStatusResponse {
 
       getEarliestBlockHeight(): number;
       setEarliestBlockHeight(value: number): void;
-
-      getEarliestBlockTime(): string;
-      setEarliestBlockTime(value: string): void;
 
       getMaxPeerBlockHeight(): number;
       setMaxPeerBlockHeight(value: number): void;
@@ -5272,11 +5270,9 @@ export namespace GetStatusResponse {
         latestBlockHash: Uint8Array | string,
         latestAppHash: Uint8Array | string,
         latestBlockHeight: number,
-        latestBlockTime: string,
         earliestBlockHash: Uint8Array | string,
         earliestAppHash: Uint8Array | string,
         earliestBlockHeight: number,
-        earliestBlockTime: string,
         maxPeerBlockHeight: number,
         coreChainLockedHeight: number,
       }

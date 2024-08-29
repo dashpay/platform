@@ -28,7 +28,7 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
    * @typedef {Function} getStatusHandler
    * @return {Promise<GetStatusResponse>}
    */
-  function getStatusHandler() {
+  async function getStatusHandler() {
     if (cachedResponse !== null) {
       cachedResponse.getVersion().getTime().setLocal(Date.now());
 
@@ -47,7 +47,7 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
       driveStatus,
       tenderdashStatusResponse,
       tenderdashNetInfoResponse,
-    ] = Promise.allSettled(promises)
+    ] = await Promise.allSettled(promises)
       .then((results) => results.map((result) => {
         if (result.status === 'fulfilled') {
           return result.value;
@@ -194,7 +194,7 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
     v0.setTime(time);
 
     cachedResponse = new GetStatusResponse();
-    cachedResponse.setVersion(v0);
+    cachedResponse.setV0(v0);
 
     return cachedResponse;
   }

@@ -39700,9 +39700,9 @@ $root.org = (function() {
                                             if (!writer)
                                                 writer = $Writer.create();
                                             if (message.p2p != null && Object.hasOwnProperty.call(message, "p2p"))
-                                                writer.uint32(/* id 1, wireType 0 =*/8).int32(message.p2p);
+                                                writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.p2p);
                                             if (message.block != null && Object.hasOwnProperty.call(message, "block"))
-                                                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.block);
+                                                writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.block);
                                             return writer;
                                         };
 
@@ -39738,10 +39738,10 @@ $root.org = (function() {
                                                 var tag = reader.uint32();
                                                 switch (tag >>> 3) {
                                                 case 1:
-                                                    message.p2p = reader.int32();
+                                                    message.p2p = reader.uint32();
                                                     break;
                                                 case 2:
-                                                    message.block = reader.int32();
+                                                    message.block = reader.uint32();
                                                     break;
                                                 default:
                                                     reader.skipType(tag & 7);
@@ -39800,9 +39800,9 @@ $root.org = (function() {
                                                 return object;
                                             var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash();
                                             if (object.p2p != null)
-                                                message.p2p = object.p2p | 0;
+                                                message.p2p = object.p2p >>> 0;
                                             if (object.block != null)
-                                                message.block = object.block | 0;
+                                                message.block = object.block >>> 0;
                                             return message;
                                         };
 
@@ -39910,9 +39910,9 @@ $root.org = (function() {
                                             if (!writer)
                                                 writer = $Writer.create();
                                             if (message.max != null && Object.hasOwnProperty.call(message, "max"))
-                                                writer.uint32(/* id 3, wireType 0 =*/24).int32(message.max);
+                                                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.max);
                                             if (message.current != null && Object.hasOwnProperty.call(message, "current"))
-                                                writer.uint32(/* id 4, wireType 0 =*/32).int32(message.current);
+                                                writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.current);
                                             return writer;
                                         };
 
@@ -39948,10 +39948,10 @@ $root.org = (function() {
                                                 var tag = reader.uint32();
                                                 switch (tag >>> 3) {
                                                 case 3:
-                                                    message.max = reader.int32();
+                                                    message.max = reader.uint32();
                                                     break;
                                                 case 4:
-                                                    message.current = reader.int32();
+                                                    message.current = reader.uint32();
                                                     break;
                                                 default:
                                                     reader.skipType(tag & 7);
@@ -40010,9 +40010,9 @@ $root.org = (function() {
                                                 return object;
                                             var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive();
                                             if (object.max != null)
-                                                message.max = object.max | 0;
+                                                message.max = object.max >>> 0;
                                             if (object.current != null)
-                                                message.current = object.current | 0;
+                                                message.current = object.current >>> 0;
                                             return message;
                                         };
 
@@ -40068,6 +40068,7 @@ $root.org = (function() {
                                  * @interface ITime
                                  * @property {number|Long|null} [local] Time local
                                  * @property {number|Long|null} [block] Time block
+                                 * @property {number|Long|null} [genesis] Time genesis
                                  * @property {number|null} [epoch] Time epoch
                                  */
 
@@ -40101,6 +40102,14 @@ $root.org = (function() {
                                  * @instance
                                  */
                                 Time.prototype.block = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Time genesis.
+                                 * @member {number|Long} genesis
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @instance
+                                 */
+                                Time.prototype.genesis = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                                 /**
                                  * Time epoch.
@@ -40138,8 +40147,10 @@ $root.org = (function() {
                                         writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.local);
                                     if (message.block != null && Object.hasOwnProperty.call(message, "block"))
                                         writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.block);
+                                    if (message.genesis != null && Object.hasOwnProperty.call(message, "genesis"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.genesis);
                                     if (message.epoch != null && Object.hasOwnProperty.call(message, "epoch"))
-                                        writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.epoch);
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.epoch);
                                     return writer;
                                 };
 
@@ -40181,6 +40192,9 @@ $root.org = (function() {
                                             message.block = reader.uint64();
                                             break;
                                         case 3:
+                                            message.genesis = reader.uint64();
+                                            break;
+                                        case 4:
                                             message.epoch = reader.uint32();
                                             break;
                                         default:
@@ -40224,6 +40238,9 @@ $root.org = (function() {
                                     if (message.block != null && message.hasOwnProperty("block"))
                                         if (!$util.isInteger(message.block) && !(message.block && $util.isInteger(message.block.low) && $util.isInteger(message.block.high)))
                                             return "block: integer|Long expected";
+                                    if (message.genesis != null && message.hasOwnProperty("genesis"))
+                                        if (!$util.isInteger(message.genesis) && !(message.genesis && $util.isInteger(message.genesis.low) && $util.isInteger(message.genesis.high)))
+                                            return "genesis: integer|Long expected";
                                     if (message.epoch != null && message.hasOwnProperty("epoch"))
                                         if (!$util.isInteger(message.epoch))
                                             return "epoch: integer expected";
@@ -40260,6 +40277,15 @@ $root.org = (function() {
                                             message.block = object.block;
                                         else if (typeof object.block === "object")
                                             message.block = new $util.LongBits(object.block.low >>> 0, object.block.high >>> 0).toNumber(true);
+                                    if (object.genesis != null)
+                                        if ($util.Long)
+                                            (message.genesis = $util.Long.fromValue(object.genesis)).unsigned = true;
+                                        else if (typeof object.genesis === "string")
+                                            message.genesis = parseInt(object.genesis, 10);
+                                        else if (typeof object.genesis === "number")
+                                            message.genesis = object.genesis;
+                                        else if (typeof object.genesis === "object")
+                                            message.genesis = new $util.LongBits(object.genesis.low >>> 0, object.genesis.high >>> 0).toNumber(true);
                                     if (object.epoch != null)
                                         message.epoch = object.epoch >>> 0;
                                     return message;
@@ -40289,6 +40315,11 @@ $root.org = (function() {
                                             object.block = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                         } else
                                             object.block = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.genesis = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.genesis = options.longs === String ? "0" : 0;
                                         object.epoch = 0;
                                     }
                                     if (message.local != null && message.hasOwnProperty("local"))
@@ -40301,6 +40332,11 @@ $root.org = (function() {
                                             object.block = options.longs === String ? String(message.block) : message.block;
                                         else
                                             object.block = options.longs === String ? $util.Long.prototype.toString.call(message.block) : options.longs === Number ? new $util.LongBits(message.block.low >>> 0, message.block.high >>> 0).toNumber(true) : message.block;
+                                    if (message.genesis != null && message.hasOwnProperty("genesis"))
+                                        if (typeof message.genesis === "number")
+                                            object.genesis = options.longs === String ? String(message.genesis) : message.genesis;
+                                        else
+                                            object.genesis = options.longs === String ? $util.Long.prototype.toString.call(message.genesis) : options.longs === Number ? new $util.LongBits(message.genesis.low >>> 0, message.genesis.high >>> 0).toNumber(true) : message.genesis;
                                     if (message.epoch != null && message.hasOwnProperty("epoch"))
                                         object.epoch = message.epoch;
                                     return object;
@@ -40558,11 +40594,9 @@ $root.org = (function() {
                                  * @property {Uint8Array|null} [latestBlockHash] Chain latestBlockHash
                                  * @property {Uint8Array|null} [latestAppHash] Chain latestAppHash
                                  * @property {number|Long|null} [latestBlockHeight] Chain latestBlockHeight
-                                 * @property {string|null} [latestBlockTime] Chain latestBlockTime
                                  * @property {Uint8Array|null} [earliestBlockHash] Chain earliestBlockHash
                                  * @property {Uint8Array|null} [earliestAppHash] Chain earliestAppHash
                                  * @property {number|Long|null} [earliestBlockHeight] Chain earliestBlockHeight
-                                 * @property {string|null} [earliestBlockTime] Chain earliestBlockTime
                                  * @property {number|Long|null} [maxPeerBlockHeight] Chain maxPeerBlockHeight
                                  * @property {number|null} [coreChainLockedHeight] Chain coreChainLockedHeight
                                  */
@@ -40615,14 +40649,6 @@ $root.org = (function() {
                                 Chain.prototype.latestBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                                 /**
-                                 * Chain latestBlockTime.
-                                 * @member {string} latestBlockTime
-                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
-                                 * @instance
-                                 */
-                                Chain.prototype.latestBlockTime = "";
-
-                                /**
                                  * Chain earliestBlockHash.
                                  * @member {Uint8Array} earliestBlockHash
                                  * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
@@ -40645,14 +40671,6 @@ $root.org = (function() {
                                  * @instance
                                  */
                                 Chain.prototype.earliestBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
-
-                                /**
-                                 * Chain earliestBlockTime.
-                                 * @member {string} earliestBlockTime
-                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
-                                 * @instance
-                                 */
-                                Chain.prototype.earliestBlockTime = "";
 
                                 /**
                                  * Chain maxPeerBlockHeight.
@@ -40702,20 +40720,16 @@ $root.org = (function() {
                                         writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.latestAppHash);
                                     if (message.latestBlockHeight != null && Object.hasOwnProperty.call(message, "latestBlockHeight"))
                                         writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.latestBlockHeight);
-                                    if (message.latestBlockTime != null && Object.hasOwnProperty.call(message, "latestBlockTime"))
-                                        writer.uint32(/* id 5, wireType 2 =*/42).string(message.latestBlockTime);
                                     if (message.earliestBlockHash != null && Object.hasOwnProperty.call(message, "earliestBlockHash"))
-                                        writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.earliestBlockHash);
+                                        writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.earliestBlockHash);
                                     if (message.earliestAppHash != null && Object.hasOwnProperty.call(message, "earliestAppHash"))
-                                        writer.uint32(/* id 7, wireType 2 =*/58).bytes(message.earliestAppHash);
+                                        writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.earliestAppHash);
                                     if (message.earliestBlockHeight != null && Object.hasOwnProperty.call(message, "earliestBlockHeight"))
-                                        writer.uint32(/* id 8, wireType 0 =*/64).uint64(message.earliestBlockHeight);
-                                    if (message.earliestBlockTime != null && Object.hasOwnProperty.call(message, "earliestBlockTime"))
-                                        writer.uint32(/* id 9, wireType 2 =*/74).string(message.earliestBlockTime);
+                                        writer.uint32(/* id 7, wireType 0 =*/56).uint64(message.earliestBlockHeight);
                                     if (message.maxPeerBlockHeight != null && Object.hasOwnProperty.call(message, "maxPeerBlockHeight"))
-                                        writer.uint32(/* id 10, wireType 0 =*/80).uint64(message.maxPeerBlockHeight);
+                                        writer.uint32(/* id 9, wireType 0 =*/72).uint64(message.maxPeerBlockHeight);
                                     if (message.coreChainLockedHeight != null && Object.hasOwnProperty.call(message, "coreChainLockedHeight"))
-                                        writer.uint32(/* id 11, wireType 0 =*/88).uint32(message.coreChainLockedHeight);
+                                        writer.uint32(/* id 10, wireType 0 =*/80).uint32(message.coreChainLockedHeight);
                                     return writer;
                                 };
 
@@ -40763,24 +40777,18 @@ $root.org = (function() {
                                             message.latestBlockHeight = reader.uint64();
                                             break;
                                         case 5:
-                                            message.latestBlockTime = reader.string();
-                                            break;
-                                        case 6:
                                             message.earliestBlockHash = reader.bytes();
                                             break;
-                                        case 7:
+                                        case 6:
                                             message.earliestAppHash = reader.bytes();
                                             break;
-                                        case 8:
+                                        case 7:
                                             message.earliestBlockHeight = reader.uint64();
                                             break;
                                         case 9:
-                                            message.earliestBlockTime = reader.string();
-                                            break;
-                                        case 10:
                                             message.maxPeerBlockHeight = reader.uint64();
                                             break;
-                                        case 11:
+                                        case 10:
                                             message.coreChainLockedHeight = reader.uint32();
                                             break;
                                         default:
@@ -40830,9 +40838,6 @@ $root.org = (function() {
                                     if (message.latestBlockHeight != null && message.hasOwnProperty("latestBlockHeight"))
                                         if (!$util.isInteger(message.latestBlockHeight) && !(message.latestBlockHeight && $util.isInteger(message.latestBlockHeight.low) && $util.isInteger(message.latestBlockHeight.high)))
                                             return "latestBlockHeight: integer|Long expected";
-                                    if (message.latestBlockTime != null && message.hasOwnProperty("latestBlockTime"))
-                                        if (!$util.isString(message.latestBlockTime))
-                                            return "latestBlockTime: string expected";
                                     if (message.earliestBlockHash != null && message.hasOwnProperty("earliestBlockHash"))
                                         if (!(message.earliestBlockHash && typeof message.earliestBlockHash.length === "number" || $util.isString(message.earliestBlockHash)))
                                             return "earliestBlockHash: buffer expected";
@@ -40842,9 +40847,6 @@ $root.org = (function() {
                                     if (message.earliestBlockHeight != null && message.hasOwnProperty("earliestBlockHeight"))
                                         if (!$util.isInteger(message.earliestBlockHeight) && !(message.earliestBlockHeight && $util.isInteger(message.earliestBlockHeight.low) && $util.isInteger(message.earliestBlockHeight.high)))
                                             return "earliestBlockHeight: integer|Long expected";
-                                    if (message.earliestBlockTime != null && message.hasOwnProperty("earliestBlockTime"))
-                                        if (!$util.isString(message.earliestBlockTime))
-                                            return "earliestBlockTime: string expected";
                                     if (message.maxPeerBlockHeight != null && message.hasOwnProperty("maxPeerBlockHeight"))
                                         if (!$util.isInteger(message.maxPeerBlockHeight) && !(message.maxPeerBlockHeight && $util.isInteger(message.maxPeerBlockHeight.low) && $util.isInteger(message.maxPeerBlockHeight.high)))
                                             return "maxPeerBlockHeight: integer|Long expected";
@@ -40887,8 +40889,6 @@ $root.org = (function() {
                                             message.latestBlockHeight = object.latestBlockHeight;
                                         else if (typeof object.latestBlockHeight === "object")
                                             message.latestBlockHeight = new $util.LongBits(object.latestBlockHeight.low >>> 0, object.latestBlockHeight.high >>> 0).toNumber(true);
-                                    if (object.latestBlockTime != null)
-                                        message.latestBlockTime = String(object.latestBlockTime);
                                     if (object.earliestBlockHash != null)
                                         if (typeof object.earliestBlockHash === "string")
                                             $util.base64.decode(object.earliestBlockHash, message.earliestBlockHash = $util.newBuffer($util.base64.length(object.earliestBlockHash)), 0);
@@ -40908,8 +40908,6 @@ $root.org = (function() {
                                             message.earliestBlockHeight = object.earliestBlockHeight;
                                         else if (typeof object.earliestBlockHeight === "object")
                                             message.earliestBlockHeight = new $util.LongBits(object.earliestBlockHeight.low >>> 0, object.earliestBlockHeight.high >>> 0).toNumber(true);
-                                    if (object.earliestBlockTime != null)
-                                        message.earliestBlockTime = String(object.earliestBlockTime);
                                     if (object.maxPeerBlockHeight != null)
                                         if ($util.Long)
                                             (message.maxPeerBlockHeight = $util.Long.fromValue(object.maxPeerBlockHeight)).unsigned = true;
@@ -40958,7 +40956,6 @@ $root.org = (function() {
                                             object.latestBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                         } else
                                             object.latestBlockHeight = options.longs === String ? "0" : 0;
-                                        object.latestBlockTime = "";
                                         if (options.bytes === String)
                                             object.earliestBlockHash = "";
                                         else {
@@ -40978,7 +40975,6 @@ $root.org = (function() {
                                             object.earliestBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                         } else
                                             object.earliestBlockHeight = options.longs === String ? "0" : 0;
-                                        object.earliestBlockTime = "";
                                         if ($util.Long) {
                                             var long = new $util.Long(0, 0, true);
                                             object.maxPeerBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
@@ -40997,8 +40993,6 @@ $root.org = (function() {
                                             object.latestBlockHeight = options.longs === String ? String(message.latestBlockHeight) : message.latestBlockHeight;
                                         else
                                             object.latestBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.latestBlockHeight) : options.longs === Number ? new $util.LongBits(message.latestBlockHeight.low >>> 0, message.latestBlockHeight.high >>> 0).toNumber(true) : message.latestBlockHeight;
-                                    if (message.latestBlockTime != null && message.hasOwnProperty("latestBlockTime"))
-                                        object.latestBlockTime = message.latestBlockTime;
                                     if (message.earliestBlockHash != null && message.hasOwnProperty("earliestBlockHash"))
                                         object.earliestBlockHash = options.bytes === String ? $util.base64.encode(message.earliestBlockHash, 0, message.earliestBlockHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.earliestBlockHash) : message.earliestBlockHash;
                                     if (message.earliestAppHash != null && message.hasOwnProperty("earliestAppHash"))
@@ -41008,8 +41002,6 @@ $root.org = (function() {
                                             object.earliestBlockHeight = options.longs === String ? String(message.earliestBlockHeight) : message.earliestBlockHeight;
                                         else
                                             object.earliestBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.earliestBlockHeight) : options.longs === Number ? new $util.LongBits(message.earliestBlockHeight.low >>> 0, message.earliestBlockHeight.high >>> 0).toNumber(true) : message.earliestBlockHeight;
-                                    if (message.earliestBlockTime != null && message.hasOwnProperty("earliestBlockTime"))
-                                        object.earliestBlockTime = message.earliestBlockTime;
                                     if (message.maxPeerBlockHeight != null && message.hasOwnProperty("maxPeerBlockHeight"))
                                         if (typeof message.maxPeerBlockHeight === "number")
                                             object.maxPeerBlockHeight = options.longs === String ? String(message.maxPeerBlockHeight) : message.maxPeerBlockHeight;

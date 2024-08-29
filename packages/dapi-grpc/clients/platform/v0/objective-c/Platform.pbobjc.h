@@ -4320,9 +4320,9 @@ typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderda
 
 GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash : GPBMessage
 
-@property(nonatomic, readwrite) int32_t p2P;
+@property(nonatomic, readwrite) uint32_t p2P;
 
-@property(nonatomic, readwrite) int32_t block;
+@property(nonatomic, readwrite) uint32_t block;
 
 @end
 
@@ -4335,9 +4335,9 @@ typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_Fi
 
 GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive : GPBMessage
 
-@property(nonatomic, readwrite) int32_t max;
+@property(nonatomic, readwrite) uint32_t max;
 
-@property(nonatomic, readwrite) int32_t current;
+@property(nonatomic, readwrite) uint32_t current;
 
 @end
 
@@ -4346,7 +4346,8 @@ GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Version_Protocol_Driv
 typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Time_FieldNumber) {
   GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Local = 1,
   GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Block = 2,
-  GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Epoch = 3,
+  GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Genesis = 3,
+  GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Epoch = 4,
 };
 
 GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Time : GPBMessage
@@ -4354,6 +4355,8 @@ GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Time : GPBMessage
 @property(nonatomic, readwrite) uint64_t local;
 
 @property(nonatomic, readwrite) uint64_t block;
+
+@property(nonatomic, readwrite) uint64_t genesis;
 
 @property(nonatomic, readwrite) uint32_t epoch;
 
@@ -4385,13 +4388,11 @@ typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber) {
   GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_LatestBlockHash = 2,
   GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_LatestAppHash = 3,
   GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_LatestBlockHeight = 4,
-  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_LatestBlockTime = 5,
-  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestBlockHash = 6,
-  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestAppHash = 7,
-  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestBlockHeight = 8,
-  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestBlockTime = 9,
-  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_MaxPeerBlockHeight = 10,
-  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_CoreChainLockedHeight = 11,
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestBlockHash = 5,
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestAppHash = 6,
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestBlockHeight = 7,
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_MaxPeerBlockHeight = 9,
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_CoreChainLockedHeight = 10,
 };
 
 GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Chain : GPBMessage
@@ -4404,15 +4405,11 @@ GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Chain : GPBMessage
 
 @property(nonatomic, readwrite) uint64_t latestBlockHeight;
 
-@property(nonatomic, readwrite, copy, null_resettable) NSString *latestBlockTime;
-
 @property(nonatomic, readwrite, copy, null_resettable) NSData *earliestBlockHash;
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *earliestAppHash;
 
 @property(nonatomic, readwrite) uint64_t earliestBlockHeight;
-
-@property(nonatomic, readwrite, copy, null_resettable) NSString *earliestBlockTime;
 
 @property(nonatomic, readwrite) uint64_t maxPeerBlockHeight;
 

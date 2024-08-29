@@ -10967,8 +10967,8 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol__storage_ 
 
 typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash__storage_ {
   uint32_t _has_storage_[1];
-  int32_t p2P;
-  int32_t block;
+  uint32_t p2P;
+  uint32_t block;
 } GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash__storage_;
 
 // This method is threadsafe because it is initially called
@@ -10984,7 +10984,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash__storage_, p2P),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldTextFormatNameCustom | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeInt32,
+        .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "block",
@@ -10993,7 +10993,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash__storage_, block),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeInt32,
+        .dataType = GPBDataTypeUInt32,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -11029,8 +11029,8 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash
 
 typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__storage_ {
   uint32_t _has_storage_[1];
-  int32_t max;
-  int32_t current;
+  uint32_t max;
+  uint32_t current;
 } GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__storage_;
 
 // This method is threadsafe because it is initially called
@@ -11046,7 +11046,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__sto
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__storage_, max),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeInt32,
+        .dataType = GPBDataTypeUInt32,
       },
       {
         .name = "current",
@@ -11055,7 +11055,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__sto
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__storage_, current),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeInt32,
+        .dataType = GPBDataTypeUInt32,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -11083,6 +11083,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__sto
 
 @dynamic local;
 @dynamic block;
+@dynamic genesis;
 @dynamic epoch;
 
 typedef struct GetStatusResponse_GetStatusResponseV0_Time__storage_ {
@@ -11090,6 +11091,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Time__storage_ {
   uint32_t epoch;
   uint64_t local;
   uint64_t block;
+  uint64_t genesis;
 } GetStatusResponse_GetStatusResponseV0_Time__storage_;
 
 // This method is threadsafe because it is initially called
@@ -11117,10 +11119,19 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Time__storage_ {
         .dataType = GPBDataTypeUInt64,
       },
       {
+        .name = "genesis",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Genesis,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Time__storage_, genesis),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
         .name = "epoch",
         .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Epoch,
-        .hasIndex = 2,
+        .hasIndex = 3,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Time__storage_, epoch),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
@@ -11210,11 +11221,9 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Node__storage_ {
 @dynamic latestBlockHash;
 @dynamic latestAppHash;
 @dynamic latestBlockHeight;
-@dynamic latestBlockTime;
 @dynamic earliestBlockHash;
 @dynamic earliestAppHash;
 @dynamic earliestBlockHeight;
-@dynamic earliestBlockTime;
 @dynamic maxPeerBlockHeight;
 @dynamic coreChainLockedHeight;
 
@@ -11223,10 +11232,8 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Chain__storage_ {
   uint32_t coreChainLockedHeight;
   NSData *latestBlockHash;
   NSData *latestAppHash;
-  NSString *latestBlockTime;
   NSData *earliestBlockHash;
   NSData *earliestAppHash;
-  NSString *earliestBlockTime;
   uint64_t latestBlockHeight;
   uint64_t earliestBlockHeight;
   uint64_t maxPeerBlockHeight;
@@ -11275,19 +11282,10 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Chain__storage_ {
         .dataType = GPBDataTypeUInt64,
       },
       {
-        .name = "latestBlockTime",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_LatestBlockTime,
-        .hasIndex = 5,
-        .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Chain__storage_, latestBlockTime),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeString,
-      },
-      {
         .name = "earliestBlockHash",
         .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestBlockHash,
-        .hasIndex = 6,
+        .hasIndex = 5,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Chain__storage_, earliestBlockHash),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
@@ -11296,7 +11294,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Chain__storage_ {
         .name = "earliestAppHash",
         .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestAppHash,
-        .hasIndex = 7,
+        .hasIndex = 6,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Chain__storage_, earliestAppHash),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
@@ -11305,25 +11303,16 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Chain__storage_ {
         .name = "earliestBlockHeight",
         .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestBlockHeight,
-        .hasIndex = 8,
+        .hasIndex = 7,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Chain__storage_, earliestBlockHeight),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt64,
       },
       {
-        .name = "earliestBlockTime",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestBlockTime,
-        .hasIndex = 9,
-        .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Chain__storage_, earliestBlockTime),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeString,
-      },
-      {
         .name = "maxPeerBlockHeight",
         .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_MaxPeerBlockHeight,
-        .hasIndex = 10,
+        .hasIndex = 8,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Chain__storage_, maxPeerBlockHeight),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt64,
@@ -11332,7 +11321,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Chain__storage_ {
         .name = "coreChainLockedHeight",
         .dataTypeSpecific.clazz = Nil,
         .number = GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_CoreChainLockedHeight,
-        .hasIndex = 11,
+        .hasIndex = 9,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Chain__storage_, coreChainLockedHeight),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,

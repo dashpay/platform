@@ -20,8 +20,8 @@ impl<C> Platform<C> {
             protocol: Some(get_status_response_v0::version::Protocol {
                 tenderdash: None,
                 drive: Some(get_status_response_v0::version::protocol::Drive {
-                    max: latest_supported_protocol_version as i32,
-                    current: platform_state.current_protocol_version_in_consensus() as i32,
+                    max: latest_supported_protocol_version,
+                    current: platform_state.current_protocol_version_in_consensus(),
                 }),
             }),
             software: Some(get_status_response_v0::version::Software {
@@ -48,7 +48,6 @@ impl<C> Platform<C> {
             block: platform_state
                 .last_committed_block_time_ms()
                 .unwrap_or_default(),
-            // TODO: Is it actually genesis time?
             genesis: platform_state
                 .genesis_block_info()
                 .map(|info| info.time_ms)
