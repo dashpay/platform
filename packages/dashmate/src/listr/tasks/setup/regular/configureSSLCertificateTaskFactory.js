@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { Listr } from 'listr2';
+import crypto from 'node:crypto';
 
 import {
   PRESET_MAINNET,
@@ -35,6 +36,10 @@ export default function configureSSLCertificateTaskFactory(
           if (!ctx.fileCertificateProviderForm) {
             form = await task.prompt({
               type: 'form',
+              header: `  To configure SSL certificates, you need to provide a certificate chain file
+  and a private key file.
+  The certificate chain file should contain your server certificate at the top and
+  then intermediate/root certificates if present.\n`,
               message: 'Specify paths to your certificate files',
               choices: [
                 {
@@ -59,6 +64,34 @@ export default function configureSSLCertificateTaskFactory(
 
                 if (chainFilePath === privateFilePath) {
                   return 'the same path for both files';
+                }
+
+                const bundlePem = fs.readFileSync(chainFilePath, 'utf8');
+                const privateKeyPem = fs.readFileSync(privateFilePath, 'utf8');
+
+                // Step 2: Create a signature using the private key
+                const data = 'This is a test message';
+                const sign = crypto.createSign('SHA256');
+                sign.update(data);
+                sign.end();
+
+                const signature = sign.sign(privateKeyPem, 'hex');
+
+                // Verify the signature using the public key from the certificate
+                const verify = crypto.createVerify('SHA256');
+                verify.update(data);
+                verify.end();
+
+                // Extract the public key from the first certificate in the bundle
+                const certificate = crypto.createPublicKey({
+                  key: bundlePem,
+                  format: 'pem',
+                });
+
+                const isValid = verify.verify(certificate, signature, 'hex');
+
+                if (!isValid) {
+                  return 'The certificate and private key do not match';
                 }
 
                 return true;
