@@ -154,7 +154,7 @@ where
         if transaction_guard.is_none() {
             Err(Error::Abci(AbciError::BadRequest("received a process proposal request for the genesis height before an init chain request".to_string())))?;
         }
-        tracing::info!(
+        tracing::debug!(
             "rolling back to savepoint to process genesis proposal for round: {}",
             request.round,
         );
