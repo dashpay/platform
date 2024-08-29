@@ -9,6 +9,7 @@ use crate::platform_types::state_transitions_processing_result::StateTransitionE
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
 use dpp::version::TryIntoPlatformVersioned;
+use drive::grovedb_storage::Error::{RocksDBError, StorageError};
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
@@ -91,9 +92,11 @@ where
             "rolling back to savepoint to process genesis proposal for round: {}",
             request.round,
         );
-        transaction_guard
-            .as_ref()
-            .map(|tx| tx.rollback_to_savepoint());
+        if let Some(tx) = transaction_guard.as_ref() {
+            tx.rollback_to_savepoint()
+                .map_err(|e| drive::grovedb::error::Error::StorageError(RocksDBError(e)))?;
+            tx.set_savepoint();
+        }
         transaction_guard
     } else {
         app.start_transaction();
