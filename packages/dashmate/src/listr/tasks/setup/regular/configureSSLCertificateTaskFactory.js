@@ -36,9 +36,9 @@ export default function configureSSLCertificateTaskFactory(
           if (!ctx.fileCertificateProviderForm) {
             form = await task.prompt({
               type: 'form',
-              header: `  To configure SSL certificate, you need to provide a certificate chain file
+              header: `  To configure SSL certificates, you need to provide a certificate chain file
   and a private key file.
-  Certificate chain file should contain your server certificate at the top and
+  The certificate chain file should contain your server certificate at the top and
   then intermediate/root certificates if present.\n`,
               message: 'Specify paths to your certificate files',
               choices: [
