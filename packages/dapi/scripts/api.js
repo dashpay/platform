@@ -16,9 +16,9 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const {default: loadWasmDpp, DashPlatformProtocol} = require('@dashevo/wasm-dpp');
+const { default: loadWasmDpp, DashPlatformProtocol } = require('@dashevo/wasm-dpp');
 
-const {client: RpcClient} = require('jayson/promise');
+const { client: RpcClient } = require('jayson/promise');
 
 // Load config from .env
 dotenv.config();
@@ -26,7 +26,7 @@ dotenv.config();
 const WsClient = require('../lib/externalApis/tenderdash/WsClient');
 
 const config = require('../lib/config');
-const {validateConfig} = require('../lib/config/validator');
+const { validateConfig } = require('../lib/config/validator');
 const logger = require('../lib/logger');
 const rpcServer = require('../lib/rpcServer/server');
 const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
@@ -91,19 +91,19 @@ async function main() {
     tenderdashLogger.info('Connection to Tenderdash established.');
   });
 
-  tenderDashWsClient.on('connect:retry', ({interval}) => {
+  tenderDashWsClient.on('connect:retry', ({ interval }) => {
     tenderdashLogger.info(`Reconnect to Tenderdash in ${interval} ms`);
   });
 
-  tenderDashWsClient.on('connect:max_retry_exceeded', ({maxRetries}) => {
+  tenderDashWsClient.on('connect:max_retry_exceeded', ({ maxRetries }) => {
     tenderdashLogger.info(`Connection retry limit ${maxRetries} is reached`);
   });
 
-  tenderDashWsClient.on('error', ({error}) => {
+  tenderDashWsClient.on('error', ({ error }) => {
     tenderdashLogger.error(`Tenderdash connection error: ${error.message}`);
   });
 
-  tenderDashWsClient.on('close', ({error}) => {
+  tenderDashWsClient.on('close', ({ error }) => {
     tenderdashLogger.warn(`Connection closed: ${error.code}`);
   });
 
