@@ -728,7 +728,7 @@ pub fn create_identities_state_transitions(
                         for (key_index, public_key) in identity.public_keys().iter().enumerate() {
                             let key_num = index * (key_count as usize + extra_keys.len()) + key_index;
                             let private_key_wif =
-                                PrivateKey::from_slice(&keys[*&key_num].1, Network::Testnet)
+                                PrivateKey::from_slice(&keys[*&key_num].1, Network::Dash)
                                     .unwrap()
                                     .to_wif();
 
