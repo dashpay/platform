@@ -122,14 +122,21 @@ where
                     &mut drive_operations,
                     platform_version,
                 )?;
-                self.update_operator_identity(
-                    update,
-                    block_info,
-                    platform_state,
-                    transaction,
-                    &mut drive_operations,
-                    platform_version,
-                )?;
+                if state_diff.platform_node_id.is_some()
+                    || state_diff.operator_payout_address.is_some()
+                    || state_diff.pub_key_operator.is_some()
+                {
+                    self.update_operator_identity(
+                        pro_tx_hash,
+                        state_diff.pub_key_operator.as_ref(),
+                        state_diff.operator_payout_address,
+                        state_diff.platform_node_id,
+                        platform_state,
+                        transaction,
+                        &mut drive_operations,
+                        platform_version,
+                    )?;
+                }
             }
 
             for masternode in removed_masternodes.values() {
