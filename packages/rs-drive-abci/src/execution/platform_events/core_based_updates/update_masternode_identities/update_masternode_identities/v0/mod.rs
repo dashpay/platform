@@ -136,14 +136,14 @@ where
             }
         }
 
-        let previous_fee_verions = platform_state.map(|state| state.previous_fee_versions());
+        let previous_fee_versions = platform_state.map(|state| state.previous_fee_versions());
         self.drive.apply_drive_operations(
             drive_operations,
             true,
             block_info,
             Some(transaction),
             platform_version,
-            previous_fee_verions,
+            previous_fee_versions,
         )?;
 
         let height = block_info.height;

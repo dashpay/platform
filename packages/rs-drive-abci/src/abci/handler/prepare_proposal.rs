@@ -87,11 +87,13 @@ where
         if transaction_guard.is_none() {
             Err(Error::Abci(AbciError::BadRequest("received a prepare proposal request for the genesis height before an init chain request".to_string())))?;
         };
-        if request.round > 0 {
-            transaction_guard
-                .as_ref()
-                .map(|tx| tx.rollback_to_savepoint());
-        };
+        tracing::info!(
+            "rolling back to savepoint to process genesis proposal for round: {}",
+            request.round,
+        );
+        transaction_guard
+            .as_ref()
+            .map(|tx| tx.rollback_to_savepoint());
         transaction_guard
     } else {
         app.start_transaction();
