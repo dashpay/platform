@@ -9,29 +9,31 @@ use dpp::data_contract::document_type::IndexLevel;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
-use crate::drive::flags::StorageFlags;
+use crate::util::storage_flags::StorageFlags;
 
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
+use crate::util::object_size_info::DriveKeyInfo::KeyRef;
 
-use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::drive::Drive;
+use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Removes indices for an index level and recurses.
+    #[inline]
     pub(super) fn remove_indices_for_index_level_for_contract_operations_v0(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
         index_level: &IndexLevel,
         mut any_fields_null: bool,
+        mut all_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -60,12 +62,13 @@ impl Drive {
             );
         }
 
-        if let Some(unique) = index_level.has_index_with_uniqueness() {
+        if let Some(index_type) = index_level.has_index_with_type() {
             self.remove_reference_for_index_level_for_contract_operations(
                 document_and_contract_info,
                 index_path_info.clone(),
-                unique,
+                index_type,
                 any_fields_null,
+                all_fields_null,
                 storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
@@ -128,16 +131,18 @@ impl Drive {
             // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
             any_fields_null |= document_index_field.is_empty();
+            all_fields_null &= document_index_field.is_empty();
 
             // we push the actual value of the index path
             sub_level_index_path_info.push(document_index_field)?;
             // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
             // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
-            self.remove_indices_for_index_level_for_contract_operations(
+            self.remove_indices_for_index_level_for_contract_operations_v0(
                 document_and_contract_info,
                 sub_level_index_path_info,
                 sub_level,
                 any_fields_null,
+                all_fields_null,
                 storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,

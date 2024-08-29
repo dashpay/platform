@@ -1,38 +1,7 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Execution Tests
 //!
 
 extern crate core;
-
-use dashcore_rpc::dashcore::QuorumHash;
 
 use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
 
@@ -40,6 +9,8 @@ use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
 use strategy_tests::frequency::Frequency;
 
+use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
+use dpp::dashcore::Transaction;
 use std::collections::BTreeMap;
 
 use strategy::{
@@ -47,96 +18,101 @@ use strategy::{
 };
 use strategy_tests::Strategy;
 
+mod chain_lock_update;
 mod core_update_tests;
 mod execution;
 mod failures;
 mod masternode_list_item_helpers;
 mod masternodes;
+mod patch_platform_tests;
 mod query;
 mod strategy;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
+mod voting_tests;
 
 pub type BlockHeight = u64;
+
+fn asset_unlock_index(tx: &Transaction) -> u64 {
+    let Some(AssetUnlockPayloadType(ref payload)) = tx.special_transaction_payload else {
+        panic!("expected to get AssetUnlockPayloadType");
+    };
+    payload.base.index
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
+    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy, GENESIS_TIME_MS};
     use crate::query::QueryStrategy;
     use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy};
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
-    use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
+    use dashcore_rpc::dashcore_rpc_json::AssetUnlockStatus;
+    use dashcore_rpc::json::{AssetUnlockStatusResult, QuorumType};
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-    use strategy_tests::operations::DocumentAction::DocumentActionReplace;
+    use std::sync::{Arc, Mutex};
+    use strategy_tests::operations::DocumentAction::{
+        DocumentActionReplaceRandom, DocumentActionTransferRandom,
+    };
     use strategy_tests::operations::{
         DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
     };
+    use strategy_tests::{IdentityInsertInfo, StartIdentities};
 
+    use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
+    use dpp::dashcore::bls_sig_utils::BLSSignature;
+    use dpp::dashcore::ChainLock;
+    use dpp::dashcore::Txid;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
     };
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::system_data_contracts::withdrawals_contract;
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
-    use drive_abci::config::{ExecutionConfig, PlatformTestConfig};
+    use drive::config::DEFAULT_QUERY_LIMIT;
+    use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
+    use drive_abci::config::{
+        ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformTestConfig, ValidatorSetConfig,
+    };
+
     use drive_abci::logging::LogLevel;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
-    use rand::distributions::uniform::SampleBorrow;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
-    use tenderdash_abci::proto::types::CoreChainLock;
+
+    use dpp::data_contract::document_type::v0::random_document_type::{
+        FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
+    };
+    use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
+    use dpp::state_transition::StateTransition;
+    use simple_signer::signer::SimpleSigner;
+    use strategy_tests::transitions::create_state_transitions_for_identities;
     use tenderdash_abci::Application;
-
-    pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
-        let mut quorums = QuorumListExtendedInfo::new();
-
-        for i in 0..n {
-            let i_bytes = [i as u8; 32];
-
-            let hash = QuorumHash::from_byte_array(i_bytes);
-
-            let details = ExtendedQuorumDetails {
-                creation_height: i,
-                health_ratio: (i as f32) / (n as f32),
-                mined_block_hash: BlockHash::from_slice(&i_bytes).unwrap(),
-                num_valid_members: i,
-                quorum_index: Some(i),
-            };
-
-            if let Some(v) = quorums.insert(hash, details) {
-                panic!("duplicate record {:?}={:?}", hash, v)
-            }
-        }
-        quorums
-    }
 
     #[test]
     fn run_chain_nothing_happening() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -145,54 +121,43 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
     }
 
     #[test]
     fn run_chain_block_signing() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -201,10 +166,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -215,40 +182,27 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
+        run_chain_for_strategy(&mut platform, 50, strategy, config, 13, &mut None);
     }
 
     #[test]
     fn run_chain_stop_and_restart() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -257,10 +211,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -274,45 +230,44 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
             ..
-        } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
+        } = run_chain_for_strategy(
+            &mut platform,
+            15,
+            strategy.clone(),
+            config.clone(),
+            40,
+            &mut None,
+        );
+
+        let state = abci_app.platform.state.load();
+
+        let protocol_version = state.current_protocol_version_in_consensus();
+
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
 
         let known_root_hash = abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("expected root hash");
 
-        let state = abci_app.platform.state.read().unwrap();
-
-        let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
-        let platform_version =
-            PlatformVersion::get(protocol_version).expect("expected platform version");
-
         abci_app
             .platform
-            .recreate_state(platform_version)
+            .reload_state_from_storage(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -333,11 +288,9 @@ mod tests {
         assert_eq!(last_block_height, 15);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
-            .unwrap()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -352,11 +305,16 @@ mod tests {
                 core_height_start: 1,
                 block_count: 30,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: Vec::new(),
             },
             strategy,
             config,
@@ -368,23 +326,20 @@ mod tests {
     fn run_chain_stop_and_restart_multiround() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: Some(FailureStrategy {
@@ -399,10 +354,12 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -416,45 +373,44 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
             ..
-        } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
+        } = run_chain_for_strategy(
+            &mut platform,
+            15,
+            strategy.clone(),
+            config.clone(),
+            40,
+            &mut None,
+        );
+
+        let state = abci_app.platform.state.load();
+
+        let protocol_version = state.current_protocol_version_in_consensus();
+
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
 
         let known_root_hash = abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("expected root hash");
 
-        let state = abci_app.platform.state.read().unwrap();
-
-        let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
-        let platform_version =
-            PlatformVersion::get(protocol_version).expect("expected platform version");
-
         abci_app
             .platform
-            .recreate_state(platform_version)
+            .reload_state_from_storage(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -475,11 +431,9 @@ mod tests {
         assert_eq!(last_block_height, 15);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
-            .unwrap()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -494,11 +448,16 @@ mod tests {
                 core_height_start: 1,
                 block_count: 30,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: Vec::new(),
             },
             strategy,
             config,
@@ -511,23 +470,26 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -536,30 +498,23 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
 
         let balance = outcome
             .abci_app
@@ -573,30 +528,30 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99869098220)
+        assert_eq!(balance, 99864012200)
     }
 
     #[test]
     fn run_chain_core_height_randomly_increasing() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.01),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -605,54 +560,46 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
     }
 
     #[test]
     fn run_chain_core_height_randomly_increasing_with_epoch_change() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -662,31 +609,24 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -699,23 +639,23 @@ mod tests {
     fn run_chain_core_height_randomly_increasing_with_quick_epoch_change() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -726,32 +666,25 @@ mod tests {
         let hour_in_s = 60 * 60;
         let three_mins_in_ms = 1000 * 60 * 3;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+
                 epoch_time_length_s: hour_in_s,
                 ..Default::default()
             },
             block_spacing_ms: three_mins_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15, &mut None);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -767,23 +700,22 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 5..6,
                 chance_per_block: Some(0.5),
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
@@ -792,50 +724,56 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 2000, strategy, config, 40);
+            run_chain_for_strategy(&mut platform, 2000, strategy, config, 40, &mut None);
 
         // With these params if we didn't rotate we would have at most 240
         // of the 500 hpmns that could get paid, however we are expecting that most
         // will be able to propose a block (and then get paid later on).
 
         let platform = abci_app.platform;
-        let drive_cache = platform.drive.cache.read().unwrap();
-        let counter = &drive_cache.protocol_versions_counter;
+        let counter = &platform.drive.cache.protocol_versions_counter.read();
         platform
             .drive
             .fetch_versions_with_counter(None, &platform_version.drive)
             .expect("expected to get versions");
 
+        let state = abci_app.platform.state.load();
+
         assert_eq!(
-            platform
-                .state
-                .read()
-                .unwrap()
+            state
                 .last_committed_block_info()
                 .as_ref()
                 .unwrap()
@@ -844,30 +782,30 @@ mod tests {
                 .index,
             0
         );
-        assert!(counter.get(&1).unwrap() > &240);
+        assert!(counter.get(&1).unwrap().unwrap() > &240);
     }
 
     #[test]
     fn run_chain_core_height_randomly_increasing_with_quorum_updates_new_proposers() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Frequency {
                     times_per_block_range: 1..3,
@@ -882,38 +820,46 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+            run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
 
         // With these params if we add new mns the hpmn masternode list would be 100, but we
         // can expect it to be much higher.
 
         let platform = abci_app.platform;
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.load();
 
         assert!(platform_state.hpmn_masternode_list().len() > 100);
     }
@@ -922,23 +868,23 @@ mod tests {
     fn run_chain_core_height_randomly_increasing_with_quorum_updates_changing_proposers() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Frequency {
                     times_per_block_range: 1..3,
@@ -957,37 +903,45 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         let ChainExecutionOutcome { abci_app, .. } =
-            run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+            run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
         let platform = abci_app.platform;
-        let platform_state = platform.state.read().unwrap();
+        let platform_state = platform.state.load();
 
         assert_ne!(platform_state.hpmn_masternode_list().len(), 100);
     }
@@ -996,23 +950,23 @@ mod tests {
     fn run_chain_core_height_randomly_increasing_with_quorum_updates_updating_proposers() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 updated_hpmns: Frequency {
                     times_per_block_range: 1..3,
@@ -1027,41 +981,49 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 10,
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 10,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 300,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
         let ChainExecutionOutcome {
             abci_app,
             proposers,
             ..
-        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43, &mut None);
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
         let platform_version = PlatformVersion::latest();
         let platform = abci_app.platform;
-        let _platform_state = platform.state.read().unwrap();
+        let _platform_state = platform.state.load();
 
         // We need to find if any masternode has ever had their keys disabled.
 
@@ -1094,26 +1056,30 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_with_block_signing() {
-        // drive_abci::logging::Loggers::default().try_install().ok();
+        drive_abci::logging::init_for_tests(LogLevel::Silent);
+
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1124,13 +1090,16 @@ mod tests {
                 },
             }),
             verify_state_transition_results: true,
+            sign_instant_locks: true,
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1140,17 +1109,8 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
 
         assert_eq!(outcome.identities.len(), 100);
     }
@@ -1159,23 +1119,26 @@ mod tests {
     fn run_chain_insert_one_new_identity_per_block_with_epoch_change() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1185,31 +1148,24 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15);
+
+        let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1217,6 +1173,12 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         assert_eq!(
             hex::encode(
                 outcome
@@ -1224,11 +1186,11 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
-            "3fcae6c74a7c0cf2ed8613a6e110f3bdc544a4a7b5b51a2620108f845241c65b".to_string()
+            "975735252c11cea7ef3fbba86928077e37ebe1926972e6ae38e237ce0864100c".to_string()
         )
     }
 
@@ -1237,6 +1199,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1244,23 +1207,26 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(contract, None)],
+                start_contracts: vec![(contract, None)],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1269,30 +1235,23 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
+
+        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None);
 
         outcome
             .abci_app
@@ -1302,7 +1261,7 @@ mod tests {
                 outcome
                     .strategy
                     .strategy
-                    .contracts_with_updates
+                    .start_contracts
                     .first()
                     .unwrap()
                     .0
@@ -1320,10 +1279,106 @@ mod tests {
     }
 
     #[test]
+    fn run_chain_insert_one_new_identity_and_many_big_contracts() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::ContractCreate(
+                        RandomDocumentTypeParameters {
+                            new_fields_optional_count_range: 1..30,
+                            new_fields_required_count_range: 1..40,
+                            new_indexes_count_range: 10..11,
+                            field_weights: FieldTypeWeights {
+                                string_weight: 50,
+                                float_weight: 50,
+                                integer_weight: 50,
+                                date_weight: 50,
+                                boolean_weight: 20,
+                                byte_array_weight: 70,
+                            },
+                            field_bounds: FieldMinMaxBounds {
+                                string_min_len: 1..10,
+                                string_has_min_len_chance: 0.5,
+                                string_max_len: 10..63,
+                                string_has_max_len_chance: 0.5,
+                                integer_min: 1..10,
+                                integer_has_min_chance: 0.5,
+                                integer_max: 10..10000,
+                                integer_has_max_chance: 0.5,
+                                float_min: 0.1..10.0,
+                                float_has_min_chance: 0.5,
+                                float_max: 10.0..1000.0,
+                                float_has_max_chance: 0.5,
+                                date_min: 0,
+                                date_max: 0,
+                                byte_array_min_len: 1..10,
+                                byte_array_has_min_len_chance: 0.0,
+                                byte_array_max_len: 10..255,
+                                byte_array_has_max_len_chance: 0.0,
+                            },
+                            keep_history_chance: 1.0,
+                            documents_mutable_chance: 1.0,
+                            documents_can_be_deleted_chance: 1.0,
+                        },
+                        30..31,
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 30..31,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                ..Default::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        run_chain_for_strategy(&mut platform, 30, strategy, config, 15, &mut None);
+    }
+
+    #[test]
     fn run_chain_insert_one_new_identity_and_a_contract_with_updates() {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1331,6 +1386,7 @@ mod tests {
 
         let mut contract_update_1 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-1.json",
+            1,
             true,
             platform_version,
         )
@@ -1341,6 +1397,7 @@ mod tests {
 
         let mut contract_update_2 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-2.json",
+            1,
             true,
             platform_version,
         )
@@ -1350,7 +1407,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(
+                start_contracts: vec![(
                     contract,
                     Some(BTreeMap::from([
                         (3, contract_update_1),
@@ -1358,21 +1415,24 @@ mod tests {
                     ])),
                 )],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1381,30 +1441,23 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         outcome
             .abci_app
@@ -1414,7 +1467,7 @@ mod tests {
                 outcome
                     .strategy
                     .strategy
-                    .contracts_with_updates
+                    .start_contracts
                     .first()
                     .unwrap()
                     .0
@@ -1436,6 +1489,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1457,7 +1511,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![Operation {
                     op_type: OperationType::Document(document_op),
                     frequency: Frequency {
@@ -1465,21 +1519,24 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1488,30 +1545,23 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+
+        run_chain_for_strategy(&mut platform, 100, strategy, config, 15, &mut None);
     }
 
     #[test]
@@ -1519,6 +1569,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1540,7 +1591,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![Operation {
                     op_type: OperationType::Document(document_op),
                     frequency: Frequency {
@@ -1548,21 +1599,24 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1572,31 +1626,25 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let block_count = 120;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1612,6 +1660,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1642,7 +1691,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
@@ -1659,21 +1708,24 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1683,31 +1735,25 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let block_count = 120;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1715,6 +1761,25 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+
+        let issues = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 
     #[test]
@@ -1723,6 +1788,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1753,38 +1819,41 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
                         frequency: Frequency {
-                            times_per_block_range: 1..10,
+                            times_per_block_range: 1..7,
                             chance_per_block: None,
                         },
                     },
                     Operation {
                         op_type: OperationType::Document(document_deletion_op),
                         frequency: Frequency {
-                            times_per_block_range: 1..10,
+                            times_per_block_range: 1..7,
                             chance_per_block: None,
                         },
                     },
                 ],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1794,14 +1863,16 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -1809,17 +1880,9 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1827,6 +1890,10 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
         assert_eq!(
             hex::encode(
                 outcome
@@ -1834,20 +1901,21 @@ mod tests {
                     .platform
                     .drive
                     .grove
-                    .root_hash(None)
+                    .root_hash(None, &platform_version.drive.grove_version)
                     .unwrap()
                     .unwrap()
             ),
-            "a19831eae73cfd6cb4fcb405e4725495b71f855842761312108c1bfc658417ba".to_string()
+            "0cc2c7a7749a0ce47a4abcd1f4db21d07734f96d09ffe08d6500a8d09a3455a1".to_string()
         )
     }
 
     #[test]
-    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
+    fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_nonce_gaps_with_epoch_change(
     ) {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1878,7 +1946,367 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..7,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..7,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+
+                identity_contract_nonce_gaps: Some(Frequency {
+                    times_per_block_range: 1..3,
+                    chance_per_block: Some(0.5),
+                }),
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+        let day_in_ms = 1000 * 60 * 60 * 24;
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+
+        let block_count = 120;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        assert_eq!(outcome.identities.len() as u64, block_count);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let all_have_balances = outcome
+            .masternode_identity_balances
+            .iter()
+            .all(|(_, balance)| *balance != 0);
+        assert!(all_have_balances, "all masternodes should have a balance");
+        let state = outcome.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+        assert_eq!(
+            hex::encode(
+                outcome
+                    .abci_app
+                    .platform
+                    .drive
+                    .grove
+                    .root_hash(None, &platform_version.drive.grove_version)
+                    .unwrap()
+                    .unwrap()
+            ),
+            "5a08b133a19b11b09eaba6763ad2893c2bcbcc645fb698298790bb5d26e551e0".to_string()
+        )
+    }
+
+    #[test]
+    fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_max_nonce_gaps_with_epoch_change(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
+            true,
+            platform_version,
+        )
+        .expect("expected to get contract from a json document");
+
+        let contract = created_contract.data_contract();
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..7,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..7,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+
+                identity_contract_nonce_gaps: Some(Frequency {
+                    times_per_block_range: 24..25,
+                    chance_per_block: Some(1.0),
+                }),
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+        let day_in_ms = 1000 * 60 * 60 * 24;
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+
+        let block_count = 10;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        for tx_results_per_block in outcome.state_transition_results_per_block.values() {
+            for (state_transition, result) in tx_results_per_block {
+                assert_eq!(
+                    result.code, 0,
+                    "state transition got code {} : {:?}",
+                    result.code, state_transition
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_higher_than_max_nonce_gaps_with_epoch_change(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
+            true,
+            platform_version,
+        )
+        .expect("expected to get contract from a json document");
+
+        let contract = created_contract.data_contract();
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..7,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..7,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+
+                identity_contract_nonce_gaps: Some(Frequency {
+                    times_per_block_range: 25..26,
+                    chance_per_block: Some(1.0),
+                }),
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+        let day_in_ms = 1000 * 60 * 60 * 24;
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+
+        let block_count = 10;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        for tx_results_per_block in outcome.state_transition_results_per_block.values() {
+            for (state_transition, _unused_result) in tx_results_per_block {
+                // We can't ever get a documents batch transition, because the proposer will remove it from a block
+                assert!(!matches!(
+                    state_transition,
+                    StateTransition::DocumentsBatch(_)
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
+            true,
+            platform_version,
+        )
+        .expect("expected to get contract from a json document");
+
+        let contract = created_contract.data_contract();
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
@@ -1895,21 +2323,25 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..30,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..30,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -1921,33 +2353,27 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let block_count = 30;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 421);
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        assert_eq!(outcome.identities.len() as u64, 472);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -1955,14 +2381,34 @@ mod tests {
             .filter(|(_, balance)| *balance != 0)
             .count();
         assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+
+        let issues = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 
     #[test]
-    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
+    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_updates_with_epoch_change(
     ) {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
             true,
             platform_version,
         )
@@ -1984,7 +2430,283 @@ mod tests {
 
         let document_replace_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionReplace,
+            action: DocumentActionReplaceRandom,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..40,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_replace_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..6,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
+                },
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let day_in_ms = 1000 * 60 * 60 * 24;
+
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                epoch_time_length_s: 1576800,
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+        let block_count = 21;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+
+        let issues = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
+    }
+
+    #[test]
+    fn run_chain_insert_many_document_updates_with_epoch_change() {
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
+            true,
+            platform_version,
+        )
+        .expect("expected to get contract from a json document");
+
+        let contract = created_contract.data_contract();
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_replace_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionReplaceRandom,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let mut simple_signer = SimpleSigner::default();
+
+        let (identity1, keys1) =
+            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
+                2,
+                &mut rng,
+                platform_version,
+            )
+            .unwrap();
+
+        simple_signer.add_keys(keys1);
+
+        let (identity2, keys2) =
+            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
+                2,
+                &mut rng,
+                platform_version,
+            )
+            .unwrap();
+
+        simple_signer.add_keys(keys2);
+
+        let start_identities = create_state_transitions_for_identities(
+            vec![identity1, identity2],
+            &simple_signer,
+            &mut rng,
+            platform_version,
+        );
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..2,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_replace_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..2,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities {
+                    hard_coded: start_identities,
+                    ..Default::default()
+                },
+                identity_inserts: Default::default(),
+
+                identity_contract_nonce_gaps: None,
+                signer: Some(simple_signer),
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let day_in_ms = 1000 * 60 * 60 * 24;
+
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                epoch_time_length_s: 1576800,
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+        let block_count = 21;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+
+        let issues = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
+    }
+
+    #[test]
+    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
+            true,
+            platform_version,
+        )
+        .expect("expected to get contract from a json document");
+
+        let contract = created_contract.data_contract();
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_replace_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionReplaceRandom,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -2002,7 +2724,7 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![(created_contract, None)],
+                start_contracts: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
@@ -2026,21 +2748,25 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..6,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..6,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2052,71 +2778,160 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 100,
+
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
-        let block_count = 30;
+        let block_count = 100;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 86);
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        assert_eq!(outcome.identities.len() as u64, 296);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
             .into_iter()
             .filter(|(_, balance)| *balance != 0)
             .count();
-        assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+        assert_eq!(balance_count, 92); // 1 epoch worth of proposers
+
+        let issues = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 
     #[test]
-    fn run_chain_top_up_identities() {
-        drive_abci::logging::init_for_tests(LogLevel::Silent);
+    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_transfers_and_deletions_with_epoch_change(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
+            true,
+            platform_version,
+        )
+        .expect("expected to get contract from a json document");
+
+        let contract = created_contract.data_contract();
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_replace_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionReplaceRandom,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_transfer_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionTransferRandom,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
-                operations: vec![Operation {
-                    op_type: OperationType::IdentityTopUp,
+                start_contracts: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..10,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_replace_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_transfer_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
-                        times_per_block_range: 1..3,
+                        times_per_block_range: 1..6,
                         chance_per_block: None,
                     },
-                }],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                    start_keys: 5,
+                    extra_keys: Default::default(),
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2124,31 +2939,99 @@ mod tests {
             verify_state_transition_results: true,
             ..Default::default()
         };
+
+        let day_in_ms = 1000 * 60 * 60 * 24;
+
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
+                epoch_time_length_s: 1576800,
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+        let block_count = 70;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome =
+            run_chain_for_strategy(&mut platform, block_count, strategy, config, 15, &mut None);
+        assert_eq!(outcome.identities.len() as u64, 201);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let balance_count = outcome
+            .masternode_identity_balances
+            .into_iter()
+            .filter(|(_, balance)| *balance != 0)
+            .count();
+        assert_eq!(balance_count, 55); // 1 epoch worth of proposers
+    }
+
+    #[test]
+    fn run_chain_top_up_identities() {
+        let platform_version = PlatformVersion::latest();
+        drive_abci::logging::init_for_tests(LogLevel::Silent);
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::IdentityTopUp,
+                    frequency: Frequency {
+                        times_per_block_range: 1..3,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            sign_instant_locks: true,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         let max_initial_balance = 100000000000u64; // TODO: some centralized way for random test data (`arbitrary` maybe?)
         let balances = outcome
@@ -2162,6 +3045,7 @@ mod tests {
                     .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 
@@ -2174,7 +3058,7 @@ mod tests {
     fn run_chain_update_identities_add_keys() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![Operation {
                     op_type: OperationType::IdentityUpdate(
                         IdentityUpdateOp::IdentityUpdateAddKeys(3),
@@ -2184,21 +3068,24 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2209,31 +3096,24 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
-        let state = outcome.abci_app.platform.state.read().unwrap();
+
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
+        let state = outcome.abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
@@ -2263,7 +3143,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![Operation {
                     op_type: OperationType::IdentityUpdate(
                         IdentityUpdateOp::IdentityUpdateDisableKey(3),
@@ -2273,21 +3153,24 @@ mod tests {
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2298,30 +3181,23 @@ mod tests {
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15, &mut None);
 
         let identities = outcome
             .abci_app
@@ -2349,10 +3225,12 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn run_chain_top_up_and_withdraw_from_identities() {
+        let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![
                     Operation {
                         op_type: OperationType::IdentityTopUp,
@@ -2369,82 +3247,614 @@ mod tests {
                         },
                     },
                 ],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    start_keys: 3,
+                    extra_keys: [(
+                        Purpose::TRANSFER,
+                        [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
+                    )]
+                    .into(),
                 },
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
             // because we can add an identity and withdraw from it in the same block
-            // the result would be different then expected
+            // the result would be different from what would be expected
             verify_state_transition_results: false,
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
         platform
             .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+            .expect_send_raw_transaction()
+            .returning(move |_| Ok(Txid::all_zeros()));
 
-        assert_eq!(outcome.identities.len(), 10);
-        assert_eq!(outcome.withdrawals.len(), 18);
+        struct CoreState {
+            asset_unlock_statuses: BTreeMap<WithdrawalTransactionIndex, AssetUnlockStatusResult>,
+            chain_lock: ChainLock,
+        }
+
+        let mut chain_locked_height = 1;
+
+        // Have to go with a complicated shared object for the core state because we need to change
+        // rpc response along the way but we can't mutate `platform.core_rpc` later
+        // because platform reference is moved into the AbciApplication.
+        let shared_core_state = Arc::new(Mutex::new(CoreState {
+            asset_unlock_statuses: BTreeMap::new(),
+            chain_lock: ChainLock {
+                block_height: chain_locked_height,
+                block_hash: BlockHash::from_byte_array([1; 32]),
+                signature: BLSSignature::from([2; 96]),
+            },
+        }));
+
+        // Set up Core RPC responses
+        {
+            let core_state = shared_core_state.clone();
+
+            platform
+                .core_rpc
+                .expect_get_asset_unlock_statuses()
+                .returning(move |indices, _| {
+                    Ok(indices
+                        .iter()
+                        .map(|index| {
+                            core_state
+                                .lock()
+                                .unwrap()
+                                .asset_unlock_statuses
+                                .get(index)
+                                .cloned()
+                                .unwrap()
+                        })
+                        .collect())
+                });
+
+            let core_state = shared_core_state.clone();
+            platform
+                .core_rpc
+                .expect_get_best_chain_lock()
+                .returning(move || Ok(core_state.lock().unwrap().chain_lock.clone()));
+        }
+
+        // Run first two blocks:
+        // - Block 1: creates identity
+        // - Block 2: tops up identity and initiates withdrawals
+        let (
+            ChainExecutionOutcome {
+                abci_app,
+                proposers,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                current_proposer_versions,
+                end_time_ms,
+                identity_nonce_counter,
+                identity_contract_nonce_counter,
+                instant_lock_quorums,
+                ..
+            },
+            last_block_pooled_withdrawals_amount,
+        ) = {
+            let outcome = run_chain_for_strategy(
+                &mut platform,
+                2,
+                strategy.clone(),
+                config.clone(),
+                1,
+                &mut None,
+            );
+
+            // Withdrawal transactions are not populated to block execution context yet
+            assert_eq!(outcome.withdrawals.len(), 0);
+
+            // Withdrawal documents with pooled status should exist.
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+            assert!(!withdrawal_documents_pooled.is_empty());
+            let pooled_withdrawals = withdrawal_documents_pooled.len();
+
+            (outcome, pooled_withdrawals)
+        };
+
+        // Run block 3
+        // Should broadcast previously pooled withdrawals to core
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            withdrawals: last_block_withdrawals,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            ..
+        } = {
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 3,
+                    core_height_start: 1,
+                    block_count: 1,
+                    proposers,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    current_identity_nonce_counter: identity_nonce_counter,
+                    current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms,
+                    instant_lock_quorums,
+                    current_identities: Vec::new(),
+                },
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(2),
+            );
+
+            // Withdrawal documents with pooled status should exist.
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // In this block all previously pooled withdrawals should be broadcasted
+            assert_eq!(
+                outcome.withdrawals.len(),
+                last_block_pooled_withdrawals_amount
+            );
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                last_block_pooled_withdrawals_amount
+            );
+
+            outcome
+        };
+
+        // Update core state before running next block.
+        // Asset unlocks broadcasted in the last block should have Unknown status
+        {
+            let mut core_state = shared_core_state.lock().unwrap();
+            last_block_withdrawals.iter().for_each(|tx| {
+                let index = asset_unlock_index(tx);
+
+                core_state.asset_unlock_statuses.insert(
+                    index,
+                    AssetUnlockStatusResult {
+                        index,
+                        status: AssetUnlockStatus::Unknown,
+                    },
+                );
+            });
+        }
+
+        // Run block 4
+        // Should change pooled status to broadcasted
+        let last_block_broadcasted_withdrawals_amount = last_block_withdrawals.len();
+        let (
+            ChainExecutionOutcome {
+                abci_app,
+                proposers,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                current_proposer_versions,
+                end_time_ms,
+                withdrawals: last_block_withdrawals,
+                identity_nonce_counter,
+                identity_contract_nonce_counter,
+                instant_lock_quorums,
+                ..
+            },
+            last_block_broadcased_withdrawals_amount,
+        ) = {
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 4,
+                    core_height_start: 1,
+                    block_count: 1,
+                    proposers,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    current_identity_nonce_counter: identity_nonce_counter,
+                    current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms + 1000,
+                    instant_lock_quorums,
+                    current_identities: Vec::new(),
+                },
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(3),
+            );
+
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // In this block we should have new withdrawals pooled
+            assert!(!withdrawal_documents_pooled.is_empty());
+
+            // And extra withdrawals broadcasted
+            let withdrawals_broadcasted_expected =
+                last_block_broadcasted_withdrawals_amount + outcome.withdrawals.len();
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                withdrawals_broadcasted_expected
+            );
+
+            (outcome, withdrawal_documents_broadcasted.len())
+        };
+
+        // Update core state for newly broadcasted transactions
+        {
+            let mut core_state = shared_core_state.lock().unwrap();
+
+            // First, set all previously broadcasted transactions to Chainlocked
+            core_state
+                .asset_unlock_statuses
+                .iter_mut()
+                .for_each(|(index, status_result)| {
+                    // Do not settle yet transactions that were broadcasted in the last block
+                    status_result.index = *index;
+                    status_result.status = AssetUnlockStatus::Chainlocked;
+                });
+
+            // Then increase chainlocked height, so that withdrawals for chainlocked transactions
+            // could be completed in the next block
+            // TODO: do we need this var?
+            chain_locked_height += 1;
+            core_state.chain_lock.block_height = chain_locked_height;
+
+            // Then set all newly broadcasted transactions to Unknown
+            last_block_withdrawals.iter().for_each(|tx| {
+                let index = asset_unlock_index(tx);
+
+                core_state.asset_unlock_statuses.insert(
+                    index,
+                    AssetUnlockStatusResult {
+                        index,
+                        status: AssetUnlockStatus::Unknown,
+                    },
+                );
+            });
+
+            drop(core_state);
+        }
+
+        // Run block 5
+        // Previously broadcasted transactions should be settled after block 5,
+        // and their corresponding statuses should be changed to COMPLETED
+        let (
+            ChainExecutionOutcome {
+                abci_app,
+                proposers,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                current_proposer_versions,
+                end_time_ms,
+                withdrawals: last_block_withdrawals,
+                identity_nonce_counter,
+                identity_contract_nonce_counter,
+                instant_lock_quorums,
+                ..
+            },
+            last_block_withdrawals_completed_amount,
+        ) = {
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 5,
+                    core_height_start: 1,
+                    block_count: 1,
+                    proposers,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    current_identity_nonce_counter: identity_nonce_counter,
+                    current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms + 1000,
+                    instant_lock_quorums,
+                    current_identities: Vec::new(),
+                },
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(4),
+            );
+
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_completed = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // In this block we should have new withdrawals pooled
+            assert!(!withdrawal_documents_pooled.is_empty());
+
+            // And some withdrawals completed
+            let withdrawals_completed_expected =
+                // Withdrawals issued on {previous_block - 1} considered completed
+                last_block_broadcased_withdrawals_amount - last_block_withdrawals.len();
+            assert_eq!(
+                withdrawal_documents_completed.len(),
+                withdrawals_completed_expected
+            );
+
+            // And extra withdrawals broadcasted
+            let withdrawals_broadcasted_expected =
+                // Withdrawals issued on previous block + withdrawals from this block are still in broadcasted state
+                last_block_withdrawals.len() + outcome.withdrawals.len();
+
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                withdrawals_broadcasted_expected
+            );
+
+            (outcome, withdrawal_documents_completed.len())
+        };
+
+        // Update state of the core before proceeding to the next block
+        {
+            // Simulate transactions being added to the core mempool
+            let mut core_state = shared_core_state.lock().unwrap();
+
+            let number_of_blocks_before_expiration: u32 = 48;
+            chain_locked_height += number_of_blocks_before_expiration;
+
+            core_state.chain_lock.block_height = chain_locked_height;
+
+            last_block_withdrawals.iter().for_each(|tx| {
+                let index = asset_unlock_index(tx);
+
+                core_state.asset_unlock_statuses.insert(
+                    index,
+                    AssetUnlockStatusResult {
+                        index,
+                        status: AssetUnlockStatus::Unknown,
+                    },
+                );
+            });
+        }
+
+        // Run block 6.
+        // Tests withdrawal expiration
+        let ChainExecutionOutcome { .. } = {
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 6,
+                    core_height_start: 1,
+                    block_count: 1,
+                    proposers,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    current_identity_nonce_counter: identity_nonce_counter,
+                    current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms + 1000,
+                    instant_lock_quorums,
+                    current_identities: Vec::new(),
+                },
+                strategy.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(5),
+            );
+
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_completed = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_expired = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // In this block we should have new withdrawals pooled
+            assert!(!withdrawal_documents_pooled.is_empty());
+
+            // Amount of completed withdrawals stays the same as in the last block
+            assert_eq!(
+                withdrawal_documents_completed.len(),
+                last_block_withdrawals_completed_amount
+            );
+
+            // And some withdrawals got expired
+            let withdrawals_expired_expected =
+                // Withdrawals issued on {previous_block - 1}, but not chainlocked yet, considered expired
+                last_block_broadcased_withdrawals_amount - last_block_withdrawals.len();
+
+            assert_eq!(
+                withdrawal_documents_expired.len(),
+                withdrawals_expired_expected
+            );
+
+            // And extra withdrawals broadcasted
+            let withdrawals_broadcasted_expected =
+                // Withdrawals issued on previous block + withdrawals from this block are still in broadcasted state
+                last_block_withdrawals.len() + outcome.withdrawals.len();
+
+            assert_eq!(
+                withdrawal_documents_broadcasted.len(),
+                withdrawals_broadcasted_expected
+            );
+
+            outcome
+        };
     }
 
     #[test]
     fn run_chain_rotation_is_deterministic_1_block() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
                     //we do this to create some paying transactions
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 50,
             extra_normal_mns: 0,
-            quorum_count: 10,
+            validator_quorum_count: 10,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
@@ -2454,14 +3864,31 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 3,
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 1,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -2480,14 +3907,15 @@ mod tests {
                 .core_rpc
                 .expect_get_best_chain_lock()
                 .returning(move || {
-                    Ok(CoreChainLock {
-                        core_block_height: 10,
-                        core_block_hash: [1; 32].to_vec(),
-                        signature: [2; 96].to_vec(),
+                    Ok(ChainLock {
+                        block_height: 10,
+                        block_hash: BlockHash::from_byte_array([1; 32]),
+                        signature: [2; 96].into(),
                     })
                 });
 
-            let outcome = run_chain_for_strategy(platform, 1, strategy.clone(), config.clone(), 7);
+            let outcome =
+                run_chain_for_strategy(platform, 1, strategy.clone(), config.clone(), 7, &mut None);
             outcomes.push(outcome);
         }
 
@@ -2557,12 +3985,17 @@ mod tests {
             first_validator_set_fingerprint == last_validator_set_fingerprint
         }));
 
+        let state = outcomes[0].abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         let first_last_app_hash = outcomes[0]
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -2572,7 +4005,7 @@ mod tests {
                 .platform
                 .drive
                 .grove
-                .root_hash(None)
+                .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()
                 .expect("should return app hash");
 
@@ -2584,24 +4017,30 @@ mod tests {
     fn run_chain_heavy_rotation_deterministic_before_payout() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
                     //we do this to create some paying transactions
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
-            quorum_count: 100,
+            validator_quorum_count: 100,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
@@ -2611,15 +4050,32 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 3,
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 1,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform_a = TestPlatformBuilder::new()
@@ -2632,26 +4088,32 @@ mod tests {
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height: 10,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
         platform_b
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height: 10,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
 
-        let outcome_a =
-            run_chain_for_strategy(&mut platform_a, 18, strategy.clone(), config.clone(), 7);
-        let outcome_b = run_chain_for_strategy(&mut platform_b, 18, strategy, config, 7);
+        let outcome_a = run_chain_for_strategy(
+            &mut platform_a,
+            18,
+            strategy.clone(),
+            config.clone(),
+            7,
+            &mut None,
+        );
+        let outcome_b = run_chain_for_strategy(&mut platform_b, 18, strategy, config, 7, &mut None);
         assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
         assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
         assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes
@@ -2665,7 +4127,7 @@ mod tests {
         );
         assert_eq!(
             masternodes_fingerprint_a,
-            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+            "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
         let masternodes_fingerprint_b = hash_to_hex_string(
             outcome_b
@@ -2676,15 +4138,20 @@ mod tests {
         );
         assert_eq!(
             masternodes_fingerprint_b,
-            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+            "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
+
+        let state = outcome_a.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
 
         let last_app_hash_a = outcome_a
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -2693,7 +4160,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -2712,24 +4179,30 @@ mod tests {
     ) {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
                     //we do this to create some paying transactions
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
-            quorum_count: 100,
+            validator_quorum_count: 100,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
@@ -2739,14 +4212,31 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 3,
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 1,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform_a = TestPlatformBuilder::new()
@@ -2759,26 +4249,33 @@ mod tests {
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height: 10,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
         platform_b
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
+                Ok(ChainLock {
+                    block_height: 10,
+                    block_hash: BlockHash::from_byte_array([1; 32]),
+                    signature: [2; 96].into(),
                 })
             });
 
-        let outcome_a =
-            run_chain_for_strategy(&mut platform_a, 100, strategy.clone(), config.clone(), 7);
-        let outcome_b = run_chain_for_strategy(&mut platform_b, 100, strategy, config, 7);
+        let outcome_a = run_chain_for_strategy(
+            &mut platform_a,
+            100,
+            strategy.clone(),
+            config.clone(),
+            7,
+            &mut None,
+        );
+        let outcome_b =
+            run_chain_for_strategy(&mut platform_b, 100, strategy, config, 7, &mut None);
         assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
         assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
         assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes
@@ -2792,7 +4289,7 @@ mod tests {
         );
         assert_eq!(
             masternodes_fingerprint_a,
-            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+            "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
         let masternodes_fingerprint_b = hash_to_hex_string(
             outcome_b
@@ -2803,15 +4300,20 @@ mod tests {
         );
         assert_eq!(
             masternodes_fingerprint_b,
-            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+            "0154fd29f0062819ee6b8063ea02c9f3296ed9af33a4538ae98087edb1a75029".to_string()
         );
+
+        let state = outcome_a.abci_app.platform.state.load();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
 
         let last_app_hash_a = outcome_a
             .abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -2820,7 +4322,7 @@ mod tests {
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("should return app hash");
 
@@ -2831,8 +4333,8 @@ mod tests {
             .into_iter()
             .filter(|(_, balance)| *balance != 0)
             .count();
-        // we have a maximum 90 quorums, that could have been used, 4 were used twice
-        assert_eq!(balance_count, 86);
+        // we have a maximum 90 quorums, that could have been used, 7 were used twice
+        assert_eq!(balance_count, 83);
     }
 
     #[test]
@@ -2841,23 +4343,19 @@ mod tests {
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
-            quorum_count: 100,
+            validator_quorum_count: 100,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -2867,15 +4365,32 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            quorum_size: 3,
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::Llmq100_67,
+                quorum_size: 3,
+                quorum_window: 24,
+                quorum_active_signers: 24,
+                quorum_rotation: false,
+            },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 1,
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let TempPlatform {
@@ -2885,43 +4400,41 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
             ..
-        } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
+        } = run_chain_for_strategy(
+            &mut platform,
+            100,
+            strategy.clone(),
+            config.clone(),
+            89,
+            &mut None,
+        );
 
-        let state = abci_app.platform.state.read().unwrap();
+        let state = abci_app.platform.state.load();
         let protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
+
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let known_root_hash = abci_app
             .platform
             .drive
             .grove
-            .root_hash(None)
+            .root_hash(None, &platform_version.drive.grove_version)
             .unwrap()
             .expect("expected root hash");
 
         abci_app
             .platform
-            .recreate_state(platform_version)
+            .reload_state_from_storage(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -2942,11 +4455,9 @@ mod tests {
         assert_eq!(last_block_height, 100);
         assert_eq!(last_block_app_hash, known_root_hash);
 
-        let block_start = abci_app
-            .platform
-            .state
-            .read()
-            .unwrap()
+        let state = abci_app.platform.state.load();
+
+        let block_start = state
             .last_committed_block_info()
             .as_ref()
             .unwrap()
@@ -2961,11 +4472,16 @@ mod tests {
                 core_height_start: 10,
                 block_count: 30,
                 proposers,
-                quorums,
-                current_quorum_hash,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                instant_lock_quorums: Default::default(),
                 current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
+                current_identities: Vec::new(),
             },
             strategy,
             config,
@@ -2975,31 +4491,41 @@ mod tests {
 
     #[test]
     fn run_chain_transfer_between_identities() {
+        let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![Operation {
                     op_type: OperationType::IdentityTransfer,
                     frequency: Frequency {
-                        times_per_block_range: 1..2,
+                        times_per_block_range: 1..3,
                         chance_per_block: None,
                     },
                 }],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    //we do this to create some paying transactions
+                    frequency: Frequency {
+                        times_per_block_range: 6..10,
+                        chance_per_block: None,
+                    },
+                    start_keys: 3,
+                    extra_keys: [(
+                        Purpose::TRANSFER,
+                        [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
+                    )]
+                    .into(),
                 },
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
-            },
+
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
@@ -3009,33 +4535,26 @@ mod tests {
         };
 
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
-        let balances = &outcome
+        let outcome = run_chain_for_strategy(&mut platform, 15, strategy, config, 15, &mut None);
+
+        let _balances = &outcome
             .abci_app
             .platform
             .drive
@@ -3046,24 +4565,11 @@ mod tests {
                     .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 
-        assert_eq!(outcome.identities.len(), 10);
-
-        let len = outcome.identities.len();
-
-        for identity in &outcome.identities[..len - 1] {
-            let new_balance = balances[&identity.id().to_buffer()];
-            // All identity balances decreased
-            // as we transferred funds to the last identity
-            assert_eq!(new_balance, 0);
-        }
-
-        let last_identity = &outcome.identities[len - 1];
-        let last_identity_balance = balances[&last_identity.id().to_buffer()];
-        // We transferred funds to the last identity, so we need to check that last identity balance was increased
-        assert!(last_identity_balance > 100000000000u64);
+        assert_eq!(outcome.identities.len(), 106);
     }
 
     // Test should filter out transactions exceeding max tx bytes per block
@@ -3071,41 +4577,38 @@ mod tests {
     fn run_transactions_exceeding_max_block_size() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                identities_inserts: Frequency {
-                    times_per_block_range: 5..6,
-                    chance_per_block: None,
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 5..6,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
                 },
+
                 ..Default::default()
             },
             max_tx_bytes_per_block: 3500,
             ..Default::default()
         };
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 10,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
 
-        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None);
         let state_transitions = outcome
             .state_transition_results_per_block
             .get(&1)

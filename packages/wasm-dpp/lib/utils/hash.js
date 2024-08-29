@@ -15,4 +15,4 @@ function hash(buffer) {
   return sha256(sha256(buffer));
 }
 
-module.exports = { hash };
+module.exports = { hash, sha256 };

@@ -1,6 +1,5 @@
-use crate::common::encode::encode_u64;
 use crate::drive::contract::paths::{
-    contract_keeping_history_storage_path_vec, contract_root_path_vec,
+    contract_keeping_history_root_path_vec, contract_root_path_vec,
 };
 use crate::drive::contract::{paths, MAX_CONTRACT_HISTORY_FETCH_LIMIT};
 use crate::drive::{Drive, RootTree};
@@ -8,7 +7,9 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
 use crate::query::{Query, QueryItem};
+use crate::util::common::encode::encode_u64;
 use grovedb::{PathQuery, SizedQuery};
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Creates a path query for a specified contract.
@@ -56,7 +57,7 @@ impl Drive {
         contract_id: [u8; 32],
         with_limit: bool,
     ) -> PathQuery {
-        let contract_path = contract_keeping_history_storage_path_vec(contract_id.as_slice());
+        let contract_path = contract_keeping_history_root_path_vec(contract_id.as_slice());
         let mut query = PathQuery::new_single_key(contract_path, vec![0]);
 
         if with_limit {
@@ -120,6 +121,7 @@ impl Drive {
     pub fn fetch_contracts_query(
         non_historical_contract_ids: &[[u8; 32]],
         historical_contract_ids: &[[u8; 32]],
+        platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         if non_historical_contract_ids.is_empty() {
             return Ok(Self::fetch_historical_contracts_query(
@@ -137,7 +139,11 @@ impl Drive {
         let mut historical_contracts_query =
             Self::fetch_historical_contracts_query(historical_contract_ids);
         historical_contracts_query.query.limit = None;
-        PathQuery::merge(vec![&contracts_query, &historical_contracts_query]).map_err(GroveDB)
+        PathQuery::merge(
+            vec![&contracts_query, &historical_contracts_query],
+            &platform_version.drive.grove_version,
+        )
+        .map_err(GroveDB)
     }
 
     /// Creates a merged path query for multiple historical contracts.
@@ -214,7 +220,7 @@ impl Drive {
         );
 
         Ok(PathQuery::new(
-            paths::contract_keeping_history_storage_path_vec(&contract_id),
+            paths::contract_keeping_history_root_path_vec(&contract_id),
             SizedQuery::new(query, Some(limit), offset),
         ))
     }

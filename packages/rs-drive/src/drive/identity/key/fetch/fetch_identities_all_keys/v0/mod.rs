@@ -29,6 +29,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the key fetching fails.
+    #[inline(always)]
     pub(super) fn fetch_identities_all_keys_v0(
         &self,
         identity_ids: &[[u8; 32]],

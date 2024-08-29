@@ -1,4 +1,4 @@
-use crate::identity::SecurityLevel::HIGH;
+use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
 use crate::identity::{KeyID, SecurityLevel};
 
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
@@ -14,7 +14,10 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransitionV0 {
     }
 
     fn security_level_requirement(&self) -> Vec<SecurityLevel> {
-        // TODO: should use contract_based_security_level_requirement instead
-        vec![HIGH]
+        // These are the available key levels that must sign the state transition
+        // However the fact that it is signed by one of these does not guarantee that it
+        // meets the security level requirement, as that is dictated from within the data
+        // contract
+        vec![CRITICAL, HIGH, MEDIUM]
     }
 }

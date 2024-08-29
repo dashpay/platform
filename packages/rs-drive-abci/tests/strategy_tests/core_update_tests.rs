@@ -1,37 +1,40 @@
 #[cfg(test)]
 mod tests {
-    use tenderdash_abci::proto::types::CoreChainLock;
 
     use crate::execution::run_chain_for_strategy;
+    use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
     use crate::strategy::{MasternodeListChangesStrategy, NetworkStrategy};
-    use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
+    use drive_abci::config::{
+        ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
+        ValidatorSetConfig,
+    };
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::platform_types::validator_set::v0::ValidatorSetV0Getters;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use strategy_tests::frequency::Frequency;
-    use strategy_tests::Strategy;
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
     #[test]
     fn run_chain_random_bans() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
                 removed_hpmns: Default::default(),
@@ -61,35 +64,30 @@ mod tests {
         let quorum_size = 100;
 
         let config = PlatformConfig {
-            quorum_size,
+            validator_set: ValidatorSetConfig {
+                quorum_size,
+                ..Default::default()
+            },
+
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 1,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
+        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13, &mut None);
 
         // we expect to see quorums with banned members
 
-        let state = outcome.abci_app.platform.state.read().unwrap();
+        let state = outcome.abci_app.platform.state.load();
 
         let banned_count = state
             .validator_sets()
@@ -121,23 +119,23 @@ mod tests {
     fn run_chain_random_removals() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
                 removed_hpmns: Frequency {
@@ -167,35 +165,30 @@ mod tests {
         let quorum_size = 100;
 
         let config = PlatformConfig {
-            quorum_size,
+            validator_set: ValidatorSetConfig {
+                quorum_size,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 1,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
+        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13, &mut None);
 
         // we expect to see quorums with banned members
 
-        let _state = outcome.abci_app.platform.state.read().unwrap();
+        let _state = outcome.abci_app.platform.state.load();
 
         // We should also see validator sets with less than the quorum size
 
@@ -213,34 +206,36 @@ mod tests {
     fn run_chain_random_bans_and_unbans() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
-                contracts_with_updates: vec![],
+                start_contracts: vec![],
                 operations: vec![],
-                start_identities: vec![],
-                identities_inserts: Frequency {
-                    times_per_block_range: Default::default(),
-                    chance_per_block: None,
-                },
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+
+                identity_contract_nonce_gaps: None,
                 signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
             upgrading_info: None,
-            core_height_increase: Frequency {
+            core_height_increase: RandomCoreHeightIncrease(Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-            },
+            }),
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
                 removed_hpmns: Default::default(),
                 updated_hpmns: Default::default(),
                 banned_hpmns: Frequency {
                     times_per_block_range: 1..2,
-                    chance_per_block: Some(0.1), //lower chance of banning
+                    chance_per_block: Some(0.1),
+                    //lower chance of banning
                 },
                 unbanned_hpmns: Frequency {
                     times_per_block_range: 1..2,
-                    chance_per_block: Some(0.3), //higher chance of unbanning
+                    chance_per_block: Some(0.3),
+                    //higher chance of unbanning
                 },
                 changed_ip_hpmns: Default::default(),
                 changed_p2p_port_hpmns: Default::default(),
@@ -262,31 +257,26 @@ mod tests {
         let quorum_size = 100;
 
         let config = PlatformConfig {
-            quorum_size: 100,
+            validator_set: ValidatorSetConfig {
+                quorum_size,
+                ..Default::default()
+            },
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 25,
+
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        platform
-            .core_rpc
-            .expect_get_best_chain_lock()
-            .returning(move || {
-                Ok(CoreChainLock {
-                    core_block_height: 1,
-                    core_block_hash: [1; 32].to_vec(),
-                    signature: [2; 96].to_vec(),
-                })
-            });
-        let outcome = run_chain_for_strategy(&mut platform, 26, strategy, config, 13);
+        let outcome = run_chain_for_strategy(&mut platform, 26, strategy, config, 13, &mut None);
 
         // We should also see validator sets with less than the quorum size
 

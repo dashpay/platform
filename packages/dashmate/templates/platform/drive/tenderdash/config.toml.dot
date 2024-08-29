@@ -10,10 +10,6 @@
 ###                   Main Base Config Options                      ###
 #######################################################################
 
-# TCP or UNIX socket address of the ABCI application,
-# or the name of an ABCI application compiled in with the Tendermint binary
-proxy-app = "tcp://drive_abci:26658"
-
 # A custom human readable name for this node
 {{?it.platform.drive.tenderdash.moniker}}moniker = "{{=it.platform.drive.tenderdash.moniker}}"{{?}}
 
@@ -71,12 +67,37 @@ genesis-file = "config/genesis.json"
 # Path to the JSON file containing the private key to use for node authentication in the p2p protocol
 node-key-file = "config/node_key.json"
 
-# Mechanism to connect to the ABCI application: socket | grpc
-abci = "socket"
-
 # If true, query the ABCI app on connecting to a new peer
 # so the app can decide if we should keep the connection or not
 filter-peers = false
+
+#######################################################
+###       ABCI App Connection Options               ###
+#######################################################
+[abci]
+# TCP or UNIX socket address of the ABCI application,
+# or routing rules for routed multi-app setup,
+# or the name of an ABCI application compiled in with the Tendermint binary
+# Example for routed multi-app setup:
+#   abci = "routed"
+#   address = "Info:socket:unix:///tmp/socket.1,Info:socket:unix:///tmp/socket.2,CheckTx:socket:unix:///tmp/socket.1,*:socket:unix:///tmp/socket.3"
+address = "CheckTx:grpc:drive_abci:26670,*:socket:tcp://drive_abci:26658"
+# Transport mechanism to connect to the ABCI application: socket | grpc | routed
+transport = "routed"
+# Maximum number of simultaneous connections to the ABCI application
+# per each method. Map of a gRPC method name,like "echo", to the number of concurrent connections.
+# Special value "*" can be used to set the default limit for methods not explicitly listed.
+#
+# Example:
+#
+# grpc-concurrency = [
+#	{ "*" = 10 },
+#	{ "echo" = 2 },
+#	{ "info" = 2 },
+#]
+grpc-concurrency = [
+  { "check_tx" = {{= it.platform.drive.tenderdash.mempool.maxConcurrentCheckTx }} },
+]
 
 
 #######################################################
@@ -100,10 +121,10 @@ laddr = ""
 core-rpc-host = "core:{{= it.core.rpc.port}}"
 
 # Local Dash Core RPC Username
-core-rpc-username = "{{= it.core.rpc.user}}"
+core-rpc-username = "tenderdash"
 
 # Local Dash Core RPC Password
-core-rpc-password = "{{= it.core.rpc.password}}"
+core-rpc-password = "{{= it.core.rpc.users.tenderdash.password}}"
 
 # Path to the client certificate generated while creating needed files for secure connection.
 # If a remote validator address is provided but no certificate, the connection will be insecure
@@ -193,6 +214,13 @@ event-log-max-items = 0
 # See https://github.com/tendermint/tendermint/issues/3435
 timeout-broadcast-tx-commit = "10s"
 
+# Timeout of transaction broadcast to mempool; 0 to disable.
+#
+# This setting affects timeout of CheckTX operations used before
+# adding transaction to the mempool. If the operation takes longer,
+# the transaction is rejected with an error.
+timeout-broadcast-tx = "{{=it.platform.drive.tenderdash.rpc.timeoutBroadcastTx}}"
+
 # Maximum size of request body, in bytes
 max-body-bytes = 1000000
 
@@ -250,11 +278,11 @@ persistent-peers = "{{~it.platform.drive.tenderdash.p2p.persistentPeers :peer:in
 upnp = false
 
 # Maximum number of connections (inbound and outbound).
-max-connections = 64
+max-connections = {{=it.platform.drive.tenderdash.p2p.maxConnections}}
 
 # Maximum number of connections reserved for outgoing
 # connections. Must be less than max-connections
-max-outgoing-connections = 12
+max-outgoing-connections = {{=it.platform.drive.tenderdash.p2p.maxOutgoingConnections}}
 
 # Rate limits the number of incoming connection attempts per IP address.
 max-incoming-connection-attempts = 100
@@ -315,16 +343,46 @@ size = {{= it.platform.drive.tenderdash.mempool.size }}
 max-txs-bytes = {{= it.platform.drive.tenderdash.mempool.maxTxsBytes }}
 
 # Size of the cache (used to filter transactions we saw earlier) in transactions
-cache-size = 10000
+cache-size = {{= it.platform.drive.tenderdash.mempool.cacheSize }}
 
 # Do not remove invalid transactions from the cache (default: false)
 # Set to true if it's not possible for any invalid transaction to become valid
 # again in the future.
-keep-invalid-txs-in-cache = false
+keep-invalid-txs-in-cache = true
+
+# Timeout of check TX operations received from other nodes, using p2p protocol.
+# Use 0 to disable.
+timeout-check-tx = "{{=it.platform.drive.tenderdash.mempool.timeoutCheckTx}}"
+
+# TxEnqueueTimeout defines how many nanoseconds new mempool transaction (received
+# from other nodes) will wait when internal processing queue is full
+# (most likely due to busy CheckTx execution).Once the timeout is reached, the transaction
+# will be silently dropped.
+#
+# If set to 0, the timeout is disabled and transactions will wait indefinitely.
+tx-enqueue-timeout = "{{=it.platform.drive.tenderdash.mempool.txEnqueueTimeout}}"
+
+# tx-send-rate-limit is the rate limit for sending transactions to peers, in transactions per second.
+# If zero, the rate limiter is disabled.
+#
+# Default: 0
+tx-send-rate-limit = {{=it.platform.drive.tenderdash.mempool.txSendRateLimit}}
+
+# tx-recv-rate-limit is the rate limit for receiving transactions from peers, in transactions per second.
+# If zero, the rate limiter is disabled.
+#
+# Default: 0
+tx-recv-rate-limit = {{=it.platform.drive.tenderdash.mempool.txRecvRateLimit}}
+
+# tx-recv-rate-punish-peer set to true means that when tx-recv-rate-limit is reached, the peer will be punished
+# (disconnected). If set to false, the peer will be throttled (messages will be dropped).
+#
+# Default: false
+tx-recv-rate-punish-peer = false
 
 # Maximum size of a single transaction.
 # NOTE: the max size of a tx transmitted over the network is {max-tx-bytes}.
-max-tx-bytes = 1048576
+max-tx-bytes = 50000
 
 # Maximum size of a batch of transactions to send to a peer
 # Including space needed by encoding (one varint per transaction).
@@ -337,7 +395,7 @@ max-batch-bytes = 0
 # Note, if ttl-num-blocks is also defined, a transaction will be removed if it
 # has existed in the mempool at least ttl-num-blocks number of blocks or if it's
 # insertion time into the mempool is beyond ttl-duration.
-ttl-duration = "0s"
+ttl-duration = "{{=it.platform.drive.tenderdash.mempool.ttlDuration}}"
 
 # ttl-num-blocks, if non-zero, defines the maximum number of blocks a transaction
 # can exist for in the mempool.
@@ -345,7 +403,7 @@ ttl-duration = "0s"
 # Note, if ttl-duration is also defined, a transaction will be removed if it
 # has existed in the mempool at least ttl-num-blocks number of blocks or if
 # it's insertion time into the mempool is beyond ttl-duration.
-ttl-num-blocks = 0
+ttl-num-blocks = {{=it.platform.drive.tenderdash.mempool.ttlNumBlocks}}
 
 #######################################################
 ###         State Sync Configuration Options        ###

@@ -10,6 +10,9 @@ lazy_static! {
         RwLock::new(None);
 }
 
+/// Number of votes for a protocol version upgrade.
+pub type ProtocolVersionVoteCount = u64;
+
 pub trait PlatformVersionCurrentVersion {
     fn set_current(platform_version: &'static PlatformVersion);
     fn get_current<'a>() -> Result<&'a Self, ProtocolError>;

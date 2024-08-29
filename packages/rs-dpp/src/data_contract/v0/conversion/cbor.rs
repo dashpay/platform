@@ -14,10 +14,10 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
     fn from_cbor_with_id(
         cbor_bytes: impl AsRef<[u8]>,
         contract_id: Option<Identifier>,
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let mut data_contract = Self::from_cbor(cbor_bytes, validate, platform_version)?;
+        let mut data_contract = Self::from_cbor(cbor_bytes, full_validation, platform_version)?;
         if let Some(id) = contract_id {
             data_contract.id = id;
         }
@@ -26,7 +26,7 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
 
     fn from_cbor(
         cbor_bytes: impl AsRef<[u8]>,
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let data_contract_cbor_value: CborValue = ciborium::de::from_reader(cbor_bytes.as_ref())
@@ -37,7 +37,7 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
         let data_contract_value: Value =
             Value::try_from(data_contract_cbor_value).map_err(ProtocolError::ValueError)?;
 
-        Self::from_value(data_contract_value, validate, platform_version)
+        Self::from_value(data_contract_value, full_validation, platform_version)
     }
 
     fn to_cbor(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {

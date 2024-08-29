@@ -50,6 +50,11 @@ export default {
       required: ['image', 'build'],
       additionalProperties: false,
     },
+    host: {
+      type: 'string',
+      minLength: 1,
+      format: 'ipv4',
+    },
     port: {
       type: 'integer',
       minimum: 0,
@@ -74,7 +79,7 @@ export default {
     },
     duration: {
       type: 'string',
-      pattern: '^[0-9]+(\\.[0-9]+)?(ms|m|s|h)$',
+      pattern: '^0|([0-9]+(\\.[0-9]+)?(ms|m|s|h))$',
     },
     optionalDuration: {
       type: ['null', 'string'],
@@ -83,6 +88,58 @@ export default {
     durationInSeconds: {
       type: 'string',
       pattern: '^[0-9]+(\\.[0-9]+)?s$',
+    },
+    enabledHostPort: {
+      type: 'object',
+      properties: {
+        enabled: {
+          type: 'boolean',
+        },
+        host: {
+          $ref: '#/definitions/host',
+        },
+        port: {
+          $ref: '#/definitions/port',
+        },
+      },
+      additionalProperties: false,
+      required: ['enabled', 'host', 'port'],
+    },
+    quorum: {
+      type: 'object',
+      properties: {
+        llmqType: {
+          type: 'integer',
+          enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107],
+        },
+        dkgInterval: {
+          type: 'integer',
+          minimum: 1,
+        },
+        activeSigners: {
+          type: 'integer',
+          minimum: 1,
+        },
+        rotation: {
+          type: 'boolean',
+        },
+      },
+      required: ['llmqType', 'dkgInterval', 'activeSigners', 'rotation'],
+      additionalProperties: false,
+    },
+    quorumName: {
+      type: 'string',
+      enum: [
+        'llmq_devnet',
+        'llmq_devnet_dip0024',
+        'llmq_devnet_platform',
+        'llmq_50_60',
+        'llmq_60_75',
+        'llmq_400_60',
+        'llmq_400_85',
+        'llmq_100_67',
+        'llmq_25_67',
+      ],
     },
   },
   properties: {
@@ -173,9 +230,7 @@ export default {
           type: 'object',
           properties: {
             host: {
-              type: 'string',
-              minLength: 1,
-              format: 'ipv4',
+              $ref: '#/definitions/host',
             },
             port: {
               $ref: '#/definitions/port',
@@ -212,13 +267,35 @@ export default {
             port: {
               $ref: '#/definitions/port',
             },
-            user: {
-              type: 'string',
-              minLength: 1,
-            },
-            password: {
-              type: 'string',
-              minLength: 1,
+            users: {
+              type: 'object',
+              minProperties: 1,
+              propertyNames: {
+                type: 'string',
+                minLength: 1,
+              },
+              additionalProperties: {
+                type: 'object',
+                properties: {
+                  password: {
+                    type: 'string',
+                    minLength: 1,
+                  },
+                  whitelist: {
+                    type: ['null', 'array'],
+                    items: {
+                      type: 'string',
+                      minLength: 1,
+                    },
+                    minItems: 1,
+                  },
+                  lowPriority: {
+                    type: 'boolean',
+                  },
+                },
+                required: ['password', 'whitelist', 'lowPriority'],
+                additionalProperties: false,
+              },
             },
             allowIps: {
               type: 'array',
@@ -227,7 +304,7 @@ export default {
               },
             },
           },
-          required: ['host', 'port', 'user', 'password'],
+          required: ['host', 'port', 'users', 'allowIps'],
           additionalProperties: false,
         },
         spork: {
@@ -298,6 +375,25 @@ export default {
               type: 'integer',
               minimum: 1,
             },
+            llmq: {
+              type: 'object',
+              properties: {
+                chainLocks: {
+                  $ref: '#/definitions/quorumName',
+                },
+                instantSend: {
+                  $ref: '#/definitions/quorumName',
+                },
+                platform: {
+                  $ref: '#/definitions/quorumName',
+                },
+                mnhf: {
+                  $ref: '#/definitions/quorumName',
+                },
+              },
+              required: ['chainLocks', 'instantSend', 'platform', 'mnhf'],
+              additionalProperties: false,
+            },
           },
           additionalProperties: false,
           required: ['name', 'minimumDifficultyBlocks', 'powTargetSpacing'],
@@ -337,7 +433,14 @@ export default {
           enum: [0, 1],
         },
         indexes: {
-          type: 'boolean',
+          type: ['array'],
+          uniqueItems: true,
+          items: {
+            type: 'string',
+            enum: ['address', 'tx', 'timestamp', 'spent'],
+          },
+          description: 'List of core indexes to enable. `platform.enable`, '
+            + ' `core.masternode.enable`, and `core.insight.enabled` add indexes dynamically',
         },
       },
       required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet', 'log',
@@ -347,18 +450,78 @@ export default {
     platform: {
       type: 'object',
       properties: {
-        dapi: {
+        gateway: {
           type: 'object',
           properties: {
-            envoy: {
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+            maxConnections: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Maximum number of connections that Gateway accepts from downstream clients',
+            },
+            maxHeapSizeInBytes: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Maximum heap size in bytes. If the heap size exceeds this value, Gateway will take actions to reduce memory usage',
+            },
+            upstreams: {
               type: 'object',
               properties: {
-                docker: {
-                  $ref: '#/definitions/docker',
-                },
-                http: {
+                driveGrpc: {
+                  $id: 'gatewayUpstream',
                   type: 'object',
                   properties: {
+                    maxRequests: {
+                      type: 'integer',
+                      minimum: 1,
+                      description: 'The maximum number of parallel requests',
+                    },
+                  },
+                  required: ['maxRequests'],
+                  additionalProperties: false,
+                },
+                dapiApi: {
+                  $ref: 'gatewayUpstream',
+                },
+                dapiCoreStreams: {
+                  $ref: 'gatewayUpstream',
+                },
+                dapiJsonRpc: {
+                  $ref: 'gatewayUpstream',
+                },
+              },
+              additionalProperties: false,
+              required: ['driveGrpc', 'dapiApi', 'dapiCoreStreams', 'dapiJsonRpc'],
+            },
+            metrics: {
+              $ref: '#/definitions/enabledHostPort',
+            },
+            admin: {
+              $ref: '#/definitions/enabledHostPort',
+            },
+            listeners: {
+              type: 'object',
+              properties: {
+                dapiAndDrive: {
+                  type: 'object',
+                  properties: {
+                    http2: {
+                      type: 'object',
+                      properties: {
+                        maxConcurrentStreams: {
+                          type: 'integer',
+                          minimum: 1,
+                          description: 'Maximum number of concurrent streams allowed for each connection',
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['maxConcurrentStreams'],
+                    },
+                    waitForStResultTimeout: {
+                      $ref: '#/definitions/durationInSeconds',
+                    },
                     host: {
                       type: 'string',
                       minLength: 1,
@@ -367,75 +530,228 @@ export default {
                     port: {
                       $ref: '#/definitions/port',
                     },
-                    connectTimeout: {
-                      $ref: '#/definitions/durationInSeconds',
-                    },
-                    responseTimeout: {
-                      $ref: '#/definitions/durationInSeconds',
-                    },
                   },
-                  required: ['host', 'port', 'connectTimeout', 'responseTimeout'],
-                  additionalProperties: false,
-                },
-                rateLimiter: {
-                  type: 'object',
-                  properties: {
-                    maxTokens: {
-                      type: 'integer',
-                      minimum: 0,
-                    },
-                    tokensPerFill: {
-                      type: 'integer',
-                      minimum: 0,
-                    },
-                    fillInterval: {
-                      $ref: '#/definitions/duration',
-                    },
-                    enabled: {
-                      type: 'boolean',
-                    },
-                  },
-                  required: ['enabled', 'fillInterval', 'tokensPerFill', 'maxTokens'],
-                  additionalProperties: false,
-                },
-                ssl: {
-                  type: 'object',
-                  properties: {
-                    enabled: {
-                      type: 'boolean',
-                    },
-                    provider: {
-                      type: 'string',
-                      enum: ['zerossl', 'self-signed', 'file'],
-                    },
-                    providerConfigs: {
-                      type: 'object',
-                      properties: {
-                        zerossl: {
-                          type: ['object'],
-                          properties: {
-                            apiKey: {
-                              type: ['string', 'null'],
-                              minLength: 32,
-                            },
-                            id: {
-                              type: ['string', 'null'],
-                              minLength: 32,
-                            },
-                          },
-                          required: ['apiKey', 'id'],
-                          additionalProperties: false,
-                        },
-                      },
-                    },
-                  },
-                  required: ['provider', 'providerConfigs', 'enabled'],
+                  required: ['http2', 'host', 'port', 'waitForStResultTimeout'],
                   additionalProperties: false,
                 },
               },
-              required: ['docker', 'http', 'rateLimiter', 'ssl'],
+              required: ['dapiAndDrive'],
               additionalProperties: false,
             },
+            rateLimiter: {
+              type: 'object',
+              properties: {
+                docker: {
+                  $ref: '#/definitions/docker',
+                },
+                unit: {
+                  type: 'string',
+                  enum: ['second', 'minute', 'hour', 'day'],
+                },
+                requestsPerUnit: {
+                  type: 'integer',
+                  minimum: 1,
+                },
+                blacklist: {
+                  type: 'array',
+                  items: {
+                    $ref: '#/definitions/host',
+                  },
+                  description: 'List of IP addresses that are blacklisted from making requests',
+                },
+                whitelist: {
+                  type: 'array',
+                  items: {
+                    $ref: '#/definitions/host',
+                  },
+                  description: 'List of IP addresses that are whitelisted to make requests without limits',
+                },
+                metrics: {
+                  type: 'object',
+                  properties: {
+                    docker: {
+                      $ref: '#/definitions/docker',
+                    },
+                    enabled: {
+                      type: 'boolean',
+                    },
+                    host: {
+                      $ref: '#/definitions/host',
+                    },
+                    port: {
+                      $ref: '#/definitions/port',
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['docker', 'enabled', 'host', 'port'],
+                },
+                enabled: {
+                  type: 'boolean',
+                },
+              },
+              required: ['docker', 'enabled', 'unit', 'requestsPerUnit', 'blacklist', 'whitelist', 'metrics'],
+              additionalProperties: false,
+            },
+            ssl: {
+              type: 'object',
+              properties: {
+                enabled: {
+                  type: 'boolean',
+                },
+                provider: {
+                  type: 'string',
+                  enum: ['zerossl', 'self-signed', 'file'],
+                },
+                providerConfigs: {
+                  type: 'object',
+                  properties: {
+                    zerossl: {
+                      type: ['object'],
+                      properties: {
+                        apiKey: {
+                          type: ['string', 'null'],
+                          minLength: 32,
+                        },
+                        id: {
+                          type: ['string', 'null'],
+                          minLength: 32,
+                        },
+                      },
+                      required: ['apiKey', 'id'],
+                      additionalProperties: false,
+                    },
+                  },
+                },
+              },
+              required: ['provider', 'providerConfigs', 'enabled'],
+              additionalProperties: false,
+            },
+            log: {
+              type: 'object',
+              properties: {
+                level: {
+                  type: 'string',
+                  enum: ['trace', 'debug', 'info', 'warn', 'error', 'critical', 'off'],
+                },
+                accessLogs: {
+                  type: 'array',
+                  items: {
+                    oneOf: [
+                      {
+                        type: 'object',
+                        properties: {
+                          type: {
+                            type: 'string',
+                            minLength: 1,
+                            enum: ['stdout', 'stderr'],
+                            description: 'Access log type: stdout, stderr or file',
+                          },
+                          format: {
+                            type: 'string',
+                            enum: ['text', 'json'],
+                          },
+                          template: true,
+                        },
+                        required: ['type', 'format'],
+                        additionalProperties: false,
+                        if: {
+                          type: 'object',
+                          properties: {
+                            format: {
+                              const: 'json',
+                            },
+                          },
+                        },
+                        then: {
+                          type: 'object',
+                          properties: {
+                            template: {
+                              type: ['null', 'object'],
+                              additionalProperties: {
+                                type: 'string',
+                              },
+                              description: 'JSON fields and values. If null, default template is used.',
+                            },
+                          },
+                          required: ['template'],
+                        },
+                        else: {
+                          type: 'object',
+                          properties: {
+                            template: {
+                              type: ['null', 'string'],
+                              description: 'Template string. If null, default template is used.',
+                            },
+                          },
+                          required: ['template'],
+                        },
+                      },
+                      {
+                        type: 'object',
+                        properties: {
+                          type: {
+                            type: 'string',
+                            const: 'file',
+                            description: 'Access log type: stdout, stderr or file',
+                          },
+                          format: {
+                            type: 'string',
+                            enum: ['text', 'json'],
+                          },
+                          path: {
+                            type: 'string',
+                            minLength: 1,
+                          },
+                          template: true,
+                        },
+                        required: ['type', 'format', 'path'],
+                        additionalProperties: false,
+                        if: {
+                          type: 'object',
+                          properties: {
+                            format: {
+                              const: 'json',
+                            },
+                          },
+                        },
+                        then: {
+                          type: 'object',
+                          properties: {
+                            template: {
+                              type: ['null', 'object'],
+                              additionalProperties: {
+                                type: 'string',
+                              },
+                              description: 'JSON fields and values. If null, default template is used.',
+                            },
+                          },
+                          required: ['template'],
+                        },
+                        else: {
+                          type: 'object',
+                          properties: {
+                            template: {
+                              type: ['null', 'string'],
+                              description: 'Template string. If null, default template is used.',
+                            },
+                          },
+                          required: ['template'],
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+              additionalProperties: false,
+              required: ['level', 'accessLogs'],
+            },
+          },
+          required: ['docker', 'listeners', 'rateLimiter', 'ssl', 'maxHeapSizeInBytes', 'maxConnections', 'upstreams', 'metrics', 'admin', 'log'],
+          additionalProperties: false,
+        },
+        dapi: {
+          type: 'object',
+          properties: {
             api: {
               type: 'object',
               properties: {
@@ -464,12 +780,17 @@ export default {
                   required: ['image', 'build', 'deploy'],
                   additionalProperties: false,
                 },
+                waitForStResultTimeout: {
+                  type: 'integer',
+                  minimum: 1,
+                  description: 'How many millis to wait for state transition result before timeout',
+                },
               },
-              required: ['docker'],
+              required: ['docker', 'waitForStResultTimeout'],
               additionalProperties: false,
             },
           },
-          required: ['envoy', 'api'],
+          required: ['api'],
           additionalProperties: false,
         },
         drive: {
@@ -513,25 +834,81 @@ export default {
                     additionalProperties: false,
                   },
                 },
+                tokioConsole: {
+                  type: 'object',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                    host: {
+                      $ref: '#/definitions/host',
+                    },
+                    port: {
+                      $ref: '#/definitions/port',
+                    },
+                    retention: {
+                      type: 'integer',
+                      minimum: 0,
+                      description: 'How many seconds keep data if console is not connected',
+                    },
+                  },
+                  required: ['enabled', 'host', 'port', 'retention'],
+                  additionalProperties: false,
+                },
                 validatorSet: {
                   type: 'object',
                   properties: {
-                    llmqType: {
-                      type: 'number',
-                      // https://github.com/dashpay/dashcore-lib/blob/843176fed9fc81feae43ccf319d99e2dd942fe1f/lib/constants/index.js#L50-L99
-                      enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107],
+                    quorum: {
+                      $ref: '#/definitions/quorum',
                     },
                   },
                   additionalProperties: false,
-                  required: ['llmqType'],
+                  required: ['quorum'],
+                },
+                chainLock: {
+                  type: 'object',
+                  properties: {
+                    quorum: {
+                      $ref: '#/definitions/quorum',
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['quorum'],
+                },
+                instantLock: {
+                  type: 'object',
+                  properties: {
+                    quorum: {
+                      $ref: '#/definitions/quorum',
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['quorum'],
                 },
                 epochTime: {
                   type: 'integer',
                   minimum: 180,
                 },
+                metrics: {
+                  $ref: '#/definitions/enabledHostPort',
+                },
+                grovedbVisualizer: {
+                  $ref: '#/definitions/enabledHostPort',
+                },
+                proposer: {
+                  type: 'object',
+                  properties: {
+                    txProcessingTimeLimit: {
+                      type: ['null', 'integer'],
+                      minimum: 0,
+                    },
+                  },
+                  required: ['txProcessingTimeLimit'],
+                  additionalProperties: false,
+                },
               },
               additionalProperties: false,
-              required: ['docker', 'logs', 'validatorSet', 'epochTime'],
+              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics', 'grovedbVisualizer', 'proposer'],
             },
             tenderdash: {
               type: 'object',
@@ -581,13 +958,25 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    maxConnections: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
+                    maxOutgoingConnections: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
                   },
-                  required: ['host', 'port', 'persistentPeers', 'seeds', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate'],
+                  required: ['host', 'port', 'persistentPeers', 'seeds', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate', 'maxConnections', 'maxOutgoingConnections'],
                   additionalProperties: false,
                 },
                 mempool: {
                   type: 'object',
                   properties: {
+                    cacheSize: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                     size: {
                       type: 'integer',
                       minimum: 0,
@@ -596,9 +985,34 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    timeoutCheckTx: {
+                      $ref: '#/definitions/duration',
+                    },
+                    txEnqueueTimeout: {
+                      $ref: '#/definitions/duration',
+                    },
+                    txSendRateLimit: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    txRecvRateLimit: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    maxConcurrentCheckTx: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
+                    ttlDuration: {
+                      $ref: '#/definitions/duration',
+                    },
+                    ttlNumBlocks: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                   },
                   additionalProperties: false,
-                  required: ['size', 'maxTxsBytes'],
+                  required: ['size', 'maxTxsBytes', 'cacheSize', 'timeoutCheckTx', 'txEnqueueTimeout', 'txSendRateLimit', 'txRecvRateLimit', 'maxConcurrentCheckTx', 'ttlDuration', 'ttlNumBlocks'],
                 },
                 consensus: {
                   type: 'object',
@@ -706,8 +1120,11 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    timeoutBroadcastTx: {
+                      $ref: '#/definitions/duration',
+                    },
                   },
-                  required: ['host', 'port', 'maxOpenConnections'],
+                  required: ['host', 'port', 'maxOpenConnections', 'timeoutBroadcastTx'],
                   additionalProperties: false,
                 },
                 pprof: {
@@ -724,23 +1141,7 @@ export default {
                   additionalProperties: false,
                 },
                 metrics: {
-                  description: 'Prometheus metrics',
-                  type: 'object',
-                  properties: {
-                    enabled: {
-                      type: 'boolean',
-                    },
-                    host: {
-                      type: 'string',
-                      minLength: 1,
-                      format: 'ipv4',
-                    },
-                    port: {
-                      $ref: '#/definitions/port',
-                    },
-                  },
-                  required: ['enabled', 'host', 'port'],
-                  additionalProperties: false,
+                  $ref: '#/definitions/enabledHostPort',
                 },
                 node: {
                   type: 'object',
@@ -768,153 +1169,15 @@ export default {
           required: ['abci', 'tenderdash'],
           additionalProperties: false,
         },
-        dpns: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            ownerId: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
-        },
-        dashpay: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
-        },
-        featureFlags: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            ownerId: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'ownerId', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
-        },
         sourcePath: {
           type: ['string', 'null'],
           minLength: 1,
-        },
-        masternodeRewardShares: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
-        },
-        withdrawals: {
-          type: 'object',
-          properties: {
-            contract: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: ['string', 'null'],
-                  minLength: 1,
-                },
-              },
-              required: ['id'],
-              additionalProperties: false,
-            },
-            masterPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            secondPublicKey: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
-          additionalProperties: false,
         },
         enable: {
           type: 'boolean',
         },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals', 'enable'],
+      required: ['gateway', 'dapi', 'drive', 'sourcePath', 'enable'],
       additionalProperties: false,
     },
     dashmate: {

@@ -4,6 +4,7 @@ use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DefinitionName, DocumentName};
+use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
@@ -14,7 +15,8 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         &mut self,
         schemas: BTreeMap<DocumentName, Value>,
         defs: Option<BTreeMap<DefinitionName, Value>>,
-        validate: bool,
+        full_validation: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         self.document_types = DocumentType::create_document_types_from_document_schemas(
@@ -23,7 +25,9 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
             defs.as_ref(),
             self.config.documents_keep_history_contract_default(),
             self.config.documents_mutable_contract_default(),
-            validate,
+            self.config.documents_can_be_deleted_contract_default(),
+            full_validation,
+            validation_operations,
             platform_version,
         )?;
 
@@ -34,7 +38,8 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         &mut self,
         name: &str,
         schema: Value,
-        validate: bool,
+        full_validation: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         let document_type = DocumentType::try_from_schema(
@@ -44,7 +49,9 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
             self.schema_defs.as_ref(),
             self.config.documents_keep_history_contract_default(),
             self.config.documents_mutable_contract_default(),
-            validate,
+            self.config.documents_mutable_contract_default(),
+            full_validation,
+            validation_operations,
             platform_version,
         )?;
 
@@ -68,7 +75,8 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
     fn set_schema_defs(
         &mut self,
         defs: Option<BTreeMap<DefinitionName, Value>>,
-        validate: bool,
+        full_validation: bool,
+        validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         let document_schemas = self
@@ -77,7 +85,13 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
             .map(|(name, document_type)| (name.to_owned(), document_type.schema().to_owned()))
             .collect();
 
-        self.set_document_schemas(document_schemas, defs.clone(), validate, platform_version)?;
+        self.set_document_schemas(
+            document_schemas,
+            defs.clone(),
+            full_validation,
+            validation_operations,
+            platform_version,
+        )?;
 
         self.schema_defs = defs;
 
@@ -100,18 +114,31 @@ mod test {
         let config = DataContractConfig::default_for_version(platform_version)
             .expect("should create a default config");
 
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "a": {
+                    "type": "string",
+                    "maxLength": 10,
+                    "position": 0
+                }
+            },
+            "additionalProperties": false,
+        });
+
         let serialization_format = DataContractInSerializationFormatV0 {
             id: Identifier::random(),
             config,
             version: 0,
             owner_id: Default::default(),
             schema_defs: None,
-            document_schemas: Default::default(),
+            document_schemas: BTreeMap::from([("document_type_name".to_string(), schema.clone())]),
         };
 
         let mut data_contract = DataContractV0::try_from_platform_versioned(
             serialization_format.into(),
             true,
+            &mut vec![],
             platform_version,
         )
         .expect("should create a contract from serialization format");
@@ -125,7 +152,7 @@ mod test {
         let defs_map = Some(defs.into_btree_string_map().expect("should convert to map"));
 
         data_contract
-            .set_schema_defs(defs_map.clone(), true, platform_version)
+            .set_schema_defs(defs_map.clone(), true, &mut vec![], platform_version)
             .expect("should set defs");
 
         assert_eq!(defs_map.as_ref(), data_contract.schema_defs())
@@ -157,12 +184,13 @@ mod test {
         let mut data_contract = DataContractV0::try_from_platform_versioned(
             serialization_format.into(),
             true,
+            &mut vec![],
             platform_version,
         )
         .expect("should create a contract from serialization format");
 
         data_contract
-            .set_schema_defs(None, true, platform_version)
+            .set_schema_defs(None, true, &mut vec![], platform_version)
             .expect("should set defs");
 
         assert_eq!(None, data_contract.schema_defs())

@@ -1,5 +1,6 @@
 use dashcore_rpc::dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use dpp::bls_signatures::BlsError;
+use dpp::identity::TimestampMillis;
 use dpp::version::FeatureVersion;
 use drive::error::Error as DriveError;
 
@@ -53,21 +54,30 @@ pub enum ExecutionError {
 
     /// The platform encountered a corrupted cache state error.
     #[error("platform corrupted cached state error: {0}")]
-    CorruptedCachedState(&'static str),
+    CorruptedCachedState(String),
 
     /// The fork is not yet active for core.
     #[error("initialization fork not active: {0}")]
     InitializationForkNotActive(String),
 
     /// Invalid core chain locked height
-    #[error("core chain locked height {requested} is invalid: {v20_fork} <=  {requested} <= {best} is not true")]
-    InitializationBadCoreLockedHeight {
-        /// v20 fork height
-        v20_fork: u32,
-        /// requested core height
-        requested: u32,
+    #[error("initial height {initial_height} is not chain locked. latest chainlocked height is {chain_lock_height}")]
+    InitializationHeightIsNotLocked {
+        /// initial height (requested or fork)
+        initial_height: u32,
         /// best core lock height
-        best: u32,
+        chain_lock_height: u32,
+    },
+
+    /// Genesis time is in the future.
+    #[error("genesis time {genesis_time} for initial height {initial_height} is in the future. current time is {current_time}")]
+    InitializationGenesisTimeInFuture {
+        /// initial height (requested or fork)
+        initial_height: u32,
+        /// genesis time
+        genesis_time: TimestampMillis,
+        /// current time
+        current_time: TimestampMillis,
     },
 
     /// An error occurred during initialization.
@@ -121,4 +131,8 @@ pub enum ExecutionError {
     /// General Bls Error
     #[error("bls error: {0}")]
     BlsErrorGeneral(#[from] BlsError),
+
+    /// General IO Error
+    #[error("io error: {0}")]
+    IOError(#[from] std::io::Error),
 }

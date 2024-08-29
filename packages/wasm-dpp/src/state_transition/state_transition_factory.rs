@@ -3,9 +3,11 @@ use crate::document_batch_transition::DocumentsBatchTransitionWasm;
 use crate::errors::from_dpp_err;
 use crate::identity::state_transition::{
     IdentityCreateTransitionWasm, IdentityCreditTransferTransitionWasm,
-    IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm,
+    IdentityCreditWithdrawalTransitionWasm, IdentityTopUpTransitionWasm,
+    IdentityUpdateTransitionWasm,
 };
 use crate::state_transition::errors::invalid_state_transition_error::InvalidStateTransitionErrorWasm;
+use crate::voting::state_transition::masternode_vote_transition::MasternodeVoteTransitionWasm;
 use dpp::state_transition::errors::StateTransitionError;
 use dpp::state_transition::state_transition_factory::StateTransitionFactory;
 use dpp::state_transition::StateTransition;
@@ -51,10 +53,15 @@ impl StateTransitionFactoryWasm {
                 StateTransition::IdentityCreditTransfer(st) => {
                     Ok(IdentityCreditTransferTransitionWasm::from(st).into())
                 }
+                StateTransition::IdentityCreditWithdrawal(st) => {
+                    Ok(IdentityCreditWithdrawalTransitionWasm::from(st).into())
+                }
                 StateTransition::DocumentsBatch(st) => {
                     Ok(DocumentsBatchTransitionWasm::from(st).into())
                 }
-                _ => Err("Unsupported state transition type".into()),
+                StateTransition::MasternodeVote(st) => {
+                    Ok(MasternodeVoteTransitionWasm::from(st).into())
+                }
             },
             Err(dpp::ProtocolError::StateTransitionError(e)) => match e {
                 StateTransitionError::InvalidStateTransitionError {

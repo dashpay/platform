@@ -15,35 +15,66 @@ public final class CoreGrpc {
   public static final String SERVICE_NAME = "org.dash.platform.dapi.v0.Core";
 
   // Static method descriptors that strictly reflect the proto.
-  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest,
-      org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse> getGetStatusMethod;
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse> getGetBlockchainStatusMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "getStatus",
-      requestType = org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest.class,
-      responseType = org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "getBlockchainStatus",
+      requestType = org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest.class,
+      responseType = org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest,
-      org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse> getGetStatusMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse> getGetStatusMethod;
-    if ((getGetStatusMethod = CoreGrpc.getGetStatusMethod) == null) {
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse> getGetBlockchainStatusMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse> getGetBlockchainStatusMethod;
+    if ((getGetBlockchainStatusMethod = CoreGrpc.getGetBlockchainStatusMethod) == null) {
       synchronized (CoreGrpc.class) {
-        if ((getGetStatusMethod = CoreGrpc.getGetStatusMethod) == null) {
-          CoreGrpc.getGetStatusMethod = getGetStatusMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse>newBuilder()
+        if ((getGetBlockchainStatusMethod = CoreGrpc.getGetBlockchainStatusMethod) == null) {
+          CoreGrpc.getGetBlockchainStatusMethod = getGetBlockchainStatusMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getStatus"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getBlockchainStatus"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new CoreMethodDescriptorSupplier("getStatus"))
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new CoreMethodDescriptorSupplier("getBlockchainStatus"))
               .build();
         }
       }
     }
-    return getGetStatusMethod;
+    return getGetBlockchainStatusMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse> getGetMasternodeStatusMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getMasternodeStatus",
+      requestType = org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest.class,
+      responseType = org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse> getGetMasternodeStatusMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse> getGetMasternodeStatusMethod;
+    if ((getGetMasternodeStatusMethod = CoreGrpc.getGetMasternodeStatusMethod) == null) {
+      synchronized (CoreGrpc.class) {
+        if ((getGetMasternodeStatusMethod = CoreGrpc.getGetMasternodeStatusMethod) == null) {
+          CoreGrpc.getGetMasternodeStatusMethod = getGetMasternodeStatusMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getMasternodeStatus"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new CoreMethodDescriptorSupplier("getMasternodeStatus"))
+              .build();
+        }
+      }
+    }
+    return getGetMasternodeStatusMethod;
   }
 
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockRequest,
@@ -75,6 +106,37 @@ public final class CoreGrpc {
       }
     }
     return getGetBlockMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse> getGetBestBlockHeightMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getBestBlockHeight",
+      requestType = org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest.class,
+      responseType = org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse> getGetBestBlockHeightMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse> getGetBestBlockHeightMethod;
+    if ((getGetBestBlockHeightMethod = CoreGrpc.getGetBestBlockHeightMethod) == null) {
+      synchronized (CoreGrpc.class) {
+        if ((getGetBestBlockHeightMethod = CoreGrpc.getGetBestBlockHeightMethod) == null) {
+          CoreGrpc.getGetBestBlockHeightMethod = getGetBestBlockHeightMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest, org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getBestBlockHeight"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new CoreMethodDescriptorSupplier("getBestBlockHeight"))
+              .build();
+        }
+      }
+    }
+    return getGetBestBlockHeightMethod;
   }
 
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.BroadcastTransactionRequest,
@@ -232,6 +294,37 @@ public final class CoreGrpc {
     return getSubscribeToTransactionsWithProofsMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse> getSubscribeToMasternodeListMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "subscribeToMasternodeList",
+      requestType = org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest.class,
+      responseType = org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.SERVER_STREAMING)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest,
+      org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse> getSubscribeToMasternodeListMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest, org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse> getSubscribeToMasternodeListMethod;
+    if ((getSubscribeToMasternodeListMethod = CoreGrpc.getSubscribeToMasternodeListMethod) == null) {
+      synchronized (CoreGrpc.class) {
+        if ((getSubscribeToMasternodeListMethod = CoreGrpc.getSubscribeToMasternodeListMethod) == null) {
+          CoreGrpc.getSubscribeToMasternodeListMethod = getSubscribeToMasternodeListMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest, org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.SERVER_STREAMING)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "subscribeToMasternodeList"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new CoreMethodDescriptorSupplier("subscribeToMasternodeList"))
+              .build();
+        }
+      }
+    }
+    return getSubscribeToMasternodeListMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -282,9 +375,16 @@ public final class CoreGrpc {
 
     /**
      */
-    public void getStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetStatusMethod(), responseObserver);
+    public void getBlockchainStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetBlockchainStatusMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getMasternodeStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetMasternodeStatusMethod(), responseObserver);
     }
 
     /**
@@ -292,6 +392,13 @@ public final class CoreGrpc {
     public void getBlock(org.dash.platform.dapi.v0.CoreOuterClass.GetBlockRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetBlockMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getBestBlockHeight(org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetBestBlockHeightMethod(), responseObserver);
     }
 
     /**
@@ -329,15 +436,29 @@ public final class CoreGrpc {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSubscribeToTransactionsWithProofsMethod(), responseObserver);
     }
 
+    /**
+     */
+    public void subscribeToMasternodeList(org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSubscribeToMasternodeListMethod(), responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
-            getGetStatusMethod(),
+            getGetBlockchainStatusMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
-                org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest,
-                org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse>(
-                  this, METHODID_GET_STATUS)))
+                org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest,
+                org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse>(
+                  this, METHODID_GET_BLOCKCHAIN_STATUS)))
+          .addMethod(
+            getGetMasternodeStatusMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest,
+                org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse>(
+                  this, METHODID_GET_MASTERNODE_STATUS)))
           .addMethod(
             getGetBlockMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -345,6 +466,13 @@ public final class CoreGrpc {
                 org.dash.platform.dapi.v0.CoreOuterClass.GetBlockRequest,
                 org.dash.platform.dapi.v0.CoreOuterClass.GetBlockResponse>(
                   this, METHODID_GET_BLOCK)))
+          .addMethod(
+            getGetBestBlockHeightMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest,
+                org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse>(
+                  this, METHODID_GET_BEST_BLOCK_HEIGHT)))
           .addMethod(
             getBroadcastTransactionMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -380,6 +508,13 @@ public final class CoreGrpc {
                 org.dash.platform.dapi.v0.CoreOuterClass.TransactionsWithProofsRequest,
                 org.dash.platform.dapi.v0.CoreOuterClass.TransactionsWithProofsResponse>(
                   this, METHODID_SUBSCRIBE_TO_TRANSACTIONS_WITH_PROOFS)))
+          .addMethod(
+            getSubscribeToMasternodeListMethod(),
+            io.grpc.stub.ServerCalls.asyncServerStreamingCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest,
+                org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse>(
+                  this, METHODID_SUBSCRIBE_TO_MASTERNODE_LIST)))
           .build();
     }
   }
@@ -400,10 +535,18 @@ public final class CoreGrpc {
 
     /**
      */
-    public void getStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse> responseObserver) {
+    public void getBlockchainStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getGetStatusMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getGetBlockchainStatusMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getMasternodeStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetMasternodeStatusMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -412,6 +555,14 @@ public final class CoreGrpc {
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetBlockMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getBestBlockHeight(org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetBestBlockHeightMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -453,6 +604,14 @@ public final class CoreGrpc {
       io.grpc.stub.ClientCalls.asyncServerStreamingCall(
           getChannel().newCall(getSubscribeToTransactionsWithProofsMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     */
+    public void subscribeToMasternodeList(org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncServerStreamingCall(
+          getChannel().newCall(getSubscribeToMasternodeListMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -471,9 +630,16 @@ public final class CoreGrpc {
 
     /**
      */
-    public org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse getStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest request) {
+    public org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse getBlockchainStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getGetStatusMethod(), getCallOptions(), request);
+          getChannel(), getGetBlockchainStatusMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse getMasternodeStatus(org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetMasternodeStatusMethod(), getCallOptions(), request);
     }
 
     /**
@@ -481,6 +647,13 @@ public final class CoreGrpc {
     public org.dash.platform.dapi.v0.CoreOuterClass.GetBlockResponse getBlock(org.dash.platform.dapi.v0.CoreOuterClass.GetBlockRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetBlockMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse getBestBlockHeight(org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetBestBlockHeightMethod(), getCallOptions(), request);
     }
 
     /**
@@ -519,6 +692,14 @@ public final class CoreGrpc {
       return io.grpc.stub.ClientCalls.blockingServerStreamingCall(
           getChannel(), getSubscribeToTransactionsWithProofsMethod(), getCallOptions(), request);
     }
+
+    /**
+     */
+    public java.util.Iterator<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse> subscribeToMasternodeList(
+        org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest request) {
+      return io.grpc.stub.ClientCalls.blockingServerStreamingCall(
+          getChannel(), getSubscribeToMasternodeListMethod(), getCallOptions(), request);
+    }
   }
 
   /**
@@ -537,10 +718,18 @@ public final class CoreGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse> getStatus(
-        org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse> getBlockchainStatus(
+        org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getGetStatusMethod(), getCallOptions()), request);
+          getChannel().newCall(getGetBlockchainStatusMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse> getMasternodeStatus(
+        org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetMasternodeStatusMethod(), getCallOptions()), request);
     }
 
     /**
@@ -549,6 +738,14 @@ public final class CoreGrpc {
         org.dash.platform.dapi.v0.CoreOuterClass.GetBlockRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetBlockMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse> getBestBlockHeight(
+        org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetBestBlockHeightMethod(), getCallOptions()), request);
     }
 
     /**
@@ -576,13 +773,16 @@ public final class CoreGrpc {
     }
   }
 
-  private static final int METHODID_GET_STATUS = 0;
-  private static final int METHODID_GET_BLOCK = 1;
-  private static final int METHODID_BROADCAST_TRANSACTION = 2;
-  private static final int METHODID_GET_TRANSACTION = 3;
-  private static final int METHODID_GET_ESTIMATED_TRANSACTION_FEE = 4;
-  private static final int METHODID_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS = 5;
-  private static final int METHODID_SUBSCRIBE_TO_TRANSACTIONS_WITH_PROOFS = 6;
+  private static final int METHODID_GET_BLOCKCHAIN_STATUS = 0;
+  private static final int METHODID_GET_MASTERNODE_STATUS = 1;
+  private static final int METHODID_GET_BLOCK = 2;
+  private static final int METHODID_GET_BEST_BLOCK_HEIGHT = 3;
+  private static final int METHODID_BROADCAST_TRANSACTION = 4;
+  private static final int METHODID_GET_TRANSACTION = 5;
+  private static final int METHODID_GET_ESTIMATED_TRANSACTION_FEE = 6;
+  private static final int METHODID_SUBSCRIBE_TO_BLOCK_HEADERS_WITH_CHAIN_LOCKS = 7;
+  private static final int METHODID_SUBSCRIBE_TO_TRANSACTIONS_WITH_PROOFS = 8;
+  private static final int METHODID_SUBSCRIBE_TO_MASTERNODE_LIST = 9;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -601,13 +801,21 @@ public final class CoreGrpc {
     @java.lang.SuppressWarnings("unchecked")
     public void invoke(Req request, io.grpc.stub.StreamObserver<Resp> responseObserver) {
       switch (methodId) {
-        case METHODID_GET_STATUS:
-          serviceImpl.getStatus((org.dash.platform.dapi.v0.CoreOuterClass.GetStatusRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetStatusResponse>) responseObserver);
+        case METHODID_GET_BLOCKCHAIN_STATUS:
+          serviceImpl.getBlockchainStatus((org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockchainStatusResponse>) responseObserver);
+          break;
+        case METHODID_GET_MASTERNODE_STATUS:
+          serviceImpl.getMasternodeStatus((org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetMasternodeStatusResponse>) responseObserver);
           break;
         case METHODID_GET_BLOCK:
           serviceImpl.getBlock((org.dash.platform.dapi.v0.CoreOuterClass.GetBlockRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBlockResponse>) responseObserver);
+          break;
+        case METHODID_GET_BEST_BLOCK_HEIGHT:
+          serviceImpl.getBestBlockHeight((org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.GetBestBlockHeightResponse>) responseObserver);
           break;
         case METHODID_BROADCAST_TRANSACTION:
           serviceImpl.broadcastTransaction((org.dash.platform.dapi.v0.CoreOuterClass.BroadcastTransactionRequest) request,
@@ -628,6 +836,10 @@ public final class CoreGrpc {
         case METHODID_SUBSCRIBE_TO_TRANSACTIONS_WITH_PROOFS:
           serviceImpl.subscribeToTransactionsWithProofs((org.dash.platform.dapi.v0.CoreOuterClass.TransactionsWithProofsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.TransactionsWithProofsResponse>) responseObserver);
+          break;
+        case METHODID_SUBSCRIBE_TO_MASTERNODE_LIST:
+          serviceImpl.subscribeToMasternodeList((org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.CoreOuterClass.MasternodeListResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -690,13 +902,16 @@ public final class CoreGrpc {
         if (result == null) {
           serviceDescriptor = result = io.grpc.ServiceDescriptor.newBuilder(SERVICE_NAME)
               .setSchemaDescriptor(new CoreFileDescriptorSupplier())
-              .addMethod(getGetStatusMethod())
+              .addMethod(getGetBlockchainStatusMethod())
+              .addMethod(getGetMasternodeStatusMethod())
               .addMethod(getGetBlockMethod())
+              .addMethod(getGetBestBlockHeightMethod())
               .addMethod(getBroadcastTransactionMethod())
               .addMethod(getGetTransactionMethod())
               .addMethod(getGetEstimatedTransactionFeeMethod())
               .addMethod(getSubscribeToBlockHeadersWithChainLocksMethod())
               .addMethod(getSubscribeToTransactionsWithProofsMethod())
+              .addMethod(getSubscribeToMasternodeListMethod())
               .build();
         }
       }

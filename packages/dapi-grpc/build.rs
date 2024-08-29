@@ -1,12 +1,36 @@
 use std::{
+    collections::HashSet,
     fs::{create_dir_all, remove_dir_all},
     path::PathBuf,
+    process::exit,
 };
 
 use tonic_build::Builder;
 
+const SERDE_WITH_BYTES: &str = r#"#[cfg_attr(feature = "serde", serde(with = "serde_bytes"))]"#;
+const SERDE_WITH_BASE64: &str =
+    r#"#[cfg_attr(feature = "serde", serde(with = "crate::deserialization::vec_base64string"))]"#;
+const SERDE_WITH_STRING: &str =
+    r#"#[cfg_attr(feature = "serde", serde(with = "crate::deserialization::from_to_string"))]"#;
+
 fn main() {
-    generate().expect("failed to compile protobuf definitions");
+    let core = MappingConfig::new(
+        PathBuf::from("protos/core/v0/core.proto"),
+        PathBuf::from("src/core"),
+    );
+
+    configure_core(core)
+        .generate()
+        .expect("generate core proto");
+
+    let platform = MappingConfig::new(
+        PathBuf::from("protos/platform/v0/platform.proto"),
+        PathBuf::from("src/platform"),
+    );
+
+    configure_platform(platform)
+        .generate()
+        .expect("generate platform proto");
 
     println!("cargo:rerun-if-changed=./protos");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_SERDE");
@@ -18,29 +42,20 @@ struct MappingConfig {
     builder: Builder,
     proto_includes: Vec<PathBuf>,
 }
-/// Generate Rust definitions from Protobuf definitions
-pub fn generate() -> Result<(), std::io::Error> {
-    let core = MappingConfig::new(
-        PathBuf::from("protos/core/v0/core.proto"),
-        PathBuf::from("src/core/proto"),
-    );
-    core.generate().unwrap();
 
-    let mut platform = MappingConfig::new(
-        PathBuf::from("protos/platform/v0/platform.proto"),
-        PathBuf::from("src/platform/proto"),
-    );
-
+fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 15] = [
+    const VERSIONED_REQUESTS: [&str; 26] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
         "GetDocumentsRequest",
         "GetIdentitiesByPublicKeyHashesRequest",
         "GetIdentitiesRequest",
+        "GetIdentityNonceRequest",
+        "GetIdentityContractNonceRequest",
         "GetIdentityBalanceAndRevisionRequest",
         "GetIdentityBalanceRequest",
         "GetIdentityByPublicKeyHashRequest",
@@ -50,10 +65,19 @@ pub fn generate() -> Result<(), std::io::Error> {
         "WaitForStateTransitionResultRequest",
         "GetProtocolVersionUpgradeStateRequest",
         "GetProtocolVersionUpgradeVoteStatusRequest",
+        "GetPathElementsRequest",
+        "GetIdentitiesContractKeysRequest",
+        "GetPrefundedSpecializedBalanceRequest",
+        "GetContestedResourcesRequest",
+        "GetContestedResourceVoteStateRequest",
+        "GetContestedResourceVotersForIdentityRequest",
+        "GetContestedResourceIdentityVotesRequest",
+        "GetVotePollsByEndDateRequest",
+        "GetTotalCreditsInPlatformRequest",
     ];
 
     //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
-    const VERSIONED_RESPONSES: [&str; 16] = [
+    const VERSIONED_RESPONSES: [&str; 27] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -62,6 +86,8 @@ pub fn generate() -> Result<(), std::io::Error> {
         "GetIdentitiesResponse",
         "GetIdentityBalanceAndRevisionResponse",
         "GetIdentityBalanceResponse",
+        "GetIdentityNonceResponse",
+        "GetIdentityContractNonceResponse",
         "GetIdentityByPublicKeyHashResponse",
         "GetIdentityKeysResponse",
         "GetIdentityResponse",
@@ -70,7 +96,19 @@ pub fn generate() -> Result<(), std::io::Error> {
         "GetEpochsInfoResponse",
         "GetProtocolVersionUpgradeStateResponse",
         "GetProtocolVersionUpgradeVoteStatusResponse",
+        "GetPathElementsResponse",
+        "GetIdentitiesContractKeysResponse",
+        "GetPrefundedSpecializedBalanceResponse",
+        "GetContestedResourcesResponse",
+        "GetContestedResourceVoteStateResponse",
+        "GetContestedResourceVotersForIdentityResponse",
+        "GetContestedResourceIdentityVotesResponse",
+        "GetVotePollsByEndDateResponse",
+        "GetTotalCreditsInPlatformResponse",
     ];
+
+    check_unique(&VERSIONED_REQUESTS).expect("VERSIONED_REQUESTS");
+    check_unique(&VERSIONED_RESPONSES).expect("VERSIONED_RESPONSES");
 
     // Derive VersionedGrpcMessage on requests
     for msg in VERSIONED_REQUESTS {
@@ -92,65 +130,112 @@ pub fn generate() -> Result<(), std::io::Error> {
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }
 
-    #[cfg(feature = "serde")]
+    // All messages can be mocked.
+    let platform = platform.message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#);
+
     let platform = platform
         .type_attribute(
             ".",
-            r#"#[derive(::serde::Serialize, ::serde::Deserialize)]"#,
+            r#"#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]"#,
         )
-        .type_attribute(".", r#"#[serde(rename_all = "snake_case")]"#)
-        .field_attribute("id", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute("identity_id", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute(
-            "ids",
-            r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
+        .type_attribute(
+            ".",
+            r#"#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]"#,
         )
-        .field_attribute(
-            "ResponseMetadata.height",
-            r#"#[serde(with = "crate::deserialization::from_to_string")]"#,
-        )
-        .field_attribute(
-            "ResponseMetadata.time_ms",
-            r#"#[serde(with = "crate::deserialization::from_to_string")]"#,
-        )
-        .field_attribute(
-            "start_at_ms",
-            r#"#[serde(with = "crate::deserialization::from_to_string")]"#,
-        )
-        .field_attribute("public_key_hash", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute(
-            "public_key_hashes",
-            r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
-        )
+        .field_attribute("id", SERDE_WITH_BYTES)
+        .field_attribute("identity_id", SERDE_WITH_BYTES)
+        .field_attribute("ids", SERDE_WITH_BASE64)
+        .field_attribute("ResponseMetadata.height", SERDE_WITH_STRING)
+        .field_attribute("ResponseMetadata.time_ms", SERDE_WITH_STRING)
+        .field_attribute("start_at_ms", SERDE_WITH_STRING)
+        .field_attribute("public_key_hash", SERDE_WITH_BYTES)
+        .field_attribute("public_key_hashes", SERDE_WITH_BASE64)
         // Get documents fields
-        .field_attribute("data_contract_id", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute("where", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute("order_by", r#"#[serde(with = "serde_bytes")]"#)
+        .field_attribute("data_contract_id", SERDE_WITH_BYTES)
+        .field_attribute("where", SERDE_WITH_BYTES)
+        .field_attribute("order_by", SERDE_WITH_BYTES)
         // Proof fields
-        .field_attribute("Proof.grovedb_proof", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute("Proof.quorum_hash", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute("Proof.signature", r#"#[serde(with = "serde_bytes")]"#)
-        .field_attribute("Proof.block_id_hash", r#"#[serde(with = "serde_bytes")]"#);
+        .field_attribute("Proof.grovedb_proof", SERDE_WITH_BYTES)
+        .field_attribute("Proof.quorum_hash", SERDE_WITH_BYTES)
+        .field_attribute("Proof.signature", SERDE_WITH_BYTES)
+        .field_attribute("Proof.block_id_hash", SERDE_WITH_BYTES);
 
-    platform.generate().unwrap();
+    #[allow(clippy::let_and_return)]
+    platform
+}
 
-    Ok(())
+/// Check for duplicate messages in the list.
+fn check_unique(messages: &[&'static str]) -> Result<(), String> {
+    let mut hashset: HashSet<&'static str> = HashSet::new();
+    let mut duplicates = String::new();
+
+    for value in messages {
+        if !hashset.insert(*value) {
+            duplicates.push_str(value);
+            duplicates.push_str(", ");
+        }
+    }
+
+    if duplicates.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Duplicate messages found: {}",
+            duplicates.trim_end_matches(", ")
+        ))
+    }
+}
+
+fn configure_core(core: MappingConfig) -> MappingConfig {
+    // All messages can be mocked.
+    let core = core.message_attribute(".", r#"#[derive(::dapi_grpc_macros::Mockable)]"#);
+
+    // Serde support
+    let core = core.type_attribute(
+        ".",
+        r#"#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]"#,
+    );
+
+    #[allow(clippy::let_and_return)]
+    core
 }
 
 impl MappingConfig {
+    /// Create a new MappingConfig instance.
+    ///
+    /// ## Arguments
+    ///
+    /// * `protobuf_file` - Path to the protobuf file to use as input.
+    /// * `out_dir` - Output directory where subdirectories for generated files will be created.
+    /// Depending on the features, either `client`, `server` or `client_server` subdirectory
+    /// will be created inside `out_dir`.
     fn new(protobuf_file: PathBuf, out_dir: PathBuf) -> Self {
         let protobuf_file = abs_path(&protobuf_file);
-        let out_dir = abs_path(&out_dir);
+
+        let build_server = cfg!(feature = "server");
+        let build_client = cfg!(feature = "client");
+
+        // Depending on the features, we need to build the server, client or both.
+        // We save these artifacts in separate directories to avoid overwriting the generated files
+        // when another crate requires different features.
+        let out_dir_suffix = match (build_server, build_client) {
+            (true, true) => "client_server",
+            (true, false) => "server",
+            (false, true) => "client",
+            (false, false) => {
+                println!("WARNING: At least one of the features 'server' or 'client' must be enabled; dapi-grpc will not generate any files.");
+                exit(0)
+            }
+        };
+
+        let out_dir = abs_path(&out_dir.join(out_dir_suffix));
 
         let builder = tonic_build::configure()
-            .build_server(false)
+            .build_server(build_server)
+            .build_client(build_client)
+            .build_transport(build_server || build_client)
             .out_dir(out_dir.clone())
             .protoc_arg("--experimental_allow_proto3_optional");
-
-        #[cfg(feature = "client")]
-        let builder = builder.build_client(true).build_transport(true);
-        #[cfg(not(feature = "client"))]
-        let builder = builder.build_client(false).build_transport(false);
 
         Self {
             protobuf_file,

@@ -1,9 +1,11 @@
 use crate::data_contract::document_type::DocumentTypeRef;
+#[cfg(feature = "validation")]
+use crate::validation::ConsensusValidationResult;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_version::version::FeatureVersion;
 
-pub trait DocumentPlatformConversionMethodsV0 {
+pub trait DocumentPlatformConversionMethodsV0: Clone {
     /// Serializes the document.
     ///
     /// The serialization of a document follows the pattern:
@@ -40,6 +42,18 @@ pub trait DocumentPlatformConversionMethodsV0 {
         document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
+
+    #[cfg(feature = "validation")]
+    /// Reads a serialized document and creates a Document from it.
+    /// This will return a ConsensusValidationResult instead when the error is happening
+    /// in consensus (deserialization of a message from the network)
+    fn from_bytes_in_consensus(
+        serialized_document: &[u8],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<Self>, ProtocolError>
     where
         Self: Sized;
 }

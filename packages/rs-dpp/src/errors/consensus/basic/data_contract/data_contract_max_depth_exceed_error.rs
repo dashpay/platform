@@ -16,23 +16,15 @@ pub struct DataContractMaxDepthExceedError {
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    schema_depth: usize,
     max_depth: usize,
 }
 
 impl DataContractMaxDepthExceedError {
-    pub fn new(schema_depth: usize, max_depth: usize) -> Self {
-        Self {
-            schema_depth,
-            max_depth,
-        }
+    pub fn new(max_depth: usize) -> Self {
+        Self { max_depth }
     }
-
     pub fn max_depth(&self) -> usize {
         self.max_depth
-    }
-    pub fn schema_depth(&self) -> usize {
-        self.schema_depth
     }
 }
 

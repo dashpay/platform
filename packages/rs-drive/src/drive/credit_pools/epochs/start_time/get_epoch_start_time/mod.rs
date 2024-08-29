@@ -33,7 +33,7 @@ impl Drive {
             .epochs
             .get_epoch_start_time
         {
-            0 => self.get_epoch_start_time_v0(epoch_tree, transaction),
+            0 => self.get_epoch_start_time_v0(epoch_tree, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_epoch_start_time".to_string(),
                 known_versions: vec![0],

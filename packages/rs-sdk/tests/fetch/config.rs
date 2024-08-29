@@ -1,9 +1,13 @@
-//! Configuration helpers for mocking of rs-sdk.
+//! Configuration helpers for mocking of dash-platform-sdk.
 //!
-//! This module contains [Config] struct that can be used to configure rs-sdk.
+//! This module contains [Config] struct that can be used to configure dash-platform-sdk.
 //! It's mainly used for testing.
 
-use dpp::prelude::Identifier;
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::{
+    dashcore::{hashes::Hash, ProTxHash},
+    prelude::Identifier,
+};
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
 use std::{path::PathBuf, str::FromStr};
@@ -18,12 +22,12 @@ const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
 ];
 
 #[derive(Debug, Deserialize)]
-/// Configuration for rs-sdk.
+/// Configuration for dash-platform-sdk.
 ///
 /// Content of this configuration is loaded from environment variables or `${CARGO_MANIFEST_DIR}/.env` file
 /// when the [Config::new()] is called.
-/// Variable names in the enviroment and `.env` file must be prefixed with [RS_SDK_](Config::CONFIG_PREFIX)
-/// and written as SCREAMING_SNAKE_CASE (e.g. `RS_SDK_PLATFORM_HOST`).
+/// Variable names in the enviroment and `.env` file must be prefixed with [DASH_SDK_](Config::CONFIG_PREFIX)
+/// and written as SCREAMING_SNAKE_CASE (e.g. `DASH_SDK_PLATFORM_HOST`).
 pub struct Config {
     /// Hostname of the Dash Platform node to connect to
     #[serde(default)]
@@ -40,6 +44,9 @@ pub struct Config {
     /// Password for Dash Core RPC interface
     #[serde(default)]
     pub core_password: String,
+    /// When true, use SSL for the Dash Platform node grpc interface
+    #[serde(default)]
+    pub platform_ssl: bool,
 
     /// Directory where all generated test vectors will be saved.
     ///
@@ -65,16 +72,19 @@ pub struct Config {
     /// in [`existing_data_contract_id`](Config::existing_data_contract_id).
     #[serde(default = "Config::default_document_id")]
     pub existing_document_id: Identifier,
+    // Hex-encoded ProTxHash of the existing HP masternode
+    #[serde(default = "Config::default_protxhash")]
+    pub masternode_owner_pro_reg_tx_hash: String,
 }
 
 impl Config {
     /// Prefix of configuration options in the environment variables and `.env` file.
-    pub const CONFIG_PREFIX: &str = "RS_SDK_";
+    pub const CONFIG_PREFIX: &'static str = "DASH_SDK_";
     /// Load configuration from operating system environment variables and `.env` file.
     ///
     /// Create new [Config] with data from environment variables and `${CARGO_MANIFEST_DIR}/tests/.env` file.
     /// Variable names in the environment and `.env` file must be converted to SCREAMING_SNAKE_CASE and
-    /// prefixed with [RS_SDK_](Config::CONFIG_PREFIX).
+    /// prefixed with [DASH_SDK_](Config::CONFIG_PREFIX).
     pub fn new() -> Self {
         // load config from .env file, ignore errors
 
@@ -114,7 +124,12 @@ impl Config {
     #[allow(unused)]
     /// Create list of Platform addresses from the configuration
     pub fn address_list(&self) -> AddressList {
-        let address: String = format!("http://{}:{}", self.platform_host, self.platform_port);
+        let scheme = match self.platform_ssl {
+            true => "https",
+            false => "http",
+        };
+
+        let address: String = format!("{}://{}:{}", scheme, self.platform_host, self.platform_port);
 
         AddressList::from_iter(vec![http::Uri::from_str(&address).expect("valid uri")])
     }
@@ -125,16 +140,43 @@ impl Config {
     ///
     /// ## Feature flags
     ///
-    /// * `offline-testing` is not set - connect to the platform and generate
+    /// * `offline-testing` is not set - connect to Platform and generate
     /// new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk
-    pub async fn setup_api(&self) -> rs_sdk::Sdk {
+    ///
+    /// ## Arguments
+    ///
+    /// * namespace - namespace to use when storing mock expectations; this is used to separate
+    /// expectations from different tests.
+    ///
+    /// When empty string is provided, expectations are stored in the root of the dump directory.
+    pub async fn setup_api(&self, namespace: &str) -> dash_sdk::Sdk {
+        let dump_dir = match namespace.is_empty() {
+            true => self.dump_dir.clone(),
+            false => {
+                // looks like spaces are not replaced by sanitize_filename, and we don't want them as they are confusing
+                let namespace = namespace.replace(' ', "_");
+                self.dump_dir.join(sanitize_filename::sanitize(namespace))
+            }
+        };
+
+        if dump_dir.is_relative() {
+            panic!(
+                "dump dir must be absolute path to avoid mistakes, got: {}",
+                dump_dir.display()
+            );
+        }
+
+        if dump_dir.as_os_str().eq("/") {
+            panic!("cannot use namespace with root dump dir");
+        }
+
         // offline testing takes precedence over network testing
         #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
             // Dump all traffic to disk
-            let builder = rs_sdk::SdkBuilder::new(self.address_list()).with_core(
+            let builder = dash_sdk::SdkBuilder::new(self.address_list()).with_core(
                 &self.platform_host,
                 self.core_port,
                 &self.core_user,
@@ -142,7 +184,23 @@ impl Config {
             );
 
             #[cfg(feature = "generate-test-vectors")]
-            let builder = builder.with_dump_dir(&self.dump_dir);
+            let builder = {
+                // When we use namespaces, clean up the namespaced dump dir before starting
+                // to avoid mixing expectations from different test runs
+                if !namespace.is_empty() {
+                    if let Err(err) = std::fs::remove_dir_all(&dump_dir) {
+                        tracing::warn!(?err, ?dump_dir, "failed to remove dump dir");
+                    }
+                    std::fs::create_dir_all(&dump_dir)
+                        .expect(format!("create dump dir {}", dump_dir.display()).as_str());
+                    // ensure dump dir is committed to git
+                    let gitkeep = dump_dir.join(".gitkeep");
+                    std::fs::write(&gitkeep, "")
+                        .expect(format!("create {} file", gitkeep.display()).as_str());
+                }
+
+                builder.with_dump_dir(&dump_dir)
+            };
 
             builder.build().expect("cannot initialize api")
         };
@@ -150,33 +208,29 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(feature = "offline-testing")]
         let sdk = {
-            let mut mock_sdk = rs_sdk::SdkBuilder::new_mock()
+            dash_sdk::SdkBuilder::new_mock()
+                .with_dump_dir(&dump_dir)
                 .build()
-                .expect("initialize api");
-
-            mock_sdk
-                .mock()
-                .quorum_info_dir(&self.dump_dir)
-                .load_expectations(&self.dump_dir)
-                .await
-                .expect("load expectations");
-
-            mock_sdk
+                .expect("initialize api")
         };
 
         sdk
     }
 
     fn default_identity_id() -> Identifier {
-        data_contracts::SystemDataContract::DPNS
-            .source()
-            .expect("data contract source")
-            .owner_id_bytes
-            .into()
+        // TODO: We don't have default system identities anymore.
+        //  So now I used this manually created identity to populate test vectors.
+        //  Next time we need to do it again and update this value :(. This is terrible.
+        //  We should automate creation of identity for SDK tests when we have time.
+        Identifier::from_string(
+            "a1534e47f60be71e823a9dbc9ceb6d3ea9f1ebde7a3773f03e49ef31c7d9c044",
+            Encoding::Hex,
+        )
+        .unwrap()
     }
 
     fn default_data_contract_id() -> Identifier {
-        data_contracts::SystemDataContract::DPNS.id()
+        data_contracts::dpns_contract::ID_BYTES.into()
     }
 
     fn default_document_type_name() -> String {
@@ -190,6 +244,28 @@ impl Config {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("vectors")
+    }
+
+    /// Existing masternode proTxHash. Must be updated every time test vectors are regenerated.
+    ///
+    /// See documentation of [contested_resource_identity_votes_ok](super::contested_resource_identity_votes::contested_resource_identity_votes_ok).
+    fn default_protxhash() -> String {
+        String::from("d10bf435af7c75f5b07b09486af1212469d69fdc787589548e315776bc1052a1")
+    }
+
+    /// Return ProTxHash of an existing evo node, or None if not set
+    pub fn existing_protxhash(&self) -> Result<ProTxHash, String> {
+        hex::decode(&self.masternode_owner_pro_reg_tx_hash)
+            .map_err(|e| e.to_string())
+            .and_then(|b| ProTxHash::from_slice(&b).map_err(|e| e.to_string()))
+            .map_err(|e| {
+                format!(
+                    "Invalid {}MASTERNODE_OWNER_PRO_REG_TX_HASH {}: {}",
+                    Self::CONFIG_PREFIX,
+                    self.masternode_owner_pro_reg_tx_hash,
+                    e
+                )
+            })
     }
 }
 

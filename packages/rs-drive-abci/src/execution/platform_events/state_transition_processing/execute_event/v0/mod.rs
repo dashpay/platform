@@ -1,13 +1,18 @@
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::platform_types::platform::Platform;
-use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult;
-use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::{
-    ConsensusExecutionError, SuccessfulFreeExecution, SuccessfulPaidExecution,
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::platform_types::event_execution_result::EventExecutionResult;
+use crate::platform_types::event_execution_result::EventExecutionResult::{
+    SuccessfulFreeExecution, SuccessfulPaidExecution, UnpaidConsensusExecutionError,
+    UnsuccessfulPaidExecution,
 };
+use crate::platform_types::platform::Platform;
+
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::validation::SimpleConsensusValidationResult;
+use dpp::consensus::ConsensusError;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
 use drive::grovedb::Transaction;
@@ -38,31 +43,51 @@ where
     ///
     /// This function may return an `Error` variant if there is a problem with the drive operations or
     /// an internal error occurs.
+    #[inline(always)]
     pub(super) fn execute_event_v0(
         &self,
         event: ExecutionEvent,
+        mut consensus_errors: Vec<ConsensusError>,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<StateTransitionExecutionResult, Error> {
-        //todo: we need to split out errors
-        //  between failed execution and internal errors
-        let validation_result =
-            self.validate_fees_of_event(&event, block_info, Some(transaction), platform_version)?;
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
+    ) -> Result<EventExecutionResult, Error> {
+        let maybe_fee_validation_result = match event {
+            ExecutionEvent::PaidFromAssetLock { .. } | ExecutionEvent::Paid { .. } => {
+                Some(self.validate_fees_of_event(
+                    &event,
+                    block_info,
+                    Some(transaction),
+                    platform_version,
+                    previous_fee_versions,
+                )?)
+            }
+            ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. }
+            | ExecutionEvent::PaidFixedCost { .. }
+            | ExecutionEvent::Free { .. } => None,
+        };
 
         match event {
-            ExecutionEvent::PaidFromAssetLockDriveEvent {
+            ExecutionEvent::PaidFromAssetLock {
                 identity,
                 operations,
+                execution_operations,
+                user_fee_increase,
                 ..
             }
-            | ExecutionEvent::PaidDriveEvent {
+            | ExecutionEvent::Paid {
                 identity,
                 operations,
+                execution_operations,
+                user_fee_increase,
+                ..
             } => {
-                if validation_result.is_valid_with_data() {
+                // We can unwrap here because we have the match right above
+                let mut fee_validation_result = maybe_fee_validation_result.unwrap();
+                if fee_validation_result.is_valid_with_data() {
                     //todo: make this into an atomic event with partial batches
-                    let individual_fee_result = self
+                    let mut individual_fee_result = self
                         .drive
                         .apply_drive_operations(
                             operations,
@@ -70,8 +95,17 @@ where
                             block_info,
                             Some(transaction),
                             platform_version,
+                            Some(previous_fee_versions),
                         )
                         .map_err(Error::Drive)?;
+
+                    ValidationOperation::add_many_to_fee_result(
+                        &execution_operations,
+                        &mut individual_fee_result,
+                        platform_version,
+                    )?;
+
+                    individual_fee_result.apply_user_fee_increase(user_fee_increase);
 
                     let balance_change = individual_fee_result.into_balance_change(identity.id);
 
@@ -81,17 +115,29 @@ where
                         platform_version,
                     )?;
 
-                    Ok(SuccessfulPaidExecution(
-                        validation_result.into_data()?,
-                        outcome.actual_fee_paid_owned(),
-                    ))
+                    if consensus_errors.is_empty() {
+                        Ok(SuccessfulPaidExecution(
+                            Some(fee_validation_result.into_data()?),
+                            outcome.actual_fee_paid_owned(),
+                        ))
+                    } else {
+                        Ok(UnsuccessfulPaidExecution(
+                            Some(fee_validation_result.into_data()?),
+                            outcome.actual_fee_paid_owned(),
+                            consensus_errors,
+                        ))
+                    }
                 } else {
-                    Ok(ConsensusExecutionError(
-                        SimpleConsensusValidationResult::new_with_errors(validation_result.errors),
-                    ))
+                    consensus_errors.append(&mut fee_validation_result.errors);
+                    Ok(UnpaidConsensusExecutionError(consensus_errors))
                 }
             }
-            ExecutionEvent::FreeDriveEvent { operations } => {
+            // This is for Partially used Asset Locks
+            // NOT used for identity create or identity top up
+            ExecutionEvent::PaidFromAssetLockWithoutIdentity {
+                processing_fees,
+                operations,
+            } => {
                 self.drive
                     .apply_drive_operations(
                         operations,
@@ -99,6 +145,56 @@ where
                         block_info,
                         Some(transaction),
                         platform_version,
+                        Some(previous_fee_versions),
+                    )
+                    .map_err(Error::Drive)?;
+
+                if consensus_errors.is_empty() {
+                    Ok(SuccessfulPaidExecution(
+                        None,
+                        FeeResult::default_with_fees(0, processing_fees),
+                    ))
+                } else {
+                    Ok(UnsuccessfulPaidExecution(
+                        None,
+                        FeeResult::default_with_fees(0, processing_fees),
+                        consensus_errors,
+                    ))
+                }
+            }
+            ExecutionEvent::PaidFixedCost {
+                operations,
+                fees_to_add_to_pool,
+            } => {
+                if consensus_errors.is_empty() {
+                    self.drive
+                        .apply_drive_operations(
+                            operations,
+                            true,
+                            block_info,
+                            Some(transaction),
+                            platform_version,
+                            Some(previous_fee_versions),
+                        )
+                        .map_err(Error::Drive)?;
+
+                    Ok(SuccessfulPaidExecution(
+                        None,
+                        FeeResult::default_with_fees(0, fees_to_add_to_pool),
+                    ))
+                } else {
+                    Ok(UnpaidConsensusExecutionError(consensus_errors))
+                }
+            }
+            ExecutionEvent::Free { operations } => {
+                self.drive
+                    .apply_drive_operations(
+                        operations,
+                        true,
+                        block_info,
+                        Some(transaction),
+                        platform_version,
+                        Some(previous_fee_versions),
                     )
                     .map_err(Error::Drive)?;
                 Ok(SuccessfulFreeExecution)

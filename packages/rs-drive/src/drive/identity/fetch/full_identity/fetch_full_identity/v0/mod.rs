@@ -1,7 +1,7 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
@@ -33,6 +33,7 @@ impl Drive {
             epoch,
             self.config.epochs_per_era,
             platform_version,
+            None,
         )?;
         Ok((maybe_identity, fee))
     }

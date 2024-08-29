@@ -1,6 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::IdentityPublicKey;
@@ -12,7 +12,8 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Add new keys to an identity
-    pub fn add_new_unique_keys_to_identity_v0(
+    #[inline(always)]
+    pub(super) fn add_new_unique_keys_to_identity_v0(
         &self,
         identity_id: [u8; 32],
         keys_to_add: Vec<IdentityPublicKey>,
@@ -50,6 +51,7 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
+            None,
         )?;
         Ok(fees)
     }

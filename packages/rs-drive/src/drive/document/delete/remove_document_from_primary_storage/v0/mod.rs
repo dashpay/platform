@@ -6,24 +6,27 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 
 use std::collections::HashMap;
 
-use crate::drive::grove_operations::BatchDeleteApplyType::{
+use crate::util::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
 };
 
 use crate::drive::Drive;
 
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::identifier::Identifier;
 
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U32;
 use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Removes the document from primary storage.
+    #[inline(always)]
     pub(super) fn remove_document_from_primary_storage_v0(
         &self,
-        document_id: [u8; 32],
+        document_id: Identifier,
         document_type: DocumentTypeRef,
         contract_documents_primary_key_path: [&[u8]; 5],
         estimated_costs_only_with_layer_info: &mut Option<
@@ -36,6 +39,7 @@ impl Drive {
         let apply_type = if estimated_costs_only_with_layer_info.is_some() {
             StatelessBatchDelete {
                 is_sum_tree: false,
+                estimated_key_size: DEFAULT_HASH_SIZE_U32,
                 estimated_value_size: document_type.estimated_size(platform_version)? as u32,
             }
         } else {

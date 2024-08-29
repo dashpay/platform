@@ -14,19 +14,19 @@ use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::identity::Purpose::WITHDRAW;
+use dpp::identity::Purpose::TRANSFER;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
-use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::{
-    AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys,
-};
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use drive::grovedb::Transaction;
+use drive::util::batch::DriveOperation;
+use drive::util::batch::DriveOperation::IdentityOperation;
+use drive::util::batch::IdentityOperationType::{
+    AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys,
+};
 
 impl<C> Platform<C>
 where
@@ -35,7 +35,7 @@ where
     pub(super) fn update_operator_identity_v0(
         &self,
         masternode: &(ProTxHash, DMNStateDiff),
-        block_info: &BlockInfo,
+        _block_info: &BlockInfo,
         platform_state: &PlatformState,
         transaction: &Transaction,
         drive_operations: &mut Vec<DriveOperation>,
@@ -57,9 +57,10 @@ where
             .full_masternode_list()
             .get(pro_tx_hash)
             .ok_or_else(|| {
-                Error::Execution(ExecutionError::CorruptedCachedState(
-                    "expected masternode to be in state",
-                ))
+                Error::Execution(ExecutionError::CorruptedCachedState(format!(
+                    "expected masternode {} to be in state",
+                    pro_tx_hash
+                )))
             })?;
 
         let old_operator_identifier = Self::get_operator_identifier_from_masternode_list_item(
@@ -77,7 +78,7 @@ where
         )?;
 
         let key_request = IdentityKeysRequest {
-            identity_id: old_operator_identifier,
+            identity_id: old_operator_identifier.to_buffer(),
             request_type: KeyRequestType::AllKeys,
             limit: None,
             offset: None,
@@ -142,9 +143,8 @@ where
 
             if !old_operator_identity_key_ids_to_disable.is_empty() {
                 drive_operations.push(IdentityOperation(DisableIdentityKeys {
-                    identity_id: new_operator_identifier,
+                    identity_id: new_operator_identifier.to_buffer(),
                     keys_ids: old_operator_identity_key_ids_to_disable,
-                    disable_at: block_info.time_ms,
                 }));
             }
 
@@ -191,7 +191,7 @@ where
                     let key = IdentityPublicKeyV0 {
                         id: new_key_id,
                         key_type: KeyType::ECDSA_HASH160,
-                        purpose: WITHDRAW,
+                        purpose: TRANSFER,
                         security_level: SecurityLevel::CRITICAL,
                         read_only: true,
                         data: BinaryData::new(new_operator_payout_address.to_vec()),
@@ -204,7 +204,7 @@ where
             }
 
             drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
-                identity_id: new_operator_identifier,
+                identity_id: new_operator_identifier.to_buffer(),
                 unique_keys_to_add,
                 non_unique_keys_to_add,
             }));
@@ -230,9 +230,8 @@ where
 
             if !old_operator_identity_key_ids_to_disable.is_empty() {
                 drive_operations.push(IdentityOperation(DisableIdentityKeys {
-                    identity_id: old_operator_identifier,
+                    identity_id: old_operator_identifier.to_buffer(),
                     keys_ids: old_operator_identity_key_ids_to_disable,
-                    disable_at: block_info.time_ms,
                 }));
             }
             let new_payout_address =

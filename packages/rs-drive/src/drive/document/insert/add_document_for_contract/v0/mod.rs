@@ -1,16 +1,18 @@
-use crate::drive::object_size_info::DocumentAndContractInfo;
 use crate::drive::Drive;
+use crate::util::object_size_info::DocumentAndContractInfo;
 
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
     /// Adds a document to a contract.
+    #[inline(always)]
     pub(super) fn add_document_for_contract_v0(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
@@ -19,6 +21,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.add_document_for_contract_apply_and_add_to_operations(
@@ -37,6 +40,7 @@ impl Drive {
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
+            previous_fee_versions,
         )?;
         Ok(fees)
     }

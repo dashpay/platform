@@ -4,11 +4,9 @@ use crate::serialization::{
     PlatformLimitDeserializableFromVersionedStructure, PlatformSerializableWithPlatformVersion,
 };
 
-pub use data_contract::*;
 use derive_more::From;
 
 use bincode::config::{BigEndian, Configuration};
-pub use generate_data_contract::*;
 
 pub mod errors;
 pub mod extra;
@@ -22,7 +20,7 @@ pub mod document_type;
 mod v0;
 
 #[cfg(feature = "factories")]
-mod factory;
+pub mod factory;
 #[cfg(feature = "factories")]
 pub use factory::*;
 pub mod conversion;
@@ -42,8 +40,7 @@ pub use v0::*;
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
 };
-use crate::data_contract::v0::data_contract::DataContractV0;
-use crate::util::hash::hash_to_vec;
+use crate::util::hash::hash_double_to_vec;
 
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
@@ -57,6 +54,8 @@ type JsonSchema = JsonValue;
 type DefinitionName = String;
 pub type DocumentName = String;
 type PropertyPath = String;
+
+pub const INITIAL_DATA_CONTRACT_VERSION: u32 = 1;
 
 /// Understanding Data Contract versioning
 /// Data contract versioning is both for the code structure and for serialization.
@@ -123,7 +122,7 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for DataContract {
     fn versioned_deserialize(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -143,7 +142,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
                 .0;
         DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
-            validate,
+            full_validation,
+            &mut vec![],
             platform_version,
         )
     }
@@ -152,7 +152,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
 impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
     fn versioned_deserialize_with_bytes_len(
         data: &[u8],
-        validate: bool,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, usize), ProtocolError>
     where
@@ -171,7 +171,8 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
         Ok((
             DataContract::try_from_platform_versioned(
                 data_contract_in_serialization_format,
-                validate,
+                full_validation,
+                &mut vec![],
                 platform_version,
             )?,
             len,
@@ -203,6 +204,7 @@ impl PlatformLimitDeserializableFromVersionedStructure for DataContract {
         DataContract::try_from_platform_versioned(
             data_contract_in_serialization_format,
             true,
+            &mut vec![],
             platform_version,
         )
     }
@@ -240,9 +242,9 @@ impl DataContract {
     }
 
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(self.serialize_to_bytes_with_platform_version(
-            platform_version,
-        )?))
+        Ok(hash_double_to_vec(
+            self.serialize_to_bytes_with_platform_version(platform_version)?,
+        ))
     }
 }
 
@@ -265,7 +267,7 @@ mod tests {
     #[test]
     fn test_contract_serialization() {
         let platform_version = PlatformVersion::latest();
-        let data_contract = load_system_data_contract(Dashpay, platform_version.protocol_version)
+        let data_contract = load_system_data_contract(Dashpay, platform_version)
             .expect("expected dashpay contract");
         let platform_version = PlatformVersion::latest();
         let serialized = data_contract
@@ -288,8 +290,9 @@ mod tests {
 
     #[test]
     fn test_contract_can_have_specialized_contract_encryption_decryption_keys() {
-        let data_contract = get_dashpay_contract_with_generalized_encryption_key_fixture(None, 1)
-            .data_contract_owned();
+        let data_contract =
+            get_dashpay_contract_with_generalized_encryption_key_fixture(None, 0, 1)
+                .data_contract_owned();
         assert_eq!(
             data_contract
                 .config()
@@ -306,7 +309,7 @@ mod tests {
 
     #[test]
     fn test_contract_document_type_can_have_specialized_contract_encryption_decryption_keys() {
-        let data_contract = get_dashpay_contract_fixture(None, 1).data_contract_owned();
+        let data_contract = get_dashpay_contract_fixture(None, 0, 1).data_contract_owned();
         assert_eq!(
             data_contract
                 .document_type_for_name("contactRequest")

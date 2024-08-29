@@ -8,14 +8,19 @@ use crate::{
 };
 use data_contracts::SystemDataContract;
 use platform_value::platform_value;
+use platform_version::version::PlatformVersion;
 
 pub fn get_masternode_reward_shares_documents_fixture(
     protocol_version: u32,
 ) -> (Vec<Document>, DataContract) {
     let owner_id = generate_random_identifier_struct();
     let pay_to_id = generate_random_identifier_struct();
+
+    let platform_version =
+        PlatformVersion::get(protocol_version).expect("expected to get platform version");
+
     let data_contract =
-        load_system_data_contract(SystemDataContract::MasternodeRewards, protocol_version)
+        load_system_data_contract(SystemDataContract::MasternodeRewards, platform_version)
             .expect("should load masternode rewards contract");
 
     let factory = DocumentFactory::new(protocol_version).expect("expected to make factory");
@@ -37,7 +42,9 @@ pub fn get_masternode_reward_shares_documents_fixture(
 }
 
 pub fn get_masternode_reward_shares_data_contract_fixture(protocol_version: u32) -> DataContract {
-    load_system_data_contract(SystemDataContract::MasternodeRewards, protocol_version)
+    let platform_version = PlatformVersion::get(protocol_version).expect("expected to get version");
+
+    load_system_data_contract(SystemDataContract::MasternodeRewards, platform_version)
         .expect("should load masternode rewards contract")
 }
 
@@ -45,10 +52,12 @@ pub fn get_masternode_reward_shares_data_contract_fixture(protocol_version: u32)
 pub fn get_masternode_reward_shares_extended_documents_fixture(
     protocol_version: u32,
 ) -> (Vec<ExtendedDocument>, DataContract) {
+    let platform_version = PlatformVersion::get(protocol_version).expect("expected to get version");
+
     let owner_id = generate_random_identifier_struct();
     let pay_to_id = generate_random_identifier_struct();
     let data_contract =
-        load_system_data_contract(SystemDataContract::MasternodeRewards, protocol_version)
+        load_system_data_contract(SystemDataContract::MasternodeRewards, platform_version)
             .expect("should load masternode rewards contract");
 
     let factory = DocumentFactory::new(protocol_version).expect("expected to make factory");

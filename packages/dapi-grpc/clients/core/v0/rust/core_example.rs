@@ -1,5 +1,5 @@
 use dapi_grpc::core::v0 as core;
-use prost::Message;
+use dapi_grpc::Message;
 
 fn main() {
     let request = core::GetBlockRequest {

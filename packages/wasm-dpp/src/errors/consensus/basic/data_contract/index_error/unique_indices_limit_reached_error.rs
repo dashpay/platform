@@ -1,8 +1,7 @@
-use crate::buffer::Buffer;
 use dpp::consensus::basic::data_contract::UniqueIndicesLimitReachedError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use dpp::serialization::PlatformSerializable;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=UniqueIndicesLimitReachedError)]
@@ -24,7 +23,7 @@ impl UniqueIndicesLimitReachedErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getIndexLimit)]
-    pub fn get_index_limit(&self) -> usize {
+    pub fn get_index_limit(&self) -> u16 {
         self.inner.index_limit()
     }
 

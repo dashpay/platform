@@ -7,6 +7,11 @@ export default class GroupRestartCommand extends GroupBaseCommand {
 
   static flags = {
     ...GroupBaseCommand.flags,
+    safe: {
+      char: 's',
+      description: 'wait for dkg before stop',
+      default: false,
+    },
   };
 
   /**
@@ -21,6 +26,7 @@ export default class GroupRestartCommand extends GroupBaseCommand {
   async runWithDependencies(
     args,
     {
+      safe: isSafe,
       verbose: isVerbose,
     },
     dockerCompose,
@@ -38,8 +44,8 @@ export default class GroupRestartCommand extends GroupBaseCommand {
             {
               title: 'Stop nodes',
               task: () => (
-              // So we stop the miner first, as there's a chance that MNs will get banned
-              // if the miner is still running when stopping them
+                // So we stop the miner first, as there's a chance that MNs will get banned
+                // if the miner is still running when stopping them
                 new Listr(configGroup.reverse().map((config) => ({
                   task: () => stopNodeTask(config),
                 })))
@@ -66,6 +72,7 @@ export default class GroupRestartCommand extends GroupBaseCommand {
     try {
       await tasks.run({
         isVerbose,
+        isSafe,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

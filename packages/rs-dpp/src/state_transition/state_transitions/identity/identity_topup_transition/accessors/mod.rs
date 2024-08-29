@@ -2,7 +2,6 @@ mod v0;
 
 pub use v0::*;
 
-use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
 use platform_value::Identifier;

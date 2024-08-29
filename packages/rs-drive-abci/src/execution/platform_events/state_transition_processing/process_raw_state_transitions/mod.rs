@@ -2,15 +2,14 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::metrics::HistogramTiming;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
-use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult;
+use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use tenderdash_abci::proto::abci::ExecTxResult;
 
 impl<C> Platform<C>
 where
@@ -44,7 +43,9 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<(FeeResult, Vec<(Vec<u8>, StateTransitionExecutionResult)>), Error> {
+        proposing_state_transitions: bool,
+        timer: Option<&HistogramTiming>,
+    ) -> Result<StateTransitionsProcessingResult, Error> {
         match platform_version
             .drive_abci
             .methods
@@ -57,6 +58,8 @@ where
                 block_info,
                 transaction,
                 platform_version,
+                proposing_state_transitions,
+                timer,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "process_raw_state_transitions".to_string(),

@@ -79,7 +79,7 @@ impl Value {
         map.remove_key(key)
     }
 
-    pub fn remove_many(&mut self, keys: &Vec<&str>) -> Result<(), Error> {
+    pub fn remove_many(&mut self, keys: &[&str]) -> Result<(), Error> {
         let map = self.as_map_mut_ref()?;
         keys.iter()
             .try_for_each(|key| map.remove_key(key).map(|_| ()))
@@ -646,7 +646,7 @@ impl Value {
         Ok(None)
     }
 
-    /// Gets the inner index map sorted my a special
+    /// Gets the inner index map sorted by a specified property
     pub fn inner_optional_index_map<'a, T>(
         document_type: &'a [(Value, Value)],
         key: &'a str,

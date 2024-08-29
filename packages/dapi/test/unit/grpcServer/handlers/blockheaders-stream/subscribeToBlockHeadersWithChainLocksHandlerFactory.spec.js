@@ -43,7 +43,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
       getBlock: this.sinon.stub(),
       getBlockStats: this.sinon.stub(),
       getBlockHeaders: this.sinon.stub(),
-      getBestBlockHeight: this.sinon.stub(),
       getBlockHash: this.sinon.stub(),
       getBestChainLock: this.sinon.stub(),
     };
@@ -113,6 +112,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     });
 
     coreAPIMock.getBlockStats.resolves({ height: 1 });
+    chainDataProvider.chainHeight = 10;
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
 
@@ -165,6 +165,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     });
 
     coreAPIMock.getBlockStats.resolves({ height: 1 });
+    chainDataProvider.chainHeight = 10;
 
     await subscribeToBlockHeadersWithChainLocksHandler(call);
 
@@ -213,7 +214,7 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
       coreAPIMock.getBlockStats.resolves({ height: 10 });
 
-      coreAPIMock.getBestBlockHeight.resolves(11);
+      chainDataProvider.chainHeight = 11;
 
       await subscribeToBlockHeadersWithChainLocksHandler(call);
 

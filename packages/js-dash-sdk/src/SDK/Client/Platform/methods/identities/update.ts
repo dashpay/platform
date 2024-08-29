@@ -28,8 +28,11 @@ export async function update(
 
   const { dpp } = this;
 
+  const identityNonce = await this.nonceManager.bumpIdentityNonce(identity.getId());
+
   const identityUpdateTransition = dpp.identity.createIdentityUpdateTransition(
     identity,
+    BigInt(identityNonce),
     publicKeys,
   );
 

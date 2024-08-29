@@ -11,6 +11,7 @@ mod test {
     use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::tests::json_document::json_document_to_contract;
+    use assert_matches::assert_matches;
     use platform_version::version::PlatformVersion;
 
     type IndexName = &'static str;
@@ -128,7 +129,7 @@ mod test {
             let document_type = data_contract
                 .document_type_for_name(expect.document_name)
                 .unwrap();
-            assert_eq!(expect.indexes.len(), document_type.indices().len());
+            assert_eq!(expect.indexes.len(), document_type.indexes().len());
         }
     }
 
@@ -174,23 +175,25 @@ mod test {
             .document_types
             .get("contactInfo")
             .unwrap()
-            .indices();
+            .indexes()
+            .values()
+            .collect::<Vec<_>>();
         assert_eq!(contact_info_indices.len(), 2);
-        assert!(contact_info_indices[0].unique);
-        assert!(!contact_info_indices[1].unique);
-        assert_eq!(contact_info_indices[0].properties.len(), 3);
+        assert!(contact_info_indices[1].unique);
+        assert!(!contact_info_indices[0].unique);
+        assert_eq!(contact_info_indices[1].properties.len(), 3);
 
-        assert_eq!(contact_info_indices[0].properties[0].name, "$ownerId");
+        assert_eq!(contact_info_indices[1].properties[0].name, "$ownerId");
         assert_eq!(
-            contact_info_indices[0].properties[1].name,
+            contact_info_indices[1].properties[1].name,
             "rootEncryptionKeyIndex"
         );
         assert_eq!(
-            contact_info_indices[0].properties[2].name,
+            contact_info_indices[1].properties[2].name,
             "derivationEncryptionKeyIndex"
         );
 
-        assert!(contact_info_indices[0].properties[0].ascending);
+        assert!(contact_info_indices[1].properties[0].ascending);
     }
 
     #[test]
@@ -219,6 +222,9 @@ mod test {
             .set_documents_mutable_contract_default(false);
         contract
             .config
+            .set_documents_can_be_deleted_contract_default(false);
+        contract
+            .config
             .set_documents_keep_history_contract_default(true);
 
         let contract_cbor = contract
@@ -227,7 +233,7 @@ mod test {
         let deserialized_contract = DataContract::from_cbor(contract_cbor, true, platform_version)
             .expect("deserialization shouldn't fail");
 
-        assert!(matches!(
+        assert_matches!(
             deserialized_contract.config(),
             DataContractConfig::V0(DataContractConfigV0 {
                 can_be_deleted: false,
@@ -235,10 +241,11 @@ mod test {
                 keeps_history: true,
                 documents_mutable_contract_default: false,
                 documents_keep_history_contract_default: true,
+                documents_can_be_deleted_contract_default: false,
                 requires_identity_encryption_bounded_key: None,
                 requires_identity_decryption_bounded_key: None,
             })
-        ));
+        );
     }
 
     #[test]
@@ -266,6 +273,9 @@ mod test {
             .set_documents_mutable_contract_default(false);
         contract_v0
             .config
+            .set_documents_can_be_deleted_contract_default(false);
+        contract_v0
+            .config
             .set_documents_keep_history_contract_default(true);
 
         let contract = contract
@@ -285,6 +295,7 @@ mod test {
                 documents_keep_history_contract_default: true,
                 requires_identity_encryption_bounded_key: None,
                 requires_identity_decryption_bounded_key: None,
+                documents_can_be_deleted_contract_default: false,
             })
         );
     }

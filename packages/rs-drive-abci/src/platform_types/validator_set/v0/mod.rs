@@ -21,6 +21,8 @@ use tenderdash_abci::proto::{abci, crypto};
 pub struct ValidatorSetV0 {
     /// The quorum hash
     pub quorum_hash: QuorumHash,
+    /// Rotation quorum index is available only for DIP24 quorums
+    pub quorum_index: Option<u32>,
     /// Active height
     pub core_height: u32,
     /// The list of masternodes
@@ -57,19 +59,29 @@ impl ValidatorSetV0 {
     ) -> Result<ValidatorSetUpdate, Error> {
         if self.quorum_hash != rhs.quorum_hash {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                "updating validator set doesn't match quorum hash",
+                format!(
+                    "updating validator set doesn't match quorum hash ours: {} theirs: {}",
+                    self.quorum_hash, rhs.quorum_hash
+                ),
             )));
         }
 
         if self.core_height != rhs.core_height {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                "updating validator set doesn't match core height",
+                format!(
+                    "updating validator set doesn't match core height ours: {} theirs: {}",
+                    self.core_height, rhs.core_height
+                ),
             )));
         }
 
         if self.threshold_public_key != rhs.threshold_public_key {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                "updating validator set doesn't match threshold public key",
+                format!(
+                    "updating validator set doesn't match threshold public key ours: {} theirs: {}",
+                    hex::encode(*self.threshold_public_key.to_bytes()),
+                    hex::encode(*rhs.threshold_public_key.to_bytes())
+                ),
             )));
         }
 
@@ -80,7 +92,10 @@ impl ValidatorSetV0 {
                 rhs.members.get(pro_tx_hash).map_or_else(
                     || {
                         Some(Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                            "validator set does not contain all same members",
+                            format!(
+                                "validator set does not contain all same members, missing {}",
+                                pro_tx_hash
+                            ),
                         ))))
                     },
                     |new_validator_state| {
@@ -284,6 +299,7 @@ impl ValidatorSetV0 {
         let QuorumInfoResult {
             height,
             quorum_hash,
+            quorum_index,
             quorum_public_key,
             members,
             ..
@@ -319,8 +335,15 @@ impl ValidatorSetV0 {
         let threshold_public_key = BlsPublicKey::from_bytes(quorum_public_key.as_slice())
             .map_err(ExecutionError::BlsErrorFromDashCoreResponse)?;
 
+        let optional_quorum_index = if quorum_index == 0 {
+            None
+        } else {
+            Some(quorum_index)
+        };
+
         Ok(ValidatorSetV0 {
             quorum_hash,
+            quorum_index: optional_quorum_index,
             core_height: height,
             members: validator_set,
             threshold_public_key,
@@ -332,6 +355,8 @@ impl ValidatorSetV0 {
 pub trait ValidatorSetV0Getters {
     /// Returns the quorum hash of the validator set.
     fn quorum_hash(&self) -> &QuorumHash;
+    /// Returns rotation quorum index. It's available only for DIP24 quorums
+    fn quorum_index(&self) -> Option<u32>;
     /// Returns the active height of the validator set.
     fn core_height(&self) -> u32;
     /// Returns the members of the validator set.
@@ -348,6 +373,8 @@ pub trait ValidatorSetV0Getters {
 pub trait ValidatorSetV0Setters {
     /// Sets the quorum hash of the validator set.
     fn set_quorum_hash(&mut self, quorum_hash: QuorumHash);
+    /// Sets the quorum index of the validator set.
+    fn set_quorum_index(&mut self, index: Option<u32>);
     /// Sets the active height of the validator set.
     fn set_core_height(&mut self, core_height: u32);
     /// Sets the members of the validator set.
@@ -359,6 +386,10 @@ pub trait ValidatorSetV0Setters {
 impl ValidatorSetV0Getters for ValidatorSetV0 {
     fn quorum_hash(&self) -> &QuorumHash {
         &self.quorum_hash
+    }
+
+    fn quorum_index(&self) -> Option<u32> {
+        self.quorum_index
     }
 
     fn core_height(&self) -> u32 {
@@ -385,6 +416,10 @@ impl ValidatorSetV0Getters for ValidatorSetV0 {
 impl ValidatorSetV0Setters for ValidatorSetV0 {
     fn set_quorum_hash(&mut self, quorum_hash: QuorumHash) {
         self.quorum_hash = quorum_hash;
+    }
+
+    fn set_quorum_index(&mut self, index: Option<u32>) {
+        self.quorum_index = index;
     }
 
     fn set_core_height(&mut self, core_height: u32) {

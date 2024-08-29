@@ -1,6 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
@@ -8,6 +8,7 @@ use grovedb::TransactionArg;
 impl Drive {
     /// We remove from system credits when:
     /// - an identity withdraws some of their balance
+    #[inline(always)]
     pub(super) fn remove_from_system_credits_v0(
         &self,
         amount: u64,
@@ -22,7 +23,7 @@ impl Drive {
             platform_version,
         )?;
         let grove_db_operations =
-            LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
+            LowLevelDriveOperation::grovedb_operations_batch_consume(batch_operations);
         self.grove_apply_batch_with_add_costs(
             grove_db_operations,
             false,

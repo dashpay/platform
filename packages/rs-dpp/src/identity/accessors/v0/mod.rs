@@ -1,4 +1,4 @@
-use crate::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 
 use crate::prelude::Revision;
 use crate::ProtocolError;
@@ -45,6 +45,7 @@ pub trait IdentityGettersV0 {
         purpose: Purpose,
         security_levels: HashSet<SecurityLevel>,
         key_types: HashSet<KeyType>,
+        allow_disabled: bool,
     ) -> Option<&IdentityPublicKey>;
     /// Add an identity public key
     fn add_public_key(&mut self, key: IdentityPublicKey);

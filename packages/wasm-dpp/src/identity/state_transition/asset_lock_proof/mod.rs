@@ -7,8 +7,6 @@ use std::convert::TryInto;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::__rt::Ref;
 
-use crate::errors::RustConversionError;
-
 use dpp::identity::errors::UnknownAssetLockProofTypeError;
 use wasm_bindgen::prelude::*;
 
@@ -75,7 +73,9 @@ impl AssetLockProofWasm {
                 InstantAssetLockProofWasm::from(instant.to_owned()).create_identifier()
             }
             AssetLockProof::Chain(chain) => {
-                ChainAssetLockProofWasm::from(chain.to_owned()).create_identifier()
+                let identifier =
+                    ChainAssetLockProofWasm::from(chain.to_owned()).create_identifier();
+                Ok(identifier)
             }
         }
     }

@@ -19,6 +19,7 @@ const { default: loadWasmDpp, deserializeConsensusError } = require('@dashevo/wa
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const AlreadyExistsGrpcError = require('@dashevo/grpc-common/lib/server/error/AlreadyExistsGrpcError');
+const logger = require('../../logger');
 
 /**
  * @param {Object} data
@@ -100,7 +101,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
   }
 
   // Undefined Drive and DAPI errors
-  if (code >= 17 && code < 1000) {
+  if (code >= 17 && code < 10000) {
     return new GrpcError(
       GrpcErrorCodes.UNKNOWN,
       message,
@@ -109,11 +110,22 @@ async function createGrpcErrorFromDriveResponse(code, info) {
   }
 
   // DPP errors
-  if (code >= 1000 && code < 5000) {
-    const consensusError = deserializeConsensusError(data.serializedError || []);
+  if (code >= 10000 && code < 50000) {
+    let consensusError;
+    try {
+      consensusError = deserializeConsensusError(data.serializedError || []);
+    } catch (e) {
+      logger.error({
+        err: e,
+        data: data.serializedError,
+        code,
+      }, `Failed to deserialize consensus error with code ${code}: ${e.message}`);
+
+      throw e;
+    }
 
     // Basic
-    if (code >= 1000 && code < 2000) {
+    if (code >= 10000 && code < 20000) {
       return new InvalidArgumentGrpcError(
         consensusError.message,
         { code, ...createRawMetadata(data) },
@@ -121,7 +133,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
     }
 
     // Signature
-    if (code >= 2000 && code < 3000) {
+    if (code >= 20000 && code < 30000) {
       return new GrpcError(
         GrpcErrorCodes.UNAUTHENTICATED,
         consensusError.message,
@@ -130,7 +142,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
     }
 
     // Fee
-    if (code >= 3000 && code < 4000) {
+    if (code >= 30000 && code < 40000) {
       return new FailedPreconditionGrpcError(
         consensusError.message,
         { code, ...createRawMetadata(data) },
@@ -138,7 +150,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
     }
 
     // State
-    if (code >= 4000 && code < 5000) {
+    if (code >= 40000 && code < 50000) {
       return new InvalidArgumentGrpcError(
         consensusError.message,
         { code, ...createRawMetadata(data) },

@@ -5,6 +5,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
+use dpp::identifier::Identifier;
 
 use dpp::version::PlatformVersion;
 
@@ -23,22 +24,21 @@ where
     ///
     /// # Returns
     ///
-    /// * Result<[u8; 32], Error> - Returns the derived operator identifier if successful. Otherwise, returns an error.
+    /// * Result<Identifier, Error> - Returns the derived operator identifier if successful. Otherwise, returns an error.
     pub(super) fn get_operator_identifier_from_masternode_list_item(
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,
-    ) -> Result<[u8; 32], Error> {
+    ) -> Result<Identifier, Error> {
         match platform_version
             .drive_abci
             .methods
             .core_based_updates
             .masternode_updates
-            .get_operator_identifier
+            .get_operator_identifier_from_masternode_list_item
         {
-            0 => Self::get_operator_identifier_from_masternode_list_item_v0(
+            0 => Ok(Self::get_operator_identifier_from_masternode_list_item_v0(
                 masternode,
-                platform_version,
-            ),
+            )),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "get_operator_identifier_from_masternode_list_item".to_string(),
                 known_versions: vec![0],

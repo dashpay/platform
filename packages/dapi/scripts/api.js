@@ -1,7 +1,6 @@
 // Entry point for DAPI.
 const dotenv = require('dotenv');
 const grpc = require('@grpc/grpc-js');
-// const loadBLS = require('@dashevo/bls');
 
 const {
   server: {
@@ -12,6 +11,9 @@ const {
 const {
   getCoreDefinition,
   getPlatformDefinition,
+  v0: {
+    PlatformPromiseClient,
+  },
 } = require('@dashevo/dapi-grpc');
 
 const { default: loadWasmDpp, DashPlatformProtocol } = require('@dashevo/wasm-dpp');
@@ -27,10 +29,8 @@ const config = require('../lib/config');
 const { validateConfig } = require('../lib/config/validator');
 const logger = require('../lib/logger');
 const rpcServer = require('../lib/rpcServer/server');
-const DriveClient = require('../lib/externalApis/drive/DriveClient');
 const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
 const BlockchainListener = require('../lib/externalApis/tenderdash/BlockchainListener');
-// const DriveStateRepository = require('../lib/dpp/DriveStateRepository');
 
 const coreHandlersFactory = require(
   '../lib/grpcServer/handlers/core/coreHandlersFactory',
@@ -38,6 +38,7 @@ const coreHandlersFactory = require(
 const platformHandlersFactory = require(
   '../lib/grpcServer/handlers/platform/platformHandlersFactory',
 );
+const ZmqClient = require('../lib/externalApis/dashcore/ZmqClient');
 
 async function main() {
   await loadWasmDpp();
@@ -53,11 +54,22 @@ async function main() {
 
   const isProductionEnvironment = process.env.NODE_ENV === 'production';
 
-  logger.info('Connecting to Drive');
-  const driveClient = new DriveClient({
-    host: config.tendermintCore.host,
-    port: config.tendermintCore.port,
-  });
+  // Subscribe to events from Dash Core
+  const coreZmqClient = new ZmqClient(config.dashcore.zmq.host, config.dashcore.zmq.port);
+
+  // Bind logs on ZMQ connection events
+  coreZmqClient.on(ZmqClient.events.DISCONNECTED, logger.warn.bind(logger));
+  coreZmqClient.on(ZmqClient.events.CONNECTION_DELAY, logger.warn.bind(logger));
+  coreZmqClient.on(ZmqClient.events.MONITOR_ERROR, logger.warn.bind(logger));
+
+  // Wait until zmq connection is established
+  logger.info(`Connecting to Core ZMQ on ${coreZmqClient.connectionString}`);
+
+  await coreZmqClient.start();
+
+  logger.info('Connection to ZMQ established.');
+
+  const driveClient = new PlatformPromiseClient(`http://${config.driveRpc.host}:${config.driveRpc.port}`, undefined);
 
   const rpcClient = RpcClient.http({
     host: config.tendermintCore.host,
@@ -110,9 +122,9 @@ async function main() {
   logger.info('Starting JSON RPC server');
   rpcServer.start({
     port: config.rpcServer.port,
-    networkType: config.network,
     dashcoreAPI: dashCoreRpcClient,
     logger,
+    coreZmqClient,
   });
   logger.info(`JSON RPC server is listening on port ${config.rpcServer.port}`);
 
@@ -124,6 +136,7 @@ async function main() {
   const coreHandlers = coreHandlersFactory(
     dashCoreRpcClient,
     isProductionEnvironment,
+    coreZmqClient,
   );
   const platformHandlers = platformHandlersFactory(
     rpcClient,

@@ -31,8 +31,8 @@ describe('config/validator', () => {
     it('Should return errors in array if there are invalid fields in the config', () => {
       const config = getConfigFixture();
 
-      config.dashcore.p2p.host = 1;
-      config.dashcore.p2p.port = '$/*';
+      config.dashcore.rpc.host = 1;
+      config.dashcore.rpc.port = '$/*';
       const validationResult = validateConfig(config);
 
       expect(validationResult.isValid).to.be.false;

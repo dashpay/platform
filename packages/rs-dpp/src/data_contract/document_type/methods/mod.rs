@@ -1,9 +1,14 @@
+mod contested_vote_poll_for_document;
 mod create_document_from_data;
 mod create_document_with_prevalidated_properties;
+mod deserialize_value_for_key;
 mod estimated_size;
 mod index_for_types;
 mod max_size;
+mod prefunded_voting_balances_for_document;
 mod serialize_value_for_key;
+#[cfg(feature = "validation")]
+mod validate_update;
 
 use std::collections::BTreeMap;
 
@@ -13,10 +18,12 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
 use crate::document::INITIAL_REVISION;
-use crate::prelude::Revision;
+use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
+use crate::fee::Credits;
+use crate::voting::vote_polls::VotePoll;
 use platform_value::{Identifier, Value};
 
 // TODO: Some of those methods are only for tests. Hide under feature
@@ -35,6 +42,12 @@ pub trait DocumentTypeV0Methods {
         value: &Value,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError>;
+    fn deserialize_value_for_key(
+        &self,
+        key: &str,
+        serialized_value: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Value, ProtocolError>;
 
     fn max_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError>;
 
@@ -59,23 +72,72 @@ pub trait DocumentTypeV0Methods {
     /// Non versioned
     fn top_level_indices(&self) -> Vec<&IndexProperty>;
 
+    /// Non versioned
+    fn top_level_indices_of_contested_unique_indexes(&self) -> Vec<&IndexProperty>;
+
     fn create_document_from_data(
         &self,
         data: Value,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         document_entropy: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError>;
 
-    /// Creates a document at the current time based on document type information
-    /// Properties set here must be pre validated
+    /// Creates a document at the current time based on specified document type information.
+    /// This function requires that all properties provided are pre-validated according to
+    /// the document's schema requirements.
+    ///
+    /// # Parameters:
+    /// - `id`: An identifier for the document. Unique within the context of the document's type.
+    /// - `owner_id`: The identifier of the entity that will own this document.
+    /// - `block_height`: The block height at which this document is considered to have been created.
+    ///    While this value is recorded in the document, it is ignored when the document is broadcasted
+    ///    to the network. This is because the actual block height at the time of broadcast may differ.
+    ///    This parameter is included to fulfill schema requirements that specify a block height; you may
+    ///    use the current block height, a placeholder value of 0, or any other value as necessary.
+    /// - `core_block_height`: Similar to `block_height`, this represents the core network's block height
+    ///    at the document's creation time. It is handled the same way as `block_height` regarding broadcast
+    ///    and schema requirements.
+    /// - `properties`: A collection of properties for the document, structured as a `BTreeMap<String, Value>`.
+    ///    These must be pre-validated to match the document's schema definitions.
+    /// - `platform_version`: A reference to the current version of the platform for which the document is created.
+    ///
+    /// # Returns:
+    /// A `Result<Document, ProtocolError>`, which is `Ok` if the document was successfully created, or an error
+    /// indicating what went wrong during the creation process.
+    ///
+    /// # Note:
+    /// The `block_height` and `core_block_height` are primarily included for schema compliance and local record-keeping.
+    /// These values are not used when the document is broadcasted to the network, as the network assigns its own block
+    /// heights upon receipt and processing of the document. After broadcasting, it is recommended to update these fields
+    /// in their created_at/updated_at variants as well as the base created_at/updated_at in the client-side
+    /// representation of the document to reflect the values returned by the network. The base created_at/updated_at
+    /// uses current time when creating the local document and is also ignored as it is also set network side.
     fn create_document_with_prevalidated_properties(
         &self,
         id: Identifier,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         properties: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError>;
+
+    /// Figures out the minimum prefunded voting balance needed for a document
+    fn prefunded_voting_balance_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<(String, Credits)>, ProtocolError>;
+
+    /// Gets the vote poll associated with a document
+    fn contested_vote_poll_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError>;
 }
 
 impl DocumentTypeV0Methods for DocumentTypeV0 {
@@ -118,6 +180,28 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             0 => self.serialize_value_for_key_v0(key, value),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "serialize_value_for_key".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    fn deserialize_value_for_key(
+        &self,
+        key: &str,
+        value: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Value, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .deserialize_value_for_key
+        {
+            0 => self.deserialize_value_for_key_v0(key, value),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "deserialize_value_for_key".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
@@ -174,7 +258,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
     }
 
     fn initial_revision(&self) -> Option<Revision> {
-        if self.documents_mutable {
+        if self.requires_revision() {
             Some(INITIAL_REVISION)
         } else {
             None
@@ -183,22 +267,38 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
 
     fn requires_revision(&self) -> bool {
         self.documents_mutable
+            || self.documents_transferable.is_transferable()
+            || self.trade_mode.seller_sets_price()
     }
 
     fn top_level_indices(&self) -> Vec<&IndexProperty> {
-        let mut index_properties: Vec<&IndexProperty> = Vec::with_capacity(self.indices.len());
-        for index in &self.indices {
-            if let Some(property) = index.properties.get(0) {
-                index_properties.push(property);
-            }
-        }
-        index_properties
+        self.indices
+            .values()
+            .filter_map(|index| index.properties.first())
+            .collect()
+    }
+
+    // This should normally just be 1 item, however we keep a vec in case we want to change things
+    //  in the future.
+    fn top_level_indices_of_contested_unique_indexes(&self) -> Vec<&IndexProperty> {
+        self.indices
+            .values()
+            .filter_map(|index| {
+                if index.contested_index.is_some() {
+                    index.properties.first()
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     fn create_document_from_data(
         &self,
         data: Value,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         document_entropy: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
@@ -212,6 +312,8 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             0 => self.create_document_from_data_v0(
                 data,
                 owner_id,
+                block_height,
+                core_block_height,
                 document_entropy,
                 platform_version,
             ),
@@ -227,6 +329,8 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         &self,
         id: Identifier,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         properties: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
@@ -240,11 +344,56 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             0 => self.create_document_with_prevalidated_properties_v0(
                 id,
                 owner_id,
+                block_height,
+                core_block_height,
                 properties,
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "create_document_with_prevalidated_properties".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    fn prefunded_voting_balance_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<(String, Credits)>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .prefunded_voting_balance_for_document
+        {
+            0 => Ok(self.prefunded_voting_balance_for_document_v0(document, platform_version)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "prefunded_voting_balances_for_document".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Gets the vote poll associated with a document
+    fn contested_vote_poll_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .contested_vote_poll_for_document
+        {
+            0 => Ok(self.contested_vote_poll_for_document_v0(document)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "contested_vote_poll_for_document".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

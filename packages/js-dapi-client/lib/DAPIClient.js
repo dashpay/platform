@@ -39,7 +39,15 @@ class DAPIClient extends EventEmitter {
       ...options,
     };
 
-    this.dapiAddressProvider = createDAPIAddressProviderFromOptions(this.options);
+    this.logger = logger.getForId(
+      this.options.loggerOptions.identifier,
+      this.options.loggerOptions.level,
+    );
+
+    this.dapiAddressProvider = createDAPIAddressProviderFromOptions({
+      ...this.options,
+      logger: this.logger,
+    });
 
     const grpcTransport = new GrpcTransport(
       createDAPIAddressProviderFromOptions,
@@ -58,10 +66,6 @@ class DAPIClient extends EventEmitter {
 
     this.core = new CoreMethodsFacade(jsonRpcTransport, grpcTransport);
     this.platform = new PlatformMethodsFacade(grpcTransport);
-    this.logger = logger.getForId(
-      this.options.loggerOptions.identifier,
-      this.options.loggerOptions.level,
-    );
 
     this.initBlockHeadersProvider();
   }
@@ -70,11 +74,29 @@ class DAPIClient extends EventEmitter {
    * @private
    */
   initBlockHeadersProvider() {
-    this.blockHeadersProvider = createBlockHeadersProviderFromOptions(this.options, this.core);
+    this.blockHeadersProvider = createBlockHeadersProviderFromOptions(
+      this.options,
+      this.core,
+      this.logger,
+    );
 
     this.blockHeadersProvider.on(BlockHeadersProvider.EVENTS.ERROR, (e) => {
       this.emit(EVENTS.ERROR, e);
     });
+  }
+
+  /**
+   * Close all open connections
+   * @returns {Promise<void>}
+   */
+  async disconnect() {
+    // Stop block headers provider
+    await this.blockHeadersProvider.stop();
+
+    // Stop masternode list provider
+    if (this.dapiAddressProvider.smlProvider) {
+      await this.dapiAddressProvider.smlProvider.unsubscribe();
+    }
   }
 }
 

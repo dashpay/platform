@@ -7,8 +7,8 @@ class PlatformPromiseClient {
    * @param {?Object} credentials
    * @param {?Object} options
    */
-  constructor(hostname, credentials , options = {}) {
-    this.client = new PlatformClient(hostname, options)
+  constructor(hostname, credentials, options = {}) {
+    this.client = new PlatformClient(hostname, options);
 
     this.protocolVersion = undefined;
   }
@@ -37,6 +37,20 @@ class PlatformPromiseClient {
       this.client.getIdentity.bind(this.client),
     )(
       getIdentityRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetIdentitiesContractKeysRequest} getIdentitiesContractKeysRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetIdentitiesContractKeysResponse>}
+   */
+  getIdentitiesContractKeys(getIdentitiesContractKeysRequest, metadata = {}) {
+    return promisify(
+      this.client.getIdentitiesContractKeys.bind(this.client),
+    )(
+      getIdentitiesContractKeysRequest,
       metadata,
     );
   }
@@ -87,17 +101,17 @@ class PlatformPromiseClient {
   }
 
   /**
-   * @param {!GetIdentitiesByPublicKeyHashesRequest} getIdentitiesByPublicKeyHashesRequest
+   * @param {!GetIdentityByPublicKeyHash} getIdentityByPublicKeyHashRequest
    * @param {?Object<string, string>} metadata
-   * @returns {Promise<!GetIdentitiesByPublicKeyHashesResponse>}
+   * @returns {Promise<!GetIdentityByPublicKeyHashResponse>}
    */
-  getIdentitiesByPublicKeyHashes(
-    getIdentitiesByPublicKeyHashesRequest, metadata = {}
+  getIdentityByPublicKeyHash(
+    getIdentityByPublicKeyHashRequest, metadata = {}
   ) {
     return promisify(
-      this.client.getIdentitiesByPublicKeyHashes.bind(this.client),
+      this.client.getIdentityByPublicKeyHash.bind(this.client),
     )(
-      getIdentitiesByPublicKeyHashesRequest,
+      getIdentityByPublicKeyHashRequest,
       metadata,
     );
   }
@@ -172,6 +186,48 @@ class PlatformPromiseClient {
       this.client.getProtocolVersionUpgradeState.bind(this.client),
     )(
       getProtocolVersionUpgradeStateRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetIdentityContractNonceRequest} getIdentityContractNonceRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetIdentityContractNonceResponse>}
+   */
+  getIdentityContractNonce(getIdentityContractNonceRequest, metadata = {}) {
+    return promisify(
+      this.client.getIdentityContractNonce.bind(this.client),
+    )(
+      getIdentityContractNonceRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetIdentityNonceRequest} getIdentityNonceRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetIdentityNonceResponse>}
+   */
+  getIdentityNonce(getIdentityNonceRequest, metadata = {}) {
+    return promisify(
+      this.client.getIdentityNonce.bind(this.client),
+    )(
+      getIdentityNonceRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetIdentityKeysRequest} getIdentityKeysRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetIdentityKeysResponse>}
+   */
+  getIdentityKeys(getIdentityKeysRequest, metadata = {}) {
+    return promisify(
+      this.client.getIdentityKeys.bind(this.client),
+    )(
+      getIdentityKeysRequest,
       metadata,
     );
   }

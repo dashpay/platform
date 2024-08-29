@@ -1,49 +1,57 @@
-use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
-use dapi_grpc::platform::VersionedGrpcResponse;
-
 use dapi_grpc::platform::v0::get_proofs_request::{get_proofs_request_v0, GetProofsRequestV0};
-use dpp::block::block_info::BlockInfo;
+use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest};
+use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::document::Document;
-use dpp::identity::PartialIdentity;
-use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::document::{Document, DocumentV0Getters};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+
+use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request;
+use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::vote_status_request::RequestType;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
+use dpp::document::property_names::PRICE;
+use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive::drive::Drive;
-use drive::query::SingleDocumentDriveQuery;
+use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
-use drive_abci::abci::AbciApplication;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use drive_abci::platform_types::platform::PlatformRef;
-use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
-use prost::Message;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::voting::votes::Vote;
+use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
+use drive::drive::votes::resolved::votes::resolved_resource_vote::accessors::v0::ResolvedResourceVoteGettersV0;
+use drive::drive::votes::resolved::votes::ResolvedVote;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransition;
-use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransition;
+use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransitionAction};
+use drive::state_transition_action::document::documents_batch::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionActionAccessorsV0;
+use drive_abci::abci::app::FullAbciApplication;
+use drive_abci::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use drive_abci::execution::validation::state_transition::ValidationMode;
+use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+use platform_version::DefaultForPlatformVersion;
 
 pub(crate) fn verify_state_transitions_were_or_were_not_executed(
-    abci_app: &AbciApplication<MockCoreRPCLike>,
+    abci_app: &FullAbciApplication<MockCoreRPCLike>,
     expected_root_hash: &[u8; 32],
     state_transitions: &[(StateTransition, ExecTxResult)],
-    block_info: &BlockInfo,
-    expected_validation_errors: &Vec<u32>,
+    expected_validation_errors: &[u32],
     platform_version: &PlatformVersion,
 ) -> bool {
-    let state = abci_app.platform.state.read().unwrap();
+    let state = abci_app.platform.state.load();
     let platform = PlatformRef {
         drive: &abci_app.platform.drive,
         state: &state,
         config: &abci_app.platform.config,
         core_rpc: &abci_app.platform.core_rpc,
-        block_info,
     };
 
     //actions are easier to transform to queries
@@ -57,17 +65,26 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 // dbg!(batch.transitions().len(), hex::encode(first.base().id()), state.height(), first.to_string());
             }
 
-            let consensus_validation_result =
-                match state_transition.transform_into_action(&platform, false, None) {
-                    Ok(consensus_validation_result) => consensus_validation_result,
-                    Err(e) => {
-                        if expected_validation_errors.contains(&result.code) {
-                            return (state_transition.clone(), None, false);
-                        } else {
-                            panic!("{}", e)
-                        }
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected to get an execution context");
+
+            let consensus_validation_result = match state_transition.transform_into_action(
+                &platform,
+                abci_app.platform.state.load().last_block_info(),
+                ValidationMode::NoValidation, //using check_tx so we don't validate state
+                &mut execution_context,
+                None,
+            ) {
+                Ok(consensus_validation_result) => consensus_validation_result,
+                Err(e) => {
+                    if expected_validation_errors.contains(&result.code) {
+                        return (state_transition.clone(), None, false);
+                    } else {
+                        panic!("{}", e)
                     }
-                };
+                }
+            };
 
             if !consensus_validation_result.is_valid() {
                 panic!(
@@ -85,11 +102,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
         })
         .collect::<Vec<_>>();
 
-    for (state_transition, action, was_executed) in &actions {
+    for (_state_transition, action, was_executed) in &actions {
         let mut proofs_request = GetProofsRequestV0 {
             identities: vec![],
             contracts: vec![],
             documents: vec![],
+            votes: vec![],
         };
 
         if let Some(action) = action {
@@ -100,25 +118,19 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         .push(get_proofs_request_v0::ContractRequest {
                             contract_id: data_contract_create.data_contract_ref().id().to_vec(),
                         });
+
                     let versioned_request = GetProofsRequest {
                         version: Some(get_proofs_request::Version::V0(proofs_request)),
                     };
+
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response = result.into_data().expect("expected queries to be valid");
+
+                    let response_proof = response.proof_owned().expect("expected to get proof");
 
                     // let fetched_contract = abci_app
                     //     .platform.drive.fetch_contract(data_contract_create.data_contract_ref().id().into_buffer(), None, None, None, platform_version).unwrap().unwrap();
@@ -147,7 +159,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     } else {
                         //there is the possibility that the state transition was not executed because it already existed,
                         // we can discount that for now in tests
-                        assert!(contract.is_none(),)
+                        assert!(contract.is_none())
                     }
                 }
                 StateTransitionAction::DataContractUpdateAction(data_contract_update) => {
@@ -161,18 +173,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
-
-                    let response =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response");
+                    let response = result.into_data().expect("expected queries to be valid");
 
                     let response_proof = response.proof_owned().expect("expected to get proof");
 
@@ -211,21 +214,53 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         .transitions()
                         .iter()
                         .for_each(|transition| {
+                            let document_contested_status =
+                                if let DocumentTransitionAction::CreateAction(create_action) =
+                                    transition
+                                {
+                                    if create_action.prefunded_voting_balance().is_some() {
+                                        SingleDocumentDriveQueryContestedStatus::Contested as u8
+                                    } else {
+                                        SingleDocumentDriveQueryContestedStatus::NotContested as u8
+                                    }
+                                } else {
+                                    SingleDocumentDriveQueryContestedStatus::NotContested as u8
+                                };
                             proofs_request
                                 .documents
                                 .push(get_proofs_request_v0::DocumentRequest {
-                                    contract_id: transition.base().data_contract_id().to_vec(),
-                                    document_type: transition.base().document_type_name().clone(),
+                                    contract_id: transition
+                                        .base()
+                                        .expect("expected a base for the document transition")
+                                        .data_contract_id()
+                                        .to_vec(),
+                                    document_type: transition
+                                        .base()
+                                        .expect("expected a base for the document transition")
+                                        .document_type_name()
+                                        .clone(),
                                     document_type_keeps_history: transition
                                         .base()
+                                        .expect("expected a base for the document transition")
                                         .data_contract_fetch_info()
                                         .contract
                                         .document_type_for_name(
-                                            transition.base().document_type_name().as_str(),
+                                            transition
+                                                .base()
+                                                .expect(
+                                                    "expected a base for the document transition",
+                                                )
+                                                .document_type_name()
+                                                .as_str(),
                                         )
                                         .expect("get document type")
                                         .documents_keep_history(),
-                                    document_id: transition.base().id().to_vec(),
+                                    document_id: transition
+                                        .base()
+                                        .expect("expected a base for the document transition")
+                                        .id()
+                                        .to_vec(),
+                                    document_contested_status: document_contested_status as i32,
                                 });
                         });
                     let versioned_request = GetProofsRequest {
@@ -233,48 +268,62 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
-
-                    let response =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response");
+                    let response = result.into_data().expect("expected queries to be valid");
 
                     let response_proof = response.proof_owned().expect("proof should be present");
 
                     for document_transition_action in
                         documents_batch_transition.transitions().iter()
                     {
-                        let contract_fetch_info =
-                            document_transition_action.base().data_contract_fetch_info();
+                        let contract_fetch_info = document_transition_action
+                            .base()
+                            .expect("expected a base for the document transition")
+                            .data_contract_fetch_info();
 
                         let document_type = contract_fetch_info
                             .contract
                             .document_type_for_name(
                                 document_transition_action
                                     .base()
+                                    .expect("expected a base for the document transition")
                                     .document_type_name()
                                     .as_str(),
                             )
                             .expect("get document type");
+                        let contested_status =
+                            if let DocumentTransitionAction::CreateAction(create_action) =
+                                document_transition_action
+                            {
+                                if create_action.prefunded_voting_balance().is_some() {
+                                    SingleDocumentDriveQueryContestedStatus::Contested
+                                } else {
+                                    SingleDocumentDriveQueryContestedStatus::NotContested
+                                }
+                            } else {
+                                SingleDocumentDriveQueryContestedStatus::NotContested
+                            };
+
                         let query = SingleDocumentDriveQuery {
                             contract_id: document_transition_action
                                 .base()
+                                .expect("expected a base for the document transition")
                                 .data_contract_id()
                                 .into_buffer(),
                             document_type_name: document_transition_action
                                 .base()
+                                .expect("expected a base for the document transition")
                                 .document_type_name()
                                 .clone(),
                             document_type_keeps_history: document_type.documents_keep_history(),
-                            document_id: document_transition_action.base().id().into_buffer(),
+                            document_id: document_transition_action
+                                .base()
+                                .expect("expected a base for the document transition")
+                                .id()
+                                .into_buffer(),
                             block_time_ms: None, //None because we want latest
+                            contested_status,
                         };
 
                         // dbg!(
@@ -305,7 +354,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         match document_transition_action {
                             DocumentTransitionAction::CreateAction(creation_action) => {
                                 if *was_executed {
-                                    let document = document.expect("expected a document");
+                                    let document = document.unwrap_or_else(|| {
+                                        panic!(
+                                            "expected a document on block {}",
+                                            platform.state.last_committed_block_height()
+                                        )
+                                    });
                                     // dbg!(
                                     //     &document,
                                     //     Document::try_from_create_transition(
@@ -317,7 +371,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     // );
                                     assert_eq!(
                                         document,
-                                        Document::try_from_create_transition(
+                                        Document::try_from_create_transition_action(
                                             creation_action,
                                             documents_batch_transition.owner_id(),
                                             platform_version,
@@ -336,7 +390,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     if let Some(document) = document {
                                         assert_eq!(
                                             document,
-                                            Document::try_from_replace_transition(
+                                            Document::try_from_replace_transition_action(
                                                 replace_action,
                                                 documents_batch_transition.owner_id(),
                                                 platform_version,
@@ -350,7 +404,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     if let Some(document) = document {
                                         assert_ne!(
                                             document,
-                                            Document::try_from_replace_transition(
+                                            Document::try_from_replace_transition_action(
                                                 replace_action,
                                                 documents_batch_transition.owner_id(),
                                                 platform_version,
@@ -363,6 +417,67 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             DocumentTransitionAction::DeleteAction(_) => {
                                 // we expect no document
                                 assert!(document.is_none());
+                            }
+                            DocumentTransitionAction::BumpIdentityDataContractNonce(_) => {
+                                panic!("we should not have a bump identity data contract nonce");
+                            }
+                            DocumentTransitionAction::TransferAction(transfer_action) => {
+                                if *was_executed {
+                                    // it's also possible we deleted something we replaced
+                                    if let Some(document) = document {
+                                        assert_eq!(
+                                            document.owner_id(),
+                                            transfer_action.document().owner_id()
+                                        );
+                                    }
+                                } else {
+                                    //there is the possibility that the state transition was not executed and the state is equal to the previous
+                                    // state, aka there would have been no change anyways, we can discount that for now
+                                    if let Some(document) = document {
+                                        assert_ne!(
+                                            document.owner_id(),
+                                            transfer_action.document().owner_id()
+                                        );
+                                    }
+                                }
+                            }
+                            DocumentTransitionAction::PurchaseAction(purchase_action) => {
+                                if *was_executed {
+                                    if let Some(document) = document {
+                                        assert_eq!(
+                                            document.owner_id(),
+                                            purchase_action.document().owner_id()
+                                        );
+                                    }
+                                } else {
+                                    //there is the possibility that the state transition was not executed and the state is equal to the previous
+                                    // state, aka there would have been no change anyways, we can discount that for now
+                                    if let Some(document) = document {
+                                        assert_ne!(
+                                            document.owner_id(),
+                                            purchase_action.document().owner_id()
+                                        );
+                                    }
+                                }
+                            }
+                            DocumentTransitionAction::UpdatePriceAction(update_price_action) => {
+                                if *was_executed {
+                                    if let Some(document) = document {
+                                        assert_eq!(
+                                            document.get(PRICE),
+                                            update_price_action.document().get(PRICE)
+                                        );
+                                    }
+                                } else {
+                                    //there is the possibility that the state transition was not executed and the state is equal to the previous
+                                    // state, aka there would have been no change anyways, we can discount that for now
+                                    if let Some(document) = document {
+                                        assert_ne!(
+                                            document.get(PRICE),
+                                            update_price_action.document().get(PRICE)
+                                        );
+                                    }
+                                }
                             }
                         }
                     }
@@ -380,18 +495,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
-
-                    let response =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response");
+                    let response = result.into_data().expect("expected queries to be valid");
 
                     let response_proof = response.proof_owned().expect("proof should be present");
 
@@ -410,22 +516,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         platform.state.last_committed_block_info()
                     );
                     if *was_executed {
-                        assert_eq!(
-                            identity
-                                .expect("expected an identity")
-                                .into_partial_identity_info_no_balance(),
-                            PartialIdentity {
-                                id: identity_create_transition.identity_id(),
-                                loaded_public_keys: identity_create_transition
-                                    .public_keys()
-                                    .iter()
-                                    .map(|key| (key.id(), key.clone()))
-                                    .collect(),
-                                balance: None,
-                                revision: Some(0),
-                                not_found_public_keys: Default::default(),
-                            }
-                        )
+                        // other state transitions might have happened in the same block the identity
+                        // was created
+                        let proved_identity = identity
+                            .expect("expected an identity")
+                            .into_partial_identity_info_no_balance();
+                        assert_eq!(proved_identity.id, identity_create_transition.identity_id());
                     } else {
                         //there is the possibility that the state transition was not executed because it already existed,
                         // we can discount that for now in tests
@@ -445,20 +541,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
+                    let response = result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get an identity that matches the state transition
                     let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
@@ -467,7 +554,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         false,
                         platform_version,
                     )
-                    .expect("expected to verify balance identity");
+                    .expect("expected to verify balance identity for top up");
                     let balance = balance.expect("expected a balance");
                     assert_eq!(
                         &root_hash,
@@ -479,7 +566,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     if *was_executed {
                         //while this isn't 100% sure to be true (in the case of debt,
                         // for the tests we have we can use it
-                        assert!(identity_top_up_transition.top_up_balance_amount() <= balance);
+                        assert!(
+                            identity_top_up_transition
+                                .top_up_asset_lock_value()
+                                .remaining_credit_value()
+                                <= balance
+                        );
                     }
                 }
                 StateTransitionAction::IdentityCreditWithdrawalAction(
@@ -508,21 +600,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
 
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
+                    let response = result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get an identity that matches the state transition
                     let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
@@ -533,7 +616,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         false,
                         platform_version,
                     )
-                    .expect("expected to verify balance identity");
+                    .expect("expected to verify balance identity for withdrawal");
                     let _balance = balance.expect("expected a balance");
                     assert_eq!(
                         &root_hash,
@@ -557,20 +640,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     };
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
+                    let response = result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get an identity that matches the state transition
                     let (root_hash, identity) = Drive::verify_identity_keys_by_identity_id(
@@ -579,6 +653,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             &identity_update_transition.identity_id().into_buffer(),
                             None,
                         ),
+                        false,
+                        false,
                         false,
                         platform_version,
                     )
@@ -627,20 +703,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                     let result = abci_app
                         .platform
-                        .query(
-                            "/proofs",
-                            &versioned_request.encode_to_vec(),
-                            platform_version,
-                        )
+                        .query_proofs(versioned_request, &state, platform_version)
                         .expect("expected to query proofs");
-                    let serialized_get_proofs_response =
-                        result.into_data().expect("expected queries to be valid");
+                    let response = result.into_data().expect("expected queries to be valid");
 
-                    let response_proof =
-                        GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                            .expect("expected to decode proof response")
-                            .proof_owned()
-                            .expect("proof should be present");
+                    let response_proof = response.proof_owned().expect("proof should be present");
 
                     // we expect to get an identity that matches the state transition
                     let (root_hash_identity, _balance_identity) =
@@ -650,7 +717,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             true,
                             platform_version,
                         )
-                        .expect("expected to verify balance identity");
+                        .expect("expected to verify balance identity for credit transfer");
 
                     assert_eq!(
                         &root_hash_identity,
@@ -683,6 +750,83 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         );
                     }
                 }
+                StateTransitionAction::MasternodeVoteAction(masternode_vote_action) => {
+                    let data_contract = match masternode_vote_action.vote_ref() {
+                        ResolvedVote::ResolvedResourceVote(resource_vote) => match resource_vote
+                            .vote_poll()
+                        {
+                            ResolvedVotePoll::ContestedDocumentResourceVotePollWithContractInfo(
+                                contested_document_resource_vote_poll,
+                            ) => {
+                                let config = bincode::config::standard()
+                                    .with_big_endian()
+                                    .with_no_limit();
+                                let serialized_index_values = contested_document_resource_vote_poll
+                                    .index_values
+                                    .iter()
+                                    .map(|value| {
+                                        bincode::encode_to_vec(value, config)
+                                            .expect("expected to encode value in path")
+                                    })
+                                    .collect();
+
+                                proofs_request
+                                .votes
+                                .push(get_proofs_request_v0::VoteStatusRequest{
+                                    request_type: Some(RequestType::ContestedResourceVoteStatusRequest(vote_status_request::ContestedResourceVoteStatusRequest {
+                                        contract_id: contested_document_resource_vote_poll.contract.id().to_vec(),
+                                        document_type_name: contested_document_resource_vote_poll.document_type_name.clone(),
+                                        index_name: contested_document_resource_vote_poll.index_name.clone(),
+                                        voter_identifier: masternode_vote_action.pro_tx_hash().to_vec(),
+                                        index_values: serialized_index_values,
+                                    }))
+                                });
+                                contested_document_resource_vote_poll.contract.as_ref()
+                            }
+                        },
+                    };
+
+                    let versioned_request = GetProofsRequest {
+                        version: Some(get_proofs_request::Version::V0(proofs_request)),
+                    };
+
+                    let result = abci_app
+                        .platform
+                        .query_proofs(versioned_request, &state, platform_version)
+                        .expect("expected to query proofs");
+                    let response = result.into_data().expect("expected queries to be valid");
+
+                    let response_proof = response.proof_owned().expect("proof should be present");
+
+                    let vote: Vote = masternode_vote_action.vote_ref().clone().into();
+
+                    // we expect to get a vote that matches the state transition
+                    let (root_hash_vote, maybe_vote) = Drive::verify_masternode_vote(
+                        &response_proof.grovedb_proof,
+                        masternode_vote_action.pro_tx_hash().into_buffer(),
+                        &vote,
+                        data_contract,
+                        false, // we are not in a subset, we have just one vote
+                        platform_version,
+                    )
+                    .expect("expected to verify balance identity");
+
+                    assert_eq!(
+                        &root_hash_vote,
+                        expected_root_hash,
+                        "state last block info {:?}",
+                        platform.state.last_committed_block_info()
+                    );
+
+                    if *was_executed {
+                        let executed_vote = maybe_vote.expect("expected a vote");
+
+                        assert_eq!(&executed_vote, &vote);
+                    }
+                }
+                StateTransitionAction::BumpIdentityNonceAction(_) => {}
+                StateTransitionAction::BumpIdentityDataContractNonceAction(_) => {}
+                StateTransitionAction::PartiallyUseAssetLockAction(_) => {}
             }
         } else {
             // if we don't have an action this means there was a problem in the validation of the state transition

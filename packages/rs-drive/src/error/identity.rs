@@ -45,6 +45,10 @@ pub enum IdentityError {
     #[error("critical balance overflow error: {0}")]
     CriticalBalanceOverflow(&'static str),
 
+    /// Identity Contract revision nonce error
+    #[error("identity contract revision nonce error: {0}")]
+    IdentityNonceError(&'static str),
+
     /// Identity key incorrect query missing information error
     #[error("identity key incorrect query missing information error: {0}")]
     IdentityKeyIncorrectQueryMissingInformation(&'static str),
@@ -54,6 +58,6 @@ pub enum IdentityError {
     IdentityKeyBoundsError(&'static str),
 
     /// Identity Key Data Contract Not Found
-    #[error("contact with specified identifier is not found for identity key data contract")]
+    #[error("contract with specified identifier is not found for identity key data contract")]
     IdentityKeyDataContractNotFound,
 }

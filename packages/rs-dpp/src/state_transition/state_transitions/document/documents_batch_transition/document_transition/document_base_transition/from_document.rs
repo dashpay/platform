@@ -1,5 +1,6 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
+use crate::prelude::IdentityNonce;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::ProtocolError;
@@ -9,6 +10,7 @@ impl DocumentBaseTransition {
     pub fn from_document(
         document: &Document,
         document_type: DocumentTypeRef,
+        identity_contract_nonce: IdentityNonce,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
     ) -> Result<Self, ProtocolError> {
@@ -19,7 +21,12 @@ impl DocumentBaseTransition {
                 .document_base_state_transition
                 .default_current_version,
         ) {
-            0 => Ok(DocumentBaseTransitionV0::from_document(document, document_type).into()),
+            0 => Ok(DocumentBaseTransitionV0::from_document(
+                document,
+                document_type,
+                identity_contract_nonce,
+            )
+            .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentBaseTransition::from_document".to_string(),
                 known_versions: vec![0],

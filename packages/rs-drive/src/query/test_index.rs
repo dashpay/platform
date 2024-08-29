@@ -1,4 +1,4 @@
-#[cfg(feature = "full")]
+#[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
     use dpp::data_contract::document_type::DocumentType;
@@ -6,9 +6,9 @@ mod tests {
     use dpp::util::cbor_serializer;
     use serde_json::json;
 
-    use crate::drive::config::DriveConfig;
+    use crate::config::DriveConfig;
     use crate::error::{query::QuerySyntaxError, Error};
-    use crate::query::DriveQuery;
+    use crate::query::DriveDocumentQuery;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
@@ -84,7 +84,9 @@ mod tests {
             None,
             false,
             false,
+            false,
             true,
+            &mut vec![],
             platform_version,
         )
         .expect("expected to create a document type")
@@ -93,7 +95,7 @@ mod tests {
     #[test]
     fn test_find_best_index() {
         let document_type = construct_indexed_document_type();
-        let contract = get_dpns_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_dpns_data_contract_fixture(None, 0, 1).data_contract_owned();
 
         let platform_version = PlatformVersion::latest();
 
@@ -105,7 +107,7 @@ mod tests {
         });
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type.as_ref(),
@@ -115,7 +117,10 @@ mod tests {
         let index = query
             .find_best_index(platform_version)
             .expect("expected to find index");
-        assert_eq!(index, document_type.indices().get(2).unwrap());
+        let mut iter = document_type.indexes().iter();
+        iter.next();
+        iter.next();
+        assert_eq!(index, iter.next().unwrap().1); //position 2
 
         let query_value = json!({
             "where": [
@@ -124,7 +129,7 @@ mod tests {
         });
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type.as_ref(),
@@ -134,13 +139,13 @@ mod tests {
         let index = query
             .find_best_index(platform_version)
             .expect("expected to find index");
-        assert_eq!(index, document_type.indices().get(0).unwrap());
+        assert_eq!(index, document_type.indexes().iter().next().unwrap().1);
     }
 
     #[test]
     fn test_find_best_index_error() {
         let document_type = construct_indexed_document_type();
-        let contract = get_dpns_data_contract_fixture(None, 1).data_contract_owned();
+        let contract = get_dpns_data_contract_fixture(None, 0, 1).data_contract_owned();
 
         let platform_version = PlatformVersion::latest();
 
@@ -151,7 +156,7 @@ mod tests {
         });
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(
+        let query = DriveDocumentQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
             document_type.as_ref(),
@@ -162,7 +167,7 @@ mod tests {
             .find_best_index(platform_version)
             .expect_err("expected to not find index");
         assert!(
-            matches!(error, Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message)) if message == "query must be for valid indexes")
+            matches!(error, Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message)) if message.contains("query must be for valid indexes"))
         )
     }
 }

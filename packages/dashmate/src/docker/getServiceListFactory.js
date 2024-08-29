@@ -1,6 +1,7 @@
 import yaml from 'js-yaml';
 import fs from 'fs';
 import path from 'path';
+import lodash from 'lodash';
 import { DASHMATE_HELPER_DOCKER_IMAGE, PACKAGE_ROOT_DIR } from '../constants.js';
 
 /**
@@ -9,9 +10,6 @@ import { DASHMATE_HELPER_DOCKER_IMAGE, PACKAGE_ROOT_DIR } from '../constants.js'
  * @return {getServiceList}
  */
 export default function getServiceListFactory(generateEnvs, getConfigProfiles) {
-  const file = fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'docker-compose.yml'));
-  const composeFile = yaml.load(file);
-
   /**
    * Returns list of services and corresponding docker images from the config
    *
@@ -22,11 +20,28 @@ export default function getServiceListFactory(generateEnvs, getConfigProfiles) {
   function getServiceList(config) {
     const envs = generateEnvs(config);
 
+    const composeFiles = envs.COMPOSE_FILE.split(':').map((filenameOrPath) => {
+      if (filenameOrPath.startsWith('docker-compose')) {
+        const file = fs.readFileSync(path.join(PACKAGE_ROOT_DIR, filenameOrPath));
+        return yaml.load(file);
+      }
+
+      return null;
+    })
+      .filter((e) => !!e);
+
     const profiles = getConfigProfiles(config);
 
-    return Object
-      .entries(composeFile.services)
-      .map(([serviceName, { image: serviceImage, labels, profiles: serviceProfiles }]) => {
+    const composeFile = composeFiles
+      // reduce multiple docker compose file into single
+      .reduce((composeFilesAcc, currentValue) => lodash.merge(composeFilesAcc, currentValue), {});
+
+    const services = Object.entries(composeFile.services)
+      // map to array of services and populate with data
+      .map((composeFileServiceEntry) => {
+        const [serviceName,
+          { image: serviceImage, labels, profiles: serviceProfiles }] = composeFileServiceEntry;
+
         const title = labels?.['org.dashmate.service.title'];
 
         if (!title) {
@@ -35,8 +50,12 @@ export default function getServiceListFactory(generateEnvs, getConfigProfiles) {
 
         // Use hardcoded version for dashmate helper
         // Or parse image env variable name and extract version from the env
+        const serviceImageEnv = serviceImage.match(/([A-Z_]+)/);
+
+        // eslint-disable-next-line no-nested-ternary
         const image = serviceName === 'dashmate_helper'
-          ? DASHMATE_HELPER_DOCKER_IMAGE : envs[serviceImage.match(/([A-Z_]+)/)[0]];
+          ? DASHMATE_HELPER_DOCKER_IMAGE : serviceImageEnv?.length
+            ? envs[serviceImageEnv[0]] : serviceImage;
 
         return ({
           name: serviceName,
@@ -44,9 +63,10 @@ export default function getServiceListFactory(generateEnvs, getConfigProfiles) {
           image,
           profiles: serviceProfiles ?? [],
         });
-      })
-      .filter((service) => service.profiles.length === 0
-        || service.profiles.some((serviceProfile) => profiles.includes(serviceProfile)));
+      });
+
+    return services.filter((service) => service.profiles.length === 0
+      || service.profiles.some((serviceProfile) => profiles.includes(serviceProfile)));
   }
 
   return getServiceList;

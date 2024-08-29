@@ -13,13 +13,13 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::KeyID;
 
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
-use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::{AddNewKeysToIdentity, DisableIdentityKeys};
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use drive::grovedb::Transaction;
+use drive::util::batch::DriveOperation;
+use drive::util::batch::DriveOperation::IdentityOperation;
+use drive::util::batch::IdentityOperationType::{AddNewKeysToIdentity, DisableIdentityKeys};
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
@@ -85,7 +85,6 @@ where
             drive_operations.push(IdentityOperation(DisableIdentityKeys {
                 identity_id: owner_identifier,
                 keys_ids: key_ids_to_disable,
-                disable_at: block_info.time_ms,
             }));
         }
 

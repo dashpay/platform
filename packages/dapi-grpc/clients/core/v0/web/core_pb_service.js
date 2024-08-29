@@ -10,13 +10,22 @@ var Core = (function () {
   return Core;
 }());
 
-Core.getStatus = {
-  methodName: "getStatus",
+Core.getBlockchainStatus = {
+  methodName: "getBlockchainStatus",
   service: Core,
   requestStream: false,
   responseStream: false,
-  requestType: core_pb.GetStatusRequest,
-  responseType: core_pb.GetStatusResponse
+  requestType: core_pb.GetBlockchainStatusRequest,
+  responseType: core_pb.GetBlockchainStatusResponse
+};
+
+Core.getMasternodeStatus = {
+  methodName: "getMasternodeStatus",
+  service: Core,
+  requestStream: false,
+  responseStream: false,
+  requestType: core_pb.GetMasternodeStatusRequest,
+  responseType: core_pb.GetMasternodeStatusResponse
 };
 
 Core.getBlock = {
@@ -26,6 +35,15 @@ Core.getBlock = {
   responseStream: false,
   requestType: core_pb.GetBlockRequest,
   responseType: core_pb.GetBlockResponse
+};
+
+Core.getBestBlockHeight = {
+  methodName: "getBestBlockHeight",
+  service: Core,
+  requestStream: false,
+  responseStream: false,
+  requestType: core_pb.GetBestBlockHeightRequest,
+  responseType: core_pb.GetBestBlockHeightResponse
 };
 
 Core.broadcastTransaction = {
@@ -73,6 +91,15 @@ Core.subscribeToTransactionsWithProofs = {
   responseType: core_pb.TransactionsWithProofsResponse
 };
 
+Core.subscribeToMasternodeList = {
+  methodName: "subscribeToMasternodeList",
+  service: Core,
+  requestStream: false,
+  responseStream: true,
+  requestType: core_pb.MasternodeListRequest,
+  responseType: core_pb.MasternodeListResponse
+};
+
 exports.Core = Core;
 
 function CoreClient(serviceHost, options) {
@@ -80,11 +107,42 @@ function CoreClient(serviceHost, options) {
   this.options = options || {};
 }
 
-CoreClient.prototype.getStatus = function getStatus(requestMessage, metadata, callback) {
+CoreClient.prototype.getBlockchainStatus = function getBlockchainStatus(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Core.getStatus, {
+  var client = grpc.unary(Core.getBlockchainStatus, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+CoreClient.prototype.getMasternodeStatus = function getMasternodeStatus(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Core.getMasternodeStatus, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
@@ -116,6 +174,37 @@ CoreClient.prototype.getBlock = function getBlock(requestMessage, metadata, call
     callback = arguments[1];
   }
   var client = grpc.unary(Core.getBlock, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+CoreClient.prototype.getBestBlockHeight = function getBestBlockHeight(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Core.getBestBlockHeight, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
@@ -281,6 +370,45 @@ CoreClient.prototype.subscribeToTransactionsWithProofs = function subscribeToTra
     status: []
   };
   var client = grpc.invoke(Core.subscribeToTransactionsWithProofs, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onMessage: function (responseMessage) {
+      listeners.data.forEach(function (handler) {
+        handler(responseMessage);
+      });
+    },
+    onEnd: function (status, statusMessage, trailers) {
+      listeners.status.forEach(function (handler) {
+        handler({ code: status, details: statusMessage, metadata: trailers });
+      });
+      listeners.end.forEach(function (handler) {
+        handler({ code: status, details: statusMessage, metadata: trailers });
+      });
+      listeners = null;
+    }
+  });
+  return {
+    on: function (type, handler) {
+      listeners[type].push(handler);
+      return this;
+    },
+    cancel: function () {
+      listeners = null;
+      client.close();
+    }
+  };
+};
+
+CoreClient.prototype.subscribeToMasternodeList = function subscribeToMasternodeList(requestMessage, metadata) {
+  var listeners = {
+    data: [],
+    end: [],
+    status: []
+  };
+  var client = grpc.invoke(Core.subscribeToMasternodeList, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

@@ -17,10 +17,11 @@ impl DocumentBaseTransitionActionV0 {
             id,
             document_type_name,
             data_contract_id,
-            ..
+            identity_contract_nonce,
         } = value;
         Ok(DocumentBaseTransitionActionV0 {
             id,
+            identity_contract_nonce,
             document_type_name,
             data_contract: get_data_contract(data_contract_id)?,
         })
@@ -35,10 +36,11 @@ impl DocumentBaseTransitionActionV0 {
             id,
             document_type_name,
             data_contract_id,
-            ..
+            identity_contract_nonce,
         } = value;
         Ok(DocumentBaseTransitionActionV0 {
             id: *id,
+            identity_contract_nonce: *identity_contract_nonce,
             document_type_name: document_type_name.clone(),
             data_contract: get_data_contract(*data_contract_id)?,
         })

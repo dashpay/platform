@@ -2,7 +2,7 @@ use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPrevio
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
@@ -14,7 +14,8 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Balances are stored in the balance tree under the identity's id
-    pub fn add_to_identity_balance_v0(
+    #[inline(always)]
+    pub(super) fn add_to_identity_balance_v0(
         &self,
         identity_id: [u8; 32],
         added_balance: Credits,
@@ -45,13 +46,13 @@ impl Drive {
             &mut drive_operations,
             &platform_version.drive,
         )?;
-
         let fees = Drive::calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
             self.config.epochs_per_era,
             platform_version,
+            None,
         )?;
 
         Ok(fees)
@@ -59,7 +60,8 @@ impl Drive {
 
     /// Balances are stored in the balance tree under the identity's id
     /// This gets operations based on apply flag (stateful vs stateless)
-    pub fn add_to_identity_balance_operations_v0(
+    #[inline(always)]
+    pub(super) fn add_to_identity_balance_operations_v0(
         &self,
         identity_id: [u8; 32],
         added_balance: Credits,

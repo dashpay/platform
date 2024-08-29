@@ -7,8 +7,8 @@ use crate::execution::types::storage_fee_distribution_outcome::v0::StorageFeeDis
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::EpochIndex;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::GroveDbOpBatch;
 use drive::grovedb::TransactionArg;
+use drive::util::batch::GroveDbOpBatch;
 
 impl<C> Platform<C> {
     /// This function is a versioned method that adds operations to the GroveDB operation batch.

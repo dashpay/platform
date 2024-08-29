@@ -3,6 +3,7 @@
 #![deny(missing_docs)]
 
 mod address_list;
+mod connection_pool;
 mod dapi_client;
 #[cfg(feature = "dump")]
 pub mod dump;
@@ -11,14 +12,14 @@ pub mod mock;
 mod request_settings;
 pub mod transport;
 
-pub use dapi_client::Dapi;
-use futures::{future::BoxFuture, FutureExt};
-pub use http::Uri;
-
+pub use address_list::Address;
 pub use address_list::AddressList;
+pub use dapi_client::DapiRequestExecutor;
 pub use dapi_client::{DapiClient, DapiClientError};
+use dapi_grpc::mock::Mockable;
 #[cfg(feature = "dump")]
 pub use dump::DumpData;
+use futures::{future::BoxFuture, FutureExt};
 pub use request_settings::RequestSettings;
 
 /// A DAPI request could be executed with an initialized [DapiClient].
@@ -39,12 +40,12 @@ pub trait DapiRequest {
     /// Response from DAPI for this specific request.
     type Response;
     /// An error type for the transport this request uses.
-    type TransportError;
+    type TransportError: Mockable;
 
     /// Executes the request.
-    fn execute<'c, D: Dapi>(
+    fn execute<'c, D: DapiRequestExecutor>(
         self,
-        dapi_client: &'c mut D,
+        dapi_client: &'c D,
         settings: RequestSettings,
     ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
     where
@@ -57,9 +58,9 @@ impl<T: transport::TransportRequest + Send> DapiRequest for T {
 
     type TransportError = <T::Client as transport::TransportClient>::Error;
 
-    fn execute<'c, D: Dapi>(
+    fn execute<'c, D: DapiRequestExecutor>(
         self,
-        dapi_client: &'c mut D,
+        dapi_client: &'c D,
         settings: RequestSettings,
     ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
     where
@@ -73,5 +74,5 @@ impl<T: transport::TransportRequest + Send> DapiRequest for T {
 /// try to do a request again.
 pub trait CanRetry {
     /// Get boolean flag that indicates if the error is retryable.
-    fn can_retry(&self) -> bool;
+    fn is_node_failure(&self) -> bool;
 }

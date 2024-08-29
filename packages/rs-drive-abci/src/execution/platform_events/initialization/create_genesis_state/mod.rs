@@ -1,8 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::system_identity_public_keys::SystemIdentityPublicKeys;
 use dpp::identity::TimestampMillis;
+use dpp::prelude::CoreBlockHeight;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
@@ -12,8 +12,8 @@ impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
     pub fn create_genesis_state(
         &self,
+        genesis_core_height: CoreBlockHeight,
         genesis_time: TimestampMillis,
-        system_identity_public_keys: SystemIdentityPublicKeys,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -24,8 +24,8 @@ impl<C> Platform<C> {
             .create_genesis_state
         {
             0 => self.create_genesis_state_v0(
+                genesis_core_height,
                 genesis_time,
-                system_identity_public_keys,
                 transaction,
                 platform_version,
             ),

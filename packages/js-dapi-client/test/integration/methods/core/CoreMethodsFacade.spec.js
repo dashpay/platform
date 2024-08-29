@@ -5,7 +5,8 @@ const {
     BroadcastTransactionResponse,
     GetBlockResponse,
     GetTransactionResponse,
-    GetStatusResponse,
+    GetBlockchainStatusResponse,
+    GetMasternodeStatusResponse,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -40,17 +41,6 @@ describe('CoreMethodsFacade', () => {
 
       expect(grpcTransportMock.request).to.be.calledOnce();
       expect(jsonRpcTransportMock.request).to.be.not.called();
-    });
-  });
-
-  describe('#generateToAddress', () => {
-    it('should generate address', async () => {
-      const response = 'response';
-      jsonRpcTransportMock.request.resolves(response);
-      await coreMethods.generateToAddress(1, 'yTMDce5yEpiPqmgPrPmTj7yAmQPJERUSVy');
-
-      expect(grpcTransportMock.request).to.be.not.called();
-      expect(jsonRpcTransportMock.request).to.be.calledOnce();
     });
   });
 
@@ -102,40 +92,30 @@ describe('CoreMethodsFacade', () => {
     });
   });
 
-  describe('#getMnListDiff', () => {
-    it('should get mn list diff', async () => {
-      const baseBlockHash = '0000047d24635e347be3aaaeb66c26be94901a2f962feccd4f95090191f208c1';
-      const blockHash = '000000000b0339e07bce8b3186a6a57a3c45d10e16c4bce18ef81b667bc822b2';
-
-      const response = {
-        baseBlockHash,
-        blockHash,
-        deletedMNs: [],
-        mnList: [],
-      };
-      jsonRpcTransportMock.request.resolves(response);
-      await coreMethods.getMnListDiff(baseBlockHash, blockHash);
-
-      expect(grpcTransportMock.request).to.be.not.called();
-      expect(jsonRpcTransportMock.request).to.be.calledOnce();
-    });
-  });
-
-  describe('#getStatus', () => {
+  describe('#getBlockchainStatus', () => {
     it('should get status', async () => {
-      const response = new GetStatusResponse();
+      const response = new GetBlockchainStatusResponse();
 
-      response.setStatus(GetStatusResponse.Status.READY);
-
-      const masternode = new GetStatusResponse.Masternode();
-
-      masternode.setStatus(GetStatusResponse.Masternode.Status.READY);
-
-      response.setMasternode(masternode);
+      response.setStatus(GetBlockchainStatusResponse.Status.READY);
 
       grpcTransportMock.request.resolves(response);
 
-      await coreMethods.getStatus();
+      await coreMethods.getBlockchainStatus();
+
+      expect(jsonRpcTransportMock.request).to.be.not.called();
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getMasternodeStatus', () => {
+    it('should get masternode status', async () => {
+      const response = new GetMasternodeStatusResponse();
+
+      response.setStatus(GetMasternodeStatusResponse.Status.READY);
+
+      grpcTransportMock.request.resolves(response);
+
+      await coreMethods.getMasternodeStatus();
 
       expect(jsonRpcTransportMock.request).to.be.not.called();
       expect(grpcTransportMock.request).to.be.calledOnce();

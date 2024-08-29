@@ -19,9 +19,7 @@ function emitInstantLockToFilterCollectionFactory(bloomFilterEmitterCollection) 
 
     const instantLock = new InstantLock(txLockBuffer);
 
-    logger.debug({
-      instantLock,
-    }, `instant lock received for ${transaction.hash}`);
+    logger.debug(`instant lock received for ${transaction.hash}`);
 
     bloomFilterEmitterCollection.emit('instantLock', {
       transaction,

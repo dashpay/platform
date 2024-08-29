@@ -1,0 +1,135 @@
+{
+  "withdrawal": {
+    "description": "Withdrawal document to track underlying withdrawal transactions. Withdrawals should be created with IdentityWithdrawalTransition",
+    "creationRestrictionMode": 2,
+    "type": "object",
+    "indices": [
+      {
+        "name": "identityStatus",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "status": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ],
+        "unique": false
+      },
+      {
+        "name": "identityRecent",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$updatedAt": "asc"
+          },
+          {
+            "status": "asc"
+          }
+        ],
+        "unique": false
+      },
+      {
+        "name": "pooling",
+        "properties": [
+          {
+            "status": "asc"
+          },
+          {
+            "pooling": "asc"
+          },
+          {
+            "coreFeePerByte": "asc"
+          },
+          {
+            "$updatedAt": "asc"
+          }
+        ],
+        "unique": false
+      },
+      {
+        "name": "transaction",
+        "properties": [
+          {
+            "status": "asc"
+          },
+          {
+            "transactionIndex": "asc"
+          }
+        ],
+        "unique": false
+      }
+    ],
+    "properties": {
+      "transactionIndex": {
+        "type": "integer",
+        "description": "Sequential index of asset unlock (withdrawal) transaction. Populated when a withdrawal pooled into withdrawal transaction",
+        "minimum": 1,
+        "position": 0
+      },
+      "transactionSignHeight": {
+        "type": "integer",
+        "description": "The Core height on which transaction was signed",
+        "minimum": 1,
+        "position": 1
+      },
+      "amount": {
+        "type": "integer",
+        "description": "The amount to be withdrawn",
+        "minimum": 1000,
+        "position": 2
+      },
+      "coreFeePerByte": {
+        "type": "integer",
+        "description": "This is the fee that you are willing to spend for this transaction in Duffs/Byte",
+        "minimum": 1,
+        "maximum": 4294967295,
+        "position": 3
+      },
+      "pooling": {
+        "type": "integer",
+        "description": "This indicated the level at which Platform should try to pool this transaction",
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "position": 4
+      },
+      "outputScript": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 23,
+        "maxItems": 25,
+        "position": 5
+      },
+      "status": {
+        "type": "integer",
+        "enum": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "description": "0 - Pending, 1 - Signed, 2 - Broadcasted, 3 - Complete, 4 - Expired",
+        "position": 6
+      }
+    },
+    "additionalProperties": false,
+    "required": [
+      "$createdAt",
+      "$updatedAt",
+      "amount",
+      "coreFeePerByte",
+      "pooling",
+      "outputScript",
+      "status"
+    ]
+  }
+}

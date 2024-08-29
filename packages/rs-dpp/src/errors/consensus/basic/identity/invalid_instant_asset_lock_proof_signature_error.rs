@@ -18,7 +18,7 @@ use bincode::{Decode, Encode};
     PlatformSerialize,
     PlatformDeserialize,
 )]
-#[error("Invalid instant lock proof signature")]
+#[error("Instant lock proof signature is invalid or wasn't created recently. Pleases try chain asset lock proof instead.")]
 #[platform_serialize(unversioned)]
 pub struct InvalidInstantAssetLockProofSignatureError;
 

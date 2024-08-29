@@ -13,7 +13,7 @@
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
 # - NODE_ENV - node.js environment name to use to build the library
-# - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables avaialable:
+# - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables available:
 #   - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
 #   - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
@@ -30,7 +30,7 @@
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
 ARG ALPINE_VERSION=3.18
-
+ARG PROTOC_VERSION=25.2
 ARG RUSTC_WRAPPER
 
 #
@@ -73,13 +73,14 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
     --profile minimal \
     -y \
     # Rust version the same as in /README.md
-    --default-toolchain stable \
+    --default-toolchain 1.76 \
     --target wasm32-unknown-unknown
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
+ARG PROTOC_VERSION
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
-    curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v22.4/protoc-22.4-linux-${PROTOC_ARCH}.zip \
+    curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip \
         -o /tmp/protoc.zip && \
     unzip -qd /opt/protoc /tmp/protoc.zip && \
     rm /tmp/protoc.zip && \
@@ -137,8 +138,11 @@ ENV SCCACHE_REGION=${SCCACHE_REGION}
 ARG CARGO_INCREMENTAL=false
 ENV CARGO_INCREMENTAL=${CARGO_INCREMENTAL}
 
+ARG AWS_ACCESS_KEY_ID
+ARG AWS_SECRET_ACCESS_KEY
+
 #
-# DEPS: FULL DEPENCIES LIST
+# DEPS: FULL DEPENDENCIES LIST
 #
 # This is separate from `deps` to use sccache for caching
 FROM deps-${RUSTC_WRAPPER:-base} AS deps
@@ -173,6 +177,9 @@ WORKDIR /platform
 
 COPY . .
 
+# Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
+RUN touch /platform/packages/dapi-grpc/build.rs
+
 #
 # STAGE: BUILD RS-DRIVE-ABCI
 #
@@ -193,7 +200,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
         --profile "$CARGO_BUILD_PROFILE" \
-        --package drive-abci && \
+        --package drive-abci \
+        --locked && \
     cp /platform/target/*/drive-abci /artifacts/ && \
     if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
 
@@ -231,12 +239,14 @@ LABEL description="Drive ABCI Rust"
 RUN apk add --no-cache libgcc libstdc++
 
 ENV DB_PATH=/var/lib/dash/rs-drive-abci/db
+ENV REJECTIONS_PATH=/var/log/dash/rejected
 
 RUN mkdir -p /var/log/dash \
-    /var/lib/dash/rs-drive-abci/db
+    /var/lib/dash/rs-drive-abci/db \
+    ${REJECTIONS_PATH}
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
-COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.example /var/lib/dash/rs-drive-abci/.env
+COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db
@@ -264,6 +274,7 @@ CMD ["start"]
 
 # ABCI interface
 EXPOSE 26658
+EXPOSE 26659
 # Prometheus port
 EXPOSE 29090
 
@@ -295,7 +306,6 @@ COPY --from=build-dashmate-helper /platform/package.json /platform/yarn.lock /pl
 COPY --from=build-dashmate-helper /platform/packages/dashmate packages/dashmate
 COPY --from=build-dashmate-helper /platform/packages/dashpay-contract packages/dashpay-contract
 COPY --from=build-dashmate-helper /platform/packages/wallet-lib packages/wallet-lib
-COPY --from=build-dashmate-helper /platform/packages/js-dash-sdk packages/js-dash-sdk
 COPY --from=build-dashmate-helper /platform/packages/js-dapi-client packages/js-dapi-client
 COPY --from=build-dashmate-helper /platform/packages/js-grpc-common packages/js-grpc-common
 COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grpc

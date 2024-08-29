@@ -18,12 +18,6 @@ impl Drive {
             versions_counter_path_vec(),
             Query::new_single_query_item(QueryItem::RangeFull(RangeFull)),
         );
-        self.grove_get_proved_path_query(
-            &path_query,
-            false,
-            transaction,
-            &mut vec![],
-            drive_version,
-        )
+        self.grove_get_proved_path_query(&path_query, transaction, &mut vec![], drive_version)
     }
 }

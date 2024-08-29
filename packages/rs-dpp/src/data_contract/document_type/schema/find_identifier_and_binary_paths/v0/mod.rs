@@ -3,15 +3,17 @@ use crate::data_contract::document_type::property::{DocumentProperty, DocumentPr
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 
 use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 impl DocumentTypeV0 {
+    #[inline(always)]
     pub(super) fn find_identifier_and_binary_paths_v0(
         properties: &IndexMap<String, DocumentProperty>,
     ) -> (BTreeSet<String>, BTreeSet<String>) {
         Self::find_identifier_and_binary_paths_inner(properties, "")
     }
 
+    #[inline(always)]
     fn find_identifier_and_binary_paths_inner(
         properties: &IndexMap<String, DocumentProperty>,
         current_path: &str,
@@ -30,7 +32,7 @@ impl DocumentTypeV0 {
                 DocumentPropertyType::Identifier => {
                     identifier_paths.insert(new_path);
                 }
-                DocumentPropertyType::ByteArray(_, _) => {
+                DocumentPropertyType::ByteArray(_) => {
                     binary_paths.insert(new_path);
                 }
                 DocumentPropertyType::Object(inner_properties) => {

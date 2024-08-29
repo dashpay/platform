@@ -1,4 +1,3 @@
-import { ownerId as dpnsOwnerId } from '@dashevo/dpns-contract/lib/systemIds';
 import { Platform } from '../../../Platform';
 
 export async function waitForCoreChainLockedHeight(
@@ -19,15 +18,9 @@ export async function waitForCoreChainLockedHeight(
   const promise = new Promise((resolve, reject) => {
     async function obtainCoreChainLockedHeight() {
       try {
-        const identityResponse = await platform.identities.get(dpnsOwnerId);
+        const response = await platform.client.getDAPIClient().platform.getEpochsInfo(0, 1);
 
-        if (!identityResponse) {
-          reject(new Error('Identity using to obtain core chain locked height is not present'));
-
-          return;
-        }
-
-        const metadata = identityResponse.getMetadata();
+        const metadata = response.getMetadata();
 
         coreChainLockedHeight = metadata.getCoreChainLockedHeight();
       } catch (e) {

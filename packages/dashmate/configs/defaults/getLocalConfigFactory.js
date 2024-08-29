@@ -32,17 +32,17 @@ export default function getLocalConfigFactory(getBaseConfig) {
         },
       },
       platform: {
-        dapi: {
-          envoy: {
-            ssl: {
-              provider: SSL_PROVIDERS.SELF_SIGNED,
-            },
-            http: {
+        gateway: {
+          ssl: {
+            provider: SSL_PROVIDERS.SELF_SIGNED,
+          },
+          listeners: {
+            dapiAndDrive: {
               port: 2443,
             },
-            rateLimiter: {
-              enabled: false,
-            },
+          },
+          rateLimiter: {
+            enabled: false,
           },
         },
         drive: {
@@ -65,8 +65,30 @@ export default function getLocalConfigFactory(getBaseConfig) {
             },
           },
           abci: {
+            epochTime: 1200,
             validatorSet: {
-              llmqType: 106,
+              quorum: {
+                llmqType: 106,
+                dkgInterval: 24,
+                activeSigners: 2,
+                rotation: false,
+              },
+            },
+            chainLock: {
+              quorum: {
+                llmqType: 100,
+                dkgInterval: 24,
+                activeSigners: 2,
+                rotation: false,
+              },
+            },
+            instantLock: {
+              quorum: {
+                llmqType: 104,
+                dkgInterval: 24,
+                activeSigners: 2,
+                rotation: false,
+              },
             },
           },
         },
@@ -75,7 +97,8 @@ export default function getLocalConfigFactory(getBaseConfig) {
       network: NETWORK_LOCAL,
     };
 
-    return new Config('local', lodashMerge({}, getBaseConfig().getOptions(), options));
+    return new Config('local', lodashMerge({}, getBaseConfig()
+      .getOptions(), options));
   }
 
   return getLocalConfig;

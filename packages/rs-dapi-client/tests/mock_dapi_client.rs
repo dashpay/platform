@@ -1,8 +1,11 @@
-use dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse, Proof};
-
-use rs_dapi_client::{mock::MockDapiClient, Dapi, DapiRequest, RequestSettings};
+#[cfg(feature = "mocks")]
+use {
+    dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse, Proof},
+    rs_dapi_client::{mock::MockDapiClient, DapiRequest, DapiRequestExecutor, RequestSettings},
+};
 
 #[tokio::test]
+#[cfg(feature = "mocks")]
 async fn test_mock_get_identity_dapi_client() {
     let mut dapi = MockDapiClient::new();
 
@@ -19,13 +22,14 @@ async fn test_mock_get_identity_dapi_client() {
         }))
     };
 
-    dapi.expect(&request, &response);
+    dapi.expect(&request, &Ok(response.clone()))
+        .expect("expectation added");
 
     let settings = RequestSettings::default();
 
     let result = dapi.execute(request.clone(), settings).await.unwrap();
 
-    let result2 = request.execute(&mut dapi, settings).await.unwrap();
+    let result2 = request.execute(&dapi, settings).await.unwrap();
 
     assert_eq!(result, response);
     assert_eq!(result2, response);

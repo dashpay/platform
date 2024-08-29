@@ -18,6 +18,14 @@
 @class BroadcastStateTransitionResponse;
 @class GetConsensusParamsRequest;
 @class GetConsensusParamsResponse;
+@class GetContestedResourceIdentityVotesRequest;
+@class GetContestedResourceIdentityVotesResponse;
+@class GetContestedResourceVoteStateRequest;
+@class GetContestedResourceVoteStateResponse;
+@class GetContestedResourceVotersForIdentityRequest;
+@class GetContestedResourceVotersForIdentityResponse;
+@class GetContestedResourcesRequest;
+@class GetContestedResourcesResponse;
 @class GetDataContractHistoryRequest;
 @class GetDataContractHistoryResponse;
 @class GetDataContractRequest;
@@ -28,26 +36,36 @@
 @class GetDocumentsResponse;
 @class GetEpochsInfoRequest;
 @class GetEpochsInfoResponse;
-@class GetIdentitiesByPublicKeyHashesRequest;
-@class GetIdentitiesByPublicKeyHashesResponse;
-@class GetIdentitiesRequest;
-@class GetIdentitiesResponse;
+@class GetIdentitiesContractKeysRequest;
+@class GetIdentitiesContractKeysResponse;
 @class GetIdentityBalanceAndRevisionRequest;
 @class GetIdentityBalanceAndRevisionResponse;
 @class GetIdentityBalanceRequest;
 @class GetIdentityBalanceResponse;
 @class GetIdentityByPublicKeyHashRequest;
 @class GetIdentityByPublicKeyHashResponse;
+@class GetIdentityContractNonceRequest;
+@class GetIdentityContractNonceResponse;
 @class GetIdentityKeysRequest;
 @class GetIdentityKeysResponse;
+@class GetIdentityNonceRequest;
+@class GetIdentityNonceResponse;
 @class GetIdentityRequest;
 @class GetIdentityResponse;
+@class GetPathElementsRequest;
+@class GetPathElementsResponse;
+@class GetPrefundedSpecializedBalanceRequest;
+@class GetPrefundedSpecializedBalanceResponse;
 @class GetProofsRequest;
 @class GetProofsResponse;
 @class GetProtocolVersionUpgradeStateRequest;
 @class GetProtocolVersionUpgradeStateResponse;
 @class GetProtocolVersionUpgradeVoteStatusRequest;
 @class GetProtocolVersionUpgradeVoteStatusResponse;
+@class GetTotalCreditsInPlatformRequest;
+@class GetTotalCreditsInPlatformResponse;
+@class GetVotePollsByEndDateRequest;
+@class GetVotePollsByEndDateResponse;
 @class WaitForStateTransitionResultRequest;
 @class WaitForStateTransitionResultResponse;
 
@@ -88,13 +106,21 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getIdentityWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse)
-
-- (GRPCUnaryProtoCall *)getIdentitiesWithMessage:(GetIdentitiesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
-
 #pragma mark getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse)
 
 - (GRPCUnaryProtoCall *)getIdentityKeysWithMessage:(GetIdentityKeysRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getIdentitiesContractKeys(GetIdentitiesContractKeysRequest) returns (GetIdentitiesContractKeysResponse)
+
+- (GRPCUnaryProtoCall *)getIdentitiesContractKeysWithMessage:(GetIdentitiesContractKeysRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse)
+
+- (GRPCUnaryProtoCall *)getIdentityNonceWithMessage:(GetIdentityNonceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse)
+
+- (GRPCUnaryProtoCall *)getIdentityContractNonceWithMessage:(GetIdentityContractNonceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse)
 
@@ -124,10 +150,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getDocumentsWithMessage:(GetDocumentsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse)
-
-- (GRPCUnaryProtoCall *)getIdentitiesByPublicKeyHashesWithMessage:(GetIdentitiesByPublicKeyHashesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
-
 #pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)
 
 - (GRPCUnaryProtoCall *)getIdentityByPublicKeyHashWithMessage:(GetIdentityByPublicKeyHashRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
@@ -152,6 +174,53 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getEpochsInfoWithMessage:(GetEpochsInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse)
+
+/**
+ * What votes are currently happening for a specific contested index
+ */
+- (GRPCUnaryProtoCall *)getContestedResourcesWithMessage:(GetContestedResourcesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse)
+
+/**
+ * What's the state of a contested resource vote? (ie who is winning?)
+ */
+- (GRPCUnaryProtoCall *)getContestedResourceVoteStateWithMessage:(GetContestedResourceVoteStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContestedResourceVotersForIdentity(GetContestedResourceVotersForIdentityRequest) returns (GetContestedResourceVotersForIdentityResponse)
+
+/**
+ * Who voted for a contested resource to go to a specific identity?
+ */
+- (GRPCUnaryProtoCall *)getContestedResourceVotersForIdentityWithMessage:(GetContestedResourceVotersForIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getContestedResourceIdentityVotes(GetContestedResourceIdentityVotesRequest) returns (GetContestedResourceIdentityVotesResponse)
+
+/**
+ * How did an identity vote?
+ */
+- (GRPCUnaryProtoCall *)getContestedResourceIdentityVotesWithMessage:(GetContestedResourceIdentityVotesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse)
+
+/**
+ * What vote polls will end soon?
+ */
+- (GRPCUnaryProtoCall *)getVotePollsByEndDateWithMessage:(GetVotePollsByEndDateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse)
+
+- (GRPCUnaryProtoCall *)getPrefundedSpecializedBalanceWithMessage:(GetPrefundedSpecializedBalanceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse)
+
+- (GRPCUnaryProtoCall *)getTotalCreditsInPlatformWithMessage:(GetTotalCreditsInPlatformRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
+
+- (GRPCUnaryProtoCall *)getPathElementsWithMessage:(GetPathElementsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 @end
 
 /**
@@ -174,18 +243,32 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetIdentityWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse)
-
-- (void)getIdentitiesWithRequest:(GetIdentitiesRequest *)request handler:(void(^)(GetIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetIdentitiesWithRequest:(GetIdentitiesRequest *)request handler:(void(^)(GetIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
 #pragma mark getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse)
 
 - (void)getIdentityKeysWithRequest:(GetIdentityKeysRequest *)request handler:(void(^)(GetIdentityKeysResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetIdentityKeysWithRequest:(GetIdentityKeysRequest *)request handler:(void(^)(GetIdentityKeysResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getIdentitiesContractKeys(GetIdentitiesContractKeysRequest) returns (GetIdentitiesContractKeysResponse)
+
+- (void)getIdentitiesContractKeysWithRequest:(GetIdentitiesContractKeysRequest *)request handler:(void(^)(GetIdentitiesContractKeysResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentitiesContractKeysWithRequest:(GetIdentitiesContractKeysRequest *)request handler:(void(^)(GetIdentitiesContractKeysResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getIdentityNonce(GetIdentityNonceRequest) returns (GetIdentityNonceResponse)
+
+- (void)getIdentityNonceWithRequest:(GetIdentityNonceRequest *)request handler:(void(^)(GetIdentityNonceResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentityNonceWithRequest:(GetIdentityNonceRequest *)request handler:(void(^)(GetIdentityNonceResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse)
+
+- (void)getIdentityContractNonceWithRequest:(GetIdentityContractNonceRequest *)request handler:(void(^)(GetIdentityContractNonceResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentityContractNonceWithRequest:(GetIdentityContractNonceRequest *)request handler:(void(^)(GetIdentityContractNonceResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse)
@@ -237,13 +320,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(GetDocumentsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse)
-
-- (void)getIdentitiesByPublicKeyHashesWithRequest:(GetIdentitiesByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentitiesByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetIdentitiesByPublicKeyHashesWithRequest:(GetIdentitiesByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentitiesByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
 #pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)
 
 - (void)getIdentityByPublicKeyHashWithRequest:(GetIdentityByPublicKeyHashRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashResponse *_Nullable response, NSError *_Nullable error))handler;
@@ -284,6 +360,112 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse)
+
+/**
+ * What votes are currently happening for a specific contested index
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getContestedResourcesWithRequest:(GetContestedResourcesRequest *)request handler:(void(^)(GetContestedResourcesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * What votes are currently happening for a specific contested index
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetContestedResourcesWithRequest:(GetContestedResourcesRequest *)request handler:(void(^)(GetContestedResourcesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContestedResourceVoteState(GetContestedResourceVoteStateRequest) returns (GetContestedResourceVoteStateResponse)
+
+/**
+ * What's the state of a contested resource vote? (ie who is winning?)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getContestedResourceVoteStateWithRequest:(GetContestedResourceVoteStateRequest *)request handler:(void(^)(GetContestedResourceVoteStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * What's the state of a contested resource vote? (ie who is winning?)
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetContestedResourceVoteStateWithRequest:(GetContestedResourceVoteStateRequest *)request handler:(void(^)(GetContestedResourceVoteStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContestedResourceVotersForIdentity(GetContestedResourceVotersForIdentityRequest) returns (GetContestedResourceVotersForIdentityResponse)
+
+/**
+ * Who voted for a contested resource to go to a specific identity?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getContestedResourceVotersForIdentityWithRequest:(GetContestedResourceVotersForIdentityRequest *)request handler:(void(^)(GetContestedResourceVotersForIdentityResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * Who voted for a contested resource to go to a specific identity?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetContestedResourceVotersForIdentityWithRequest:(GetContestedResourceVotersForIdentityRequest *)request handler:(void(^)(GetContestedResourceVotersForIdentityResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getContestedResourceIdentityVotes(GetContestedResourceIdentityVotesRequest) returns (GetContestedResourceIdentityVotesResponse)
+
+/**
+ * How did an identity vote?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getContestedResourceIdentityVotesWithRequest:(GetContestedResourceIdentityVotesRequest *)request handler:(void(^)(GetContestedResourceIdentityVotesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * How did an identity vote?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetContestedResourceIdentityVotesWithRequest:(GetContestedResourceIdentityVotesRequest *)request handler:(void(^)(GetContestedResourceIdentityVotesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getVotePollsByEndDate(GetVotePollsByEndDateRequest) returns (GetVotePollsByEndDateResponse)
+
+/**
+ * What vote polls will end soon?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)getVotePollsByEndDateWithRequest:(GetVotePollsByEndDateRequest *)request handler:(void(^)(GetVotePollsByEndDateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+/**
+ * What vote polls will end soon?
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTogetVotePollsByEndDateWithRequest:(GetVotePollsByEndDateRequest *)request handler:(void(^)(GetVotePollsByEndDateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse)
+
+- (void)getPrefundedSpecializedBalanceWithRequest:(GetPrefundedSpecializedBalanceRequest *)request handler:(void(^)(GetPrefundedSpecializedBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetPrefundedSpecializedBalanceWithRequest:(GetPrefundedSpecializedBalanceRequest *)request handler:(void(^)(GetPrefundedSpecializedBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse)
+
+- (void)getTotalCreditsInPlatformWithRequest:(GetTotalCreditsInPlatformRequest *)request handler:(void(^)(GetTotalCreditsInPlatformResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetTotalCreditsInPlatformWithRequest:(GetTotalCreditsInPlatformRequest *)request handler:(void(^)(GetTotalCreditsInPlatformResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
+
+- (void)getPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

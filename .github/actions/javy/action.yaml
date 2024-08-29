@@ -1,0 +1,37 @@
+---
+name: "Setup Javy"
+description: "Setup Javy binaries"
+inputs:
+  version:
+    description: Javy version to use
+    required: false
+    default: "1.4.0"
+runs:
+  using: composite
+  steps:
+    - name: Install Javy
+      shell: bash
+      run: |
+        set -e
+
+        case "${{ runner.arch }}" in
+          "ARM64")
+            JAVY_ARCH="arm-linux"
+            ;;
+          "X64")
+            JAVY_ARCH="x86_64-linux"            
+            ;;
+          *)
+            echo "Unsupported architecture: ${{ runner.arch }}"
+            exit 1
+            ;;
+        esac
+
+        curl -Ls "https://github.com/bytecodealliance/javy/releases/download/v${{ inputs.version }}/javy-${JAVY_ARCH}-v${{ inputs.version }}.gz" | gunzip > javy
+
+        chmod +x javy
+        sudo mv javy /usr/local/bin/javy
+
+    - name: Verify Javy installation
+      shell: bash
+      run: javy --version

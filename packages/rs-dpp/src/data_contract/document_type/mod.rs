@@ -7,38 +7,52 @@ pub mod methods;
 pub use index::*;
 mod index_level;
 pub use index_level::IndexLevel;
+pub use index_level::IndexLevelTypeInfo;
+pub use index_level::IndexType;
 
 #[cfg(feature = "random-documents")]
 pub mod random_document;
+pub mod restricted_creation;
 pub mod schema;
 pub mod v0;
 
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
-use crate::prelude::Revision;
+use crate::fee::Credits;
+use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use crate::version::PlatformVersion;
+use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
-pub(self) mod property_names {
+mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
+
+    pub const CAN_BE_DELETED: &str = "canBeDeleted";
+    pub const TRANSFERABLE: &str = "transferable";
+    pub const TRADE_MODE: &str = "tradeMode";
+
+    pub const CREATION_RESTRICTION_MODE: &str = "creationRestrictionMode";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
     pub const REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY: &str =
         "requiresIdentityEncryptionBoundedKey";
     pub const REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY: &str =
         "requiresIdentityDecryptionBoundedKey";
     pub const INDICES: &str = "indices";
+    pub const NULL_SEARCHABLE: &str = "nullSearchable";
     pub const PROPERTIES: &str = "properties";
     pub const POSITION: &str = "position";
     pub const REQUIRED: &str = "required";
+    pub const TRANSIENT: &str = "transient";
     pub const TYPE: &str = "type";
     pub const REF: &str = "$ref";
     pub const CREATED_AT: &str = "$createdAt";
     pub const UPDATED_AT: &str = "$updatedAt";
+    pub const TRANSFERRED_AT: &str = "$transferredAt";
     pub const MIN_ITEMS: &str = "minItems";
     pub const MAX_ITEMS: &str = "maxItems";
     pub const MIN_LENGTH: &str = "minLength";
@@ -76,6 +90,18 @@ impl DocumentType {
             DocumentType::V0(v0) => DocumentTypeMutRef::V0(v0),
         }
     }
+
+    pub fn prefunded_voting_balances_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<(String, Credits)>, ProtocolError> {
+        match self {
+            DocumentType::V0(v0) => {
+                v0.prefunded_voting_balance_for_document(document, platform_version)
+            }
+        }
+    }
 }
 
 impl<'a> DocumentTypeRef<'a> {
@@ -109,6 +135,19 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => v0.serialize_value_for_key(key, value, platform_version),
+        }
+    }
+
+    fn deserialize_value_for_key(
+        &self,
+        key: &str,
+        serialized_value: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Value, ProtocolError> {
+        match self {
+            DocumentTypeRef::V0(v0) => {
+                v0.deserialize_value_for_key(key, serialized_value, platform_version)
+            }
         }
     }
 
@@ -158,17 +197,30 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         }
     }
 
+    fn top_level_indices_of_contested_unique_indexes(&self) -> Vec<&IndexProperty> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.top_level_indices_of_contested_unique_indexes(),
+        }
+    }
+
     fn create_document_from_data(
         &self,
         data: Value,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         document_entropy: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
         match self {
-            DocumentTypeRef::V0(v0) => {
-                v0.create_document_from_data(data, owner_id, document_entropy, platform_version)
-            }
+            DocumentTypeRef::V0(v0) => v0.create_document_from_data(
+                data,
+                owner_id,
+                block_height,
+                core_block_height,
+                document_entropy,
+                platform_version,
+            ),
         }
     }
 
@@ -176,6 +228,8 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         &self,
         id: Identifier,
         owner_id: Identifier,
+        block_height: BlockHeight,
+        core_block_height: CoreBlockHeight,
         properties: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
@@ -183,9 +237,35 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
             DocumentTypeRef::V0(v0) => v0.create_document_with_prevalidated_properties(
                 id,
                 owner_id,
+                block_height,
+                core_block_height,
                 properties,
                 platform_version,
             ),
+        }
+    }
+
+    fn prefunded_voting_balance_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<(String, Credits)>, ProtocolError> {
+        match self {
+            DocumentTypeRef::V0(v0) => {
+                v0.prefunded_voting_balance_for_document(document, platform_version)
+            }
+        }
+    }
+
+    fn contested_vote_poll_for_document(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError> {
+        match self {
+            DocumentTypeRef::V0(v0) => {
+                v0.contested_vote_poll_for_document(document, platform_version)
+            }
         }
     }
 }

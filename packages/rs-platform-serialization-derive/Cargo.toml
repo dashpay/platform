@@ -2,11 +2,10 @@
 name = "platform-serialization-derive"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "Bincode serialization and deserialization derivations"
-version = "0.25.22"
+version = "1.1.1"
 edition = "2021"
-rust-version = "1.73"
+rust-version = "1.76"
 license = "MIT"
-private = true
 
 [lib]
 proc-macro = true

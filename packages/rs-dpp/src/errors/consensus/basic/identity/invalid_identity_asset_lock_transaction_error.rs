@@ -6,7 +6,9 @@ use thiserror::Error;
 
 use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[derive(
+    Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq,
+)]
 #[error("Invalid asset lock transaction: {message}")]
 #[platform_serialize(unversioned)]
 pub struct InvalidIdentityAssetLockTransactionError {

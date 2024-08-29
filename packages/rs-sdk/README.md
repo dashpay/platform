@@ -4,11 +4,51 @@ This is the official Rust SDK for the Dash Platform. Dash Platform is a Layer 2 
 
 See Rust documentation of this crate for more details.
 
+## Quick start
+
+### Cargo.toml
+
+To use this crate, define it as a dependency in your `Cargo.toml`:
+
+```toml
+[dependencies]
+
+dash-platform-sdk = { git="https://github.com/dashpay/platform"0 }
+```
+
+### Implementing Dash Platform SDK application
+
+In order to build application that uses Dash Platform SDK, you need to:
+
+1. Implement a [Wallet](src/wallet.rs) that will store, manage and use your keys to sign transactions and state transitions.
+   An example implementation of wallet can be found in [src/mock/wallet.rs](src/mock/wallet.rs).
+2. Implement Dash SPV client that will sync your application with Dash Core state, including quorum public keys.
+
+   TODO: Add more details here.
+
+   For testing and development purposes, while you don't have your SPV client implementation ready, you can setup local Dash Core node and access it using RPC interface (see below).
+
+3. Implement  `ContextProvider` gives Dash Platform SDK access to state of your application, like:
+   * quorum public keys retrieved using SPV,
+   * data contracts configured and/or fetched from the server.
+
+   See [GrpcContextProvider](../rs-sdk/src/mock/provider.rs) for an example implementation.
+
+### Mocking
+
+Dash Platform SDK supports mocking with `mocks` feature which provides a
+convenient way to define mock expectations and use the SDK without actual
+connection to Platform.
+
+You can see examples of mocking in [mock_fetch.rs](tests/fetch/mock_fetch.rs) and  [mock_fetch_many.rs](tests/fetch/mock_fetch_many.rs).
+
 ## Examples
 
 You can find quick start example in `examples/` folder. Examples must be configured by setting constants.
 
 You can also inspect tests in `tests/` folder for more detailed examples.
+
+Also refer to [Platform Explorer](https://github.com/dashpay/rs-platform-explorer/) which uses the SDK to execute various state transitions.
 
 ## Tests
 
@@ -28,7 +68,7 @@ Follow these steps to conduct network testing:
 
 ```bash
 cd packages/rs-sdk
-cargo test -p rs-sdk --no-default-features --features network-testing
+cargo test -p dash-sdk --no-default-features --features network-testing
 ```
 
 ## Offline Testing
@@ -54,7 +94,7 @@ To generate test vectors:
 Run the offline test using the following command:
 
 ```bash
-cargo test -p rs-sdk
+cargo test -p dash-platform-sdk
 ```
 
 ## Implementing Fetch and FetchAny on new objects
@@ -69,6 +109,7 @@ Definitions:
 2. `Response` - gRPC response  type, as generated in `packages/dapi-grpc/protos/platform/v0/platform.proto`.
 3. `Object` - object type that should be returned by rs-sdk, most likely defined in `dpp` crate.
    In some cases, it can be defined in `packages/rs-drive-proof-verifier/src/types.rs`.
+4. `Key` - some unique identifier of the `Object`, for example `platform_value::Identifier`
 
 Checklist:
 
@@ -85,8 +126,10 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
    that will store collection of  returned objects, indexd by some key.
 5. [ ] Implement `FromProof` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-drive-proof-verifier/src/proof.rs`.
 6. [ ] Implement `Query` trait for the `Request` in `packages/rs-sdk/src/platform/query.rs`.
-7. [ ] Implement `Fetch\<Request\>` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-sdk/src/platform/fetch.rs`.
-8. [ ] Implement `FetchMany\<Request\>` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-sdk/src/platform/fetch_many.rs`.
+7. [ ] Implement `Fetch` trait for the `Object` (or type defined in `types.rs`), with inner type Request = `Request`,
+   in `packages/rs-sdk/src/platform/fetch.rs`.
+8. [ ] Implement `FetchMany\<Key\>` trait for the `Object` (or type defined in `types.rs`),
+   with inner type Request = `Request`, in `packages/rs-sdk/src/platform/fetch_many.rs`.
 9. [ ] Add `mod ...;` clause to `packages/rs-sdk/tests/fetch/main.rs`
 10. [ ] Implement unit tests in `packages/rs-sdk/tests/fetch/*object*.rs`
 11. [ ] Add name of request type to match clause in `packages/rs-sdk/src/mock/sdk.rs` : `load_expectations()`

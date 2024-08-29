@@ -9,13 +9,12 @@ use crate::execution::types::block_execution_context::v0::{
 use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use derive_more::From;
-use dpp::dashcore::Txid;
-use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;
 
 /// The versioned block execution context
-#[derive(Debug, From)]
+#[derive(Debug, From, Clone)]
 pub enum BlockExecutionContext {
     /// Version 0
     V0(v0::BlockExecutionContextV0),
@@ -49,9 +48,9 @@ impl BlockExecutionContextV0Getters for BlockExecutionContext {
         }
     }
 
-    fn withdrawal_transactions(&self) -> &BTreeMap<Txid, Vec<u8>> {
+    fn unsigned_withdrawal_transactions(&self) -> &UnsignedWithdrawalTxs {
         match self {
-            BlockExecutionContext::V0(v0) => &v0.withdrawal_transactions,
+            BlockExecutionContext::V0(v0) => &v0.unsigned_withdrawal_transactions,
         }
     }
 
@@ -87,9 +86,9 @@ impl BlockExecutionContextV0Setters for BlockExecutionContext {
         }
     }
 
-    fn set_withdrawal_transactions(&mut self, transactions: BTreeMap<Txid, Vec<u8>>) {
+    fn set_unsigned_withdrawal_transactions(&mut self, transactions: UnsignedWithdrawalTxs) {
         match self {
-            BlockExecutionContext::V0(v0) => v0.withdrawal_transactions = transactions,
+            BlockExecutionContext::V0(v0) => v0.unsigned_withdrawal_transactions = transactions,
         }
     }
 
@@ -119,12 +118,6 @@ impl BlockExecutionContextV0MutableGetters for BlockExecutionContext {
         }
     }
 
-    fn withdrawal_transactions_mut(&mut self) -> &mut BTreeMap<Txid, Vec<u8>> {
-        match self {
-            BlockExecutionContext::V0(v0) => v0.withdrawal_transactions_mut(),
-        }
-    }
-
     fn block_platform_state_mut(&mut self) -> &mut PlatformState {
         match self {
             BlockExecutionContext::V0(v0) => v0.block_platform_state_mut(),
@@ -134,6 +127,12 @@ impl BlockExecutionContextV0MutableGetters for BlockExecutionContext {
     fn proposer_results_mut(&mut self) -> Option<&mut ResponsePrepareProposal> {
         match self {
             BlockExecutionContext::V0(v0) => v0.proposer_results_mut(),
+        }
+    }
+
+    fn unsigned_withdrawal_transactions_mut(&mut self) -> &mut UnsignedWithdrawalTxs {
+        match self {
+            BlockExecutionContext::V0(v0) => v0.unsigned_withdrawal_transactions_mut(),
         }
     }
 }
@@ -150,13 +149,6 @@ impl BlockExecutionContextV0OwnedGetters for BlockExecutionContext {
     fn epoch_info_owned(self) -> EpochInfo {
         match self {
             BlockExecutionContext::V0(v0) => v0.epoch_info,
-        }
-    }
-
-    /// Consumes the object and returns the owned `withdrawal_transactions`.
-    fn withdrawal_transactions_owned(self) -> BTreeMap<Txid, Vec<u8>> {
-        match self {
-            BlockExecutionContext::V0(v0) => v0.withdrawal_transactions,
         }
     }
 

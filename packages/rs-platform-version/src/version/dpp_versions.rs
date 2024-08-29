@@ -12,6 +12,9 @@ pub struct DPPVersion {
     pub contract_versions: ContractVersions,
     pub document_versions: DocumentVersions,
     pub identity_versions: IdentityVersions,
+    pub voting_versions: VotingVersions,
+    pub asset_lock_versions: AssetLockVersions,
+    pub methods: DPPMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -22,11 +25,14 @@ pub struct StateTransitionVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct IdentityTransitionVersions {
+    pub max_public_keys_in_creation: u16,
     pub asset_locks: IdentityTransitionAssetLockVersions,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct IdentityTransitionAssetLockVersions {
+    pub required_asset_lock_duff_balance_for_processing_start_for_identity_create: u64,
+    pub required_asset_lock_duff_balance_for_processing_start_for_identity_top_up: u64,
     pub validate_asset_lock_transaction_structure: FeatureVersion,
     pub validate_instant_asset_lock_proof_structure: FeatureVersion,
 }
@@ -54,9 +60,10 @@ pub struct CostVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPValidationVersions {
-    pub validate_time_in_block_time_window: FeatureVersion,
     pub json_schema_validator: JsonSchemaValidatorVersions,
     pub data_contract: DataContractValidationVersions,
+    pub document_type: DocumentTypeValidationVersions,
+    pub voting: VotingValidationVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -70,10 +77,26 @@ pub struct DataContractValidationVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct VotingValidationVersions {
+    /// How long do we allow other contenders to join a contest after the first contender
+    pub allow_other_contenders_time_ms: u64,
+    /// How many votes do we allow from the same masternode?
+    pub votes_allowed_per_masternode: u16,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DocumentTypeValidationVersions {
+    pub validate_update: FeatureVersion,
+    pub unique_index_limit: u16,
+    pub contested_index_limit: u16,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct JsonSchemaValidatorVersions {
     pub new: FeatureVersion,
     pub validate: FeatureVersion,
     pub compile: FeatureVersion,
+    pub compile_and_validate: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -94,6 +117,8 @@ pub struct PublicKeyInCreationMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct StateTransitionConversionVersions {
     pub identity_to_identity_create_transition: FeatureVersion,
+    pub identity_to_identity_top_up_transition: FeatureVersion,
+    pub identity_to_identity_withdrawal_transition: FeatureVersion,
     pub identity_to_identity_create_transition_with_signer: FeatureVersion,
 }
 
@@ -105,6 +130,7 @@ pub struct StateTransitionSerializationVersions {
     pub identity_top_up_state_transition: FeatureVersionBounds,
     pub identity_credit_withdrawal_state_transition: FeatureVersionBounds,
     pub identity_credit_transfer_state_transition: FeatureVersionBounds,
+    pub masternode_vote_state_transition: FeatureVersionBounds,
     pub contract_create_state_transition: FeatureVersionBounds,
     pub contract_update_state_transition: FeatureVersionBounds,
     pub documents_batch_state_transition: FeatureVersionBounds,
@@ -112,6 +138,9 @@ pub struct StateTransitionSerializationVersions {
     pub document_create_state_transition: DocumentFeatureVersionBounds,
     pub document_replace_state_transition: DocumentFeatureVersionBounds,
     pub document_delete_state_transition: DocumentFeatureVersionBounds,
+    pub document_transfer_state_transition: DocumentFeatureVersionBounds,
+    pub document_update_price_state_transition: DocumentFeatureVersionBounds,
+    pub document_purchase_state_transition: DocumentFeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -121,6 +150,10 @@ pub struct DocumentFeatureVersionBounds {
 
 #[derive(Clone, Debug, Default)]
 pub struct ContractVersions {
+    /// The maximum that we can store a data contract in the state. There is a possibility that a client
+    /// sends a state transition serialized in a specific version and that the system re-serializes it
+    /// to the current version, and in so doing increases it's size.
+    pub max_serialized_size: u32,
     /// This is how we serialize and deserialize a contract
     pub contract_serialization_version: FeatureVersionBounds,
     /// This is the structure of the Contract as it is defined for code paths
@@ -134,6 +167,7 @@ pub struct ContractVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DataContractMethodVersions {
     pub validate_document: FeatureVersion,
+    pub validate_update: FeatureVersion,
     pub schema: FeatureVersion,
 }
 
@@ -162,10 +196,13 @@ pub struct DocumentTypeVersions {
 pub struct DocumentTypeMethodVersions {
     pub create_document_from_data: FeatureVersion,
     pub create_document_with_prevalidated_properties: FeatureVersion,
+    pub prefunded_voting_balance_for_document: FeatureVersion,
+    pub contested_vote_poll_for_document: FeatureVersion,
     pub estimated_size: FeatureVersion,
     pub index_for_types: FeatureVersion,
     pub max_size: FeatureVersion,
     pub serialize_value_for_key: FeatureVersion,
+    pub deserialize_value_for_key: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -173,6 +210,7 @@ pub struct DocumentTypeSchemaVersions {
     pub enrich_with_base_schema: FeatureVersion,
     pub find_identifier_and_binary_paths: FeatureVersion,
     pub validate_max_depth: FeatureVersion,
+    pub max_depth: u16,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,
     pub validate_schema_compatibility: FeatureVersion,
 }
@@ -180,8 +218,11 @@ pub struct DocumentTypeSchemaVersions {
 #[derive(Clone, Debug, Default)]
 pub struct RecursiveSchemaValidatorVersions {
     pub traversal_validator: FeatureVersion,
-    pub byte_array_has_no_items_as_parent_validator: FeatureVersion,
-    pub pattern_is_valid_regex_validator: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct AssetLockVersions {
+    pub reduced_asset_lock_value: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -190,6 +231,12 @@ pub struct IdentityVersions {
     pub identity_structure_version: FeatureVersion,
     pub identity_key_structure_version: FeatureVersion,
     pub identity_key_type_method_versions: IdentityKeyTypeMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct VotingVersions {
+    pub default_vote_poll_time_duration_ms: u64,
+    pub contested_document_vote_poll_stored_info_version: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -211,7 +258,13 @@ pub struct DocumentVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentMethodVersions {
+    pub is_equal_ignoring_timestamps: FeatureVersion,
     pub hash: FeatureVersion,
     pub get_raw_for_contract: FeatureVersion,
     pub get_raw_for_document_type: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DPPMethodVersions {
+    pub epoch_core_reward_credits_for_distribution: FeatureVersion,
 }

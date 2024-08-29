@@ -2,7 +2,8 @@ use anyhow::{anyhow, bail};
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 
-use crate::{identifier, ProtocolError};
+use crate::data_contract::errors::DataContractError;
+use crate::identifier;
 
 pub trait JsonSchemaExt {
     /// returns true if json value contains property 'type`, and it equals 'object'
@@ -25,17 +26,15 @@ pub trait JsonSchemaExt {
     fn is_type_of_identifier(&self) -> bool;
 }
 
-pub fn resolve_uri<'a>(value: &'a Value, uri: &str) -> Result<&'a Value, ProtocolError> {
+pub fn resolve_uri<'a>(value: &'a Value, uri: &str) -> Result<&'a Value, DataContractError> {
     if !uri.starts_with("#/") {
-        return Err(ProtocolError::Generic(
-            "only local references are allowed".to_string(),
+        return Err(DataContractError::InvalidURI(
+            "only local uri references are allowed".to_string(),
         ));
     }
 
     let string_path = uri.strip_prefix("#/").unwrap().replace('/', ".");
-    value
-        .get_value_at_path(&string_path)
-        .map_err(ProtocolError::ValueError)
+    value.get_value_at_path(&string_path).map_err(|e| e.into())
 }
 
 impl JsonSchemaExt for JsonValue {
@@ -214,24 +213,29 @@ mod test {
             false,
             false,
             false,
+            false,
+            &mut vec![],
             LATEST_PLATFORM_VERSION,
         )
         .unwrap();
 
-        let indices = document_type.indices();
+        let indices = document_type.indexes();
 
         assert_eq!(indices.len(), 2);
 
-        assert_eq!(indices[0].name, "&ownerId");
-        assert_eq!(indices[0].properties.len(), 1);
-        assert_eq!(indices[0].properties[0].name, "$ownerId");
-        assert!(indices[0].properties[0].ascending);
-        assert!(indices[0].unique);
+        assert_eq!(indices["&ownerId"].name, "&ownerId");
+        assert_eq!(indices["&ownerId"].properties.len(), 1);
+        assert_eq!(indices["&ownerId"].properties[0].name, "$ownerId");
+        assert!(indices["&ownerId"].properties[0].ascending);
+        assert!(indices["&ownerId"].unique);
 
-        assert_eq!(indices[1].name, "&ownerId&updatedAt");
-        assert_eq!(indices[1].properties.len(), 2);
-        assert_eq!(indices[1].properties[0].name, "$ownerId");
-        assert_eq!(indices[1].properties[1].name, "$updatedAt");
-        assert!(!indices[1].unique);
+        assert_eq!(indices["&ownerId&updatedAt"].name, "&ownerId&updatedAt");
+        assert_eq!(indices["&ownerId&updatedAt"].properties.len(), 2);
+        assert_eq!(indices["&ownerId&updatedAt"].properties[0].name, "$ownerId");
+        assert_eq!(
+            indices["&ownerId&updatedAt"].properties[1].name,
+            "$updatedAt"
+        );
+        assert!(!indices["&ownerId&updatedAt"].unique);
     }
 }

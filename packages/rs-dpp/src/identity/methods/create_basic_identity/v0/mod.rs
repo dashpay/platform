@@ -4,9 +4,10 @@ use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 impl Identity {
-    pub(super) fn create_basic_identity_v0(id: [u8; 32]) -> Self {
+    #[inline(always)]
+    pub(super) fn create_basic_identity_v0(id: Identifier) -> Self {
         IdentityV0 {
-            id: Identifier::new(id),
+            id,
             revision: 0,
             balance: 0,
             public_keys: BTreeMap::new(),

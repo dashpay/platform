@@ -1,5 +1,9 @@
+mod error;
+pub mod v1;
+
+pub use crate::error::Error;
 use platform_value::{Identifier, IdentifierBytes32};
-use serde_json::Error;
+use platform_version::version::PlatformVersion;
 use serde_json::Value;
 
 pub const ID_BYTES: [u8; 32] = [
@@ -7,26 +11,28 @@ pub const ID_BYTES: [u8; 32] = [
     44, 24, 16, 146, 129, 193, 70, 231, 178, 113, 188,
 ];
 
-pub const OWNER_ID_BYTES: [u8; 32] = [
-    65, 63, 57, 243, 204, 9, 106, 71, 187, 2, 94, 221, 190, 127, 141, 114, 137, 209, 243, 50, 60,
-    215, 90, 101, 229, 15, 115, 5, 44, 117, 182, 217,
-];
-
-pub mod document_types {
-    pub mod contact_request {
-        pub const NAME: &str = "contactRequest";
-
-        pub mod properties {
-            pub const TO_USER_ID: &str = "toUserId";
-            pub const CORE_HEIGHT_CREATED_AT: &str = "coreHeightCreatedAt";
-            pub const CORE_CHAIN_LOCKED_HEIGHT: &str = "coreChainLockedHeight";
-        }
-    }
-}
+pub const OWNER_ID_BYTES: [u8; 32] = [0; 32];
 
 pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
 pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
 
-pub fn load_documents_schemas() -> Result<Value, Error> {
-    serde_json::from_str(include_str!("../schema/dashpay.schema.json"))
+pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Value>, Error> {
+    match platform_version.system_data_contracts.dashpay {
+        1 => Ok(None),
+        version => Err(Error::UnknownVersionMismatch {
+            method: "dashpay_contract::load_definitions".to_string(),
+            known_versions: vec![1],
+            received: version,
+        }),
+    }
+}
+pub fn load_documents_schemas(platform_version: &PlatformVersion) -> Result<Value, Error> {
+    match platform_version.system_data_contracts.dashpay {
+        1 => v1::load_documents_schemas(),
+        version => Err(Error::UnknownVersionMismatch {
+            method: "dashpay_contract::load_documents_schemas".to_string(),
+            known_versions: vec![1],
+            received: version,
+        }),
+    }
 }

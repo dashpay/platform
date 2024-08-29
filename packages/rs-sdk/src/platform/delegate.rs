@@ -34,6 +34,11 @@ macro_rules! delegate_transport_request_variant {
 
             const SETTINGS_OVERRIDES: $crate::platform::dapi::RequestSettings = $crate::platform::dapi::RequestSettings::default();
 
+            /// TODO: Not sure how to do that
+            fn method_name(&self) -> &'static str {
+                ""
+            }
+
             fn execute_transport<'c>(
                 self,
                 client: &'c mut Self::Client,
@@ -73,12 +78,13 @@ macro_rules! delegate_from_proof_variant {
             type Request = $request;
             type Response = $response;
 
-            fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+            fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
                 request: I,
                 response: O,
+                network: dpp::dashcore::Network,
                 version: &dpp::version::PlatformVersion,
-                provider: &'a dyn drive_proof_verifier::QuorumInfoProvider,
-            ) -> Result<Option<Self>, drive_proof_verifier::Error>
+                provider: &'a dyn drive_proof_verifier::ContextProvider,
+            ) -> Result<(Option<Self>, ResponseMetadata, dapi_grpc::platform::v0::Proof), drive_proof_verifier::Error>
             where
                 Self: Sized + 'a,
             {
@@ -91,8 +97,8 @@ macro_rules! delegate_from_proof_variant {
                 match request {$(
                     req::$variant(request) => {
                         if let resp::$variant(response) = response {
-                            <Self as drive_proof_verifier::FromProof<$req>>::maybe_from_proof(
-                                request, response, version, provider,
+                            <Self as drive_proof_verifier::FromProof<$req>>::maybe_from_proof_with_metadata(
+                                request, response, network, version, provider,
                             )
                         } else {
                             Err(drive_proof_verifier::Error::ResponseDecodeError {
@@ -103,13 +109,14 @@ macro_rules! delegate_from_proof_variant {
                                 ),
                             })
                         }
-                    },
+                    }
                 )*
                 }
             }
         }
     };
 }
+
 #[macro_export]
 /// Define enums that will wrap multiple requests/responses for one object.
 ///
@@ -129,7 +136,8 @@ macro_rules! delegate_from_proof_variant {
 macro_rules! delegate_enum {
     ($request:ident, $response:ident, $object:ty, $(($variant:ident, $req: ty, $resp: ty)),+) => {
         /// Wrapper around multiple requests for one object type.
-        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, derive_more::From)]
+        #[derive(Debug, Clone, derive_more::From, dapi_grpc_macros::Mockable)]
+        #[cfg_attr(feature="mocks", derive(serde::Serialize, serde::Deserialize))]
         #[allow(missing_docs)]
         pub enum $request {
             $(
@@ -138,7 +146,8 @@ macro_rules! delegate_enum {
         }
 
         /// Wrapper around multiple responses for one object type.
-        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default, derive_more::From)]
+        #[derive(Debug, Clone, Default, derive_more::From, dapi_grpc_macros::Mockable)]
+        #[cfg_attr(feature="mocks", derive(serde::Serialize, serde::Deserialize))]
         #[allow(missing_docs)]
         pub enum $response {
             #[default]
@@ -152,9 +161,6 @@ macro_rules! delegate_enum {
                 $variant($resp),
             )+
         }
-
-        impl $crate::platform::dapi::transport::TransportResponse for $response {}
-
 
         $crate::delegate_transport_request_variant! {
             $request,
