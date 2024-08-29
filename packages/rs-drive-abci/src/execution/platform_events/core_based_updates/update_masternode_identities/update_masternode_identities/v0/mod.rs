@@ -15,6 +15,7 @@ use drive::util::batch::IdentityOperationType::AddNewIdentity;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
+use dpp::dashcore::hashes::Hash;
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
 use tracing::Level;
@@ -100,13 +101,19 @@ where
             // On initialization there is no platform state, but we also don't need to update
             // masternode identities.
             for update in updated_mns.iter() {
-                self.update_owner_withdrawal_address(
-                    update,
-                    block_info,
-                    transaction,
-                    &mut drive_operations,
-                    platform_version,
-                )?;
+                let (pro_tx_hash, state_diff) = update;
+                if let Some(new_withdrawal_address) = state_diff.payout_address {
+                    let owner_identifier: [u8; 32] = pro_tx_hash.to_byte_array();
+                    self.update_owner_withdrawal_address(
+                        owner_identifier,
+                        new_withdrawal_address,
+                        block_info,
+                        transaction,
+                        &mut drive_operations,
+                        platform_version,
+                    )?;
+                };
+
                 self.update_voter_identity(
                     update,
                     block_info,

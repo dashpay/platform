@@ -26,7 +26,7 @@ where
     /// # Returns
     ///
     /// * Result<IdentityPublicKey, Error> - Returns the derived identity public key if successful. Otherwise, returns an error.
-    pub(crate) fn get_owner_identity_key(
+    pub(crate) fn get_owner_identity_withdrawal_key(
         payout_address: [u8; 20],
         key_id: KeyID,
         platform_version: &PlatformVersion,
@@ -36,11 +36,11 @@ where
             .methods
             .core_based_updates
             .masternode_updates
-            .get_owner_identity_key
+            .get_owner_identity_withdrawal_key
         {
-            0 => Self::get_owner_identity_key_v0(payout_address, key_id),
+            0 => Self::get_owner_identity_withdrawal_key_v0(payout_address, key_id),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "get_owner_identity_key".to_string(),
+                method: "get_owner_identity_withdrawal_key".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
