@@ -1,4 +1,3 @@
-import { Flags } from '@oclif/core';
 import { Listr } from 'listr2';
 import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
@@ -13,7 +12,6 @@ export default class GroupRestartCommand extends GroupBaseCommand {
       description: 'wait for dkg before stop',
       default: false,
     },
-    platform: Flags.boolean({ char: 'p', description: 'restart only platform', default: false }),
   };
 
   /**
@@ -30,7 +28,6 @@ export default class GroupRestartCommand extends GroupBaseCommand {
     {
       safe: isSafe,
       verbose: isVerbose,
-      platform: platformOnly,
     },
     dockerCompose,
     stopNodeTask,
@@ -76,7 +73,6 @@ export default class GroupRestartCommand extends GroupBaseCommand {
       await tasks.run({
         isVerbose,
         isSafe,
-        platformOnly: platformOnly === true,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
