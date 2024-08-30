@@ -163,6 +163,7 @@ GPBObjCClassDeclaration(GetStatusRequest_GetStatusRequestV0);
 GPBObjCClassDeclaration(GetStatusResponse);
 GPBObjCClassDeclaration(GetStatusResponse_GetStatusResponseV0);
 GPBObjCClassDeclaration(GetStatusResponse_GetStatusResponseV0_Chain);
+GPBObjCClassDeclaration(GetStatusResponse_GetStatusResponseV0_Network);
 GPBObjCClassDeclaration(GetStatusResponse_GetStatusResponseV0_Node);
 GPBObjCClassDeclaration(GetStatusResponse_GetStatusResponseV0_StateSync);
 GPBObjCClassDeclaration(GetStatusResponse_GetStatusResponseV0_Time);
@@ -10693,6 +10694,7 @@ void GetStatusResponse_ClearVersionOneOfCase(GetStatusResponse *message) {
 @dynamic hasVersion, version;
 @dynamic hasNode, node;
 @dynamic hasChain, chain;
+@dynamic hasNetwork, network;
 @dynamic hasStateSync, stateSync;
 @dynamic hasTime, time;
 
@@ -10701,6 +10703,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0__storage_ {
   GetStatusResponse_GetStatusResponseV0_Version *version;
   GetStatusResponse_GetStatusResponseV0_Node *node;
   GetStatusResponse_GetStatusResponseV0_Chain *chain;
+  GetStatusResponse_GetStatusResponseV0_Network *network;
   GetStatusResponse_GetStatusResponseV0_StateSync *stateSync;
   GetStatusResponse_GetStatusResponseV0_Time *time;
 } GetStatusResponse_GetStatusResponseV0__storage_;
@@ -10739,10 +10742,19 @@ typedef struct GetStatusResponse_GetStatusResponseV0__storage_ {
         .dataType = GPBDataTypeMessage,
       },
       {
+        .name = "network",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetStatusResponse_GetStatusResponseV0_Network),
+        .number = GetStatusResponse_GetStatusResponseV0_FieldNumber_Network,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0__storage_, network),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
         .name = "stateSync",
         .dataTypeSpecific.clazz = GPBObjCClass(GetStatusResponse_GetStatusResponseV0_StateSync),
         .number = GetStatusResponse_GetStatusResponseV0_FieldNumber_StateSync,
-        .hasIndex = 3,
+        .hasIndex = 4,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0__storage_, stateSync),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
@@ -10751,7 +10763,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0__storage_ {
         .name = "time",
         .dataTypeSpecific.clazz = GPBObjCClass(GetStatusResponse_GetStatusResponseV0_Time),
         .number = GetStatusResponse_GetStatusResponseV0_FieldNumber_Time,
-        .hasIndex = 4,
+        .hasIndex = 5,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0__storage_, time),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
@@ -10838,8 +10850,8 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version__storage_ {
 @implementation GetStatusResponse_GetStatusResponseV0_Version_Software
 
 @dynamic dapi;
-@dynamic drive;
-@dynamic tenderdash;
+@dynamic hasDrive, drive;
+@dynamic hasTenderdash, tenderdash;
 
 typedef struct GetStatusResponse_GetStatusResponseV0_Version_Software__storage_ {
   uint32_t _has_storage_[1];
@@ -10869,7 +10881,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Software__storage_ 
         .number = GetStatusResponse_GetStatusResponseV0_Version_Software_FieldNumber_Drive,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Version_Software__storage_, drive),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeString,
       },
       {
@@ -10878,7 +10890,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Software__storage_ 
         .number = GetStatusResponse_GetStatusResponseV0_Version_Software_FieldNumber_Tenderdash,
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Version_Software__storage_, tenderdash),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeString,
       },
     };
@@ -11024,12 +11036,12 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash
 
 @implementation GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive
 
-@dynamic max;
+@dynamic latest;
 @dynamic current;
 
 typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__storage_ {
   uint32_t _has_storage_[1];
-  uint32_t max;
+  uint32_t latest;
   uint32_t current;
 } GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__storage_;
 
@@ -11040,11 +11052,11 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__sto
   if (!descriptor) {
     static GPBMessageFieldDescription fields[] = {
       {
-        .name = "max",
+        .name = "latest",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber_Max,
+        .number = GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber_Latest,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__storage_, max),
+        .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__storage_, latest),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
@@ -11082,9 +11094,9 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__sto
 @implementation GetStatusResponse_GetStatusResponseV0_Time
 
 @dynamic local;
-@dynamic block;
-@dynamic genesis;
-@dynamic epoch;
+@dynamic hasBlock, block;
+@dynamic hasGenesis, genesis;
+@dynamic hasEpoch, epoch;
 
 typedef struct GetStatusResponse_GetStatusResponseV0_Time__storage_ {
   uint32_t _has_storage_[1];
@@ -11115,7 +11127,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Time__storage_ {
         .number = GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Block,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Time__storage_, block),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeUInt64,
       },
       {
@@ -11124,7 +11136,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Time__storage_ {
         .number = GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Genesis,
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Time__storage_, genesis),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeUInt64,
       },
       {
@@ -11133,7 +11145,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Time__storage_ {
         .number = GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Epoch,
         .hasIndex = 3,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Time__storage_, epoch),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeUInt32,
       },
     };
@@ -11225,7 +11237,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Node__storage_ {
 @dynamic earliestAppHash;
 @dynamic earliestBlockHeight;
 @dynamic maxPeerBlockHeight;
-@dynamic coreChainLockedHeight;
+@dynamic hasCoreChainLockedHeight, coreChainLockedHeight;
 
 typedef struct GetStatusResponse_GetStatusResponseV0_Chain__storage_ {
   uint32_t _has_storage_[1];
@@ -11323,7 +11335,7 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Chain__storage_ {
         .number = GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_CoreChainLockedHeight,
         .hasIndex = 9,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Chain__storage_, coreChainLockedHeight),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeUInt32,
       },
     };

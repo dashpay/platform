@@ -4995,6 +4995,11 @@ export namespace GetStatusResponse {
     getChain(): GetStatusResponse.GetStatusResponseV0.Chain | undefined;
     setChain(value?: GetStatusResponse.GetStatusResponseV0.Chain): void;
 
+    hasNetwork(): boolean;
+    clearNetwork(): void;
+    getNetwork(): GetStatusResponse.GetStatusResponseV0.Network | undefined;
+    setNetwork(value?: GetStatusResponse.GetStatusResponseV0.Network): void;
+
     hasStateSync(): boolean;
     clearStateSync(): void;
     getStateSync(): GetStatusResponse.GetStatusResponseV0.StateSync | undefined;
@@ -5020,6 +5025,7 @@ export namespace GetStatusResponse {
       version?: GetStatusResponse.GetStatusResponseV0.Version.AsObject,
       node?: GetStatusResponse.GetStatusResponseV0.Node.AsObject,
       chain?: GetStatusResponse.GetStatusResponseV0.Chain.AsObject,
+      network?: GetStatusResponse.GetStatusResponseV0.Network.AsObject,
       stateSync?: GetStatusResponse.GetStatusResponseV0.StateSync.AsObject,
       time?: GetStatusResponse.GetStatusResponseV0.Time.AsObject,
     }
@@ -5055,9 +5061,13 @@ export namespace GetStatusResponse {
         getDapi(): string;
         setDapi(value: string): void;
 
+        hasDrive(): boolean;
+        clearDrive(): void;
         getDrive(): string;
         setDrive(value: string): void;
 
+        hasTenderdash(): boolean;
+        clearTenderdash(): void;
         getTenderdash(): string;
         setTenderdash(value: string): void;
 
@@ -5131,8 +5141,8 @@ export namespace GetStatusResponse {
         }
 
         export class Drive extends jspb.Message {
-          getMax(): number;
-          setMax(value: number): void;
+          getLatest(): number;
+          setLatest(value: number): void;
 
           getCurrent(): number;
           setCurrent(value: number): void;
@@ -5149,7 +5159,7 @@ export namespace GetStatusResponse {
 
         export namespace Drive {
           export type AsObject = {
-            max: number,
+            latest: number,
             current: number,
           }
         }
@@ -5160,12 +5170,18 @@ export namespace GetStatusResponse {
       getLocal(): number;
       setLocal(value: number): void;
 
+      hasBlock(): boolean;
+      clearBlock(): void;
       getBlock(): number;
       setBlock(value: number): void;
 
+      hasGenesis(): boolean;
+      clearGenesis(): void;
       getGenesis(): number;
       setGenesis(value: number): void;
 
+      hasEpoch(): boolean;
+      clearEpoch(): void;
       getEpoch(): number;
       setEpoch(value: number): void;
 
@@ -5251,6 +5267,8 @@ export namespace GetStatusResponse {
       getMaxPeerBlockHeight(): number;
       setMaxPeerBlockHeight(value: number): void;
 
+      hasCoreChainLockedHeight(): boolean;
+      clearCoreChainLockedHeight(): void;
       getCoreChainLockedHeight(): number;
       setCoreChainLockedHeight(value: number): void;
 

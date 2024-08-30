@@ -37835,6 +37835,7 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.toObject =
     version: (f = msg.getVersion()) && proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.toObject(includeInstance, f),
     node: (f = msg.getNode()) && proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.toObject(includeInstance, f),
     chain: (f = msg.getChain()) && proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.toObject(includeInstance, f),
+    network: (f = msg.getNetwork()) && proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.toObject(includeInstance, f),
     stateSync: (f = msg.getStateSync()) && proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.toObject(includeInstance, f),
     time: (f = msg.getTime()) && proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.toObject(includeInstance, f)
   };
@@ -37889,11 +37890,16 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.deserializ
       msg.setChain(value);
       break;
     case 4:
+      var value = new proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.deserializeBinaryFromReader);
+      msg.setNetwork(value);
+      break;
+    case 5:
       var value = new proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync;
       reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.deserializeBinaryFromReader);
       msg.setStateSync(value);
       break;
-    case 5:
+    case 6:
       var value = new proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time;
       reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.deserializeBinaryFromReader);
       msg.setTime(value);
@@ -37951,10 +37957,18 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.serializeB
       proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.serializeBinaryToWriter
     );
   }
-  f = message.getStateSync();
+  f = message.getNetwork();
   if (f != null) {
     writer.writeMessage(
       4,
+      f,
+      proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.serializeBinaryToWriter
+    );
+  }
+  f = message.getStateSync();
+  if (f != null) {
+    writer.writeMessage(
+      5,
       f,
       proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.serializeBinaryToWriter
     );
@@ -37962,7 +37976,7 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.serializeB
   f = message.getTime();
   if (f != null) {
     writer.writeMessage(
-      5,
+      6,
       f,
       proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.serializeBinaryToWriter
     );
@@ -38217,15 +38231,15 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.So
       f
     );
   }
-  f = message.getDrive();
-  if (f.length > 0) {
+  f = /** @type {string} */ (jspb.Message.getField(message, 2));
+  if (f != null) {
     writer.writeString(
       2,
       f
     );
   }
-  f = message.getTenderdash();
-  if (f.length > 0) {
+  f = /** @type {string} */ (jspb.Message.getField(message, 3));
+  if (f != null) {
     writer.writeString(
       3,
       f
@@ -38266,7 +38280,25 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.So
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.prototype.setDrive = function(value) {
-  return jspb.Message.setProto3StringField(this, 2, value);
+  return jspb.Message.setField(this, 2, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.prototype.clearDrive = function() {
+  return jspb.Message.setField(this, 2, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.prototype.hasDrive = function() {
+  return jspb.Message.getField(this, 2) != null;
 };
 
 
@@ -38284,7 +38316,25 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.So
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.prototype.setTenderdash = function(value) {
-  return jspb.Message.setProto3StringField(this, 3, value);
+  return jspb.Message.setField(this, 3, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.prototype.clearTenderdash = function() {
+  return jspb.Message.setField(this, 3, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.prototype.hasTenderdash = function() {
+  return jspb.Message.getField(this, 3) != null;
 };
 
 
@@ -38608,7 +38658,7 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Pr
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.toObject = function(includeInstance, msg) {
   var f, obj = {
-    max: jspb.Message.getFieldWithDefault(msg, 3, 0),
+    latest: jspb.Message.getFieldWithDefault(msg, 3, 0),
     current: jspb.Message.getFieldWithDefault(msg, 4, 0)
   };
 
@@ -38648,7 +38698,7 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Pr
     switch (field) {
     case 3:
       var value = /** @type {number} */ (reader.readUint32());
-      msg.setMax(value);
+      msg.setLatest(value);
       break;
     case 4:
       var value = /** @type {number} */ (reader.readUint32());
@@ -38683,7 +38733,7 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Pr
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = message.getMax();
+  f = message.getLatest();
   if (f !== 0) {
     writer.writeUint32(
       3,
@@ -38701,10 +38751,10 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Pr
 
 
 /**
- * optional uint32 max = 3;
+ * optional uint32 latest = 3;
  * @return {number}
  */
-proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.prototype.getMax = function() {
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.prototype.getLatest = function() {
   return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 3, 0));
 };
 
@@ -38713,7 +38763,7 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Pr
  * @param {number} value
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive} returns this
  */
-proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.prototype.setMax = function(value) {
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.prototype.setLatest = function(value) {
   return jspb.Message.setProto3IntField(this, 3, value);
 };
 
@@ -39008,22 +39058,22 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.seria
       f
     );
   }
-  f = message.getBlock();
-  if (f !== 0) {
+  f = /** @type {number} */ (jspb.Message.getField(message, 2));
+  if (f != null) {
     writer.writeUint64(
       2,
       f
     );
   }
-  f = message.getGenesis();
-  if (f !== 0) {
+  f = /** @type {number} */ (jspb.Message.getField(message, 3));
+  if (f != null) {
     writer.writeUint64(
       3,
       f
     );
   }
-  f = message.getEpoch();
-  if (f !== 0) {
+  f = /** @type {number} */ (jspb.Message.getField(message, 4));
+  if (f != null) {
     writer.writeUint32(
       4,
       f
@@ -39064,7 +39114,25 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.proto
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.setBlock = function(value) {
-  return jspb.Message.setProto3IntField(this, 2, value);
+  return jspb.Message.setField(this, 2, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.clearBlock = function() {
+  return jspb.Message.setField(this, 2, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.hasBlock = function() {
+  return jspb.Message.getField(this, 2) != null;
 };
 
 
@@ -39082,7 +39150,25 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.proto
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.setGenesis = function(value) {
-  return jspb.Message.setProto3IntField(this, 3, value);
+  return jspb.Message.setField(this, 3, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.clearGenesis = function() {
+  return jspb.Message.setField(this, 3, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.hasGenesis = function() {
+  return jspb.Message.getField(this, 3) != null;
 };
 
 
@@ -39100,7 +39186,25 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.proto
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.setEpoch = function(value) {
-  return jspb.Message.setProto3IntField(this, 4, value);
+  return jspb.Message.setField(this, 4, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.clearEpoch = function() {
+  return jspb.Message.setField(this, 4, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.prototype.hasEpoch = function() {
+  return jspb.Message.getField(this, 4) != null;
 };
 
 
@@ -39528,8 +39632,8 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.seri
       f
     );
   }
-  f = message.getCoreChainLockedHeight();
-  if (f !== 0) {
+  f = /** @type {number} */ (jspb.Message.getField(message, 10));
+  if (f != null) {
     writer.writeUint32(
       10,
       f
@@ -39792,7 +39896,25 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.prot
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} returns this
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.prototype.setCoreChainLockedHeight = function(value) {
-  return jspb.Message.setProto3IntField(this, 10, value);
+  return jspb.Message.setField(this, 10, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.prototype.clearCoreChainLockedHeight = function() {
+  return jspb.Message.setField(this, 10, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.prototype.hasCoreChainLockedHeight = function() {
+  return jspb.Message.getField(this, 10) != null;
 };
 
 
@@ -40438,12 +40560,49 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.
 
 
 /**
- * optional StateSync state_sync = 4;
+ * optional Network network = 4;
+ * @return {?proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network}
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.getNetwork = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network, 4));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.setNetwork = function(value) {
+  return jspb.Message.setWrapperField(this, 4, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.clearNetwork = function() {
+  return this.setNetwork(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.hasNetwork = function() {
+  return jspb.Message.getField(this, 4) != null;
+};
+
+
+/**
+ * optional StateSync state_sync = 5;
  * @return {?proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.getStateSync = function() {
   return /** @type{?proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync, 4));
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync, 5));
 };
 
 
@@ -40452,7 +40611,7 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} returns this
 */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.setStateSync = function(value) {
-  return jspb.Message.setWrapperField(this, 4, value);
+  return jspb.Message.setWrapperField(this, 5, value);
 };
 
 
@@ -40470,17 +40629,17 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.
  * @return {boolean}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.hasStateSync = function() {
-  return jspb.Message.getField(this, 4) != null;
+  return jspb.Message.getField(this, 5) != null;
 };
 
 
 /**
- * optional Time time = 5;
+ * optional Time time = 6;
  * @return {?proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.getTime = function() {
   return /** @type{?proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time, 5));
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time, 6));
 };
 
 
@@ -40489,7 +40648,7 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.
  * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} returns this
 */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.setTime = function(value) {
-  return jspb.Message.setWrapperField(this, 5, value);
+  return jspb.Message.setWrapperField(this, 6, value);
 };
 
 
@@ -40507,7 +40666,7 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.
  * @return {boolean}
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.prototype.hasTime = function() {
-  return jspb.Message.getField(this, 5) != null;
+  return jspb.Message.getField(this, 6) != null;
 };
 
 

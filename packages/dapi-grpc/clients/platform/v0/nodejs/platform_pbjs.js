@@ -38679,6 +38679,7 @@ $root.org = (function() {
                              * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IVersion|null} [version] GetStatusResponseV0 version
                              * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INode|null} [node] GetStatusResponseV0 node
                              * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IChain|null} [chain] GetStatusResponseV0 chain
+                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork|null} [network] GetStatusResponseV0 network
                              * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IStateSync|null} [stateSync] GetStatusResponseV0 stateSync
                              * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.ITime|null} [time] GetStatusResponseV0 time
                              */
@@ -38721,6 +38722,14 @@ $root.org = (function() {
                              * @instance
                              */
                             GetStatusResponseV0.prototype.chain = null;
+
+                            /**
+                             * GetStatusResponseV0 network.
+                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork|null|undefined} network
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             */
+                            GetStatusResponseV0.prototype.network = null;
 
                             /**
                              * GetStatusResponseV0 stateSync.
@@ -38768,10 +38777,12 @@ $root.org = (function() {
                                     $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.encode(message.node, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 if (message.chain != null && Object.hasOwnProperty.call(message, "chain"))
                                     $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.encode(message.chain, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.network != null && Object.hasOwnProperty.call(message, "network"))
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.encode(message.network, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                 if (message.stateSync != null && Object.hasOwnProperty.call(message, "stateSync"))
-                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.encode(message.stateSync, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.encode(message.stateSync, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
                                 if (message.time != null && Object.hasOwnProperty.call(message, "time"))
-                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.encode(message.time, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.encode(message.time, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
                                 return writer;
                             };
 
@@ -38816,9 +38827,12 @@ $root.org = (function() {
                                         message.chain = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.decode(reader, reader.uint32());
                                         break;
                                     case 4:
-                                        message.stateSync = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.decode(reader, reader.uint32());
+                                        message.network = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.decode(reader, reader.uint32());
                                         break;
                                     case 5:
+                                        message.stateSync = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.decode(reader, reader.uint32());
+                                        break;
+                                    case 6:
                                         message.time = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.decode(reader, reader.uint32());
                                         break;
                                     default:
@@ -38871,6 +38885,11 @@ $root.org = (function() {
                                     if (error)
                                         return "chain." + error;
                                 }
+                                if (message.network != null && message.hasOwnProperty("network")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.verify(message.network);
+                                    if (error)
+                                        return "network." + error;
+                                }
                                 if (message.stateSync != null && message.hasOwnProperty("stateSync")) {
                                     var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.verify(message.stateSync);
                                     if (error)
@@ -38911,6 +38930,11 @@ $root.org = (function() {
                                         throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.chain: object expected");
                                     message.chain = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.fromObject(object.chain);
                                 }
+                                if (object.network != null) {
+                                    if (typeof object.network !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.network: object expected");
+                                    message.network = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.fromObject(object.network);
+                                }
                                 if (object.stateSync != null) {
                                     if (typeof object.stateSync !== "object")
                                         throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.stateSync: object expected");
@@ -38941,6 +38965,7 @@ $root.org = (function() {
                                     object.version = null;
                                     object.node = null;
                                     object.chain = null;
+                                    object.network = null;
                                     object.stateSync = null;
                                     object.time = null;
                                 }
@@ -38950,6 +38975,8 @@ $root.org = (function() {
                                     object.node = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.toObject(message.node, options);
                                 if (message.chain != null && message.hasOwnProperty("chain"))
                                     object.chain = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.toObject(message.chain, options);
+                                if (message.network != null && message.hasOwnProperty("network"))
+                                    object.network = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.toObject(message.network, options);
                                 if (message.stateSync != null && message.hasOwnProperty("stateSync"))
                                     object.stateSync = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.toObject(message.stateSync, options);
                                 if (message.time != null && message.hasOwnProperty("time"))
@@ -39850,7 +39877,7 @@ $root.org = (function() {
                                          * Properties of a Drive.
                                          * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
                                          * @interface IDrive
-                                         * @property {number|null} [max] Drive max
+                                         * @property {number|null} [latest] Drive latest
                                          * @property {number|null} [current] Drive current
                                          */
 
@@ -39870,12 +39897,12 @@ $root.org = (function() {
                                         }
 
                                         /**
-                                         * Drive max.
-                                         * @member {number} max
+                                         * Drive latest.
+                                         * @member {number} latest
                                          * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
                                          * @instance
                                          */
-                                        Drive.prototype.max = 0;
+                                        Drive.prototype.latest = 0;
 
                                         /**
                                          * Drive current.
@@ -39909,8 +39936,8 @@ $root.org = (function() {
                                         Drive.encode = function encode(message, writer) {
                                             if (!writer)
                                                 writer = $Writer.create();
-                                            if (message.max != null && Object.hasOwnProperty.call(message, "max"))
-                                                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.max);
+                                            if (message.latest != null && Object.hasOwnProperty.call(message, "latest"))
+                                                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.latest);
                                             if (message.current != null && Object.hasOwnProperty.call(message, "current"))
                                                 writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.current);
                                             return writer;
@@ -39948,7 +39975,7 @@ $root.org = (function() {
                                                 var tag = reader.uint32();
                                                 switch (tag >>> 3) {
                                                 case 3:
-                                                    message.max = reader.uint32();
+                                                    message.latest = reader.uint32();
                                                     break;
                                                 case 4:
                                                     message.current = reader.uint32();
@@ -39988,9 +40015,9 @@ $root.org = (function() {
                                         Drive.verify = function verify(message) {
                                             if (typeof message !== "object" || message === null)
                                                 return "object expected";
-                                            if (message.max != null && message.hasOwnProperty("max"))
-                                                if (!$util.isInteger(message.max))
-                                                    return "max: integer expected";
+                                            if (message.latest != null && message.hasOwnProperty("latest"))
+                                                if (!$util.isInteger(message.latest))
+                                                    return "latest: integer expected";
                                             if (message.current != null && message.hasOwnProperty("current"))
                                                 if (!$util.isInteger(message.current))
                                                     return "current: integer expected";
@@ -40009,8 +40036,8 @@ $root.org = (function() {
                                             if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive)
                                                 return object;
                                             var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive();
-                                            if (object.max != null)
-                                                message.max = object.max >>> 0;
+                                            if (object.latest != null)
+                                                message.latest = object.latest >>> 0;
                                             if (object.current != null)
                                                 message.current = object.current >>> 0;
                                             return message;
@@ -40030,11 +40057,11 @@ $root.org = (function() {
                                                 options = {};
                                             var object = {};
                                             if (options.defaults) {
-                                                object.max = 0;
+                                                object.latest = 0;
                                                 object.current = 0;
                                             }
-                                            if (message.max != null && message.hasOwnProperty("max"))
-                                                object.max = message.max;
+                                            if (message.latest != null && message.hasOwnProperty("latest"))
+                                                object.latest = message.latest;
                                             if (message.current != null && message.hasOwnProperty("current"))
                                                 object.current = message.current;
                                             return object;

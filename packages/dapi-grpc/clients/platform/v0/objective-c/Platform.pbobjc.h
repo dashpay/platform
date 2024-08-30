@@ -115,6 +115,7 @@ CF_EXTERN_C_BEGIN
 @class GetStatusRequest_GetStatusRequestV0;
 @class GetStatusResponse_GetStatusResponseV0;
 @class GetStatusResponse_GetStatusResponseV0_Chain;
+@class GetStatusResponse_GetStatusResponseV0_Network;
 @class GetStatusResponse_GetStatusResponseV0_Node;
 @class GetStatusResponse_GetStatusResponseV0_StateSync;
 @class GetStatusResponse_GetStatusResponseV0_Time;
@@ -4227,8 +4228,9 @@ typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_FieldNumber) {
   GetStatusResponse_GetStatusResponseV0_FieldNumber_Version = 1,
   GetStatusResponse_GetStatusResponseV0_FieldNumber_Node = 2,
   GetStatusResponse_GetStatusResponseV0_FieldNumber_Chain = 3,
-  GetStatusResponse_GetStatusResponseV0_FieldNumber_StateSync = 4,
-  GetStatusResponse_GetStatusResponseV0_FieldNumber_Time = 5,
+  GetStatusResponse_GetStatusResponseV0_FieldNumber_Network = 4,
+  GetStatusResponse_GetStatusResponseV0_FieldNumber_StateSync = 5,
+  GetStatusResponse_GetStatusResponseV0_FieldNumber_Time = 6,
 };
 
 GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0 : GPBMessage
@@ -4244,6 +4246,10 @@ GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0 : GPBMessage
 @property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0_Chain *chain;
 /** Test to see if @c chain has been set. */
 @property(nonatomic, readwrite) BOOL hasChain;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0_Network *network;
+/** Test to see if @c network has been set. */
+@property(nonatomic, readwrite) BOOL hasNetwork;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0_StateSync *stateSync;
 /** Test to see if @c stateSync has been set. */
@@ -4286,9 +4292,15 @@ GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Version_Software : GP
 
 @property(nonatomic, readwrite, copy, null_resettable) NSString *dapi;
 
+/** It will be missing if Drive is not responding */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *drive;
+/** Test to see if @c drive has been set. */
+@property(nonatomic, readwrite) BOOL hasDrive;
 
+/** It will be missing if Tenderdash is not responding */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *tenderdash;
+/** Test to see if @c tenderdash has been set. */
+@property(nonatomic, readwrite) BOOL hasTenderdash;
 
 @end
 
@@ -4329,13 +4341,13 @@ GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tend
 #pragma mark - GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive
 
 typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber) {
-  GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber_Max = 3,
+  GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber_Latest = 3,
   GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber_Current = 4,
 };
 
 GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive : GPBMessage
 
-@property(nonatomic, readwrite) uint32_t max;
+@property(nonatomic, readwrite) uint32_t latest;
 
 @property(nonatomic, readwrite) uint32_t current;
 
@@ -4354,12 +4366,18 @@ GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Time : GPBMessage
 
 @property(nonatomic, readwrite) uint64_t local;
 
+/** It will be missing if Drive is not responding */
 @property(nonatomic, readwrite) uint64_t block;
 
+@property(nonatomic, readwrite) BOOL hasBlock;
+/** It will be missing if Drive is not responding */
 @property(nonatomic, readwrite) uint64_t genesis;
 
+@property(nonatomic, readwrite) BOOL hasGenesis;
+/** It will be missing if Drive is not responding */
 @property(nonatomic, readwrite) uint32_t epoch;
 
+@property(nonatomic, readwrite) BOOL hasEpoch;
 @end
 
 #pragma mark - GetStatusResponse_GetStatusResponseV0_Node
@@ -4413,9 +4431,13 @@ GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Chain : GPBMessage
 
 @property(nonatomic, readwrite) uint64_t maxPeerBlockHeight;
 
-/** Latest known core height in consensus */
+/**
+ * Latest known core height in consensus.
+ * It will be missing if Drive is not responding
+ **/
 @property(nonatomic, readwrite) uint32_t coreChainLockedHeight;
 
+@property(nonatomic, readwrite) BOOL hasCoreChainLockedHeight;
 @end
 
 #pragma mark - GetStatusResponse_GetStatusResponseV0_Network

@@ -7,6 +7,7 @@ const {
     GetStatusResponse,
   },
 } = require('@dashevo/dapi-grpc');
+
 const BlockchainListener = require('../../../externalApis/tenderdash/BlockchainListener');
 
 /**
@@ -16,21 +17,27 @@ const BlockchainListener = require('../../../externalApis/tenderdash/BlockchainL
  * @return {getStatusHandler}
  */
 function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcClient) {
+  // Clean cache when new platform block committed
   let cachedResponse = null;
 
   blockchainListener.on(BlockchainListener.EVENTS.NEW_BLOCK, () => {
     cachedResponse = null;
   });
 
-  const dapiSoftwareVersion = fs.readFileSync(path.join(__dirname, '../../../../package.json'), 'utf8');
+  // DAPI Software version
+  const packageJsonPath = path.resolve(__dirname, '..', '..', '..', '..', 'package.json');
+  const packageJsonString = fs.readFileSync(packageJsonPath, 'utf-8');
+  const packageJson = JSON.parse(packageJsonString);
+  const dapiSoftwareVersion = packageJson.version;
 
   /**
    * @typedef {Function} getStatusHandler
    * @return {Promise<GetStatusResponse>}
    */
   async function getStatusHandler() {
+    // Return cached response if it exists
     if (cachedResponse !== null) {
-      cachedResponse.getVersion().getTime().setLocal(Date.now());
+      cachedResponse.getV0().getTime().setLocal(Date.now());
 
       return cachedResponse;
     }
@@ -38,7 +45,8 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
     const request = new GetStatusRequest();
 
     const promises = [
-      driveClient.getStatus(request),
+      driveClient.getStatus(request)
+        .then((response) => response.getV0()?.toObject() || {}),
       tenderdashRpcClient.request('status'),
       tenderdashRpcClient.request('net_info'),
     ];
@@ -74,10 +82,13 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
 
     // Versions
 
-    const versionProtocolTenderdash = new GetStatusResponse
-      .GetStatusResponseV0.Version.Protocol.Tenderdash();
+    const versionProtocol = new GetStatusResponse
+      .GetStatusResponseV0.Version.Protocol();
 
     if (tenderdashStatus.node_info?.protocol_version) {
+      const versionProtocolTenderdash = new GetStatusResponse
+        .GetStatusResponseV0.Version.Protocol.Tenderdash();
+
       versionProtocolTenderdash.setBlock(
         Number(tenderdashStatus.node_info.protocol_version.block),
       );
@@ -85,19 +96,19 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
       versionProtocolTenderdash.setP2p(
         Number(tenderdashStatus.node_info.protocol_version.p2p),
       );
+
+      versionProtocol.setTenderdash(versionProtocolTenderdash);
     }
 
-    const versionProtocolDrive = new GetStatusResponse
-      .GetStatusResponseV0.Version.Protocol.Drive();
+    if (driveStatus.version?.protocol?.drive) {
+      const versionProtocolDrive = new GetStatusResponse
+        .GetStatusResponseV0.Version.Protocol.Drive();
 
-    versionProtocolDrive.setCurrent(driveStatus.getVersion().getProtocol().getDrive().getCurrent());
-    versionProtocolDrive.setMax(driveStatus.getVersion().getProtocol().getDrive().getMax());
+      versionProtocolDrive.setCurrent(driveStatus.version.protocol.drive.current);
+      versionProtocolDrive.setLatest(driveStatus.version.protocol.drive.latest);
 
-    const versionProtocol = new GetStatusResponse
-      .GetStatusResponseV0.Version.Protocol();
-
-    versionProtocol.setTenderdash(versionProtocolTenderdash);
-    versionProtocol.setDrive(versionProtocolDrive);
+      versionProtocol.setDrive(versionProtocolDrive);
+    }
 
     version.setProtocol(versionProtocol);
 
@@ -105,15 +116,13 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
       .GetStatusResponseV0.Version.Software();
 
     versionSoftware.setDapi(dapiSoftwareVersion);
-    if (driveStatus.getVersion()?.getSoftware()?.getDrive()) {
-      versionSoftware.setDrive(
-        driveStatus.getVersion()
-          .getSoftware()
-          .getDrive(),
-      );
+
+    if (driveStatus.version?.software?.drive) {
+      versionSoftware.setDrive(driveStatus.version.software.drive);
     }
+
     if (tenderdashStatus.node_info?.version) {
-      versionSoftware.setTenderdash(tenderdashStatus.node_info?.version);
+      versionSoftware.setTenderdash(tenderdashStatus.node_info.version);
     }
 
     version.setSoftware(versionSoftware);
@@ -148,7 +157,9 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
       chain.setEarliestAppHash(Buffer.from(tenderdashStatus.sync_info.earliest_app_hash, 'hex'));
       chain.setEarliestBlockHeight(Number(tenderdashStatus.sync_info.earliest_block_height));
       chain.setMaxPeerBlockHeight(Number(tenderdashStatus.sync_info.max_peer_block_height));
-      chain.setCoreChainLockedHeight(driveStatus.getChain()?.getCoreChainLockedHeight());
+      if (driveStatus.chain?.coreChainLockedHeight) {
+        chain.setCoreChainLockedHeight(driveStatus.chain.coreChainLockedHeight);
+      }
 
       v0.setChain(chain);
 
@@ -157,16 +168,18 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
       stateSync.setRemainingTime(Number(tenderdashStatus.sync_info.remaining_time));
       stateSync.setTotalSnapshots(Number(tenderdashStatus.sync_info.total_snapshots));
       stateSync.setChunkProcessAvgTime(
-        Number(tenderdashStatus.sync_info.chunk_processing_avg_time),
+        Number(tenderdashStatus.sync_info.chunk_process_avg_time),
       );
       stateSync.setSnapshotHeight(Number(tenderdashStatus.sync_info.snapshot_height));
       stateSync.setSnapshotChunksCount(Number(tenderdashStatus.sync_info.snapshot_chunks_count));
       stateSync.setBackfilledBlocks(Number(tenderdashStatus.sync_info.backfilled_blocks));
       stateSync.setBackfillBlocksTotal(Number(tenderdashStatus.sync_info.backfill_blocks_total));
+
+      v0.setStateSync(stateSync);
     }
 
     // Network
-    if (tenderdashNetInfo) {
+    if (tenderdashNetInfo.listening !== undefined) {
       const network = new GetStatusResponse.GetStatusResponseV0.Network();
 
       network.setListening(tenderdashNetInfo.listening);
@@ -184,9 +197,10 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
 
     const time = new GetStatusResponse.GetStatusResponseV0.Time();
 
-    if (driveStatus.getTime()) {
-      time.setBlock(driveStatus?.getTime()?.getBlock());
-      time.setEpoch(driveStatus?.getTime()?.getEpoch());
+    if (driveStatus.time) {
+      time.setBlock(driveStatus.time.block);
+      time.setGenesis(driveStatus.time.genesis);
+      time.setEpoch(driveStatus.time.epoch);
     }
 
     time.setLocal(Date.now());

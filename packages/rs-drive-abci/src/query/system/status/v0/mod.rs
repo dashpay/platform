@@ -20,14 +20,14 @@ impl<C> Platform<C> {
             protocol: Some(get_status_response_v0::version::Protocol {
                 tenderdash: None,
                 drive: Some(get_status_response_v0::version::protocol::Drive {
-                    max: latest_supported_protocol_version,
+                    latest: latest_supported_protocol_version,
                     current: platform_state.current_protocol_version_in_consensus(),
                 }),
             }),
             software: Some(get_status_response_v0::version::Software {
                 dapi: "".to_string(),
-                drive: env!("CARGO_PKG_VERSION").to_string(),
-                tenderdash: "".to_string(),
+                drive: Some(env!("CARGO_PKG_VERSION").to_string()),
+                tenderdash: None,
             }),
         };
 
@@ -40,25 +40,30 @@ impl<C> Platform<C> {
             earliest_app_hash: vec![],
             earliest_block_height: 0,
             max_peer_block_height: 0,
-            core_chain_locked_height: platform_state.last_committed_core_height(),
+            core_chain_locked_height: Some(platform_state.last_committed_core_height()),
         };
 
         let time = get_status_response_v0::Time {
             local: 0,
-            block: platform_state
-                .last_committed_block_time_ms()
-                .unwrap_or_default(),
-            genesis: platform_state
-                .genesis_block_info()
-                .map(|info| info.time_ms)
-                .unwrap_or_default(),
-            epoch: platform_state.last_committed_block_epoch().index as u32,
+            block: Some(
+                platform_state
+                    .last_committed_block_time_ms()
+                    .unwrap_or_default(),
+            ),
+            genesis: Some(
+                platform_state
+                    .genesis_block_info()
+                    .map(|info| info.time_ms)
+                    .unwrap_or_default(),
+            ),
+            epoch: Some(platform_state.last_committed_block_epoch().index as u32),
         };
 
         let response = GetStatusResponseV0 {
             version: Some(version),
             node: None,
             chain: Some(chain),
+            network: None,
             state_sync: None,
             time: Some(time),
         };

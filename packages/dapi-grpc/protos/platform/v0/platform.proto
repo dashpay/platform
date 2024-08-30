@@ -1016,8 +1016,10 @@ message GetStatusResponse {
     message Version {
       message Software {
         string dapi = 1;
-        string drive = 2;
-        string tenderdash = 3;
+        // It will be missing if Drive is not responding
+        optional string drive = 2;
+        // It will be missing if Tenderdash is not responding
+        optional string tenderdash = 3;
       }
 
       message Protocol {
@@ -1027,7 +1029,7 @@ message GetStatusResponse {
         }
 
         message Drive {
-          uint32 max = 3;
+          uint32 latest = 3;
           uint32 current = 4;
         }
 
@@ -1041,9 +1043,12 @@ message GetStatusResponse {
 
     message Time {
       uint64 local = 1;
-      uint64 block = 2;
-      uint64 genesis = 3;
-      uint32 epoch = 4;
+      // It will be missing if Drive is not responding
+      optional uint64 block = 2;
+      // It will be missing if Drive is not responding
+      optional uint64 genesis = 3;
+      // It will be missing if Drive is not responding
+      optional uint32 epoch = 4;
     }
 
     message Node {
@@ -1062,8 +1067,9 @@ message GetStatusResponse {
       bytes earliest_app_hash = 6;
       uint64 earliest_block_height = 7;
       uint64 max_peer_block_height = 9;
-      // Latest known core height in consensus
-      uint32 core_chain_locked_height = 10;
+      // Latest known core height in consensus.
+      // It will be missing if Drive is not responding
+      optional uint32 core_chain_locked_height = 10;
     }
 
     message Network {
@@ -1086,8 +1092,9 @@ message GetStatusResponse {
     Version version = 1;
     Node node = 2;
     Chain chain = 3;
-    StateSync state_sync = 4;
-    Time time = 5;
+    Network network = 4;
+    StateSync state_sync = 5;
+    Time time = 6;
   }
 
   oneof version { GetStatusResponseV0 v0 = 1; }
