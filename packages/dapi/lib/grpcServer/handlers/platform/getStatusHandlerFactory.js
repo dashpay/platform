@@ -47,8 +47,8 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
     const promises = [
       driveClient.getStatus(request)
         .then((response) => response.getV0()?.toObject() || {}),
-      tenderdashRpcClient.request('status'),
-      tenderdashRpcClient.request('net_info'),
+      tenderdashRpcClient.request('status', {}),
+      tenderdashRpcClient.request('net_info', {}),
     ];
 
     const [
