@@ -847,6 +847,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.network === NETWORK_MAINNET && name !== 'base') {
               options.platform.drive.tenderdash.genesis.chain_id = 'evo1';
             }
+            if (options.network === NETWORK_TESTNET) {
+              delete options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
+            }
           });
         return configFile;
       },
