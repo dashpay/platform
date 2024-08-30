@@ -139,8 +139,8 @@ impl Drive {
                         BasicStorageRemoval(removed_key_bytes),
                         BasicStorageRemoval(removed_value_bytes),
                     )),
-                    Some(storage_flags) => storage_flags
-                        .split_storage_removed_bytes(removed_key_bytes, removed_value_bytes),
+                    Some(storage_flags) => Ok(storage_flags
+                        .split_storage_removed_bytes(removed_key_bytes, removed_value_bytes)),
                 }
             },
             add_on_operations,

@@ -439,6 +439,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '0.25.22': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
+          });
+
+        return configFile;
+      },
       '1.0.0-dev.2': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
@@ -790,9 +798,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
-      '1.1.0-dev.2': (configFile) => {
+      '1.1.0': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.abci.proposer = {
                 txProcessingTimeLimit: 5000,
@@ -815,6 +826,29 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.drive.abci.proposer = {
                 txProcessingTimeLimit: null,
               };
+            }
+          });
+        return configFile;
+      },
+      '1.1.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.2.0';
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis.chain_id = 'dash-testnet-51';
+            }
+          });
+        return configFile;
+      },
+      '1.2.0-rc.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1';
+            if (options.network === NETWORK_MAINNET && name !== 'base') {
+              options.platform.drive.tenderdash.genesis.chain_id = 'evo1';
+            }
+            if (options.network === NETWORK_TESTNET) {
+              delete options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
             }
           });
         return configFile;

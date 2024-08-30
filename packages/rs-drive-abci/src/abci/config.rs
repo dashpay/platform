@@ -1,7 +1,6 @@
 //! Configuration of ABCI Application server
 
 use crate::utils::from_opt_str_or_number;
-use dpp::prelude::TimestampMillis;
 use serde::{Deserialize, Serialize};
 
 // We allow changes in the ABCI configuration, but there should be a social process
