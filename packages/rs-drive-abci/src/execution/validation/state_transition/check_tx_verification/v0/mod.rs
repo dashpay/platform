@@ -9,14 +9,13 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::ProtocolError;
-
 use dpp::state_transition::StateTransition;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
-use crate::execution::validation::state_transition::processor::v0::{StateTransitionIdentityBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0};
+use crate::execution::validation::state_transition::processor::v0::{StateTransitionIdentityBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0, StateTransitionIsAllowedValidationV0};
 use crate::execution::validation::state_transition::ValidationMode;
 
 pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPCLike>(
@@ -29,9 +28,22 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
+    // TODO: There is no point to have it here. There is "_" arm implemented.
     #[allow(unreachable_patterns)]
     match check_tx_level {
         CheckTxLevel::FirstTimeCheck => {
+            if state_transition.has_is_allowed_validation(platform_version)? {
+                let result = state_transition.validate_is_allowed(platform, platform_version)?;
+
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+            }
+
             // Only identity top up and identity create do not have nonces validation
             if state_transition.has_nonces_validation() {
                 let result = state_transition.validate_nonces(

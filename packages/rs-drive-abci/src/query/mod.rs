@@ -18,7 +18,7 @@ pub use service::QueryService;
 pub type QueryValidationResult<TData> = ValidationResult<TData, QueryError>;
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use crate::error::query::QueryError;
     use crate::platform_types::platform::Platform;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;

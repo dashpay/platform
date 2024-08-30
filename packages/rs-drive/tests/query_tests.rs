@@ -2342,7 +2342,7 @@ fn test_family_person_update() {
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefInfo((&document, storage_flags)),
+                    document_info: DocumentRefInfo((&document, storage_flags.clone())),
                     owner_id: None,
                 },
                 contract: &contract,
@@ -2379,7 +2379,7 @@ fn test_family_person_update() {
             None,
             BlockInfo::genesis(),
             true,
-            None,
+            storage_flags,
             Some(&db_transaction),
             platform_version,
             Some(&epoch_change_fee_version_test),
