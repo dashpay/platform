@@ -613,7 +613,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 masternode_updates: DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
                     get_voter_identity_key: 0,
                     get_operator_identity_keys: 0,
-                    get_owner_identity_key: 0,
+                    get_owner_identity_withdrawal_key: 0,
                     get_voter_identifier_from_masternode_list_item: 0,
                     get_operator_identifier_from_masternode_list_item: 0,
                     create_operator_identity: 0,

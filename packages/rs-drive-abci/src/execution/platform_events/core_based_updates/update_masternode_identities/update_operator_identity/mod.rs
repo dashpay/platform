@@ -45,8 +45,10 @@ where
     /// does not match any of the known versions.
     pub(in crate::execution::platform_events::core_based_updates::update_masternode_identities) fn update_operator_identity(
         &self,
-        masternode: &(ProTxHash, DMNStateDiff),
-        block_info: &BlockInfo,
+        masternode_pro_tx_hash: &ProTxHash,
+        pub_key_operator_change: Option<&Vec<u8>>,
+        operator_payout_address_change: Option<Option<[u8; 20]>>,
+        platform_node_id_change: Option<[u8; 20]>,
         platform_state: &PlatformState,
         transaction: &Transaction,
         drive_operations: &mut Vec<DriveOperation>,
@@ -60,8 +62,10 @@ where
             .update_operator_identity
         {
             0 => self.update_operator_identity_v0(
-                masternode,
-                block_info,
+                masternode_pro_tx_hash,
+                pub_key_operator_change,
+                operator_payout_address_change,
+                platform_node_id_change,
                 platform_state,
                 transaction,
                 drive_operations,
