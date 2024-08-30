@@ -46,6 +46,7 @@ export const TEMPLATES_DIR = path.join(PACKAGE_ROOT_DIR, 'templates');
 
 const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
+export const DASHMATE_VERSION = version;
 export const DASHMATE_HELPER_DOCKER_IMAGE = `dashpay/dashmate-helper:${version}`;
 
 export const OUTPUT_FORMATS = {

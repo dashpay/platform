@@ -1,3 +1,59 @@
+### [1.1.1](https://github.com/dashpay/platform/compare/v1.1.0...v1.1.1) (2024-08-25)
+
+
+### Features
+
+* **dashmate:** update testnet config ([#2079](https://github.com/dashpay/platform/issues/2079))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash version to 1.2.0 ([#2078](https://github.com/dashpay/platform/issues/2078))
+
+
+## [1.1.0](https://github.com/dashpay/platform/compare/v1.1.0-dev.1...v1.1.0) (2024-08-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** just in time fee update fixes (#2075)
+* do not allow contested documents for the first three epochs (#2066)
+* **drive-abci:** fix wrong fields in dash top level domain  (#2065)
+* **platform:** fix reference of items between epochs (#2064)
+* **sdk:** mock sdk cannot find quorum keys in offline mode (#2061)
+* **sdk:** overflow when using &&sdk in DapiRequestExecutor (#2060)
+
+### Features
+
+* **dashmate:** add `dashmate doctor` command ([#2024](https://github.com/dashpay/platform/issues/2024))
+* **dashmate:** compress doctor report and other improvements ([#2071](https://github.com/dashpay/platform/issues/2071))
+* **dashmate:** configure proposer and tx limits ([#2057](https://github.com/dashpay/platform/issues/2057))
+* **dpp:** function for getting enabled matching public keys in identities ([#2052](https://github.com/dashpay/platform/issues/2052))
+* where clauses recognize nested properties
+
+
+### Bug Fixes
+
+* add back the matches on system properties
+* **dapi:** getTotalCreditsOnPlatform missing parts ([#2059](https://github.com/dashpay/platform/issues/2059))
+* **dashmate:** core reindex command not working ([#2054](https://github.com/dashpay/platform/issues/2054))
+* **dashmate:** the reset platform command doesn't remove data ([#2053](https://github.com/dashpay/platform/issues/2053))
+* **drive-abci:** fix wrong fields in dash top level domain  ([#2065](https://github.com/dashpay/platform/issues/2065))
+* **drive:** just in time fee update fixes ([#2075](https://github.com/dashpay/platform/issues/2075))
+* **platform:** fix reference of items between epochs ([#2064](https://github.com/dashpay/platform/issues/2064))
+* **sdk:** mock sdk cannot find quorum keys in offline mode ([#2061](https://github.com/dashpay/platform/issues/2061))
+* **sdk:** overflow when using &&sdk in DapiRequestExecutor ([#2060](https://github.com/dashpay/platform/issues/2060))
+
+
+### Code Refactoring
+
+* rename getTotalCreditsOnPlatform ([#2056](https://github.com/dashpay/platform/issues/2056))
+
+
+### Miscellaneous Chores
+
+* do not allow contested documents for the first three epochs ([#2066](https://github.com/dashpay/platform/issues/2066))
+
 ## [1.1.0-dev.1](https://github.com/dashpay/platform/compare/v1.0.2...v1.1.0-dev.1) (2024-08-13)
 
 
@@ -552,14 +608,14 @@ There are multiple breaking changes that make previously created state invalid:
 
 * make strategy start identities a new struct ([#1764](https://github.com/dashpay/platform/issues/1764))
 * updated descriptions and function names in strategy tests plus readme file ([#1785](https://github.com/dashpay/platform/issues/1785))
-  
+
 
 ### Miscellaneous Chores
 
 * **dashmate:** readme fixes ([#1624](https://github.com/dashpay/platform/issues/1624))
 * fix npm audit for follow-redirects package ([#1781](https://github.com/dashpay/platform/issues/1781))
 * **dapi:** use broadcast_tx instead of deprecated broadcast_tx_sync ([#1775](https://github.com/dashpay/platform/issues/1775))
-  
+
 
 ### Build System
 
@@ -802,6 +858,14 @@ There are multiple breaking changes that make previously created state invalid:
 ### Miscellaneous Chores
 
 * automatic clippy fixes ([#1528](https://github.com/dashpay/platform/issues/1528), [#1602](https://github.com/dashpay/platform/issues/1602))
+
+
+### [0.25.22](https://github.com/dashpay/platform/compare/v0.25.21...v0.25.22) (2024-01-19)
+
+
+### Bug Fixes
+
+* **dashmate:** dapi kills host machine on container stop ([#1670](https://github.com/dashpay/platform/issues/1670))
 
 ### [0.25.21](https://github.com/dashpay/platform/compare/v0.25.20...v0.25.21) (2023-12-28)
 

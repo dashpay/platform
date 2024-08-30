@@ -74,6 +74,9 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
                 rotation: true,
               },
             },
+            proposer: {
+              txProcessingTimeLimit: 5000,
+            },
           },
           tenderdash: {
             p2p: {
@@ -91,6 +94,14 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
               ],
               port: 36656,
             },
+            mempool: {
+              timeoutCheckTx: '3s',
+              txEnqueueTimeout: '30ms',
+              txSendRateLimit: 100,
+              txRecvRateLimit: 120,
+              ttlDuration: '24h',
+              ttlNumBlocks: 0,
+            },
             rpc: {
               port: 36657,
               timeoutBroadcastTx: '1s',
@@ -102,8 +113,9 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
               port: 36660,
             },
             genesis: {
-              chain_id: 'dash-testnet-49',
+              chain_id: 'dash-testnet-51',
               validator_quorum_type: 6,
+              initial_core_chain_locked_height: 918609,
             },
           },
         },

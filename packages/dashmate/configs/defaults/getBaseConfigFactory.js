@@ -298,12 +298,15 @@ export default function getBaseConfigFactory(homeDir) {
               host: '127.0.0.1',
               port: 8083,
             },
+            proposer: {
+              txProcessingTimeLimit: null,
+            },
             epochTime: 788400,
           },
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.2.0-dev.3',
+              image: 'dashpay/tenderdash:1.2.0',
             },
             p2p: {
               host: '0.0.0.0',
@@ -341,6 +344,8 @@ export default function getBaseConfigFactory(homeDir) {
               txSendRateLimit: 10,
               txRecvRateLimit: 12,
               maxConcurrentCheckTx: 250,
+              ttlDuration: '0s',
+              ttlNumBlocks: 0,
             },
             consensus: {
               createEmptyBlocks: true,

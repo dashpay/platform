@@ -439,6 +439,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '0.25.22': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
+          });
+
+        return configFile;
+      },
       '1.0.0-dev.2': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
@@ -787,6 +795,49 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.drive.tenderdash.genesis
               .consensus_params = base.get('platform.drive.tenderdash.genesis.consensus_params');
             options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+          });
+        return configFile;
+      },
+      '1.1.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.abci.proposer = {
+                txProcessingTimeLimit: 5000,
+              };
+              options.platform.drive.tenderdash.mempool.timeoutCheckTx = '3s';
+              options.platform.drive.tenderdash.mempool.txEnqueueTimeout = '30ms';
+              options.platform.drive.tenderdash.mempool.txSendRateLimit = 100;
+              options.platform.drive.tenderdash.mempool.txRecvRateLimit = 120;
+              options.platform.drive.tenderdash.mempool.ttlDuration = '24h';
+              options.platform.drive.tenderdash.mempool.ttlNumBlocks = 0;
+            } else if (options.network === NETWORK_MAINNET && name !== 'base') {
+              options.platform.drive.abci.proposer = {
+                txProcessingTimeLimit: 5000,
+              };
+              options.platform.drive.tenderdash.mempool.ttlDuration = '24h';
+              options.platform.drive.tenderdash.mempool.ttlNumBlocks = 0;
+            } else {
+              options.platform.drive.tenderdash.mempool.ttlDuration = '0s';
+              options.platform.drive.tenderdash.mempool.ttlNumBlocks = 0;
+              options.platform.drive.abci.proposer = {
+                txProcessingTimeLimit: null,
+              };
+            }
+          });
+        return configFile;
+      },
+      '1.1.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.2.0';
+
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis.chain_id = 'dash-testnet-51';
+            }
           });
         return configFile;
       },

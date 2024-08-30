@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "1.1.0-dev.1",
+  "version": "1.1.1",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
@@ -93,6 +93,7 @@
     "semver": "^7.5.3",
     "systeminformation": "^5.22.11",
     "table": "^6.8.1",
+    "tar": "7.4.3",
     "wrap-ansi": "^7.0.0"
   },
   "devDependencies": {

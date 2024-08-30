@@ -1,6 +1,6 @@
 [package]
 name = "wasm-dpp"
-version = "1.1.0-dev.1"
+version = "1.1.1"
 edition = "2021"
 rust-version = "1.76"
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
@@ -18,7 +18,7 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 wasm-bindgen = { version = "=0.2.86" }
 js-sys = "0.3.53"
 web-sys = { version = "0.3.6", features = ["console"] }
-thiserror = { version = "1.0.59" }
+thiserror = { version = "1.0.63" }
 serde-wasm-bindgen = { git = "https://github.com/QuantumExplorer/serde-wasm-bindgen", branch = "feat/not_human_readable" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transition-serde-conversion",
