@@ -25,13 +25,14 @@ const { EventEmitter } = require('events');
 
 const cbor = require('cbor');
 const NotFoundGrpcError = require('@dashevo/grpc-common/lib/server/error/NotFoundGrpcError');
-const BlockchainListener = require('../../../../../lib/externalApis/tenderdash/BlockchainListener');
+const UnavailableGrpcError = require('@dashevo/grpc-common/lib/server/error/UnavailableGrpcError');
 
+const BlockchainListener = require('../../../../../lib/externalApis/tenderdash/BlockchainListener');
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 const fetchProofForStateTransitionFactory = require('../../../../../lib/externalApis/drive/fetchProofForStateTransitionFactory');
 const waitForTransactionToBeProvableFactory = require('../../../../../lib/externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionToBeProvableFactory');
-const waitForTransactionResult = require('../../../../../lib/externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionResult');
 
+const waitForTransactionResult = require('../../../../../lib/externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionResult');
 const waitForStateTransitionResultHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/waitForStateTransitionResultHandlerFactory');
 
 describe('waitForStateTransitionResultHandlerFactory', () => {
@@ -173,6 +174,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
 
     tenderDashWsClientMock = new EventEmitter();
     tenderDashWsClientMock.subscribe = this.sinon.stub();
+    tenderDashWsClientMock.isConnected = true;
 
     const dpp = new DashPlatformProtocol(null, 1);
 
@@ -370,6 +372,19 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
       expect(e.getRawMetadata()).to.be.deep.equal({
         stateTransitionHash: hashString,
       });
+    }
+  });
+
+  it('should throw UnavailableGrpcError if Tenderdash is not available', async () => {
+    tenderDashWsClientMock.isConnected = false;
+
+    try {
+      await waitForStateTransitionResultHandler(call);
+
+      expect.fail('should throw an error');
+    } catch (e) {
+      expect(e).to.be.instanceOf(UnavailableGrpcError);
+      expect(e.getMessage()).to.equal('Tenderdash is not available');
     }
   });
 });
