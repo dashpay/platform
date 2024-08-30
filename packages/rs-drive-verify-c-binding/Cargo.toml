@@ -1,6 +1,6 @@
 [package]
 name = "rs-drive-verify-c-binding"
-version = "0.25.16-rc.3"
+version = "1.1.0"
 edition = "2021"
 rust-version = "1.76"
 

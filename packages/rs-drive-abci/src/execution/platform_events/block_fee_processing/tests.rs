@@ -18,20 +18,27 @@ mod refund_tests {
     use dpp::data_contract::document_type::DocumentTypeRef;
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::document::{Document, DocumentV0Setters};
+    use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
     use dpp::fee::fee_result::FeeResult;
     use dpp::fee::Credits;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::Bytes32;
+    use dpp::prelude::CoreBlockHeight;
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use drive::util::test_helpers::setup_contract;
+    use once_cell::sync::Lazy;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
+    use std::collections::BTreeMap;
     use std::ops::Deref;
+
+    static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
+        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
 
     // There's a fee for the first document that a user creates on a contract as they add space
     // For the identity data contract nonce

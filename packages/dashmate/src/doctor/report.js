@@ -82,8 +82,8 @@ export default class Report {
     await create(
       {
         cwd: reportDir,
-        gzip: false,
-        file: path.join(folderPath, `${reportName}.tar`),
+        gzip: true,
+        file: path.join(folderPath, `${reportName}.tar.gz`),
       },
       ['.'],
     );

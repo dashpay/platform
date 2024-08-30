@@ -118,6 +118,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidDocumentTypeNameError(_) => 10415,
             Self::DocumentCreationNotAllowedError(_) => 10416,
             Self::DocumentFieldMaxSizeExceededError(_) => 10417,
+            Self::ContestedDocumentsTemporarilyNotAllowedError(_) => 10418,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
