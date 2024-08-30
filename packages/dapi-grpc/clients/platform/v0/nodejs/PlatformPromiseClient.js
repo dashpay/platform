@@ -186,7 +186,6 @@ class PlatformPromiseClient {
       this.client.getStatus.bind(this.client),
     );
 
-
     this.protocolVersion = undefined;
   }
 
