@@ -2064,9 +2064,9 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "grovedb"
-version = "2.0.0"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b002bb44616b8bd62d3eea81b98f06021ea97420b3bc69b0c512e88d3191f259"
+checksum = "77097f0a4cc70c4a69fa400f633c5f18739e446eaed05269a3d76e17fa4d33d2"
 dependencies = [
  "axum 0.7.5",
  "bincode",
@@ -2098,9 +2098,9 @@ dependencies = [
 
 [[package]]
 name = "grovedb-costs"
-version = "2.0.0"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f01fac5c7ed1dd595bf87d0676d4973919226b48c6222dc2ca97bbda68bcab60"
+checksum = "e0487d63a68621b910567a911b3708a8246501ae1912fa2f1920474dcb28a207"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2109,9 +2109,9 @@ dependencies = [
 
 [[package]]
 name = "grovedb-epoch-based-storage-flags"
-version = "2.0.0"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa895084eb5dcea2089154409d38aaaf9bbd05386ab1cefbe4f7a3027be07bbe"
+checksum = "53eb4b99b056e34bcceef2d604c883aee40daa688ceb7ec558456e10bef27c64"
 dependencies = [
  "grovedb-costs",
  "hex",
@@ -2122,9 +2122,9 @@ dependencies = [
 
 [[package]]
 name = "grovedb-merk"
-version = "2.0.0"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae8b499ea84654e2d57cfb24399425beeb1033d7c531ceb1aadd492485df7ba9"
+checksum = "daedc296cac3093d244cbda0a11a5ef378bd4f747fcbe45b6cbed040c78cfb36"
 dependencies = [
  "bincode",
  "blake3",
@@ -2148,15 +2148,15 @@ dependencies = [
 
 [[package]]
 name = "grovedb-path"
-version = "2.0.0"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "250531333771d13b20e70adaf01891944e3bd568b2e8da702d27be3dfb0e870c"
+checksum = "d3552accddbfe6e586853f50a102d665efc0449a63504e5e2113389be924f98c"
 
 [[package]]
 name = "grovedb-storage"
-version = "2.0.0"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47053b9366eee532f8fe57506b0fa3b3b630cbc9c53662f2334bd4cea93b3737"
+checksum = "1868d74460c6205563e7bc72549f3fa057ed8bd0f83d96e04b2286ca0a216149"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2174,9 +2174,9 @@ dependencies = [
 
 [[package]]
 name = "grovedb-version"
-version = "2.0.0"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7966cf4a52f52d095024873a6801b2f64cc36d7aa1aa7703f0c717007592bed"
+checksum = "6d62bd20c621681dfd8aa6ca128702de775c67560c1fe412f380c5278d5c48ba"
 dependencies = [
  "thiserror",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2184,9 +2184,9 @@ dependencies = [
 
 [[package]]
 name = "grovedb-visualize"
-version = "2.0.0"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52bfd25577f009c9ab3c2bb31a6ab73c0b6edfe7b0f7ee881550a731fd782d00"
+checksum = "b6cd92c3a11055b1d841d071f801517b98575f9704f5a757a016fe83d35a37b8"
 dependencies = [
  "hex",
  "itertools 0.12.1",
@@ -2194,9 +2194,9 @@ dependencies = [
 
 [[package]]
 name = "grovedbg-types"
-version = "2.0.0"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "355f2fa065f8a59086907f16b2a464d435f15afd9269189d132e05a9b71c72cd"
+checksum = "003e5066965932dbb617e5966df5f73a066eb721579840b30ddd46bf04311fc8"
 dependencies = [
  "serde",
  "serde_with 3.9.0",

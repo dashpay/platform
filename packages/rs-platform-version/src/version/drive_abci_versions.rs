@@ -228,7 +228,7 @@ pub struct DriveAbciCoreBasedUpdatesMethodVersions {
 pub struct DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
     pub get_voter_identity_key: FeatureVersion,
     pub get_operator_identity_keys: FeatureVersion,
-    pub get_owner_identity_key: FeatureVersion,
+    pub get_owner_identity_withdrawal_key: FeatureVersion,
     pub get_voter_identifier_from_masternode_list_item: FeatureVersion,
     pub get_operator_identifier_from_masternode_list_item: FeatureVersion,
     pub create_operator_identity: FeatureVersion,
