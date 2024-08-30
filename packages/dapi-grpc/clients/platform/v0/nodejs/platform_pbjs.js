@@ -977,6 +977,39 @@ $root.org = (function() {
                          * @variation 2
                          */
 
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getStatus}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getStatusCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetStatusResponse} [response] GetStatusResponse
+                         */
+
+                        /**
+                         * Calls getStatus.
+                         * @function getStatus
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetStatusRequest} request GetStatusRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getStatusCallback} callback Node-style callback called with the error, if any, and GetStatusResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getStatus = function getStatus(request, callback) {
+                            return this.rpcCall(getStatus, $root.org.dash.platform.dapi.v0.GetStatusRequest, $root.org.dash.platform.dapi.v0.GetStatusResponse, request, callback);
+                        }, "name", { value: "getStatus" });
+
+                        /**
+                         * Calls getStatus.
+                         * @function getStatus
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetStatusRequest} request GetStatusRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetStatusResponse>} Promise
+                         * @variation 2
+                         */
+
                         return Platform;
                     })();
 
@@ -38056,6 +38089,3646 @@ $root.org = (function() {
                         })();
 
                         return GetPathElementsResponse;
+                    })();
+
+                    v0.GetStatusRequest = (function() {
+
+                        /**
+                         * Properties of a GetStatusRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetStatusRequest
+                         * @property {org.dash.platform.dapi.v0.GetStatusRequest.IGetStatusRequestV0|null} [v0] GetStatusRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetStatusRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetStatusRequest.
+                         * @implements IGetStatusRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetStatusRequest=} [properties] Properties to set
+                         */
+                        function GetStatusRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetStatusRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetStatusRequest.IGetStatusRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @instance
+                         */
+                        GetStatusRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetStatusRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetStatusRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetStatusRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetStatusRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetStatusRequest} GetStatusRequest instance
+                         */
+                        GetStatusRequest.create = function create(properties) {
+                            return new GetStatusRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetStatusRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetStatusRequest} message GetStatusRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetStatusRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetStatusRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetStatusRequest} message GetStatusRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetStatusRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetStatusRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetStatusRequest} GetStatusRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetStatusRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetStatusRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetStatusRequest} GetStatusRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetStatusRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetStatusRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetStatusRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetStatusRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetStatusRequest} GetStatusRequest
+                         */
+                        GetStatusRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetStatusRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetStatusRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetStatusRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetStatusRequest} message GetStatusRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetStatusRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetStatusRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetStatusRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetStatusRequest.GetStatusRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetStatusRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                             * @interface IGetStatusRequestV0
+                             */
+
+                            /**
+                             * Constructs a new GetStatusRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                             * @classdesc Represents a GetStatusRequestV0.
+                             * @implements IGetStatusRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetStatusRequest.IGetStatusRequestV0=} [properties] Properties to set
+                             */
+                            function GetStatusRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * Creates a new GetStatusRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusRequest.IGetStatusRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0} GetStatusRequestV0 instance
+                             */
+                            GetStatusRequestV0.create = function create(properties) {
+                                return new GetStatusRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetStatusRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusRequest.IGetStatusRequestV0} message GetStatusRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetStatusRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetStatusRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusRequest.IGetStatusRequestV0} message GetStatusRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetStatusRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetStatusRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0} GetStatusRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetStatusRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetStatusRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0} GetStatusRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetStatusRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetStatusRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetStatusRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetStatusRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0} GetStatusRequestV0
+                             */
+                            GetStatusRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0)
+                                    return object;
+                                return new $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0();
+                            };
+
+                            /**
+                             * Creates a plain object from a GetStatusRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0} message GetStatusRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetStatusRequestV0.toObject = function toObject() {
+                                return {};
+                            };
+
+                            /**
+                             * Converts this GetStatusRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetStatusRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetStatusRequestV0;
+                        })();
+
+                        return GetStatusRequest;
+                    })();
+
+                    v0.GetStatusResponse = (function() {
+
+                        /**
+                         * Properties of a GetStatusResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetStatusResponse
+                         * @property {org.dash.platform.dapi.v0.GetStatusResponse.IGetStatusResponseV0|null} [v0] GetStatusResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetStatusResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetStatusResponse.
+                         * @implements IGetStatusResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetStatusResponse=} [properties] Properties to set
+                         */
+                        function GetStatusResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetStatusResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetStatusResponse.IGetStatusResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @instance
+                         */
+                        GetStatusResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetStatusResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetStatusResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetStatusResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetStatusResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse} GetStatusResponse instance
+                         */
+                        GetStatusResponse.create = function create(properties) {
+                            return new GetStatusResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetStatusResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetStatusResponse} message GetStatusResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetStatusResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetStatusResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetStatusResponse} message GetStatusResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetStatusResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetStatusResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse} GetStatusResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetStatusResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetStatusResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse} GetStatusResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetStatusResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetStatusResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetStatusResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetStatusResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse} GetStatusResponse
+                         */
+                        GetStatusResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetStatusResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetStatusResponse} message GetStatusResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetStatusResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetStatusResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetStatusResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetStatusResponse.GetStatusResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetStatusResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                             * @interface IGetStatusResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IVersion|null} [version] GetStatusResponseV0 version
+                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INode|null} [node] GetStatusResponseV0 node
+                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IChain|null} [chain] GetStatusResponseV0 chain
+                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork|null} [network] GetStatusResponseV0 network
+                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IStateSync|null} [stateSync] GetStatusResponseV0 stateSync
+                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.ITime|null} [time] GetStatusResponseV0 time
+                             */
+
+                            /**
+                             * Constructs a new GetStatusResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                             * @classdesc Represents a GetStatusResponseV0.
+                             * @implements IGetStatusResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.IGetStatusResponseV0=} [properties] Properties to set
+                             */
+                            function GetStatusResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetStatusResponseV0 version.
+                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IVersion|null|undefined} version
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             */
+                            GetStatusResponseV0.prototype.version = null;
+
+                            /**
+                             * GetStatusResponseV0 node.
+                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INode|null|undefined} node
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             */
+                            GetStatusResponseV0.prototype.node = null;
+
+                            /**
+                             * GetStatusResponseV0 chain.
+                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IChain|null|undefined} chain
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             */
+                            GetStatusResponseV0.prototype.chain = null;
+
+                            /**
+                             * GetStatusResponseV0 network.
+                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork|null|undefined} network
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             */
+                            GetStatusResponseV0.prototype.network = null;
+
+                            /**
+                             * GetStatusResponseV0 stateSync.
+                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IStateSync|null|undefined} stateSync
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             */
+                            GetStatusResponseV0.prototype.stateSync = null;
+
+                            /**
+                             * GetStatusResponseV0 time.
+                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.ITime|null|undefined} time
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             */
+                            GetStatusResponseV0.prototype.time = null;
+
+                            /**
+                             * Creates a new GetStatusResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.IGetStatusResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} GetStatusResponseV0 instance
+                             */
+                            GetStatusResponseV0.create = function create(properties) {
+                                return new GetStatusResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetStatusResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.IGetStatusResponseV0} message GetStatusResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetStatusResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.version != null && Object.hasOwnProperty.call(message, "version"))
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.encode(message.version, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.node != null && Object.hasOwnProperty.call(message, "node"))
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.encode(message.node, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.chain != null && Object.hasOwnProperty.call(message, "chain"))
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.encode(message.chain, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.network != null && Object.hasOwnProperty.call(message, "network"))
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.encode(message.network, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                if (message.stateSync != null && Object.hasOwnProperty.call(message, "stateSync"))
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.encode(message.stateSync, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+                                if (message.time != null && Object.hasOwnProperty.call(message, "time"))
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.encode(message.time, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetStatusResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.IGetStatusResponseV0} message GetStatusResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetStatusResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetStatusResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} GetStatusResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetStatusResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.version = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.node = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.chain = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.decode(reader, reader.uint32());
+                                        break;
+                                    case 4:
+                                        message.network = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.decode(reader, reader.uint32());
+                                        break;
+                                    case 5:
+                                        message.stateSync = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.decode(reader, reader.uint32());
+                                        break;
+                                    case 6:
+                                        message.time = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetStatusResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} GetStatusResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetStatusResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetStatusResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetStatusResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.version != null && message.hasOwnProperty("version")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.verify(message.version);
+                                    if (error)
+                                        return "version." + error;
+                                }
+                                if (message.node != null && message.hasOwnProperty("node")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.verify(message.node);
+                                    if (error)
+                                        return "node." + error;
+                                }
+                                if (message.chain != null && message.hasOwnProperty("chain")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.verify(message.chain);
+                                    if (error)
+                                        return "chain." + error;
+                                }
+                                if (message.network != null && message.hasOwnProperty("network")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.verify(message.network);
+                                    if (error)
+                                        return "network." + error;
+                                }
+                                if (message.stateSync != null && message.hasOwnProperty("stateSync")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.verify(message.stateSync);
+                                    if (error)
+                                        return "stateSync." + error;
+                                }
+                                if (message.time != null && message.hasOwnProperty("time")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.verify(message.time);
+                                    if (error)
+                                        return "time." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetStatusResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} GetStatusResponseV0
+                             */
+                            GetStatusResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0();
+                                if (object.version != null) {
+                                    if (typeof object.version !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.version: object expected");
+                                    message.version = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.fromObject(object.version);
+                                }
+                                if (object.node != null) {
+                                    if (typeof object.node !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.node: object expected");
+                                    message.node = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.fromObject(object.node);
+                                }
+                                if (object.chain != null) {
+                                    if (typeof object.chain !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.chain: object expected");
+                                    message.chain = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.fromObject(object.chain);
+                                }
+                                if (object.network != null) {
+                                    if (typeof object.network !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.network: object expected");
+                                    message.network = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.fromObject(object.network);
+                                }
+                                if (object.stateSync != null) {
+                                    if (typeof object.stateSync !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.stateSync: object expected");
+                                    message.stateSync = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.fromObject(object.stateSync);
+                                }
+                                if (object.time != null) {
+                                    if (typeof object.time !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.time: object expected");
+                                    message.time = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.fromObject(object.time);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetStatusResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} message GetStatusResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetStatusResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.version = null;
+                                    object.node = null;
+                                    object.chain = null;
+                                    object.network = null;
+                                    object.stateSync = null;
+                                    object.time = null;
+                                }
+                                if (message.version != null && message.hasOwnProperty("version"))
+                                    object.version = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.toObject(message.version, options);
+                                if (message.node != null && message.hasOwnProperty("node"))
+                                    object.node = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.toObject(message.node, options);
+                                if (message.chain != null && message.hasOwnProperty("chain"))
+                                    object.chain = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.toObject(message.chain, options);
+                                if (message.network != null && message.hasOwnProperty("network"))
+                                    object.network = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.toObject(message.network, options);
+                                if (message.stateSync != null && message.hasOwnProperty("stateSync"))
+                                    object.stateSync = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.toObject(message.stateSync, options);
+                                if (message.time != null && message.hasOwnProperty("time"))
+                                    object.time = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.toObject(message.time, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetStatusResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetStatusResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetStatusResponseV0.Version = (function() {
+
+                                /**
+                                 * Properties of a Version.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @interface IVersion
+                                 * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.ISoftware|null} [software] Version software
+                                 * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.IProtocol|null} [protocol] Version protocol
+                                 */
+
+                                /**
+                                 * Constructs a new Version.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @classdesc Represents a Version.
+                                 * @implements IVersion
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IVersion=} [properties] Properties to set
+                                 */
+                                function Version(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Version software.
+                                 * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.ISoftware|null|undefined} software
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @instance
+                                 */
+                                Version.prototype.software = null;
+
+                                /**
+                                 * Version protocol.
+                                 * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.IProtocol|null|undefined} protocol
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @instance
+                                 */
+                                Version.prototype.protocol = null;
+
+                                /**
+                                 * Creates a new Version instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IVersion=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version} Version instance
+                                 */
+                                Version.create = function create(properties) {
+                                    return new Version(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Version message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IVersion} message Version message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Version.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.software != null && Object.hasOwnProperty.call(message, "software"))
+                                        $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.encode(message.software, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    if (message.protocol != null && Object.hasOwnProperty.call(message, "protocol"))
+                                        $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.encode(message.protocol, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Version message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IVersion} message Version message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Version.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Version message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version} Version
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Version.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.software = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.decode(reader, reader.uint32());
+                                            break;
+                                        case 2:
+                                            message.protocol = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.decode(reader, reader.uint32());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Version message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version} Version
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Version.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Version message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Version.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.software != null && message.hasOwnProperty("software")) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.verify(message.software);
+                                        if (error)
+                                            return "software." + error;
+                                    }
+                                    if (message.protocol != null && message.hasOwnProperty("protocol")) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.verify(message.protocol);
+                                        if (error)
+                                            return "protocol." + error;
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Version message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version} Version
+                                 */
+                                Version.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version();
+                                    if (object.software != null) {
+                                        if (typeof object.software !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.software: object expected");
+                                        message.software = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.fromObject(object.software);
+                                    }
+                                    if (object.protocol != null) {
+                                        if (typeof object.protocol !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.protocol: object expected");
+                                        message.protocol = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.fromObject(object.protocol);
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Version message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version} message Version
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Version.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.software = null;
+                                        object.protocol = null;
+                                    }
+                                    if (message.software != null && message.hasOwnProperty("software"))
+                                        object.software = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.toObject(message.software, options);
+                                    if (message.protocol != null && message.hasOwnProperty("protocol"))
+                                        object.protocol = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.toObject(message.protocol, options);
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Version to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Version.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                Version.Software = (function() {
+
+                                    /**
+                                     * Properties of a Software.
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                     * @interface ISoftware
+                                     * @property {string|null} [dapi] Software dapi
+                                     * @property {string|null} [drive] Software drive
+                                     * @property {string|null} [tenderdash] Software tenderdash
+                                     */
+
+                                    /**
+                                     * Constructs a new Software.
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                     * @classdesc Represents a Software.
+                                     * @implements ISoftware
+                                     * @constructor
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.ISoftware=} [properties] Properties to set
+                                     */
+                                    function Software(properties) {
+                                        if (properties)
+                                            for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                                if (properties[keys[i]] != null)
+                                                    this[keys[i]] = properties[keys[i]];
+                                    }
+
+                                    /**
+                                     * Software dapi.
+                                     * @member {string} dapi
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @instance
+                                     */
+                                    Software.prototype.dapi = "";
+
+                                    /**
+                                     * Software drive.
+                                     * @member {string} drive
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @instance
+                                     */
+                                    Software.prototype.drive = "";
+
+                                    /**
+                                     * Software tenderdash.
+                                     * @member {string} tenderdash
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @instance
+                                     */
+                                    Software.prototype.tenderdash = "";
+
+                                    /**
+                                     * Creates a new Software instance using the specified properties.
+                                     * @function create
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.ISoftware=} [properties] Properties to set
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} Software instance
+                                     */
+                                    Software.create = function create(properties) {
+                                        return new Software(properties);
+                                    };
+
+                                    /**
+                                     * Encodes the specified Software message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.verify|verify} messages.
+                                     * @function encode
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.ISoftware} message Software message or plain object to encode
+                                     * @param {$protobuf.Writer} [writer] Writer to encode to
+                                     * @returns {$protobuf.Writer} Writer
+                                     */
+                                    Software.encode = function encode(message, writer) {
+                                        if (!writer)
+                                            writer = $Writer.create();
+                                        if (message.dapi != null && Object.hasOwnProperty.call(message, "dapi"))
+                                            writer.uint32(/* id 1, wireType 2 =*/10).string(message.dapi);
+                                        if (message.drive != null && Object.hasOwnProperty.call(message, "drive"))
+                                            writer.uint32(/* id 2, wireType 2 =*/18).string(message.drive);
+                                        if (message.tenderdash != null && Object.hasOwnProperty.call(message, "tenderdash"))
+                                            writer.uint32(/* id 3, wireType 2 =*/26).string(message.tenderdash);
+                                        return writer;
+                                    };
+
+                                    /**
+                                     * Encodes the specified Software message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.verify|verify} messages.
+                                     * @function encodeDelimited
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.ISoftware} message Software message or plain object to encode
+                                     * @param {$protobuf.Writer} [writer] Writer to encode to
+                                     * @returns {$protobuf.Writer} Writer
+                                     */
+                                    Software.encodeDelimited = function encodeDelimited(message, writer) {
+                                        return this.encode(message, writer).ldelim();
+                                    };
+
+                                    /**
+                                     * Decodes a Software message from the specified reader or buffer.
+                                     * @function decode
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                     * @param {number} [length] Message length if known beforehand
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} Software
+                                     * @throws {Error} If the payload is not a reader or valid buffer
+                                     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                     */
+                                    Software.decode = function decode(reader, length) {
+                                        if (!(reader instanceof $Reader))
+                                            reader = $Reader.create(reader);
+                                        var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software();
+                                        while (reader.pos < end) {
+                                            var tag = reader.uint32();
+                                            switch (tag >>> 3) {
+                                            case 1:
+                                                message.dapi = reader.string();
+                                                break;
+                                            case 2:
+                                                message.drive = reader.string();
+                                                break;
+                                            case 3:
+                                                message.tenderdash = reader.string();
+                                                break;
+                                            default:
+                                                reader.skipType(tag & 7);
+                                                break;
+                                            }
+                                        }
+                                        return message;
+                                    };
+
+                                    /**
+                                     * Decodes a Software message from the specified reader or buffer, length delimited.
+                                     * @function decodeDelimited
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} Software
+                                     * @throws {Error} If the payload is not a reader or valid buffer
+                                     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                     */
+                                    Software.decodeDelimited = function decodeDelimited(reader) {
+                                        if (!(reader instanceof $Reader))
+                                            reader = new $Reader(reader);
+                                        return this.decode(reader, reader.uint32());
+                                    };
+
+                                    /**
+                                     * Verifies a Software message.
+                                     * @function verify
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {Object.<string,*>} message Plain object to verify
+                                     * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                     */
+                                    Software.verify = function verify(message) {
+                                        if (typeof message !== "object" || message === null)
+                                            return "object expected";
+                                        if (message.dapi != null && message.hasOwnProperty("dapi"))
+                                            if (!$util.isString(message.dapi))
+                                                return "dapi: string expected";
+                                        if (message.drive != null && message.hasOwnProperty("drive"))
+                                            if (!$util.isString(message.drive))
+                                                return "drive: string expected";
+                                        if (message.tenderdash != null && message.hasOwnProperty("tenderdash"))
+                                            if (!$util.isString(message.tenderdash))
+                                                return "tenderdash: string expected";
+                                        return null;
+                                    };
+
+                                    /**
+                                     * Creates a Software message from a plain object. Also converts values to their respective internal types.
+                                     * @function fromObject
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {Object.<string,*>} object Plain object
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} Software
+                                     */
+                                    Software.fromObject = function fromObject(object) {
+                                        if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software)
+                                            return object;
+                                        var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software();
+                                        if (object.dapi != null)
+                                            message.dapi = String(object.dapi);
+                                        if (object.drive != null)
+                                            message.drive = String(object.drive);
+                                        if (object.tenderdash != null)
+                                            message.tenderdash = String(object.tenderdash);
+                                        return message;
+                                    };
+
+                                    /**
+                                     * Creates a plain object from a Software message. Also converts values to other types if specified.
+                                     * @function toObject
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} message Software
+                                     * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                     * @returns {Object.<string,*>} Plain object
+                                     */
+                                    Software.toObject = function toObject(message, options) {
+                                        if (!options)
+                                            options = {};
+                                        var object = {};
+                                        if (options.defaults) {
+                                            object.dapi = "";
+                                            object.drive = "";
+                                            object.tenderdash = "";
+                                        }
+                                        if (message.dapi != null && message.hasOwnProperty("dapi"))
+                                            object.dapi = message.dapi;
+                                        if (message.drive != null && message.hasOwnProperty("drive"))
+                                            object.drive = message.drive;
+                                        if (message.tenderdash != null && message.hasOwnProperty("tenderdash"))
+                                            object.tenderdash = message.tenderdash;
+                                        return object;
+                                    };
+
+                                    /**
+                                     * Converts this Software to JSON.
+                                     * @function toJSON
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @instance
+                                     * @returns {Object.<string,*>} JSON object
+                                     */
+                                    Software.prototype.toJSON = function toJSON() {
+                                        return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                    };
+
+                                    return Software;
+                                })();
+
+                                Version.Protocol = (function() {
+
+                                    /**
+                                     * Properties of a Protocol.
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                     * @interface IProtocol
+                                     * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.ITenderdash|null} [tenderdash] Protocol tenderdash
+                                     * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.IDrive|null} [drive] Protocol drive
+                                     */
+
+                                    /**
+                                     * Constructs a new Protocol.
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                     * @classdesc Represents a Protocol.
+                                     * @implements IProtocol
+                                     * @constructor
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.IProtocol=} [properties] Properties to set
+                                     */
+                                    function Protocol(properties) {
+                                        if (properties)
+                                            for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                                if (properties[keys[i]] != null)
+                                                    this[keys[i]] = properties[keys[i]];
+                                    }
+
+                                    /**
+                                     * Protocol tenderdash.
+                                     * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.ITenderdash|null|undefined} tenderdash
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @instance
+                                     */
+                                    Protocol.prototype.tenderdash = null;
+
+                                    /**
+                                     * Protocol drive.
+                                     * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.IDrive|null|undefined} drive
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @instance
+                                     */
+                                    Protocol.prototype.drive = null;
+
+                                    /**
+                                     * Creates a new Protocol instance using the specified properties.
+                                     * @function create
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.IProtocol=} [properties] Properties to set
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol} Protocol instance
+                                     */
+                                    Protocol.create = function create(properties) {
+                                        return new Protocol(properties);
+                                    };
+
+                                    /**
+                                     * Encodes the specified Protocol message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.verify|verify} messages.
+                                     * @function encode
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.IProtocol} message Protocol message or plain object to encode
+                                     * @param {$protobuf.Writer} [writer] Writer to encode to
+                                     * @returns {$protobuf.Writer} Writer
+                                     */
+                                    Protocol.encode = function encode(message, writer) {
+                                        if (!writer)
+                                            writer = $Writer.create();
+                                        if (message.tenderdash != null && Object.hasOwnProperty.call(message, "tenderdash"))
+                                            $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.encode(message.tenderdash, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                        if (message.drive != null && Object.hasOwnProperty.call(message, "drive"))
+                                            $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.encode(message.drive, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                        return writer;
+                                    };
+
+                                    /**
+                                     * Encodes the specified Protocol message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.verify|verify} messages.
+                                     * @function encodeDelimited
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.IProtocol} message Protocol message or plain object to encode
+                                     * @param {$protobuf.Writer} [writer] Writer to encode to
+                                     * @returns {$protobuf.Writer} Writer
+                                     */
+                                    Protocol.encodeDelimited = function encodeDelimited(message, writer) {
+                                        return this.encode(message, writer).ldelim();
+                                    };
+
+                                    /**
+                                     * Decodes a Protocol message from the specified reader or buffer.
+                                     * @function decode
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                     * @param {number} [length] Message length if known beforehand
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol} Protocol
+                                     * @throws {Error} If the payload is not a reader or valid buffer
+                                     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                     */
+                                    Protocol.decode = function decode(reader, length) {
+                                        if (!(reader instanceof $Reader))
+                                            reader = $Reader.create(reader);
+                                        var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol();
+                                        while (reader.pos < end) {
+                                            var tag = reader.uint32();
+                                            switch (tag >>> 3) {
+                                            case 1:
+                                                message.tenderdash = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.decode(reader, reader.uint32());
+                                                break;
+                                            case 2:
+                                                message.drive = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.decode(reader, reader.uint32());
+                                                break;
+                                            default:
+                                                reader.skipType(tag & 7);
+                                                break;
+                                            }
+                                        }
+                                        return message;
+                                    };
+
+                                    /**
+                                     * Decodes a Protocol message from the specified reader or buffer, length delimited.
+                                     * @function decodeDelimited
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol} Protocol
+                                     * @throws {Error} If the payload is not a reader or valid buffer
+                                     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                     */
+                                    Protocol.decodeDelimited = function decodeDelimited(reader) {
+                                        if (!(reader instanceof $Reader))
+                                            reader = new $Reader(reader);
+                                        return this.decode(reader, reader.uint32());
+                                    };
+
+                                    /**
+                                     * Verifies a Protocol message.
+                                     * @function verify
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {Object.<string,*>} message Plain object to verify
+                                     * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                     */
+                                    Protocol.verify = function verify(message) {
+                                        if (typeof message !== "object" || message === null)
+                                            return "object expected";
+                                        if (message.tenderdash != null && message.hasOwnProperty("tenderdash")) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.verify(message.tenderdash);
+                                            if (error)
+                                                return "tenderdash." + error;
+                                        }
+                                        if (message.drive != null && message.hasOwnProperty("drive")) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.verify(message.drive);
+                                            if (error)
+                                                return "drive." + error;
+                                        }
+                                        return null;
+                                    };
+
+                                    /**
+                                     * Creates a Protocol message from a plain object. Also converts values to their respective internal types.
+                                     * @function fromObject
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {Object.<string,*>} object Plain object
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol} Protocol
+                                     */
+                                    Protocol.fromObject = function fromObject(object) {
+                                        if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol)
+                                            return object;
+                                        var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol();
+                                        if (object.tenderdash != null) {
+                                            if (typeof object.tenderdash !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.tenderdash: object expected");
+                                            message.tenderdash = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.fromObject(object.tenderdash);
+                                        }
+                                        if (object.drive != null) {
+                                            if (typeof object.drive !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.drive: object expected");
+                                            message.drive = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.fromObject(object.drive);
+                                        }
+                                        return message;
+                                    };
+
+                                    /**
+                                     * Creates a plain object from a Protocol message. Also converts values to other types if specified.
+                                     * @function toObject
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol} message Protocol
+                                     * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                     * @returns {Object.<string,*>} Plain object
+                                     */
+                                    Protocol.toObject = function toObject(message, options) {
+                                        if (!options)
+                                            options = {};
+                                        var object = {};
+                                        if (options.defaults) {
+                                            object.tenderdash = null;
+                                            object.drive = null;
+                                        }
+                                        if (message.tenderdash != null && message.hasOwnProperty("tenderdash"))
+                                            object.tenderdash = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.toObject(message.tenderdash, options);
+                                        if (message.drive != null && message.hasOwnProperty("drive"))
+                                            object.drive = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.toObject(message.drive, options);
+                                        return object;
+                                    };
+
+                                    /**
+                                     * Converts this Protocol to JSON.
+                                     * @function toJSON
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @instance
+                                     * @returns {Object.<string,*>} JSON object
+                                     */
+                                    Protocol.prototype.toJSON = function toJSON() {
+                                        return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                    };
+
+                                    Protocol.Tenderdash = (function() {
+
+                                        /**
+                                         * Properties of a Tenderdash.
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                         * @interface ITenderdash
+                                         * @property {number|null} [p2p] Tenderdash p2p
+                                         * @property {number|null} [block] Tenderdash block
+                                         */
+
+                                        /**
+                                         * Constructs a new Tenderdash.
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                         * @classdesc Represents a Tenderdash.
+                                         * @implements ITenderdash
+                                         * @constructor
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.ITenderdash=} [properties] Properties to set
+                                         */
+                                        function Tenderdash(properties) {
+                                            if (properties)
+                                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                                    if (properties[keys[i]] != null)
+                                                        this[keys[i]] = properties[keys[i]];
+                                        }
+
+                                        /**
+                                         * Tenderdash p2p.
+                                         * @member {number} p2p
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @instance
+                                         */
+                                        Tenderdash.prototype.p2p = 0;
+
+                                        /**
+                                         * Tenderdash block.
+                                         * @member {number} block
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @instance
+                                         */
+                                        Tenderdash.prototype.block = 0;
+
+                                        /**
+                                         * Creates a new Tenderdash instance using the specified properties.
+                                         * @function create
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.ITenderdash=} [properties] Properties to set
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash} Tenderdash instance
+                                         */
+                                        Tenderdash.create = function create(properties) {
+                                            return new Tenderdash(properties);
+                                        };
+
+                                        /**
+                                         * Encodes the specified Tenderdash message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.verify|verify} messages.
+                                         * @function encode
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.ITenderdash} message Tenderdash message or plain object to encode
+                                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                                         * @returns {$protobuf.Writer} Writer
+                                         */
+                                        Tenderdash.encode = function encode(message, writer) {
+                                            if (!writer)
+                                                writer = $Writer.create();
+                                            if (message.p2p != null && Object.hasOwnProperty.call(message, "p2p"))
+                                                writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.p2p);
+                                            if (message.block != null && Object.hasOwnProperty.call(message, "block"))
+                                                writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.block);
+                                            return writer;
+                                        };
+
+                                        /**
+                                         * Encodes the specified Tenderdash message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.verify|verify} messages.
+                                         * @function encodeDelimited
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.ITenderdash} message Tenderdash message or plain object to encode
+                                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                                         * @returns {$protobuf.Writer} Writer
+                                         */
+                                        Tenderdash.encodeDelimited = function encodeDelimited(message, writer) {
+                                            return this.encode(message, writer).ldelim();
+                                        };
+
+                                        /**
+                                         * Decodes a Tenderdash message from the specified reader or buffer.
+                                         * @function decode
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                         * @param {number} [length] Message length if known beforehand
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash} Tenderdash
+                                         * @throws {Error} If the payload is not a reader or valid buffer
+                                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                         */
+                                        Tenderdash.decode = function decode(reader, length) {
+                                            if (!(reader instanceof $Reader))
+                                                reader = $Reader.create(reader);
+                                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash();
+                                            while (reader.pos < end) {
+                                                var tag = reader.uint32();
+                                                switch (tag >>> 3) {
+                                                case 1:
+                                                    message.p2p = reader.uint32();
+                                                    break;
+                                                case 2:
+                                                    message.block = reader.uint32();
+                                                    break;
+                                                default:
+                                                    reader.skipType(tag & 7);
+                                                    break;
+                                                }
+                                            }
+                                            return message;
+                                        };
+
+                                        /**
+                                         * Decodes a Tenderdash message from the specified reader or buffer, length delimited.
+                                         * @function decodeDelimited
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash} Tenderdash
+                                         * @throws {Error} If the payload is not a reader or valid buffer
+                                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                         */
+                                        Tenderdash.decodeDelimited = function decodeDelimited(reader) {
+                                            if (!(reader instanceof $Reader))
+                                                reader = new $Reader(reader);
+                                            return this.decode(reader, reader.uint32());
+                                        };
+
+                                        /**
+                                         * Verifies a Tenderdash message.
+                                         * @function verify
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {Object.<string,*>} message Plain object to verify
+                                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                         */
+                                        Tenderdash.verify = function verify(message) {
+                                            if (typeof message !== "object" || message === null)
+                                                return "object expected";
+                                            if (message.p2p != null && message.hasOwnProperty("p2p"))
+                                                if (!$util.isInteger(message.p2p))
+                                                    return "p2p: integer expected";
+                                            if (message.block != null && message.hasOwnProperty("block"))
+                                                if (!$util.isInteger(message.block))
+                                                    return "block: integer expected";
+                                            return null;
+                                        };
+
+                                        /**
+                                         * Creates a Tenderdash message from a plain object. Also converts values to their respective internal types.
+                                         * @function fromObject
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {Object.<string,*>} object Plain object
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash} Tenderdash
+                                         */
+                                        Tenderdash.fromObject = function fromObject(object) {
+                                            if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash)
+                                                return object;
+                                            var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash();
+                                            if (object.p2p != null)
+                                                message.p2p = object.p2p >>> 0;
+                                            if (object.block != null)
+                                                message.block = object.block >>> 0;
+                                            return message;
+                                        };
+
+                                        /**
+                                         * Creates a plain object from a Tenderdash message. Also converts values to other types if specified.
+                                         * @function toObject
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash} message Tenderdash
+                                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                         * @returns {Object.<string,*>} Plain object
+                                         */
+                                        Tenderdash.toObject = function toObject(message, options) {
+                                            if (!options)
+                                                options = {};
+                                            var object = {};
+                                            if (options.defaults) {
+                                                object.p2p = 0;
+                                                object.block = 0;
+                                            }
+                                            if (message.p2p != null && message.hasOwnProperty("p2p"))
+                                                object.p2p = message.p2p;
+                                            if (message.block != null && message.hasOwnProperty("block"))
+                                                object.block = message.block;
+                                            return object;
+                                        };
+
+                                        /**
+                                         * Converts this Tenderdash to JSON.
+                                         * @function toJSON
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @instance
+                                         * @returns {Object.<string,*>} JSON object
+                                         */
+                                        Tenderdash.prototype.toJSON = function toJSON() {
+                                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                        };
+
+                                        return Tenderdash;
+                                    })();
+
+                                    Protocol.Drive = (function() {
+
+                                        /**
+                                         * Properties of a Drive.
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                         * @interface IDrive
+                                         * @property {number|null} [latest] Drive latest
+                                         * @property {number|null} [current] Drive current
+                                         */
+
+                                        /**
+                                         * Constructs a new Drive.
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                         * @classdesc Represents a Drive.
+                                         * @implements IDrive
+                                         * @constructor
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.IDrive=} [properties] Properties to set
+                                         */
+                                        function Drive(properties) {
+                                            if (properties)
+                                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                                    if (properties[keys[i]] != null)
+                                                        this[keys[i]] = properties[keys[i]];
+                                        }
+
+                                        /**
+                                         * Drive latest.
+                                         * @member {number} latest
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @instance
+                                         */
+                                        Drive.prototype.latest = 0;
+
+                                        /**
+                                         * Drive current.
+                                         * @member {number} current
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @instance
+                                         */
+                                        Drive.prototype.current = 0;
+
+                                        /**
+                                         * Creates a new Drive instance using the specified properties.
+                                         * @function create
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.IDrive=} [properties] Properties to set
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive} Drive instance
+                                         */
+                                        Drive.create = function create(properties) {
+                                            return new Drive(properties);
+                                        };
+
+                                        /**
+                                         * Encodes the specified Drive message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.verify|verify} messages.
+                                         * @function encode
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.IDrive} message Drive message or plain object to encode
+                                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                                         * @returns {$protobuf.Writer} Writer
+                                         */
+                                        Drive.encode = function encode(message, writer) {
+                                            if (!writer)
+                                                writer = $Writer.create();
+                                            if (message.latest != null && Object.hasOwnProperty.call(message, "latest"))
+                                                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.latest);
+                                            if (message.current != null && Object.hasOwnProperty.call(message, "current"))
+                                                writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.current);
+                                            return writer;
+                                        };
+
+                                        /**
+                                         * Encodes the specified Drive message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.verify|verify} messages.
+                                         * @function encodeDelimited
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.IDrive} message Drive message or plain object to encode
+                                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                                         * @returns {$protobuf.Writer} Writer
+                                         */
+                                        Drive.encodeDelimited = function encodeDelimited(message, writer) {
+                                            return this.encode(message, writer).ldelim();
+                                        };
+
+                                        /**
+                                         * Decodes a Drive message from the specified reader or buffer.
+                                         * @function decode
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                         * @param {number} [length] Message length if known beforehand
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive} Drive
+                                         * @throws {Error} If the payload is not a reader or valid buffer
+                                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                         */
+                                        Drive.decode = function decode(reader, length) {
+                                            if (!(reader instanceof $Reader))
+                                                reader = $Reader.create(reader);
+                                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive();
+                                            while (reader.pos < end) {
+                                                var tag = reader.uint32();
+                                                switch (tag >>> 3) {
+                                                case 3:
+                                                    message.latest = reader.uint32();
+                                                    break;
+                                                case 4:
+                                                    message.current = reader.uint32();
+                                                    break;
+                                                default:
+                                                    reader.skipType(tag & 7);
+                                                    break;
+                                                }
+                                            }
+                                            return message;
+                                        };
+
+                                        /**
+                                         * Decodes a Drive message from the specified reader or buffer, length delimited.
+                                         * @function decodeDelimited
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive} Drive
+                                         * @throws {Error} If the payload is not a reader or valid buffer
+                                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                         */
+                                        Drive.decodeDelimited = function decodeDelimited(reader) {
+                                            if (!(reader instanceof $Reader))
+                                                reader = new $Reader(reader);
+                                            return this.decode(reader, reader.uint32());
+                                        };
+
+                                        /**
+                                         * Verifies a Drive message.
+                                         * @function verify
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {Object.<string,*>} message Plain object to verify
+                                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                         */
+                                        Drive.verify = function verify(message) {
+                                            if (typeof message !== "object" || message === null)
+                                                return "object expected";
+                                            if (message.latest != null && message.hasOwnProperty("latest"))
+                                                if (!$util.isInteger(message.latest))
+                                                    return "latest: integer expected";
+                                            if (message.current != null && message.hasOwnProperty("current"))
+                                                if (!$util.isInteger(message.current))
+                                                    return "current: integer expected";
+                                            return null;
+                                        };
+
+                                        /**
+                                         * Creates a Drive message from a plain object. Also converts values to their respective internal types.
+                                         * @function fromObject
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {Object.<string,*>} object Plain object
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive} Drive
+                                         */
+                                        Drive.fromObject = function fromObject(object) {
+                                            if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive)
+                                                return object;
+                                            var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive();
+                                            if (object.latest != null)
+                                                message.latest = object.latest >>> 0;
+                                            if (object.current != null)
+                                                message.current = object.current >>> 0;
+                                            return message;
+                                        };
+
+                                        /**
+                                         * Creates a plain object from a Drive message. Also converts values to other types if specified.
+                                         * @function toObject
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive} message Drive
+                                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                         * @returns {Object.<string,*>} Plain object
+                                         */
+                                        Drive.toObject = function toObject(message, options) {
+                                            if (!options)
+                                                options = {};
+                                            var object = {};
+                                            if (options.defaults) {
+                                                object.latest = 0;
+                                                object.current = 0;
+                                            }
+                                            if (message.latest != null && message.hasOwnProperty("latest"))
+                                                object.latest = message.latest;
+                                            if (message.current != null && message.hasOwnProperty("current"))
+                                                object.current = message.current;
+                                            return object;
+                                        };
+
+                                        /**
+                                         * Converts this Drive to JSON.
+                                         * @function toJSON
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @instance
+                                         * @returns {Object.<string,*>} JSON object
+                                         */
+                                        Drive.prototype.toJSON = function toJSON() {
+                                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                        };
+
+                                        return Drive;
+                                    })();
+
+                                    return Protocol;
+                                })();
+
+                                return Version;
+                            })();
+
+                            GetStatusResponseV0.Time = (function() {
+
+                                /**
+                                 * Properties of a Time.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @interface ITime
+                                 * @property {number|Long|null} [local] Time local
+                                 * @property {number|Long|null} [block] Time block
+                                 * @property {number|Long|null} [genesis] Time genesis
+                                 * @property {number|null} [epoch] Time epoch
+                                 */
+
+                                /**
+                                 * Constructs a new Time.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @classdesc Represents a Time.
+                                 * @implements ITime
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.ITime=} [properties] Properties to set
+                                 */
+                                function Time(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Time local.
+                                 * @member {number|Long} local
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @instance
+                                 */
+                                Time.prototype.local = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Time block.
+                                 * @member {number|Long} block
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @instance
+                                 */
+                                Time.prototype.block = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Time genesis.
+                                 * @member {number|Long} genesis
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @instance
+                                 */
+                                Time.prototype.genesis = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Time epoch.
+                                 * @member {number} epoch
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @instance
+                                 */
+                                Time.prototype.epoch = 0;
+
+                                /**
+                                 * Creates a new Time instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.ITime=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} Time instance
+                                 */
+                                Time.create = function create(properties) {
+                                    return new Time(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Time message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.ITime} message Time message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Time.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.local != null && Object.hasOwnProperty.call(message, "local"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.local);
+                                    if (message.block != null && Object.hasOwnProperty.call(message, "block"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.block);
+                                    if (message.genesis != null && Object.hasOwnProperty.call(message, "genesis"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.genesis);
+                                    if (message.epoch != null && Object.hasOwnProperty.call(message, "epoch"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.epoch);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Time message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.ITime} message Time message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Time.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Time message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} Time
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Time.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.local = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.block = reader.uint64();
+                                            break;
+                                        case 3:
+                                            message.genesis = reader.uint64();
+                                            break;
+                                        case 4:
+                                            message.epoch = reader.uint32();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Time message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} Time
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Time.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Time message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Time.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.local != null && message.hasOwnProperty("local"))
+                                        if (!$util.isInteger(message.local) && !(message.local && $util.isInteger(message.local.low) && $util.isInteger(message.local.high)))
+                                            return "local: integer|Long expected";
+                                    if (message.block != null && message.hasOwnProperty("block"))
+                                        if (!$util.isInteger(message.block) && !(message.block && $util.isInteger(message.block.low) && $util.isInteger(message.block.high)))
+                                            return "block: integer|Long expected";
+                                    if (message.genesis != null && message.hasOwnProperty("genesis"))
+                                        if (!$util.isInteger(message.genesis) && !(message.genesis && $util.isInteger(message.genesis.low) && $util.isInteger(message.genesis.high)))
+                                            return "genesis: integer|Long expected";
+                                    if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                        if (!$util.isInteger(message.epoch))
+                                            return "epoch: integer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Time message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} Time
+                                 */
+                                Time.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time();
+                                    if (object.local != null)
+                                        if ($util.Long)
+                                            (message.local = $util.Long.fromValue(object.local)).unsigned = true;
+                                        else if (typeof object.local === "string")
+                                            message.local = parseInt(object.local, 10);
+                                        else if (typeof object.local === "number")
+                                            message.local = object.local;
+                                        else if (typeof object.local === "object")
+                                            message.local = new $util.LongBits(object.local.low >>> 0, object.local.high >>> 0).toNumber(true);
+                                    if (object.block != null)
+                                        if ($util.Long)
+                                            (message.block = $util.Long.fromValue(object.block)).unsigned = true;
+                                        else if (typeof object.block === "string")
+                                            message.block = parseInt(object.block, 10);
+                                        else if (typeof object.block === "number")
+                                            message.block = object.block;
+                                        else if (typeof object.block === "object")
+                                            message.block = new $util.LongBits(object.block.low >>> 0, object.block.high >>> 0).toNumber(true);
+                                    if (object.genesis != null)
+                                        if ($util.Long)
+                                            (message.genesis = $util.Long.fromValue(object.genesis)).unsigned = true;
+                                        else if (typeof object.genesis === "string")
+                                            message.genesis = parseInt(object.genesis, 10);
+                                        else if (typeof object.genesis === "number")
+                                            message.genesis = object.genesis;
+                                        else if (typeof object.genesis === "object")
+                                            message.genesis = new $util.LongBits(object.genesis.low >>> 0, object.genesis.high >>> 0).toNumber(true);
+                                    if (object.epoch != null)
+                                        message.epoch = object.epoch >>> 0;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Time message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} message Time
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Time.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.local = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.local = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.block = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.block = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.genesis = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.genesis = options.longs === String ? "0" : 0;
+                                        object.epoch = 0;
+                                    }
+                                    if (message.local != null && message.hasOwnProperty("local"))
+                                        if (typeof message.local === "number")
+                                            object.local = options.longs === String ? String(message.local) : message.local;
+                                        else
+                                            object.local = options.longs === String ? $util.Long.prototype.toString.call(message.local) : options.longs === Number ? new $util.LongBits(message.local.low >>> 0, message.local.high >>> 0).toNumber(true) : message.local;
+                                    if (message.block != null && message.hasOwnProperty("block"))
+                                        if (typeof message.block === "number")
+                                            object.block = options.longs === String ? String(message.block) : message.block;
+                                        else
+                                            object.block = options.longs === String ? $util.Long.prototype.toString.call(message.block) : options.longs === Number ? new $util.LongBits(message.block.low >>> 0, message.block.high >>> 0).toNumber(true) : message.block;
+                                    if (message.genesis != null && message.hasOwnProperty("genesis"))
+                                        if (typeof message.genesis === "number")
+                                            object.genesis = options.longs === String ? String(message.genesis) : message.genesis;
+                                        else
+                                            object.genesis = options.longs === String ? $util.Long.prototype.toString.call(message.genesis) : options.longs === Number ? new $util.LongBits(message.genesis.low >>> 0, message.genesis.high >>> 0).toNumber(true) : message.genesis;
+                                    if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                        object.epoch = message.epoch;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Time to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Time.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Time;
+                            })();
+
+                            GetStatusResponseV0.Node = (function() {
+
+                                /**
+                                 * Properties of a Node.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @interface INode
+                                 * @property {Uint8Array|null} [id] Node id
+                                 * @property {Uint8Array|null} [proTxHash] Node proTxHash
+                                 */
+
+                                /**
+                                 * Constructs a new Node.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @classdesc Represents a Node.
+                                 * @implements INode
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INode=} [properties] Properties to set
+                                 */
+                                function Node(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Node id.
+                                 * @member {Uint8Array} id
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @instance
+                                 */
+                                Node.prototype.id = $util.newBuffer([]);
+
+                                /**
+                                 * Node proTxHash.
+                                 * @member {Uint8Array} proTxHash
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @instance
+                                 */
+                                Node.prototype.proTxHash = $util.newBuffer([]);
+
+                                /**
+                                 * Creates a new Node instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INode=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node} Node instance
+                                 */
+                                Node.create = function create(properties) {
+                                    return new Node(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Node message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INode} message Node message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Node.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.id != null && Object.hasOwnProperty.call(message, "id"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.id);
+                                    if (message.proTxHash != null && Object.hasOwnProperty.call(message, "proTxHash"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.proTxHash);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Node message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INode} message Node message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Node.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Node message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node} Node
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Node.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.id = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.proTxHash = reader.bytes();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Node message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node} Node
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Node.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Node message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Node.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.id != null && message.hasOwnProperty("id"))
+                                        if (!(message.id && typeof message.id.length === "number" || $util.isString(message.id)))
+                                            return "id: buffer expected";
+                                    if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                        if (!(message.proTxHash && typeof message.proTxHash.length === "number" || $util.isString(message.proTxHash)))
+                                            return "proTxHash: buffer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Node message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node} Node
+                                 */
+                                Node.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node();
+                                    if (object.id != null)
+                                        if (typeof object.id === "string")
+                                            $util.base64.decode(object.id, message.id = $util.newBuffer($util.base64.length(object.id)), 0);
+                                        else if (object.id.length >= 0)
+                                            message.id = object.id;
+                                    if (object.proTxHash != null)
+                                        if (typeof object.proTxHash === "string")
+                                            $util.base64.decode(object.proTxHash, message.proTxHash = $util.newBuffer($util.base64.length(object.proTxHash)), 0);
+                                        else if (object.proTxHash.length >= 0)
+                                            message.proTxHash = object.proTxHash;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Node message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node} message Node
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Node.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.id = "";
+                                        else {
+                                            object.id = [];
+                                            if (options.bytes !== Array)
+                                                object.id = $util.newBuffer(object.id);
+                                        }
+                                        if (options.bytes === String)
+                                            object.proTxHash = "";
+                                        else {
+                                            object.proTxHash = [];
+                                            if (options.bytes !== Array)
+                                                object.proTxHash = $util.newBuffer(object.proTxHash);
+                                        }
+                                    }
+                                    if (message.id != null && message.hasOwnProperty("id"))
+                                        object.id = options.bytes === String ? $util.base64.encode(message.id, 0, message.id.length) : options.bytes === Array ? Array.prototype.slice.call(message.id) : message.id;
+                                    if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                        object.proTxHash = options.bytes === String ? $util.base64.encode(message.proTxHash, 0, message.proTxHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.proTxHash) : message.proTxHash;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Node to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Node.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Node;
+                            })();
+
+                            GetStatusResponseV0.Chain = (function() {
+
+                                /**
+                                 * Properties of a Chain.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @interface IChain
+                                 * @property {boolean|null} [catchingUp] Chain catchingUp
+                                 * @property {Uint8Array|null} [latestBlockHash] Chain latestBlockHash
+                                 * @property {Uint8Array|null} [latestAppHash] Chain latestAppHash
+                                 * @property {number|Long|null} [latestBlockHeight] Chain latestBlockHeight
+                                 * @property {Uint8Array|null} [earliestBlockHash] Chain earliestBlockHash
+                                 * @property {Uint8Array|null} [earliestAppHash] Chain earliestAppHash
+                                 * @property {number|Long|null} [earliestBlockHeight] Chain earliestBlockHeight
+                                 * @property {number|Long|null} [maxPeerBlockHeight] Chain maxPeerBlockHeight
+                                 * @property {number|null} [coreChainLockedHeight] Chain coreChainLockedHeight
+                                 */
+
+                                /**
+                                 * Constructs a new Chain.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @classdesc Represents a Chain.
+                                 * @implements IChain
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IChain=} [properties] Properties to set
+                                 */
+                                function Chain(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Chain catchingUp.
+                                 * @member {boolean} catchingUp
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.catchingUp = false;
+
+                                /**
+                                 * Chain latestBlockHash.
+                                 * @member {Uint8Array} latestBlockHash
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.latestBlockHash = $util.newBuffer([]);
+
+                                /**
+                                 * Chain latestAppHash.
+                                 * @member {Uint8Array} latestAppHash
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.latestAppHash = $util.newBuffer([]);
+
+                                /**
+                                 * Chain latestBlockHeight.
+                                 * @member {number|Long} latestBlockHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.latestBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Chain earliestBlockHash.
+                                 * @member {Uint8Array} earliestBlockHash
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.earliestBlockHash = $util.newBuffer([]);
+
+                                /**
+                                 * Chain earliestAppHash.
+                                 * @member {Uint8Array} earliestAppHash
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.earliestAppHash = $util.newBuffer([]);
+
+                                /**
+                                 * Chain earliestBlockHeight.
+                                 * @member {number|Long} earliestBlockHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.earliestBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Chain maxPeerBlockHeight.
+                                 * @member {number|Long} maxPeerBlockHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.maxPeerBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Chain coreChainLockedHeight.
+                                 * @member {number} coreChainLockedHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.coreChainLockedHeight = 0;
+
+                                /**
+                                 * Creates a new Chain instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IChain=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} Chain instance
+                                 */
+                                Chain.create = function create(properties) {
+                                    return new Chain(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Chain message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IChain} message Chain message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Chain.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.catchingUp != null && Object.hasOwnProperty.call(message, "catchingUp"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).bool(message.catchingUp);
+                                    if (message.latestBlockHash != null && Object.hasOwnProperty.call(message, "latestBlockHash"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.latestBlockHash);
+                                    if (message.latestAppHash != null && Object.hasOwnProperty.call(message, "latestAppHash"))
+                                        writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.latestAppHash);
+                                    if (message.latestBlockHeight != null && Object.hasOwnProperty.call(message, "latestBlockHeight"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.latestBlockHeight);
+                                    if (message.earliestBlockHash != null && Object.hasOwnProperty.call(message, "earliestBlockHash"))
+                                        writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.earliestBlockHash);
+                                    if (message.earliestAppHash != null && Object.hasOwnProperty.call(message, "earliestAppHash"))
+                                        writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.earliestAppHash);
+                                    if (message.earliestBlockHeight != null && Object.hasOwnProperty.call(message, "earliestBlockHeight"))
+                                        writer.uint32(/* id 7, wireType 0 =*/56).uint64(message.earliestBlockHeight);
+                                    if (message.maxPeerBlockHeight != null && Object.hasOwnProperty.call(message, "maxPeerBlockHeight"))
+                                        writer.uint32(/* id 9, wireType 0 =*/72).uint64(message.maxPeerBlockHeight);
+                                    if (message.coreChainLockedHeight != null && Object.hasOwnProperty.call(message, "coreChainLockedHeight"))
+                                        writer.uint32(/* id 10, wireType 0 =*/80).uint32(message.coreChainLockedHeight);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Chain message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IChain} message Chain message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Chain.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Chain message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} Chain
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Chain.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.catchingUp = reader.bool();
+                                            break;
+                                        case 2:
+                                            message.latestBlockHash = reader.bytes();
+                                            break;
+                                        case 3:
+                                            message.latestAppHash = reader.bytes();
+                                            break;
+                                        case 4:
+                                            message.latestBlockHeight = reader.uint64();
+                                            break;
+                                        case 5:
+                                            message.earliestBlockHash = reader.bytes();
+                                            break;
+                                        case 6:
+                                            message.earliestAppHash = reader.bytes();
+                                            break;
+                                        case 7:
+                                            message.earliestBlockHeight = reader.uint64();
+                                            break;
+                                        case 9:
+                                            message.maxPeerBlockHeight = reader.uint64();
+                                            break;
+                                        case 10:
+                                            message.coreChainLockedHeight = reader.uint32();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Chain message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} Chain
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Chain.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Chain message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Chain.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.catchingUp != null && message.hasOwnProperty("catchingUp"))
+                                        if (typeof message.catchingUp !== "boolean")
+                                            return "catchingUp: boolean expected";
+                                    if (message.latestBlockHash != null && message.hasOwnProperty("latestBlockHash"))
+                                        if (!(message.latestBlockHash && typeof message.latestBlockHash.length === "number" || $util.isString(message.latestBlockHash)))
+                                            return "latestBlockHash: buffer expected";
+                                    if (message.latestAppHash != null && message.hasOwnProperty("latestAppHash"))
+                                        if (!(message.latestAppHash && typeof message.latestAppHash.length === "number" || $util.isString(message.latestAppHash)))
+                                            return "latestAppHash: buffer expected";
+                                    if (message.latestBlockHeight != null && message.hasOwnProperty("latestBlockHeight"))
+                                        if (!$util.isInteger(message.latestBlockHeight) && !(message.latestBlockHeight && $util.isInteger(message.latestBlockHeight.low) && $util.isInteger(message.latestBlockHeight.high)))
+                                            return "latestBlockHeight: integer|Long expected";
+                                    if (message.earliestBlockHash != null && message.hasOwnProperty("earliestBlockHash"))
+                                        if (!(message.earliestBlockHash && typeof message.earliestBlockHash.length === "number" || $util.isString(message.earliestBlockHash)))
+                                            return "earliestBlockHash: buffer expected";
+                                    if (message.earliestAppHash != null && message.hasOwnProperty("earliestAppHash"))
+                                        if (!(message.earliestAppHash && typeof message.earliestAppHash.length === "number" || $util.isString(message.earliestAppHash)))
+                                            return "earliestAppHash: buffer expected";
+                                    if (message.earliestBlockHeight != null && message.hasOwnProperty("earliestBlockHeight"))
+                                        if (!$util.isInteger(message.earliestBlockHeight) && !(message.earliestBlockHeight && $util.isInteger(message.earliestBlockHeight.low) && $util.isInteger(message.earliestBlockHeight.high)))
+                                            return "earliestBlockHeight: integer|Long expected";
+                                    if (message.maxPeerBlockHeight != null && message.hasOwnProperty("maxPeerBlockHeight"))
+                                        if (!$util.isInteger(message.maxPeerBlockHeight) && !(message.maxPeerBlockHeight && $util.isInteger(message.maxPeerBlockHeight.low) && $util.isInteger(message.maxPeerBlockHeight.high)))
+                                            return "maxPeerBlockHeight: integer|Long expected";
+                                    if (message.coreChainLockedHeight != null && message.hasOwnProperty("coreChainLockedHeight"))
+                                        if (!$util.isInteger(message.coreChainLockedHeight))
+                                            return "coreChainLockedHeight: integer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Chain message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} Chain
+                                 */
+                                Chain.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain();
+                                    if (object.catchingUp != null)
+                                        message.catchingUp = Boolean(object.catchingUp);
+                                    if (object.latestBlockHash != null)
+                                        if (typeof object.latestBlockHash === "string")
+                                            $util.base64.decode(object.latestBlockHash, message.latestBlockHash = $util.newBuffer($util.base64.length(object.latestBlockHash)), 0);
+                                        else if (object.latestBlockHash.length >= 0)
+                                            message.latestBlockHash = object.latestBlockHash;
+                                    if (object.latestAppHash != null)
+                                        if (typeof object.latestAppHash === "string")
+                                            $util.base64.decode(object.latestAppHash, message.latestAppHash = $util.newBuffer($util.base64.length(object.latestAppHash)), 0);
+                                        else if (object.latestAppHash.length >= 0)
+                                            message.latestAppHash = object.latestAppHash;
+                                    if (object.latestBlockHeight != null)
+                                        if ($util.Long)
+                                            (message.latestBlockHeight = $util.Long.fromValue(object.latestBlockHeight)).unsigned = true;
+                                        else if (typeof object.latestBlockHeight === "string")
+                                            message.latestBlockHeight = parseInt(object.latestBlockHeight, 10);
+                                        else if (typeof object.latestBlockHeight === "number")
+                                            message.latestBlockHeight = object.latestBlockHeight;
+                                        else if (typeof object.latestBlockHeight === "object")
+                                            message.latestBlockHeight = new $util.LongBits(object.latestBlockHeight.low >>> 0, object.latestBlockHeight.high >>> 0).toNumber(true);
+                                    if (object.earliestBlockHash != null)
+                                        if (typeof object.earliestBlockHash === "string")
+                                            $util.base64.decode(object.earliestBlockHash, message.earliestBlockHash = $util.newBuffer($util.base64.length(object.earliestBlockHash)), 0);
+                                        else if (object.earliestBlockHash.length >= 0)
+                                            message.earliestBlockHash = object.earliestBlockHash;
+                                    if (object.earliestAppHash != null)
+                                        if (typeof object.earliestAppHash === "string")
+                                            $util.base64.decode(object.earliestAppHash, message.earliestAppHash = $util.newBuffer($util.base64.length(object.earliestAppHash)), 0);
+                                        else if (object.earliestAppHash.length >= 0)
+                                            message.earliestAppHash = object.earliestAppHash;
+                                    if (object.earliestBlockHeight != null)
+                                        if ($util.Long)
+                                            (message.earliestBlockHeight = $util.Long.fromValue(object.earliestBlockHeight)).unsigned = true;
+                                        else if (typeof object.earliestBlockHeight === "string")
+                                            message.earliestBlockHeight = parseInt(object.earliestBlockHeight, 10);
+                                        else if (typeof object.earliestBlockHeight === "number")
+                                            message.earliestBlockHeight = object.earliestBlockHeight;
+                                        else if (typeof object.earliestBlockHeight === "object")
+                                            message.earliestBlockHeight = new $util.LongBits(object.earliestBlockHeight.low >>> 0, object.earliestBlockHeight.high >>> 0).toNumber(true);
+                                    if (object.maxPeerBlockHeight != null)
+                                        if ($util.Long)
+                                            (message.maxPeerBlockHeight = $util.Long.fromValue(object.maxPeerBlockHeight)).unsigned = true;
+                                        else if (typeof object.maxPeerBlockHeight === "string")
+                                            message.maxPeerBlockHeight = parseInt(object.maxPeerBlockHeight, 10);
+                                        else if (typeof object.maxPeerBlockHeight === "number")
+                                            message.maxPeerBlockHeight = object.maxPeerBlockHeight;
+                                        else if (typeof object.maxPeerBlockHeight === "object")
+                                            message.maxPeerBlockHeight = new $util.LongBits(object.maxPeerBlockHeight.low >>> 0, object.maxPeerBlockHeight.high >>> 0).toNumber(true);
+                                    if (object.coreChainLockedHeight != null)
+                                        message.coreChainLockedHeight = object.coreChainLockedHeight >>> 0;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Chain message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} message Chain
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Chain.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.catchingUp = false;
+                                        if (options.bytes === String)
+                                            object.latestBlockHash = "";
+                                        else {
+                                            object.latestBlockHash = [];
+                                            if (options.bytes !== Array)
+                                                object.latestBlockHash = $util.newBuffer(object.latestBlockHash);
+                                        }
+                                        if (options.bytes === String)
+                                            object.latestAppHash = "";
+                                        else {
+                                            object.latestAppHash = [];
+                                            if (options.bytes !== Array)
+                                                object.latestAppHash = $util.newBuffer(object.latestAppHash);
+                                        }
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.latestBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.latestBlockHeight = options.longs === String ? "0" : 0;
+                                        if (options.bytes === String)
+                                            object.earliestBlockHash = "";
+                                        else {
+                                            object.earliestBlockHash = [];
+                                            if (options.bytes !== Array)
+                                                object.earliestBlockHash = $util.newBuffer(object.earliestBlockHash);
+                                        }
+                                        if (options.bytes === String)
+                                            object.earliestAppHash = "";
+                                        else {
+                                            object.earliestAppHash = [];
+                                            if (options.bytes !== Array)
+                                                object.earliestAppHash = $util.newBuffer(object.earliestAppHash);
+                                        }
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.earliestBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.earliestBlockHeight = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.maxPeerBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.maxPeerBlockHeight = options.longs === String ? "0" : 0;
+                                        object.coreChainLockedHeight = 0;
+                                    }
+                                    if (message.catchingUp != null && message.hasOwnProperty("catchingUp"))
+                                        object.catchingUp = message.catchingUp;
+                                    if (message.latestBlockHash != null && message.hasOwnProperty("latestBlockHash"))
+                                        object.latestBlockHash = options.bytes === String ? $util.base64.encode(message.latestBlockHash, 0, message.latestBlockHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.latestBlockHash) : message.latestBlockHash;
+                                    if (message.latestAppHash != null && message.hasOwnProperty("latestAppHash"))
+                                        object.latestAppHash = options.bytes === String ? $util.base64.encode(message.latestAppHash, 0, message.latestAppHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.latestAppHash) : message.latestAppHash;
+                                    if (message.latestBlockHeight != null && message.hasOwnProperty("latestBlockHeight"))
+                                        if (typeof message.latestBlockHeight === "number")
+                                            object.latestBlockHeight = options.longs === String ? String(message.latestBlockHeight) : message.latestBlockHeight;
+                                        else
+                                            object.latestBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.latestBlockHeight) : options.longs === Number ? new $util.LongBits(message.latestBlockHeight.low >>> 0, message.latestBlockHeight.high >>> 0).toNumber(true) : message.latestBlockHeight;
+                                    if (message.earliestBlockHash != null && message.hasOwnProperty("earliestBlockHash"))
+                                        object.earliestBlockHash = options.bytes === String ? $util.base64.encode(message.earliestBlockHash, 0, message.earliestBlockHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.earliestBlockHash) : message.earliestBlockHash;
+                                    if (message.earliestAppHash != null && message.hasOwnProperty("earliestAppHash"))
+                                        object.earliestAppHash = options.bytes === String ? $util.base64.encode(message.earliestAppHash, 0, message.earliestAppHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.earliestAppHash) : message.earliestAppHash;
+                                    if (message.earliestBlockHeight != null && message.hasOwnProperty("earliestBlockHeight"))
+                                        if (typeof message.earliestBlockHeight === "number")
+                                            object.earliestBlockHeight = options.longs === String ? String(message.earliestBlockHeight) : message.earliestBlockHeight;
+                                        else
+                                            object.earliestBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.earliestBlockHeight) : options.longs === Number ? new $util.LongBits(message.earliestBlockHeight.low >>> 0, message.earliestBlockHeight.high >>> 0).toNumber(true) : message.earliestBlockHeight;
+                                    if (message.maxPeerBlockHeight != null && message.hasOwnProperty("maxPeerBlockHeight"))
+                                        if (typeof message.maxPeerBlockHeight === "number")
+                                            object.maxPeerBlockHeight = options.longs === String ? String(message.maxPeerBlockHeight) : message.maxPeerBlockHeight;
+                                        else
+                                            object.maxPeerBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.maxPeerBlockHeight) : options.longs === Number ? new $util.LongBits(message.maxPeerBlockHeight.low >>> 0, message.maxPeerBlockHeight.high >>> 0).toNumber(true) : message.maxPeerBlockHeight;
+                                    if (message.coreChainLockedHeight != null && message.hasOwnProperty("coreChainLockedHeight"))
+                                        object.coreChainLockedHeight = message.coreChainLockedHeight;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Chain to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Chain.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Chain;
+                            })();
+
+                            GetStatusResponseV0.Network = (function() {
+
+                                /**
+                                 * Properties of a Network.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @interface INetwork
+                                 * @property {string|null} [chainId] Network chainId
+                                 * @property {number|null} [peersCount] Network peersCount
+                                 * @property {boolean|null} [listening] Network listening
+                                 */
+
+                                /**
+                                 * Constructs a new Network.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @classdesc Represents a Network.
+                                 * @implements INetwork
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork=} [properties] Properties to set
+                                 */
+                                function Network(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Network chainId.
+                                 * @member {string} chainId
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @instance
+                                 */
+                                Network.prototype.chainId = "";
+
+                                /**
+                                 * Network peersCount.
+                                 * @member {number} peersCount
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @instance
+                                 */
+                                Network.prototype.peersCount = 0;
+
+                                /**
+                                 * Network listening.
+                                 * @member {boolean} listening
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @instance
+                                 */
+                                Network.prototype.listening = false;
+
+                                /**
+                                 * Creates a new Network instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network} Network instance
+                                 */
+                                Network.create = function create(properties) {
+                                    return new Network(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Network message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork} message Network message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Network.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.chainId != null && Object.hasOwnProperty.call(message, "chainId"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).string(message.chainId);
+                                    if (message.peersCount != null && Object.hasOwnProperty.call(message, "peersCount"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.peersCount);
+                                    if (message.listening != null && Object.hasOwnProperty.call(message, "listening"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).bool(message.listening);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Network message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork} message Network message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Network.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Network message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network} Network
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Network.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.chainId = reader.string();
+                                            break;
+                                        case 2:
+                                            message.peersCount = reader.uint32();
+                                            break;
+                                        case 3:
+                                            message.listening = reader.bool();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Network message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network} Network
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Network.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Network message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Network.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.chainId != null && message.hasOwnProperty("chainId"))
+                                        if (!$util.isString(message.chainId))
+                                            return "chainId: string expected";
+                                    if (message.peersCount != null && message.hasOwnProperty("peersCount"))
+                                        if (!$util.isInteger(message.peersCount))
+                                            return "peersCount: integer expected";
+                                    if (message.listening != null && message.hasOwnProperty("listening"))
+                                        if (typeof message.listening !== "boolean")
+                                            return "listening: boolean expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Network message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network} Network
+                                 */
+                                Network.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network();
+                                    if (object.chainId != null)
+                                        message.chainId = String(object.chainId);
+                                    if (object.peersCount != null)
+                                        message.peersCount = object.peersCount >>> 0;
+                                    if (object.listening != null)
+                                        message.listening = Boolean(object.listening);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Network message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network} message Network
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Network.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.chainId = "";
+                                        object.peersCount = 0;
+                                        object.listening = false;
+                                    }
+                                    if (message.chainId != null && message.hasOwnProperty("chainId"))
+                                        object.chainId = message.chainId;
+                                    if (message.peersCount != null && message.hasOwnProperty("peersCount"))
+                                        object.peersCount = message.peersCount;
+                                    if (message.listening != null && message.hasOwnProperty("listening"))
+                                        object.listening = message.listening;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Network to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Network.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Network;
+                            })();
+
+                            GetStatusResponseV0.StateSync = (function() {
+
+                                /**
+                                 * Properties of a StateSync.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @interface IStateSync
+                                 * @property {number|Long|null} [totalSyncedTime] StateSync totalSyncedTime
+                                 * @property {number|Long|null} [remainingTime] StateSync remainingTime
+                                 * @property {number|null} [totalSnapshots] StateSync totalSnapshots
+                                 * @property {number|Long|null} [chunkProcessAvgTime] StateSync chunkProcessAvgTime
+                                 * @property {number|Long|null} [snapshotHeight] StateSync snapshotHeight
+                                 * @property {number|Long|null} [snapshotChunksCount] StateSync snapshotChunksCount
+                                 * @property {number|Long|null} [backfilledBlocks] StateSync backfilledBlocks
+                                 * @property {number|Long|null} [backfillBlocksTotal] StateSync backfillBlocksTotal
+                                 */
+
+                                /**
+                                 * Constructs a new StateSync.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @classdesc Represents a StateSync.
+                                 * @implements IStateSync
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IStateSync=} [properties] Properties to set
+                                 */
+                                function StateSync(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * StateSync totalSyncedTime.
+                                 * @member {number|Long} totalSyncedTime
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.totalSyncedTime = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateSync remainingTime.
+                                 * @member {number|Long} remainingTime
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.remainingTime = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateSync totalSnapshots.
+                                 * @member {number} totalSnapshots
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.totalSnapshots = 0;
+
+                                /**
+                                 * StateSync chunkProcessAvgTime.
+                                 * @member {number|Long} chunkProcessAvgTime
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.chunkProcessAvgTime = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateSync snapshotHeight.
+                                 * @member {number|Long} snapshotHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.snapshotHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateSync snapshotChunksCount.
+                                 * @member {number|Long} snapshotChunksCount
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.snapshotChunksCount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateSync backfilledBlocks.
+                                 * @member {number|Long} backfilledBlocks
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.backfilledBlocks = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateSync backfillBlocksTotal.
+                                 * @member {number|Long} backfillBlocksTotal
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.backfillBlocksTotal = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Creates a new StateSync instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IStateSync=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} StateSync instance
+                                 */
+                                StateSync.create = function create(properties) {
+                                    return new StateSync(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified StateSync message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IStateSync} message StateSync message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                StateSync.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.totalSyncedTime != null && Object.hasOwnProperty.call(message, "totalSyncedTime"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.totalSyncedTime);
+                                    if (message.remainingTime != null && Object.hasOwnProperty.call(message, "remainingTime"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.remainingTime);
+                                    if (message.totalSnapshots != null && Object.hasOwnProperty.call(message, "totalSnapshots"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.totalSnapshots);
+                                    if (message.chunkProcessAvgTime != null && Object.hasOwnProperty.call(message, "chunkProcessAvgTime"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.chunkProcessAvgTime);
+                                    if (message.snapshotHeight != null && Object.hasOwnProperty.call(message, "snapshotHeight"))
+                                        writer.uint32(/* id 5, wireType 0 =*/40).uint64(message.snapshotHeight);
+                                    if (message.snapshotChunksCount != null && Object.hasOwnProperty.call(message, "snapshotChunksCount"))
+                                        writer.uint32(/* id 6, wireType 0 =*/48).uint64(message.snapshotChunksCount);
+                                    if (message.backfilledBlocks != null && Object.hasOwnProperty.call(message, "backfilledBlocks"))
+                                        writer.uint32(/* id 7, wireType 0 =*/56).uint64(message.backfilledBlocks);
+                                    if (message.backfillBlocksTotal != null && Object.hasOwnProperty.call(message, "backfillBlocksTotal"))
+                                        writer.uint32(/* id 8, wireType 0 =*/64).uint64(message.backfillBlocksTotal);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified StateSync message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IStateSync} message StateSync message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                StateSync.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a StateSync message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} StateSync
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                StateSync.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.totalSyncedTime = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.remainingTime = reader.uint64();
+                                            break;
+                                        case 3:
+                                            message.totalSnapshots = reader.uint32();
+                                            break;
+                                        case 4:
+                                            message.chunkProcessAvgTime = reader.uint64();
+                                            break;
+                                        case 5:
+                                            message.snapshotHeight = reader.uint64();
+                                            break;
+                                        case 6:
+                                            message.snapshotChunksCount = reader.uint64();
+                                            break;
+                                        case 7:
+                                            message.backfilledBlocks = reader.uint64();
+                                            break;
+                                        case 8:
+                                            message.backfillBlocksTotal = reader.uint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a StateSync message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} StateSync
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                StateSync.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a StateSync message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                StateSync.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.totalSyncedTime != null && message.hasOwnProperty("totalSyncedTime"))
+                                        if (!$util.isInteger(message.totalSyncedTime) && !(message.totalSyncedTime && $util.isInteger(message.totalSyncedTime.low) && $util.isInteger(message.totalSyncedTime.high)))
+                                            return "totalSyncedTime: integer|Long expected";
+                                    if (message.remainingTime != null && message.hasOwnProperty("remainingTime"))
+                                        if (!$util.isInteger(message.remainingTime) && !(message.remainingTime && $util.isInteger(message.remainingTime.low) && $util.isInteger(message.remainingTime.high)))
+                                            return "remainingTime: integer|Long expected";
+                                    if (message.totalSnapshots != null && message.hasOwnProperty("totalSnapshots"))
+                                        if (!$util.isInteger(message.totalSnapshots))
+                                            return "totalSnapshots: integer expected";
+                                    if (message.chunkProcessAvgTime != null && message.hasOwnProperty("chunkProcessAvgTime"))
+                                        if (!$util.isInteger(message.chunkProcessAvgTime) && !(message.chunkProcessAvgTime && $util.isInteger(message.chunkProcessAvgTime.low) && $util.isInteger(message.chunkProcessAvgTime.high)))
+                                            return "chunkProcessAvgTime: integer|Long expected";
+                                    if (message.snapshotHeight != null && message.hasOwnProperty("snapshotHeight"))
+                                        if (!$util.isInteger(message.snapshotHeight) && !(message.snapshotHeight && $util.isInteger(message.snapshotHeight.low) && $util.isInteger(message.snapshotHeight.high)))
+                                            return "snapshotHeight: integer|Long expected";
+                                    if (message.snapshotChunksCount != null && message.hasOwnProperty("snapshotChunksCount"))
+                                        if (!$util.isInteger(message.snapshotChunksCount) && !(message.snapshotChunksCount && $util.isInteger(message.snapshotChunksCount.low) && $util.isInteger(message.snapshotChunksCount.high)))
+                                            return "snapshotChunksCount: integer|Long expected";
+                                    if (message.backfilledBlocks != null && message.hasOwnProperty("backfilledBlocks"))
+                                        if (!$util.isInteger(message.backfilledBlocks) && !(message.backfilledBlocks && $util.isInteger(message.backfilledBlocks.low) && $util.isInteger(message.backfilledBlocks.high)))
+                                            return "backfilledBlocks: integer|Long expected";
+                                    if (message.backfillBlocksTotal != null && message.hasOwnProperty("backfillBlocksTotal"))
+                                        if (!$util.isInteger(message.backfillBlocksTotal) && !(message.backfillBlocksTotal && $util.isInteger(message.backfillBlocksTotal.low) && $util.isInteger(message.backfillBlocksTotal.high)))
+                                            return "backfillBlocksTotal: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a StateSync message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} StateSync
+                                 */
+                                StateSync.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync();
+                                    if (object.totalSyncedTime != null)
+                                        if ($util.Long)
+                                            (message.totalSyncedTime = $util.Long.fromValue(object.totalSyncedTime)).unsigned = true;
+                                        else if (typeof object.totalSyncedTime === "string")
+                                            message.totalSyncedTime = parseInt(object.totalSyncedTime, 10);
+                                        else if (typeof object.totalSyncedTime === "number")
+                                            message.totalSyncedTime = object.totalSyncedTime;
+                                        else if (typeof object.totalSyncedTime === "object")
+                                            message.totalSyncedTime = new $util.LongBits(object.totalSyncedTime.low >>> 0, object.totalSyncedTime.high >>> 0).toNumber(true);
+                                    if (object.remainingTime != null)
+                                        if ($util.Long)
+                                            (message.remainingTime = $util.Long.fromValue(object.remainingTime)).unsigned = true;
+                                        else if (typeof object.remainingTime === "string")
+                                            message.remainingTime = parseInt(object.remainingTime, 10);
+                                        else if (typeof object.remainingTime === "number")
+                                            message.remainingTime = object.remainingTime;
+                                        else if (typeof object.remainingTime === "object")
+                                            message.remainingTime = new $util.LongBits(object.remainingTime.low >>> 0, object.remainingTime.high >>> 0).toNumber(true);
+                                    if (object.totalSnapshots != null)
+                                        message.totalSnapshots = object.totalSnapshots >>> 0;
+                                    if (object.chunkProcessAvgTime != null)
+                                        if ($util.Long)
+                                            (message.chunkProcessAvgTime = $util.Long.fromValue(object.chunkProcessAvgTime)).unsigned = true;
+                                        else if (typeof object.chunkProcessAvgTime === "string")
+                                            message.chunkProcessAvgTime = parseInt(object.chunkProcessAvgTime, 10);
+                                        else if (typeof object.chunkProcessAvgTime === "number")
+                                            message.chunkProcessAvgTime = object.chunkProcessAvgTime;
+                                        else if (typeof object.chunkProcessAvgTime === "object")
+                                            message.chunkProcessAvgTime = new $util.LongBits(object.chunkProcessAvgTime.low >>> 0, object.chunkProcessAvgTime.high >>> 0).toNumber(true);
+                                    if (object.snapshotHeight != null)
+                                        if ($util.Long)
+                                            (message.snapshotHeight = $util.Long.fromValue(object.snapshotHeight)).unsigned = true;
+                                        else if (typeof object.snapshotHeight === "string")
+                                            message.snapshotHeight = parseInt(object.snapshotHeight, 10);
+                                        else if (typeof object.snapshotHeight === "number")
+                                            message.snapshotHeight = object.snapshotHeight;
+                                        else if (typeof object.snapshotHeight === "object")
+                                            message.snapshotHeight = new $util.LongBits(object.snapshotHeight.low >>> 0, object.snapshotHeight.high >>> 0).toNumber(true);
+                                    if (object.snapshotChunksCount != null)
+                                        if ($util.Long)
+                                            (message.snapshotChunksCount = $util.Long.fromValue(object.snapshotChunksCount)).unsigned = true;
+                                        else if (typeof object.snapshotChunksCount === "string")
+                                            message.snapshotChunksCount = parseInt(object.snapshotChunksCount, 10);
+                                        else if (typeof object.snapshotChunksCount === "number")
+                                            message.snapshotChunksCount = object.snapshotChunksCount;
+                                        else if (typeof object.snapshotChunksCount === "object")
+                                            message.snapshotChunksCount = new $util.LongBits(object.snapshotChunksCount.low >>> 0, object.snapshotChunksCount.high >>> 0).toNumber(true);
+                                    if (object.backfilledBlocks != null)
+                                        if ($util.Long)
+                                            (message.backfilledBlocks = $util.Long.fromValue(object.backfilledBlocks)).unsigned = true;
+                                        else if (typeof object.backfilledBlocks === "string")
+                                            message.backfilledBlocks = parseInt(object.backfilledBlocks, 10);
+                                        else if (typeof object.backfilledBlocks === "number")
+                                            message.backfilledBlocks = object.backfilledBlocks;
+                                        else if (typeof object.backfilledBlocks === "object")
+                                            message.backfilledBlocks = new $util.LongBits(object.backfilledBlocks.low >>> 0, object.backfilledBlocks.high >>> 0).toNumber(true);
+                                    if (object.backfillBlocksTotal != null)
+                                        if ($util.Long)
+                                            (message.backfillBlocksTotal = $util.Long.fromValue(object.backfillBlocksTotal)).unsigned = true;
+                                        else if (typeof object.backfillBlocksTotal === "string")
+                                            message.backfillBlocksTotal = parseInt(object.backfillBlocksTotal, 10);
+                                        else if (typeof object.backfillBlocksTotal === "number")
+                                            message.backfillBlocksTotal = object.backfillBlocksTotal;
+                                        else if (typeof object.backfillBlocksTotal === "object")
+                                            message.backfillBlocksTotal = new $util.LongBits(object.backfillBlocksTotal.low >>> 0, object.backfillBlocksTotal.high >>> 0).toNumber(true);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a StateSync message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} message StateSync
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                StateSync.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.totalSyncedTime = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.totalSyncedTime = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.remainingTime = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.remainingTime = options.longs === String ? "0" : 0;
+                                        object.totalSnapshots = 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.chunkProcessAvgTime = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.chunkProcessAvgTime = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.snapshotHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.snapshotHeight = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.snapshotChunksCount = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.snapshotChunksCount = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.backfilledBlocks = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.backfilledBlocks = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.backfillBlocksTotal = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.backfillBlocksTotal = options.longs === String ? "0" : 0;
+                                    }
+                                    if (message.totalSyncedTime != null && message.hasOwnProperty("totalSyncedTime"))
+                                        if (typeof message.totalSyncedTime === "number")
+                                            object.totalSyncedTime = options.longs === String ? String(message.totalSyncedTime) : message.totalSyncedTime;
+                                        else
+                                            object.totalSyncedTime = options.longs === String ? $util.Long.prototype.toString.call(message.totalSyncedTime) : options.longs === Number ? new $util.LongBits(message.totalSyncedTime.low >>> 0, message.totalSyncedTime.high >>> 0).toNumber(true) : message.totalSyncedTime;
+                                    if (message.remainingTime != null && message.hasOwnProperty("remainingTime"))
+                                        if (typeof message.remainingTime === "number")
+                                            object.remainingTime = options.longs === String ? String(message.remainingTime) : message.remainingTime;
+                                        else
+                                            object.remainingTime = options.longs === String ? $util.Long.prototype.toString.call(message.remainingTime) : options.longs === Number ? new $util.LongBits(message.remainingTime.low >>> 0, message.remainingTime.high >>> 0).toNumber(true) : message.remainingTime;
+                                    if (message.totalSnapshots != null && message.hasOwnProperty("totalSnapshots"))
+                                        object.totalSnapshots = message.totalSnapshots;
+                                    if (message.chunkProcessAvgTime != null && message.hasOwnProperty("chunkProcessAvgTime"))
+                                        if (typeof message.chunkProcessAvgTime === "number")
+                                            object.chunkProcessAvgTime = options.longs === String ? String(message.chunkProcessAvgTime) : message.chunkProcessAvgTime;
+                                        else
+                                            object.chunkProcessAvgTime = options.longs === String ? $util.Long.prototype.toString.call(message.chunkProcessAvgTime) : options.longs === Number ? new $util.LongBits(message.chunkProcessAvgTime.low >>> 0, message.chunkProcessAvgTime.high >>> 0).toNumber(true) : message.chunkProcessAvgTime;
+                                    if (message.snapshotHeight != null && message.hasOwnProperty("snapshotHeight"))
+                                        if (typeof message.snapshotHeight === "number")
+                                            object.snapshotHeight = options.longs === String ? String(message.snapshotHeight) : message.snapshotHeight;
+                                        else
+                                            object.snapshotHeight = options.longs === String ? $util.Long.prototype.toString.call(message.snapshotHeight) : options.longs === Number ? new $util.LongBits(message.snapshotHeight.low >>> 0, message.snapshotHeight.high >>> 0).toNumber(true) : message.snapshotHeight;
+                                    if (message.snapshotChunksCount != null && message.hasOwnProperty("snapshotChunksCount"))
+                                        if (typeof message.snapshotChunksCount === "number")
+                                            object.snapshotChunksCount = options.longs === String ? String(message.snapshotChunksCount) : message.snapshotChunksCount;
+                                        else
+                                            object.snapshotChunksCount = options.longs === String ? $util.Long.prototype.toString.call(message.snapshotChunksCount) : options.longs === Number ? new $util.LongBits(message.snapshotChunksCount.low >>> 0, message.snapshotChunksCount.high >>> 0).toNumber(true) : message.snapshotChunksCount;
+                                    if (message.backfilledBlocks != null && message.hasOwnProperty("backfilledBlocks"))
+                                        if (typeof message.backfilledBlocks === "number")
+                                            object.backfilledBlocks = options.longs === String ? String(message.backfilledBlocks) : message.backfilledBlocks;
+                                        else
+                                            object.backfilledBlocks = options.longs === String ? $util.Long.prototype.toString.call(message.backfilledBlocks) : options.longs === Number ? new $util.LongBits(message.backfilledBlocks.low >>> 0, message.backfilledBlocks.high >>> 0).toNumber(true) : message.backfilledBlocks;
+                                    if (message.backfillBlocksTotal != null && message.hasOwnProperty("backfillBlocksTotal"))
+                                        if (typeof message.backfillBlocksTotal === "number")
+                                            object.backfillBlocksTotal = options.longs === String ? String(message.backfillBlocksTotal) : message.backfillBlocksTotal;
+                                        else
+                                            object.backfillBlocksTotal = options.longs === String ? $util.Long.prototype.toString.call(message.backfillBlocksTotal) : options.longs === Number ? new $util.LongBits(message.backfillBlocksTotal.low >>> 0, message.backfillBlocksTotal.high >>> 0).toNumber(true) : message.backfillBlocksTotal;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this StateSync to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                StateSync.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return StateSync;
+                            })();
+
+                            return GetStatusResponseV0;
+                        })();
+
+                        return GetStatusResponse;
                     })();
 
                     return v0;
