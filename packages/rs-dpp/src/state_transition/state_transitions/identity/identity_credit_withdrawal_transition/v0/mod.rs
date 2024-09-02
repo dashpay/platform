@@ -24,14 +24,6 @@ use crate::{
     ProtocolError,
 };
 
-// TODO: unsafe - we must use actual relay fee from core
-/// Minimal core per byte. Must be a fibonacci number
-pub const MIN_CORE_FEE_PER_BYTE: u32 = 1;
-
-/// Minimal amount in credits (x1000) to avoid "dust" error in Core
-pub const MIN_WITHDRAWAL_AMOUNT: u64 =
-    (ASSET_UNLOCK_TX_SIZE as u64) * (MIN_CORE_FEE_PER_BYTE as u64) * CREDITS_PER_DUFF;
-
 #[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
@@ -44,6 +36,7 @@ pub struct IdentityCreditWithdrawalTransitionV0 {
     pub amount: u64,
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,
+    /// If the send to output script is None, then we send the withdrawal to the address set by core
     pub output_script: CoreScript,
     pub nonce: IdentityNonce,
     pub user_fee_increase: UserFeeIncrease,

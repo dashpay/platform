@@ -12,6 +12,7 @@ mod limits;
 pub mod mocks;
 pub mod patches;
 pub mod v1;
+pub mod v2;
 
 pub type ProtocolVersion = u32;
 

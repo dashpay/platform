@@ -78,13 +78,13 @@ impl IdentityCreditWithdrawalTransitionAccessorsV0 for IdentityCreditWithdrawalT
         }
     }
 
-    fn output_script(&self) -> CoreScript {
+    fn output_script(&self) -> Option<CoreScript> {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.output_script.clone(),
         }
     }
 
-    fn set_output_script(&mut self, output_script: CoreScript) {
+    fn set_output_script(&mut self, output_script: Option<CoreScript>) {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => {
                 transition.output_script = output_script;

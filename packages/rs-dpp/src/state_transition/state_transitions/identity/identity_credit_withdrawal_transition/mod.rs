@@ -11,6 +11,7 @@ pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
+pub mod v1;
 
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
@@ -18,6 +19,7 @@ use crate::state_transition::StateTransitionFieldTypes;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
+use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
 use derive_more::From;
 use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
@@ -25,6 +27,14 @@ use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
+use crate::balances::credits::CREDITS_PER_DUFF;
+
+/// Minimal core per byte. Must be a fibonacci number
+pub const MIN_CORE_FEE_PER_BYTE: u32 = 1;
+
+/// Minimal amount in credits (x1000) to avoid "dust" error in Core
+pub const MIN_WITHDRAWAL_AMOUNT: u64 =
+    (ASSET_UNLOCK_TX_SIZE as u64) * (MIN_CORE_FEE_PER_BYTE as u64) * CREDITS_PER_DUFF;
 
 pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTransitionV0;
 
