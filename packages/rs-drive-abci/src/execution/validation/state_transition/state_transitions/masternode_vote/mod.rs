@@ -159,7 +159,7 @@ mod tests {
     };
     use dpp::fee::Credits;
     use drive::drive::Drive;
-    use crate::execution::validation::state_transition::state_transitions::tests::{create_dpns_identity_name_contest, verify_dpns_name_contest, perform_vote, setup_masternode_identity, get_proved_vote_states, get_vote_states, perform_votes_multi};
+    use crate::execution::validation::state_transition::state_transitions::tests::{create_dpns_identity_name_contest, verify_dpns_name_contest, perform_vote, setup_masternode_voting_identity, get_proved_vote_states, get_vote_states, perform_votes_multi};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::{finished_vote_info, FinishedVoteInfo};
     use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
     use dapi_grpc::platform::v0::get_vote_polls_by_end_date_request::get_vote_polls_by_end_date_request_v0;
@@ -1364,7 +1364,7 @@ mod tests {
                 );
 
                 let (pro_tx_hash_1, _masternode_1, signer_1, voting_key_1) =
-                    setup_masternode_identity(&mut platform, 29, platform_version);
+                    setup_masternode_voting_identity(&mut platform, 29, platform_version);
 
                 let platform_state = platform.state.load();
 
@@ -1514,7 +1514,7 @@ mod tests {
                 );
 
                 let (pro_tx_hash_1, _masternode_1, signer_1, voting_key_1) =
-                    setup_masternode_identity(&mut platform, 29, platform_version);
+                    setup_masternode_voting_identity(&mut platform, 29, platform_version);
 
                 let platform_state = platform.state.load();
 
@@ -3023,7 +3023,7 @@ mod tests {
 
                 for i in 0..50 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
-                        setup_masternode_identity(&mut platform, 10 + i, platform_version);
+                        setup_masternode_voting_identity(&mut platform, 10 + i, platform_version);
 
                     let platform_state = platform.state.load();
 
@@ -3044,7 +3044,7 @@ mod tests {
 
                 for i in 0..5 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
-                        setup_masternode_identity(&mut platform, 100 + i, platform_version);
+                        setup_masternode_voting_identity(&mut platform, 100 + i, platform_version);
 
                     let platform_state = platform.state.load();
 
@@ -3065,7 +3065,7 @@ mod tests {
 
                 for i in 0..8 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
-                        setup_masternode_identity(&mut platform, 200 + i, platform_version);
+                        setup_masternode_voting_identity(&mut platform, 200 + i, platform_version);
 
                     let platform_state = platform.state.load();
 
@@ -3147,7 +3147,7 @@ mod tests {
                 // let's add another 50 votes
                 for i in 0..50 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
-                        setup_masternode_identity(&mut platform, 400 + i, platform_version);
+                        setup_masternode_voting_identity(&mut platform, 400 + i, platform_version);
 
                     let platform_state = platform.state.load();
 
@@ -3183,7 +3183,7 @@ mod tests {
                 // let's add another vote
                 for i in 0..1 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
-                        setup_masternode_identity(&mut platform, 500 + i, platform_version);
+                        setup_masternode_voting_identity(&mut platform, 500 + i, platform_version);
 
                     let platform_state = platform.state.load();
 
@@ -3266,7 +3266,7 @@ mod tests {
 
                 for i in 0..50 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
-                        setup_masternode_identity(&mut platform, 10 + i, platform_version);
+                        setup_masternode_voting_identity(&mut platform, 10 + i, platform_version);
 
                     let platform_state = platform.state.load();
 
@@ -3287,7 +3287,7 @@ mod tests {
 
                 for i in 0..5 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
-                        setup_masternode_identity(&mut platform, 100 + i, platform_version);
+                        setup_masternode_voting_identity(&mut platform, 100 + i, platform_version);
 
                     let platform_state = platform.state.load();
 
@@ -3308,7 +3308,7 @@ mod tests {
 
                 for i in 0..8 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
-                        setup_masternode_identity(&mut platform, 200 + i, platform_version);
+                        setup_masternode_voting_identity(&mut platform, 200 + i, platform_version);
 
                     let platform_state = platform.state.load();
 
@@ -3583,7 +3583,7 @@ mod tests {
                     );
 
                 let (pro_tx_hash, _masternode, signer, voting_key) =
-                    setup_masternode_identity(&mut platform, 10, platform_version);
+                    setup_masternode_voting_identity(&mut platform, 10, platform_version);
 
                 // Now let's perform a few votes
 
@@ -3745,7 +3745,7 @@ mod tests {
                     );
 
                 let (pro_tx_hash, _masternode, signer, voting_key) =
-                    setup_masternode_identity(&mut platform, 10, platform_version);
+                    setup_masternode_voting_identity(&mut platform, 10, platform_version);
 
                 // Now let's perform a few votes
 
@@ -5554,7 +5554,7 @@ mod tests {
 
                 for i in 0..50 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
-                        setup_masternode_identity(&mut platform, 10 + i, platform_version);
+                        setup_masternode_voting_identity(&mut platform, 10 + i, platform_version);
 
                     let platform_state = platform.state.load();
 
@@ -5585,7 +5585,7 @@ mod tests {
 
                 for i in 0..5 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
-                        setup_masternode_identity(&mut platform, 100 + i, platform_version);
+                        setup_masternode_voting_identity(&mut platform, 100 + i, platform_version);
 
                     let platform_state = platform.state.load();
 
@@ -5662,7 +5662,7 @@ mod tests {
 
                 for i in 0..50 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
-                        setup_masternode_identity(&mut platform, 10 + i, platform_version);
+                        setup_masternode_voting_identity(&mut platform, 10 + i, platform_version);
 
                     let platform_state = platform.state.load();
 
@@ -5693,7 +5693,7 @@ mod tests {
 
                 for i in 0..5 {
                     let (pro_tx_hash, _masternode, signer, voting_key) =
-                        setup_masternode_identity(&mut platform, 100 + i, platform_version);
+                        setup_masternode_voting_identity(&mut platform, 100 + i, platform_version);
 
                     let platform_state = platform.state.load();
 
@@ -7104,7 +7104,7 @@ mod tests {
                 // now let's try to do another vote
 
                 let (pro_tx_hash, _masternode, signer, voting_key) =
-                    setup_masternode_identity(&mut platform, 5000, platform_version);
+                    setup_masternode_voting_identity(&mut platform, 5000, platform_version);
 
                 let platform_state = platform.state.load();
 
@@ -7293,7 +7293,7 @@ mod tests {
                 // now let's try to do another vote
 
                 let (pro_tx_hash, _masternode, signer, voting_key) =
-                    setup_masternode_identity(&mut platform, 5000, platform_version);
+                    setup_masternode_voting_identity(&mut platform, 5000, platform_version);
 
                 let platform_state = platform.state.load();
 
@@ -7595,7 +7595,7 @@ mod tests {
                 );
 
                 let (pro_tx_hash, _masternode, signer, voting_key) =
-                    setup_masternode_identity(&mut platform, 10, platform_version);
+                    setup_masternode_voting_identity(&mut platform, 10, platform_version);
 
                 let platform_state = platform.state.load();
 
@@ -7646,7 +7646,7 @@ mod tests {
                 );
 
                 let (pro_tx_hash, _masternode, signer, voting_key) =
-                    setup_masternode_identity(&mut platform, 10, platform_version);
+                    setup_masternode_voting_identity(&mut platform, 10, platform_version);
 
                 let platform_state = platform.state.load();
 
@@ -7727,7 +7727,7 @@ mod tests {
                 );
 
                 let (pro_tx_hash, _masternode, signer, voting_key) =
-                    setup_masternode_identity(&mut platform, 10, platform_version);
+                    setup_masternode_voting_identity(&mut platform, 10, platform_version);
 
                 let platform_state = platform.state.load();
 

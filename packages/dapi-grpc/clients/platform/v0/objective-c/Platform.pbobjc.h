@@ -112,6 +112,18 @@ CF_EXTERN_C_BEGIN
 @class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0;
 @class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal;
 @class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals;
+@class GetStatusRequest_GetStatusRequestV0;
+@class GetStatusResponse_GetStatusResponseV0;
+@class GetStatusResponse_GetStatusResponseV0_Chain;
+@class GetStatusResponse_GetStatusResponseV0_Network;
+@class GetStatusResponse_GetStatusResponseV0_Node;
+@class GetStatusResponse_GetStatusResponseV0_StateSync;
+@class GetStatusResponse_GetStatusResponseV0_Time;
+@class GetStatusResponse_GetStatusResponseV0_Version;
+@class GetStatusResponse_GetStatusResponseV0_Version_Protocol;
+@class GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive;
+@class GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash;
+@class GetStatusResponse_GetStatusResponseV0_Version_Software;
 @class GetTotalCreditsInPlatformRequest_GetTotalCreditsInPlatformRequestV0;
 @class GetTotalCreditsInPlatformResponse_GetTotalCreditsInPlatformResponseV0;
 @class GetVotePollsByEndDateRequest_GetVotePollsByEndDateRequestV0;
@@ -4153,6 +4165,329 @@ GPB_FINAL @interface GetPathElementsResponse_GetPathElementsResponseV0_Elements 
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *elementsArray;
 /** The number of items in @c elementsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger elementsArray_Count;
+
+@end
+
+#pragma mark - GetStatusRequest
+
+typedef GPB_ENUM(GetStatusRequest_FieldNumber) {
+  GetStatusRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetStatusRequest_Version_OneOfCase) {
+  GetStatusRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetStatusRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetStatusRequest : GPBMessage
+
+@property(nonatomic, readonly) GetStatusRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetStatusRequest_GetStatusRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetStatusRequest_ClearVersionOneOfCase(GetStatusRequest *message);
+
+#pragma mark - GetStatusRequest_GetStatusRequestV0
+
+GPB_FINAL @interface GetStatusRequest_GetStatusRequestV0 : GPBMessage
+
+@end
+
+#pragma mark - GetStatusResponse
+
+typedef GPB_ENUM(GetStatusResponse_FieldNumber) {
+  GetStatusResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetStatusResponse_Version_OneOfCase) {
+  GetStatusResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetStatusResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetStatusResponse : GPBMessage
+
+@property(nonatomic, readonly) GetStatusResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetStatusResponse_ClearVersionOneOfCase(GetStatusResponse *message);
+
+#pragma mark - GetStatusResponse_GetStatusResponseV0
+
+typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_FieldNumber) {
+  GetStatusResponse_GetStatusResponseV0_FieldNumber_Version = 1,
+  GetStatusResponse_GetStatusResponseV0_FieldNumber_Node = 2,
+  GetStatusResponse_GetStatusResponseV0_FieldNumber_Chain = 3,
+  GetStatusResponse_GetStatusResponseV0_FieldNumber_Network = 4,
+  GetStatusResponse_GetStatusResponseV0_FieldNumber_StateSync = 5,
+  GetStatusResponse_GetStatusResponseV0_FieldNumber_Time = 6,
+};
+
+GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0_Version *version;
+/** Test to see if @c version has been set. */
+@property(nonatomic, readwrite) BOOL hasVersion;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0_Node *node;
+/** Test to see if @c node has been set. */
+@property(nonatomic, readwrite) BOOL hasNode;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0_Chain *chain;
+/** Test to see if @c chain has been set. */
+@property(nonatomic, readwrite) BOOL hasChain;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0_Network *network;
+/** Test to see if @c network has been set. */
+@property(nonatomic, readwrite) BOOL hasNetwork;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0_StateSync *stateSync;
+/** Test to see if @c stateSync has been set. */
+@property(nonatomic, readwrite) BOOL hasStateSync;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0_Time *time;
+/** Test to see if @c time has been set. */
+@property(nonatomic, readwrite) BOOL hasTime;
+
+@end
+
+#pragma mark - GetStatusResponse_GetStatusResponseV0_Version
+
+typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Version_FieldNumber) {
+  GetStatusResponse_GetStatusResponseV0_Version_FieldNumber_Software = 1,
+  GetStatusResponse_GetStatusResponseV0_Version_FieldNumber_Protocol = 2,
+};
+
+GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Version : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0_Version_Software *software;
+/** Test to see if @c software has been set. */
+@property(nonatomic, readwrite) BOOL hasSoftware;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0_Version_Protocol *protocol;
+/** Test to see if @c protocol has been set. */
+@property(nonatomic, readwrite) BOOL hasProtocol;
+
+@end
+
+#pragma mark - GetStatusResponse_GetStatusResponseV0_Version_Software
+
+typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Version_Software_FieldNumber) {
+  GetStatusResponse_GetStatusResponseV0_Version_Software_FieldNumber_Dapi = 1,
+  GetStatusResponse_GetStatusResponseV0_Version_Software_FieldNumber_Drive = 2,
+  GetStatusResponse_GetStatusResponseV0_Version_Software_FieldNumber_Tenderdash = 3,
+};
+
+GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Version_Software : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *dapi;
+
+/** It will be missing if Drive is not responding */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *drive;
+/** Test to see if @c drive has been set. */
+@property(nonatomic, readwrite) BOOL hasDrive;
+
+/** It will be missing if Tenderdash is not responding */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *tenderdash;
+/** Test to see if @c tenderdash has been set. */
+@property(nonatomic, readwrite) BOOL hasTenderdash;
+
+@end
+
+#pragma mark - GetStatusResponse_GetStatusResponseV0_Version_Protocol
+
+typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Version_Protocol_FieldNumber) {
+  GetStatusResponse_GetStatusResponseV0_Version_Protocol_FieldNumber_Tenderdash = 1,
+  GetStatusResponse_GetStatusResponseV0_Version_Protocol_FieldNumber_Drive = 2,
+};
+
+GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Version_Protocol : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash *tenderdash;
+/** Test to see if @c tenderdash has been set. */
+@property(nonatomic, readwrite) BOOL hasTenderdash;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive *drive;
+/** Test to see if @c drive has been set. */
+@property(nonatomic, readwrite) BOOL hasDrive;
+
+@end
+
+#pragma mark - GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash
+
+typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash_FieldNumber) {
+  GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash_FieldNumber_P2P = 1,
+  GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash_FieldNumber_Block = 2,
+};
+
+GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash : GPBMessage
+
+@property(nonatomic, readwrite) uint32_t p2P;
+
+@property(nonatomic, readwrite) uint32_t block;
+
+@end
+
+#pragma mark - GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive
+
+typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber) {
+  GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber_Latest = 3,
+  GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber_Current = 4,
+};
+
+GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive : GPBMessage
+
+@property(nonatomic, readwrite) uint32_t latest;
+
+@property(nonatomic, readwrite) uint32_t current;
+
+@end
+
+#pragma mark - GetStatusResponse_GetStatusResponseV0_Time
+
+typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Time_FieldNumber) {
+  GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Local = 1,
+  GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Block = 2,
+  GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Genesis = 3,
+  GetStatusResponse_GetStatusResponseV0_Time_FieldNumber_Epoch = 4,
+};
+
+GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Time : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t local;
+
+/** It will be missing if Drive is not responding */
+@property(nonatomic, readwrite) uint64_t block;
+
+@property(nonatomic, readwrite) BOOL hasBlock;
+/** It will be missing if Drive is not responding */
+@property(nonatomic, readwrite) uint64_t genesis;
+
+@property(nonatomic, readwrite) BOOL hasGenesis;
+/** It will be missing if Drive is not responding */
+@property(nonatomic, readwrite) uint32_t epoch;
+
+@property(nonatomic, readwrite) BOOL hasEpoch;
+@end
+
+#pragma mark - GetStatusResponse_GetStatusResponseV0_Node
+
+typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Node_FieldNumber) {
+  GetStatusResponse_GetStatusResponseV0_Node_FieldNumber_Id_p = 1,
+  GetStatusResponse_GetStatusResponseV0_Node_FieldNumber_ProTxHash = 2,
+};
+
+GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Node : GPBMessage
+
+/** Platform node ID */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
+
+/** Evo masternode pro tx hash. It will be absent if the node is a fullnode */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *proTxHash;
+/** Test to see if @c proTxHash has been set. */
+@property(nonatomic, readwrite) BOOL hasProTxHash;
+
+@end
+
+#pragma mark - GetStatusResponse_GetStatusResponseV0_Chain
+
+typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber) {
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_CatchingUp = 1,
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_LatestBlockHash = 2,
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_LatestAppHash = 3,
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_LatestBlockHeight = 4,
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestBlockHash = 5,
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestAppHash = 6,
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_EarliestBlockHeight = 7,
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_MaxPeerBlockHeight = 9,
+  GetStatusResponse_GetStatusResponseV0_Chain_FieldNumber_CoreChainLockedHeight = 10,
+};
+
+GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Chain : GPBMessage
+
+@property(nonatomic, readwrite) BOOL catchingUp;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *latestBlockHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *latestAppHash;
+
+@property(nonatomic, readwrite) uint64_t latestBlockHeight;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *earliestBlockHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *earliestAppHash;
+
+@property(nonatomic, readwrite) uint64_t earliestBlockHeight;
+
+@property(nonatomic, readwrite) uint64_t maxPeerBlockHeight;
+
+/**
+ * Latest known core height in consensus.
+ * It will be missing if Drive is not responding
+ **/
+@property(nonatomic, readwrite) uint32_t coreChainLockedHeight;
+
+@property(nonatomic, readwrite) BOOL hasCoreChainLockedHeight;
+@end
+
+#pragma mark - GetStatusResponse_GetStatusResponseV0_Network
+
+typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Network_FieldNumber) {
+  GetStatusResponse_GetStatusResponseV0_Network_FieldNumber_ChainId = 1,
+  GetStatusResponse_GetStatusResponseV0_Network_FieldNumber_PeersCount = 2,
+  GetStatusResponse_GetStatusResponseV0_Network_FieldNumber_Listening = 3,
+};
+
+GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Network : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *chainId;
+
+@property(nonatomic, readwrite) uint32_t peersCount;
+
+@property(nonatomic, readwrite) BOOL listening;
+
+@end
+
+#pragma mark - GetStatusResponse_GetStatusResponseV0_StateSync
+
+typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_StateSync_FieldNumber) {
+  GetStatusResponse_GetStatusResponseV0_StateSync_FieldNumber_TotalSyncedTime = 1,
+  GetStatusResponse_GetStatusResponseV0_StateSync_FieldNumber_RemainingTime = 2,
+  GetStatusResponse_GetStatusResponseV0_StateSync_FieldNumber_TotalSnapshots = 3,
+  GetStatusResponse_GetStatusResponseV0_StateSync_FieldNumber_ChunkProcessAvgTime = 4,
+  GetStatusResponse_GetStatusResponseV0_StateSync_FieldNumber_SnapshotHeight = 5,
+  GetStatusResponse_GetStatusResponseV0_StateSync_FieldNumber_SnapshotChunksCount = 6,
+  GetStatusResponse_GetStatusResponseV0_StateSync_FieldNumber_BackfilledBlocks = 7,
+  GetStatusResponse_GetStatusResponseV0_StateSync_FieldNumber_BackfillBlocksTotal = 8,
+};
+
+GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_StateSync : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t totalSyncedTime;
+
+@property(nonatomic, readwrite) uint64_t remainingTime;
+
+@property(nonatomic, readwrite) uint32_t totalSnapshots;
+
+@property(nonatomic, readwrite) uint64_t chunkProcessAvgTime;
+
+@property(nonatomic, readwrite) uint64_t snapshotHeight;
+
+@property(nonatomic, readwrite) uint64_t snapshotChunksCount;
+
+@property(nonatomic, readwrite) uint64_t backfilledBlocks;
+
+@property(nonatomic, readwrite) uint64_t backfillBlocksTotal;
 
 @end
 

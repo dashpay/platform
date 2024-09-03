@@ -51,7 +51,7 @@ impl ValidationMode {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+pub(in crate::execution) mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::block::block_info::BlockInfo;
@@ -80,6 +80,7 @@ pub(crate) mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContract;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::DocumentTypeRef;
     use dpp::data_contract::document_type::random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType};
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -88,7 +89,8 @@ pub(crate) mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
-    use dpp::platform_value::{Bytes32, Value};
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::platform_value::{BinaryData, Bytes32, Value};
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -125,7 +127,7 @@ pub(crate) mod tests {
     use crate::execution::types::processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome;
 
     /// We add an identity, but we also add the same amount to system credits
-    pub(crate) fn setup_identity_with_system_credits(
+    pub(in crate::execution) fn setup_identity_with_system_credits(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         credits: Credits,
@@ -138,7 +140,7 @@ pub(crate) mod tests {
         setup_identity(platform, seed, credits)
     }
 
-    pub(crate) fn setup_identity(
+    pub(in crate::execution) fn setup_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         credits: Credits,
@@ -196,7 +198,7 @@ pub(crate) mod tests {
         (identity, signer, critical_public_key)
     }
 
-    pub(crate) fn setup_identity_return_master_key(
+    pub(in crate::execution) fn setup_identity_return_master_key(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         credits: Credits,
@@ -299,7 +301,7 @@ pub(crate) mod tests {
         key
     }
 
-    pub(crate) fn setup_identity_with_withdrawal_key_and_system_credits(
+    pub(in crate::execution) fn setup_identity_with_withdrawal_key_and_system_credits(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         credits: Credits,
@@ -379,7 +381,7 @@ pub(crate) mod tests {
         (identity, signer, critical_public_key, withdrawal_public_key)
     }
 
-    pub(crate) fn process_state_transitions(
+    pub(in crate::execution) fn process_state_transitions(
         platform: &TempPlatform<MockCoreRPCLike>,
         state_transitions: &[StateTransition],
         block_info: BlockInfo,
@@ -453,7 +455,7 @@ pub(crate) mod tests {
         (fee_results, processed_block_fees)
     }
 
-    pub(crate) fn fetch_expected_identity_balance(
+    pub(in crate::execution) fn fetch_expected_identity_balance(
         platform: &TempPlatform<MockCoreRPCLike>,
         identity_id: Identifier,
         platform_version: &PlatformVersion,
@@ -468,7 +470,8 @@ pub(crate) mod tests {
                 .expect("expected a balance")
         );
     }
-    pub(crate) fn setup_masternode_identity(
+
+    pub(in crate::execution) fn setup_masternode_voting_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         platform_version: &PlatformVersion,
@@ -557,7 +560,7 @@ pub(crate) mod tests {
         (pro_tx_hash_bytes.into(), identity, signer, voting_key)
     }
 
-    pub(crate) fn take_down_masternode_identities(
+    pub(in crate::execution) fn take_down_masternode_identities(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         masternode_identities: &Vec<Identifier>,
     ) {
@@ -574,7 +577,7 @@ pub(crate) mod tests {
         platform.state.store(Arc::new(platform_state));
     }
 
-    pub(crate) fn create_dpns_name_contest_give_key_info(
+    pub(in crate::execution) fn create_dpns_name_contest_give_key_info(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -645,7 +648,7 @@ pub(crate) mod tests {
         )
     }
 
-    pub(crate) fn create_dpns_identity_name_contest(
+    pub(in crate::execution) fn create_dpns_identity_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -678,7 +681,7 @@ pub(crate) mod tests {
         (identity_1_info.0, identity_2_info.0, dpns_contract)
     }
 
-    pub(crate) fn create_dpns_contract_name_contest(
+    pub(in crate::execution) fn create_dpns_contract_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -1287,7 +1290,7 @@ pub(crate) mod tests {
         )
     }
 
-    pub(crate) fn add_contender_to_dpns_name_contest(
+    pub(in crate::execution) fn add_contender_to_dpns_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -1468,7 +1471,7 @@ pub(crate) mod tests {
         identity_1
     }
 
-    pub(crate) fn verify_dpns_name_contest(
+    pub(in crate::execution) fn verify_dpns_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &Guard<Arc<PlatformState>>,
         dpns_contract: &DataContract,
@@ -1676,7 +1679,7 @@ pub(crate) mod tests {
         assert_eq!(second_contender.vote_tally(), Some(0));
     }
 
-    pub(crate) fn perform_vote(
+    pub(in crate::execution) fn perform_vote(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &Guard<Arc<PlatformState>>,
         dpns_contract: &DataContract,
@@ -1755,7 +1758,7 @@ pub(crate) mod tests {
         }
     }
 
-    pub(crate) fn perform_votes(
+    pub(in crate::execution) fn perform_votes(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         dpns_contract: &DataContract,
         resource_vote_choice: ResourceVoteChoice,
@@ -1767,7 +1770,7 @@ pub(crate) mod tests {
         let mut masternode_infos = vec![];
         for i in 0..count {
             let (pro_tx_hash_bytes, voting_identity, signer, voting_key) =
-                setup_masternode_identity(platform, start_seed + i, platform_version);
+                setup_masternode_voting_identity(platform, start_seed + i, platform_version);
 
             let platform_state = platform.state.load();
 
@@ -1790,7 +1793,7 @@ pub(crate) mod tests {
         masternode_infos
     }
 
-    pub(crate) fn perform_votes_multi(
+    pub(in crate::execution) fn perform_votes_multi(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         dpns_contract: &DataContract,
         resource_vote_choices: Vec<(ResourceVoteChoice, u64)>,
@@ -1817,7 +1820,7 @@ pub(crate) mod tests {
         masternodes_by_vote_choice
     }
 
-    pub(crate) fn get_vote_states(
+    pub(in crate::execution) fn get_vote_states(
         platform: &TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         dpns_contract: &DataContract,
@@ -1923,7 +1926,7 @@ pub(crate) mod tests {
         )
     }
 
-    pub(crate) fn get_proved_vote_states(
+    pub(in crate::execution) fn get_proved_vote_states(
         platform: &TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         dpns_contract: &DataContract,
