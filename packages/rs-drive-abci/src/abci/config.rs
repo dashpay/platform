@@ -1,5 +1,7 @@
 //! Configuration of ABCI Application server
 
+use std::path::PathBuf;
+
 use crate::utils::from_opt_str_or_number;
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +36,10 @@ pub struct AbciConfig {
     #[serde(default)]
     pub log: crate::logging::LogConfigs,
 
+    /// Directory to dump ABCI requests and responses for debugging
+    #[serde(default)]
+    pub dump_dir: Option<PathBuf>,
+
     /// Maximum time limit (in ms) to process state transitions to prepare proposal
     #[serde(default, deserialize_with = "from_opt_str_or_number")]
     pub proposer_tx_processing_time_limit: Option<u16>,
@@ -58,6 +64,7 @@ impl Default for AbciConfig {
             chain_id: "chain_id".to_string(),
             log: Default::default(),
             proposer_tx_processing_time_limit: Default::default(),
+            dump_dir: Default::default(),
         }
     }
 }
