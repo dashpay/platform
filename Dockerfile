@@ -190,6 +190,8 @@ RUN touch /platform/packages/dapi-grpc/build.rs
 # This will prebuild majority of dependencies
 FROM sources AS build-drive-abci
 
+SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
+
 ARG SCCACHE_S3_KEY_PREFIX
 ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
 
@@ -201,12 +203,21 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
+        mv .cargo/config-release.toml .cargo/config.toml && \
+        export OUT_DIRECTORY=release ; \
+    else \
+        export FEATURES_FLAG="--features=console,grovedbg" ; \
+        export OUT_DIRECTORY=debug ; \
+        
+    fi && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
-        --profile "$CARGO_BUILD_PROFILE" \
+        --profile "${CARGO_BUILD_PROFILE}" \
         --package drive-abci \
+        ${FEATURES_FLAG} \
         --locked && \
-    cp /platform/target/*/drive-abci /artifacts/ && \
+    cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
     if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
 
 #
