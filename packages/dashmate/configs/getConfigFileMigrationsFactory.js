@@ -853,6 +853,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.3.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.docker.image = 'dashpay/dashd:21.2.0-nightly.2024.09.0';
+          });
+        return configFile;
+      },
     };
   }
 
