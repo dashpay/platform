@@ -17,7 +17,7 @@ where
     ) -> Result<Identity, Error> {
         let owner_identifier = Self::get_owner_identifier(masternode)?;
         let mut identity = Identity::create_basic_identity(owner_identifier, platform_version)?;
-        identity.add_public_keys([Self::get_owner_identity_key(
+        identity.add_public_keys([Self::get_owner_identity_withdrawal_key(
             masternode.state.payout_address,
             0,
             platform_version,

@@ -253,6 +253,15 @@ Platform.getPathElements = {
   responseType: platform_pb.GetPathElementsResponse
 };
 
+Platform.getStatus = {
+  methodName: "getStatus",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetStatusRequest,
+  responseType: platform_pb.GetStatusResponse
+};
+
 exports.Platform = Platform;
 
 function PlatformClient(serviceHost, options) {
@@ -1071,6 +1080,37 @@ PlatformClient.prototype.getPathElements = function getPathElements(requestMessa
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getPathElements, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getStatus = function getStatus(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getStatus, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

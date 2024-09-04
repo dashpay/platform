@@ -675,5 +675,25 @@
              responseClass:[GetPathElementsResponse class]];
 }
 
+#pragma mark getStatus(GetStatusRequest) returns (GetStatusResponse)
+
+- (void)getStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetStatusWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getStatus"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetStatusResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getStatusWithMessage:(GetStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getStatus"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetStatusResponse class]];
+}
+
 @end
 #endif

@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/platform-test-suite",
   "private": true,
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Dash Network end-to-end tests",
   "scripts": {
     "test": "yarn exec bin/test.sh",
@@ -73,7 +73,7 @@
     "url": "^0.11.3",
     "utf-8-validate": "^5.0.9",
     "util": "^0.12.4",
-    "webpack": "^5.76.1",
+    "webpack": "^5.94.0",
     "ws": "^8.17.1"
   },
   "devDependencies": {

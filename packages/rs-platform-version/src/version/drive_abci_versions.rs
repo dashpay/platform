@@ -59,6 +59,7 @@ pub struct DriveAbciQuerySystemVersions {
     pub version_upgrade_state: FeatureVersionBounds,
     pub version_upgrade_vote_status: FeatureVersionBounds,
     pub epoch_infos: FeatureVersionBounds,
+    pub partial_status: FeatureVersionBounds,
     pub path_elements: FeatureVersionBounds,
     pub total_credits_in_platform: FeatureVersionBounds,
 }
@@ -228,7 +229,7 @@ pub struct DriveAbciCoreBasedUpdatesMethodVersions {
 pub struct DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
     pub get_voter_identity_key: FeatureVersion,
     pub get_operator_identity_keys: FeatureVersion,
-    pub get_owner_identity_key: FeatureVersion,
+    pub get_owner_identity_withdrawal_key: FeatureVersion,
     pub get_voter_identifier_from_masternode_list_item: FeatureVersion,
     pub get_operator_identifier_from_masternode_list_item: FeatureVersion,
     pub create_operator_identity: FeatureVersion,

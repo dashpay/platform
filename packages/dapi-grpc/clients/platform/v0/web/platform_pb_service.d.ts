@@ -247,6 +247,15 @@ type PlatformgetPathElements = {
   readonly responseType: typeof platform_pb.GetPathElementsResponse;
 };
 
+type PlatformgetStatus = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetStatusRequest;
+  readonly responseType: typeof platform_pb.GetStatusResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -276,6 +285,7 @@ export class Platform {
   static readonly getPrefundedSpecializedBalance: PlatformgetPrefundedSpecializedBalance;
   static readonly getTotalCreditsInPlatform: PlatformgetTotalCreditsInPlatform;
   static readonly getPathElements: PlatformgetPathElements;
+  static readonly getStatus: PlatformgetStatus;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -552,6 +562,15 @@ export class PlatformClient {
   getPathElements(
     requestMessage: platform_pb.GetPathElementsRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetPathElementsResponse|null) => void
+  ): UnaryResponse;
+  getStatus(
+    requestMessage: platform_pb.GetStatusRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetStatusResponse|null) => void
+  ): UnaryResponse;
+  getStatus(
+    requestMessage: platform_pb.GetStatusRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetStatusResponse|null) => void
   ): UnaryResponse;
 }
 

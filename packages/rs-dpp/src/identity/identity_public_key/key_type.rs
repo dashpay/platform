@@ -58,7 +58,8 @@ lazy_static! {
         (KeyType::ECDSA_SECP256K1, 33),
         (KeyType::BLS12_381, 48),
         (KeyType::ECDSA_HASH160, 20),
-        (KeyType::BIP13_SCRIPT_HASH, 20)
+        (KeyType::BIP13_SCRIPT_HASH, 20),
+        (KeyType::EDDSA_25519_HASH160, 20)
     ]
     .iter()
     .copied()

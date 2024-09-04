@@ -14,6 +14,7 @@ const getIdentityContractNonceFactory = require('./getIdentityContractNonce/getI
 const getIdentityNonceFactory = require('./getIdentityNonce/getIdentityNonceFactory');
 const getIdentityKeysFactory = require('./getIdentityKeys/getIdentityKeysFactory');
 const getTotalCreditsInPlatformFactory = require('./getTotalCreditsInPlatform/getTotalCreditsInPlatformFactory');
+const getStatusFactory = require('./getStatus/getStatusFactory');
 
 class PlatformMethodsFacade {
   /**
@@ -38,6 +39,7 @@ class PlatformMethodsFacade {
     this.getIdentityNonce = getIdentityNonceFactory(grpcTransport);
     this.getIdentityKeys = getIdentityKeysFactory(grpcTransport);
     this.getTotalCreditsInPlatform = getTotalCreditsInPlatformFactory(grpcTransport);
+    this.getStatus = getStatusFactory(grpcTransport);
   }
 }
 

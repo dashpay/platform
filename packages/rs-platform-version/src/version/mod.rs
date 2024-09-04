@@ -1,5 +1,5 @@
 mod protocol_version;
-use crate::version::v1::PROTOCOL_VERSION_1;
+use crate::version::v2::PROTOCOL_VERSION_2;
 pub use protocol_version::*;
 
 pub mod contracts;
@@ -12,8 +12,9 @@ mod limits;
 pub mod mocks;
 pub mod patches;
 pub mod v1;
+pub mod v2;
 
 pub type ProtocolVersion = u32;
 
-pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_1;
+pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_2;
 pub const INITIAL_PROTOCOL_VERSION: ProtocolVersion = 1;
