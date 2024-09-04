@@ -28,7 +28,7 @@ class GetIdentityBalanceResponse extends AbstractResponse {
     const balance = proto.getV0().getBalance();
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
-    if (!balance && !proof) {
+    if ((balance === null || balance === undefined) && !proof) {
       throw new InvalidResponseError('Balance is not defined');
     }
 
