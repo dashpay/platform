@@ -7,6 +7,10 @@
 
 Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)
 
+**Warning: Although this SDK provides easy access to Dash Platform without requiring a full node,
+it does not support Dash Platform proofs. Therefore, it is less secure than the [Rust
+SDK](../rs-sdk/), which requests proofs for all queried data.**
+
 Dash library provides access via [DAPI](https://dashplatform.readme.io/docs/explanation-dapi) to use both the Dash Core network and Dash Platform on [supported networks](https://github.com/dashpay/platform/#supported-networks). The Dash Core network can be used to broadcast and receive payments. Dash Platform can be used to manage identities, register data contracts for applications, and submit or retrieve application data via documents.
 
 ## Table of Contents
