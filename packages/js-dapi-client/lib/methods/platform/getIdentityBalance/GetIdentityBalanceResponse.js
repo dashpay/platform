@@ -3,7 +3,7 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 class GetIdentityBalanceResponse extends AbstractResponse {
   /**
-   * @param {Buffer} identity
+   * @param {number} balance
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
@@ -14,9 +14,9 @@ class GetIdentityBalanceResponse extends AbstractResponse {
   }
 
   /**
-   * @returns {Buffer}
+   * @returns {number}
    */
-  getIdentity() {
+  getBalance() {
     return this.balance;
   }
 
