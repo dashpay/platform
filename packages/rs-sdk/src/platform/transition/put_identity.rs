@@ -1,19 +1,17 @@
+use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
-
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dapi_grpc::tonic::Code;
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
 use dpp::prelude::{AssetLockProof, Identity};
-use drive_proof_verifier::error::ContextProviderError;
-use drive_proof_verifier::DataContractProvider;
-
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use drive::drive::Drive;
+use drive_proof_verifier::error::ContextProviderError;
+use drive_proof_verifier::DataContractProvider;
 use rs_dapi_client::{DapiClientError, DapiRequest, RequestSettings};
 
 #[async_trait::async_trait]
