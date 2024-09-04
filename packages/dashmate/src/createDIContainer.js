@@ -116,6 +116,7 @@ import verifySystemRequirementsTaskFactory
 import analyseSamplesTaskFactory from './listr/tasks/doctor/analyseSamplesTaskFactory.js';
 import collectSamplesTaskFactory from './listr/tasks/doctor/collectSamplesTaskFactory.js';
 import prescriptionTaskFactory from './listr/tasks/doctor/prescriptionTaskFactory.js';
+import verifySystemRequirementsFactory from './doctor/verifySystemRequirementsFactory.js';
 
 /**
  * @param {Object} [options]
@@ -312,6 +313,13 @@ export default async function createDIContainer(options = {}) {
     analyseSamplesTask: asFunction(analyseSamplesTaskFactory).singleton(),
     collectSamplesTask: asFunction(collectSamplesTaskFactory).singleton(),
     prescriptionTask: asFunction(prescriptionTaskFactory).singleton(),
+  });
+
+  /**
+   * Doctor
+   */
+  container.register({
+    verifySystemRequirements: asFunction(verifySystemRequirementsFactory),
   });
 
   /**
