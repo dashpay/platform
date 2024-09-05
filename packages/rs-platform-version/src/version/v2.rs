@@ -80,10 +80,9 @@ use crate::version::limits::SystemLimits;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{PlatformArchitectureVersion, ProtocolVersion};
 use grovedb_version::version::v1::GROVE_V1;
+pub const PROTOCOL_VERSION_2: ProtocolVersion = 2;
 
-pub const PROTOCOL_VERSION_1: ProtocolVersion = 2;
-
-pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
+pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
     protocol_version: 1,
     proofs: FeatureVersionBounds {
         min_version: 0,

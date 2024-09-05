@@ -201,6 +201,12 @@ fn main() -> Result<(), ExitCode> {
     install_panic_hook(cancel.clone());
 
     // Start runtime in the main thread
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        features = list_enabled_features().join(","),
+        rust = env!("CARGO_PKG_RUST_VERSION"),
+        "drive-abci server initializing",
+    );
 
     let runtime_guard = runtime.enter();
 
@@ -280,6 +286,19 @@ fn dump_config(config: &PlatformConfig) -> Result<(), String> {
     println!("{}", serialized);
 
     Ok(())
+}
+
+fn list_enabled_features() -> Vec<&'static str> {
+    vec![
+        #[cfg(feature = "console")]
+        "console",
+        #[cfg(feature = "testing-config")]
+        "testing-config",
+        #[cfg(feature = "grovedbg")]
+        "grovedbg",
+        #[cfg(feature = "mocks")]
+        "mocks",
+    ]
 }
 
 /// Check status of ABCI server.
