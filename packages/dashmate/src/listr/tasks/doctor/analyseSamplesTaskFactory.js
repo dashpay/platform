@@ -30,6 +30,7 @@ export default function analyseSamplesTaskFactory(
             diskSpace,
             fsOpenFiles,
             memory,
+            diskIO,
           } = ctx.samples.getSystemInfo();
 
           ctx.systemResourceProblems = verifySystemRequirements(
@@ -119,7 +120,24 @@ export default function analyseSamplesTaskFactory(
                 }
               },
             },
-            // TODO: Disk IO
+            {
+              title: 'Disk IO',
+              enabled: diskIO?.tWaitPercent,
+              task: (_ctx, task) => {
+                const THRESHOLD = 40;
+
+                const maxDiskIOWaitPercent = Math.max(
+                  diskIO.rWaitPercent,
+                  diskIO.wWaitPercent,
+                  diskIO.tWaitPercent,
+                ) * 100;
+
+                if (maxDiskIOWaitPercent > THRESHOLD) {
+                  ctx.systemResourceProblems.diskIO = `Disk IO wait time is ${maxDiskIOWaitPercent.toFixed(0)}%. Consider to upgrade to faster disk.`;
+                  throw new Error(task.title);
+                }
+              },
+            },
           ], {
             exitOnError: false,
           });
