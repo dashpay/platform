@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "1.2.0-rc.1"
+version = "1.2.0"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -103,8 +103,8 @@ rocksdb = { version = "0.22.0" }
 integer-encoding = { version = "4.0.0" }
 
 [features]
-# TODO: Remove console for production
-default = ["mocks", "console"]
+
+default = ["mocks"]
 mocks = ["mockall", "drive/fixtures-and-mocks"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
@@ -113,4 +113,3 @@ grovedbg = ["drive/grovedbg"]
 [[bin]]
 name = "drive-abci"
 path = "src/main.rs"
-required-features = ["console"]
