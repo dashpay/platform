@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e -o pipefail
+
 # Function to display help
 show_help() {
     echo "Usage: $0 OLD_BASE NEW_BASE"
