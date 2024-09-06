@@ -200,7 +200,7 @@ impl TryFromRequest<GetContestedResourceIdentityVotesRequest>
         }
 
         Ok(proto::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0 {
-                        prove: true,
+                    prove: true,
                     identity_id: self.identity_id.to_vec(),
                     offset: self.offset.map(|x| x as u32),
                     limit: self.limit.map(|x| x as u32),

@@ -1,9 +1,9 @@
 [package]
 name = "data-contracts"
 description = "Dash Platform system data contracts"
-version = "1.1.1"
+version = "1.2.0"
 edition = "2021"
-rust-version = "1.76"
+rust-version.workspace = true
 license = "MIT"
 
 [dependencies]

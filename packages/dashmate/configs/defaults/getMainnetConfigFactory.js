@@ -71,7 +71,7 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
               ttlNumBlocks: 0,
             },
             genesis: {
-              chain_id: 'dash-1',
+              chain_id: 'evo1',
               validator_quorum_type: 4,
             },
           },

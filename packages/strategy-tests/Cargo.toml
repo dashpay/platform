@@ -1,13 +1,13 @@
 [package]
 name = "strategy-tests"
-version = "1.1.1"
+version = "1.2.0"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
   "Paul DeLucia <paul.delucia@dash.org>",
 ]
 edition = "2021"
-rust-version = "1.76"
+rust-version.workspace = true
 license = "MIT"
 
 [dependencies]

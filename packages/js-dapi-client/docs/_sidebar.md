@@ -18,6 +18,7 @@
                 - [.subscribeToMasternodeList()](usage/application/core/subscribeToMasternodeList.md)
             - Platform 
                 - [.broadcastStateTransition()](usage/application/platform/broadcastStateTransition.md)
+                - [.getStatus()](usage/application/platform/getStatus.md)
                 - [.getDataContract()](usage/application/platform/getDataContract.md)
                 - [.getDocuments()](usage/application/platform/getDocuments.md)
                 - [.getIdentityByFirstPublicKey()](usage/application/platform/getIdentityByFirstPublicKey.md)

@@ -28,8 +28,8 @@ use dapi_grpc::platform::v0::{
     GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
-    GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse,
-    GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    GetStatusRequest, GetStatusResponse, GetTotalCreditsInPlatformRequest,
+    GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
@@ -542,6 +542,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_total_credits_in_platform,
             "get_total_credits_in_platform",
+        )
+        .await
+    }
+
+    async fn get_status(
+        &self,
+        request: Request<GetStatusRequest>,
+    ) -> Result<Response<GetStatusResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_partial_status,
+            "query_partial_status",
         )
         .await
     }

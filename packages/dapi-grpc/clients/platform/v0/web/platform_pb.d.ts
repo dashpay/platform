@@ -4913,6 +4913,472 @@ export namespace GetPathElementsResponse {
   }
 }
 
+export class GetStatusRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetStatusRequest.GetStatusRequestV0 | undefined;
+  setV0(value?: GetStatusRequest.GetStatusRequestV0): void;
+
+  getVersionCase(): GetStatusRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetStatusRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetStatusRequest): GetStatusRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetStatusRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetStatusRequest;
+  static deserializeBinaryFromReader(message: GetStatusRequest, reader: jspb.BinaryReader): GetStatusRequest;
+}
+
+export namespace GetStatusRequest {
+  export type AsObject = {
+    v0?: GetStatusRequest.GetStatusRequestV0.AsObject,
+  }
+
+  export class GetStatusRequestV0 extends jspb.Message {
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetStatusRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetStatusRequestV0): GetStatusRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetStatusRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetStatusRequestV0;
+    static deserializeBinaryFromReader(message: GetStatusRequestV0, reader: jspb.BinaryReader): GetStatusRequestV0;
+  }
+
+  export namespace GetStatusRequestV0 {
+    export type AsObject = {
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetStatusResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetStatusResponse.GetStatusResponseV0 | undefined;
+  setV0(value?: GetStatusResponse.GetStatusResponseV0): void;
+
+  getVersionCase(): GetStatusResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetStatusResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetStatusResponse): GetStatusResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetStatusResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetStatusResponse;
+  static deserializeBinaryFromReader(message: GetStatusResponse, reader: jspb.BinaryReader): GetStatusResponse;
+}
+
+export namespace GetStatusResponse {
+  export type AsObject = {
+    v0?: GetStatusResponse.GetStatusResponseV0.AsObject,
+  }
+
+  export class GetStatusResponseV0 extends jspb.Message {
+    hasVersion(): boolean;
+    clearVersion(): void;
+    getVersion(): GetStatusResponse.GetStatusResponseV0.Version | undefined;
+    setVersion(value?: GetStatusResponse.GetStatusResponseV0.Version): void;
+
+    hasNode(): boolean;
+    clearNode(): void;
+    getNode(): GetStatusResponse.GetStatusResponseV0.Node | undefined;
+    setNode(value?: GetStatusResponse.GetStatusResponseV0.Node): void;
+
+    hasChain(): boolean;
+    clearChain(): void;
+    getChain(): GetStatusResponse.GetStatusResponseV0.Chain | undefined;
+    setChain(value?: GetStatusResponse.GetStatusResponseV0.Chain): void;
+
+    hasNetwork(): boolean;
+    clearNetwork(): void;
+    getNetwork(): GetStatusResponse.GetStatusResponseV0.Network | undefined;
+    setNetwork(value?: GetStatusResponse.GetStatusResponseV0.Network): void;
+
+    hasStateSync(): boolean;
+    clearStateSync(): void;
+    getStateSync(): GetStatusResponse.GetStatusResponseV0.StateSync | undefined;
+    setStateSync(value?: GetStatusResponse.GetStatusResponseV0.StateSync): void;
+
+    hasTime(): boolean;
+    clearTime(): void;
+    getTime(): GetStatusResponse.GetStatusResponseV0.Time | undefined;
+    setTime(value?: GetStatusResponse.GetStatusResponseV0.Time): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetStatusResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetStatusResponseV0): GetStatusResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetStatusResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetStatusResponseV0;
+    static deserializeBinaryFromReader(message: GetStatusResponseV0, reader: jspb.BinaryReader): GetStatusResponseV0;
+  }
+
+  export namespace GetStatusResponseV0 {
+    export type AsObject = {
+      version?: GetStatusResponse.GetStatusResponseV0.Version.AsObject,
+      node?: GetStatusResponse.GetStatusResponseV0.Node.AsObject,
+      chain?: GetStatusResponse.GetStatusResponseV0.Chain.AsObject,
+      network?: GetStatusResponse.GetStatusResponseV0.Network.AsObject,
+      stateSync?: GetStatusResponse.GetStatusResponseV0.StateSync.AsObject,
+      time?: GetStatusResponse.GetStatusResponseV0.Time.AsObject,
+    }
+
+    export class Version extends jspb.Message {
+      hasSoftware(): boolean;
+      clearSoftware(): void;
+      getSoftware(): GetStatusResponse.GetStatusResponseV0.Version.Software | undefined;
+      setSoftware(value?: GetStatusResponse.GetStatusResponseV0.Version.Software): void;
+
+      hasProtocol(): boolean;
+      clearProtocol(): void;
+      getProtocol(): GetStatusResponse.GetStatusResponseV0.Version.Protocol | undefined;
+      setProtocol(value?: GetStatusResponse.GetStatusResponseV0.Version.Protocol): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Version.AsObject;
+      static toObject(includeInstance: boolean, msg: Version): Version.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Version, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Version;
+      static deserializeBinaryFromReader(message: Version, reader: jspb.BinaryReader): Version;
+    }
+
+    export namespace Version {
+      export type AsObject = {
+        software?: GetStatusResponse.GetStatusResponseV0.Version.Software.AsObject,
+        protocol?: GetStatusResponse.GetStatusResponseV0.Version.Protocol.AsObject,
+      }
+
+      export class Software extends jspb.Message {
+        getDapi(): string;
+        setDapi(value: string): void;
+
+        hasDrive(): boolean;
+        clearDrive(): void;
+        getDrive(): string;
+        setDrive(value: string): void;
+
+        hasTenderdash(): boolean;
+        clearTenderdash(): void;
+        getTenderdash(): string;
+        setTenderdash(value: string): void;
+
+        serializeBinary(): Uint8Array;
+        toObject(includeInstance?: boolean): Software.AsObject;
+        static toObject(includeInstance: boolean, msg: Software): Software.AsObject;
+        static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+        static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+        static serializeBinaryToWriter(message: Software, writer: jspb.BinaryWriter): void;
+        static deserializeBinary(bytes: Uint8Array): Software;
+        static deserializeBinaryFromReader(message: Software, reader: jspb.BinaryReader): Software;
+      }
+
+      export namespace Software {
+        export type AsObject = {
+          dapi: string,
+          drive: string,
+          tenderdash: string,
+        }
+      }
+
+      export class Protocol extends jspb.Message {
+        hasTenderdash(): boolean;
+        clearTenderdash(): void;
+        getTenderdash(): GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash | undefined;
+        setTenderdash(value?: GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash): void;
+
+        hasDrive(): boolean;
+        clearDrive(): void;
+        getDrive(): GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive | undefined;
+        setDrive(value?: GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive): void;
+
+        serializeBinary(): Uint8Array;
+        toObject(includeInstance?: boolean): Protocol.AsObject;
+        static toObject(includeInstance: boolean, msg: Protocol): Protocol.AsObject;
+        static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+        static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+        static serializeBinaryToWriter(message: Protocol, writer: jspb.BinaryWriter): void;
+        static deserializeBinary(bytes: Uint8Array): Protocol;
+        static deserializeBinaryFromReader(message: Protocol, reader: jspb.BinaryReader): Protocol;
+      }
+
+      export namespace Protocol {
+        export type AsObject = {
+          tenderdash?: GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.AsObject,
+          drive?: GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.AsObject,
+        }
+
+        export class Tenderdash extends jspb.Message {
+          getP2p(): number;
+          setP2p(value: number): void;
+
+          getBlock(): number;
+          setBlock(value: number): void;
+
+          serializeBinary(): Uint8Array;
+          toObject(includeInstance?: boolean): Tenderdash.AsObject;
+          static toObject(includeInstance: boolean, msg: Tenderdash): Tenderdash.AsObject;
+          static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+          static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+          static serializeBinaryToWriter(message: Tenderdash, writer: jspb.BinaryWriter): void;
+          static deserializeBinary(bytes: Uint8Array): Tenderdash;
+          static deserializeBinaryFromReader(message: Tenderdash, reader: jspb.BinaryReader): Tenderdash;
+        }
+
+        export namespace Tenderdash {
+          export type AsObject = {
+            p2p: number,
+            block: number,
+          }
+        }
+
+        export class Drive extends jspb.Message {
+          getLatest(): number;
+          setLatest(value: number): void;
+
+          getCurrent(): number;
+          setCurrent(value: number): void;
+
+          serializeBinary(): Uint8Array;
+          toObject(includeInstance?: boolean): Drive.AsObject;
+          static toObject(includeInstance: boolean, msg: Drive): Drive.AsObject;
+          static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+          static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+          static serializeBinaryToWriter(message: Drive, writer: jspb.BinaryWriter): void;
+          static deserializeBinary(bytes: Uint8Array): Drive;
+          static deserializeBinaryFromReader(message: Drive, reader: jspb.BinaryReader): Drive;
+        }
+
+        export namespace Drive {
+          export type AsObject = {
+            latest: number,
+            current: number,
+          }
+        }
+      }
+    }
+
+    export class Time extends jspb.Message {
+      getLocal(): number;
+      setLocal(value: number): void;
+
+      hasBlock(): boolean;
+      clearBlock(): void;
+      getBlock(): number;
+      setBlock(value: number): void;
+
+      hasGenesis(): boolean;
+      clearGenesis(): void;
+      getGenesis(): number;
+      setGenesis(value: number): void;
+
+      hasEpoch(): boolean;
+      clearEpoch(): void;
+      getEpoch(): number;
+      setEpoch(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Time.AsObject;
+      static toObject(includeInstance: boolean, msg: Time): Time.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Time, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Time;
+      static deserializeBinaryFromReader(message: Time, reader: jspb.BinaryReader): Time;
+    }
+
+    export namespace Time {
+      export type AsObject = {
+        local: number,
+        block: number,
+        genesis: number,
+        epoch: number,
+      }
+    }
+
+    export class Node extends jspb.Message {
+      getId(): Uint8Array | string;
+      getId_asU8(): Uint8Array;
+      getId_asB64(): string;
+      setId(value: Uint8Array | string): void;
+
+      hasProTxHash(): boolean;
+      clearProTxHash(): void;
+      getProTxHash(): Uint8Array | string;
+      getProTxHash_asU8(): Uint8Array;
+      getProTxHash_asB64(): string;
+      setProTxHash(value: Uint8Array | string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Node.AsObject;
+      static toObject(includeInstance: boolean, msg: Node): Node.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Node, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Node;
+      static deserializeBinaryFromReader(message: Node, reader: jspb.BinaryReader): Node;
+    }
+
+    export namespace Node {
+      export type AsObject = {
+        id: Uint8Array | string,
+        proTxHash: Uint8Array | string,
+      }
+    }
+
+    export class Chain extends jspb.Message {
+      getCatchingUp(): boolean;
+      setCatchingUp(value: boolean): void;
+
+      getLatestBlockHash(): Uint8Array | string;
+      getLatestBlockHash_asU8(): Uint8Array;
+      getLatestBlockHash_asB64(): string;
+      setLatestBlockHash(value: Uint8Array | string): void;
+
+      getLatestAppHash(): Uint8Array | string;
+      getLatestAppHash_asU8(): Uint8Array;
+      getLatestAppHash_asB64(): string;
+      setLatestAppHash(value: Uint8Array | string): void;
+
+      getLatestBlockHeight(): number;
+      setLatestBlockHeight(value: number): void;
+
+      getEarliestBlockHash(): Uint8Array | string;
+      getEarliestBlockHash_asU8(): Uint8Array;
+      getEarliestBlockHash_asB64(): string;
+      setEarliestBlockHash(value: Uint8Array | string): void;
+
+      getEarliestAppHash(): Uint8Array | string;
+      getEarliestAppHash_asU8(): Uint8Array;
+      getEarliestAppHash_asB64(): string;
+      setEarliestAppHash(value: Uint8Array | string): void;
+
+      getEarliestBlockHeight(): number;
+      setEarliestBlockHeight(value: number): void;
+
+      getMaxPeerBlockHeight(): number;
+      setMaxPeerBlockHeight(value: number): void;
+
+      hasCoreChainLockedHeight(): boolean;
+      clearCoreChainLockedHeight(): void;
+      getCoreChainLockedHeight(): number;
+      setCoreChainLockedHeight(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Chain.AsObject;
+      static toObject(includeInstance: boolean, msg: Chain): Chain.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Chain, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Chain;
+      static deserializeBinaryFromReader(message: Chain, reader: jspb.BinaryReader): Chain;
+    }
+
+    export namespace Chain {
+      export type AsObject = {
+        catchingUp: boolean,
+        latestBlockHash: Uint8Array | string,
+        latestAppHash: Uint8Array | string,
+        latestBlockHeight: number,
+        earliestBlockHash: Uint8Array | string,
+        earliestAppHash: Uint8Array | string,
+        earliestBlockHeight: number,
+        maxPeerBlockHeight: number,
+        coreChainLockedHeight: number,
+      }
+    }
+
+    export class Network extends jspb.Message {
+      getChainId(): string;
+      setChainId(value: string): void;
+
+      getPeersCount(): number;
+      setPeersCount(value: number): void;
+
+      getListening(): boolean;
+      setListening(value: boolean): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Network.AsObject;
+      static toObject(includeInstance: boolean, msg: Network): Network.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Network, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Network;
+      static deserializeBinaryFromReader(message: Network, reader: jspb.BinaryReader): Network;
+    }
+
+    export namespace Network {
+      export type AsObject = {
+        chainId: string,
+        peersCount: number,
+        listening: boolean,
+      }
+    }
+
+    export class StateSync extends jspb.Message {
+      getTotalSyncedTime(): number;
+      setTotalSyncedTime(value: number): void;
+
+      getRemainingTime(): number;
+      setRemainingTime(value: number): void;
+
+      getTotalSnapshots(): number;
+      setTotalSnapshots(value: number): void;
+
+      getChunkProcessAvgTime(): number;
+      setChunkProcessAvgTime(value: number): void;
+
+      getSnapshotHeight(): number;
+      setSnapshotHeight(value: number): void;
+
+      getSnapshotChunksCount(): number;
+      setSnapshotChunksCount(value: number): void;
+
+      getBackfilledBlocks(): number;
+      setBackfilledBlocks(value: number): void;
+
+      getBackfillBlocksTotal(): number;
+      setBackfillBlocksTotal(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): StateSync.AsObject;
+      static toObject(includeInstance: boolean, msg: StateSync): StateSync.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: StateSync, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): StateSync;
+      static deserializeBinaryFromReader(message: StateSync, reader: jspb.BinaryReader): StateSync;
+    }
+
+    export namespace StateSync {
+      export type AsObject = {
+        totalSyncedTime: number,
+        remainingTime: number,
+        totalSnapshots: number,
+        chunkProcessAvgTime: number,
+        snapshotHeight: number,
+        snapshotChunksCount: number,
+        backfilledBlocks: number,
+        backfillBlocksTotal: number,
+      }
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export interface KeyPurposeMap {
   AUTHENTICATION: 0;
   ENCRYPTION: 1;
