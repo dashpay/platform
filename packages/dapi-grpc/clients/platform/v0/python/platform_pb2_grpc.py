@@ -49,6 +49,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetIdentityBalanceRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityBalanceResponse.FromString,
                 )
+        self.getIdentitiesBalances = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getIdentitiesBalances',
+                request_serializer=platform__pb2.GetIdentitiesBalancesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentitiesBalancesResponse.FromString,
+                )
         self.getIdentityBalanceAndRevision = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityBalanceAndRevision',
                 request_serializer=platform__pb2.GetIdentityBalanceAndRevisionRequest.SerializeToString,
@@ -196,6 +201,12 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getIdentityBalance(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getIdentitiesBalances(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -369,6 +380,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getIdentityBalance,
                     request_deserializer=platform__pb2.GetIdentityBalanceRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityBalanceResponse.SerializeToString,
+            ),
+            'getIdentitiesBalances': grpc.unary_unary_rpc_method_handler(
+                    servicer.getIdentitiesBalances,
+                    request_deserializer=platform__pb2.GetIdentitiesBalancesRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentitiesBalancesResponse.SerializeToString,
             ),
             'getIdentityBalanceAndRevision': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityBalanceAndRevision,
@@ -601,6 +617,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityBalance',
             platform__pb2.GetIdentityBalanceRequest.SerializeToString,
             platform__pb2.GetIdentityBalanceResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getIdentitiesBalances(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentitiesBalances',
+            platform__pb2.GetIdentitiesBalancesRequest.SerializeToString,
+            platform__pb2.GetIdentitiesBalancesResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
