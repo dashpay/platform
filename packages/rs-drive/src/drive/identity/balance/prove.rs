@@ -38,8 +38,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
-        let balance_query =
-            Self::balances_for_identity_ids_query(identity_ids);
+        let balance_query = Self::balances_for_identity_ids_query(identity_ids);
         self.grove_get_proved_path_query(&balance_query, transaction, &mut vec![], drive_version)
     }
 
@@ -52,8 +51,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
-        let balance_query =
-            Self::balances_for_range_query(start_at, ascending, limit);
+        let balance_query = Self::balances_for_range_query(start_at, ascending, limit);
         self.grove_get_proved_path_query(&balance_query, transaction, &mut vec![], drive_version)
     }
 }

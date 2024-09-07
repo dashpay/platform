@@ -1343,23 +1343,14 @@ export namespace GetIdentitiesBalancesRequest {
   }
 
   export class GetIdentitiesBalancesRequestV0 extends jspb.Message {
-    hasByKnownIdentityIds(): boolean;
-    clearByKnownIdentityIds(): void;
-    getByKnownIdentityIds(): GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds | undefined;
-    setByKnownIdentityIds(value?: GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds): void;
-
-    hasByRange(): boolean;
-    clearByRange(): void;
-    getByRange(): GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByIdentityIdRange | undefined;
-    setByRange(value?: GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByIdentityIdRange): void;
-
-    getAscending(): boolean;
-    setAscending(value: boolean): void;
+    hasIdentitiesIds(): boolean;
+    clearIdentitiesIds(): void;
+    getIdentitiesIds(): GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds | undefined;
+    setIdentitiesIds(value?: GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds): void;
 
     getProve(): boolean;
     setProve(value: boolean): void;
 
-    getRequestTypeCase(): GetIdentitiesBalancesRequestV0.RequestTypeCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetIdentitiesBalancesRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetIdentitiesBalancesRequestV0): GetIdentitiesBalancesRequestV0.AsObject;
@@ -1372,9 +1363,7 @@ export namespace GetIdentitiesBalancesRequest {
 
   export namespace GetIdentitiesBalancesRequestV0 {
     export type AsObject = {
-      byKnownIdentityIds?: GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.AsObject,
-      byRange?: GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByIdentityIdRange.AsObject,
-      ascending: boolean,
+      identitiesIds?: GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.AsObject,
       prove: boolean,
     }
 
@@ -1400,72 +1389,6 @@ export namespace GetIdentitiesBalancesRequest {
       export type AsObject = {
         identitiesIdsList: Array<Uint8Array | string>,
       }
-    }
-
-    export class GetIdentitiesBalancesByIdentityIdRange extends jspb.Message {
-      hasStartAt(): boolean;
-      clearStartAt(): void;
-      getStartAt(): GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByIdentityIdRange.StartAtIdentity | undefined;
-      setStartAt(value?: GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByIdentityIdRange.StartAtIdentity): void;
-
-      hasLimit(): boolean;
-      clearLimit(): void;
-      getLimit(): number;
-      setLimit(value: number): void;
-
-      hasOffset(): boolean;
-      clearOffset(): void;
-      getOffset(): number;
-      setOffset(value: number): void;
-
-      serializeBinary(): Uint8Array;
-      toObject(includeInstance?: boolean): GetIdentitiesBalancesByIdentityIdRange.AsObject;
-      static toObject(includeInstance: boolean, msg: GetIdentitiesBalancesByIdentityIdRange): GetIdentitiesBalancesByIdentityIdRange.AsObject;
-      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-      static serializeBinaryToWriter(message: GetIdentitiesBalancesByIdentityIdRange, writer: jspb.BinaryWriter): void;
-      static deserializeBinary(bytes: Uint8Array): GetIdentitiesBalancesByIdentityIdRange;
-      static deserializeBinaryFromReader(message: GetIdentitiesBalancesByIdentityIdRange, reader: jspb.BinaryReader): GetIdentitiesBalancesByIdentityIdRange;
-    }
-
-    export namespace GetIdentitiesBalancesByIdentityIdRange {
-      export type AsObject = {
-        startAt?: GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByIdentityIdRange.StartAtIdentity.AsObject,
-        limit: number,
-        offset: number,
-      }
-
-      export class StartAtIdentity extends jspb.Message {
-        getStartIdentityId(): Uint8Array | string;
-        getStartIdentityId_asU8(): Uint8Array;
-        getStartIdentityId_asB64(): string;
-        setStartIdentityId(value: Uint8Array | string): void;
-
-        getStartIdentityIdIncluded(): boolean;
-        setStartIdentityIdIncluded(value: boolean): void;
-
-        serializeBinary(): Uint8Array;
-        toObject(includeInstance?: boolean): StartAtIdentity.AsObject;
-        static toObject(includeInstance: boolean, msg: StartAtIdentity): StartAtIdentity.AsObject;
-        static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-        static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-        static serializeBinaryToWriter(message: StartAtIdentity, writer: jspb.BinaryWriter): void;
-        static deserializeBinary(bytes: Uint8Array): StartAtIdentity;
-        static deserializeBinaryFromReader(message: StartAtIdentity, reader: jspb.BinaryReader): StartAtIdentity;
-      }
-
-      export namespace StartAtIdentity {
-        export type AsObject = {
-          startIdentityId: Uint8Array | string,
-          startIdentityIdIncluded: boolean,
-        }
-      }
-    }
-
-    export enum RequestTypeCase {
-      REQUEST_TYPE_NOT_SET = 0,
-      BY_KNOWN_IDENTITY_IDS = 1,
-      BY_RANGE = 2,
     }
   }
 

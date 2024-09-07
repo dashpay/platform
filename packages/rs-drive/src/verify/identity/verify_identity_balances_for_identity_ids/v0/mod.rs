@@ -6,6 +6,7 @@ use dpp::fee::Credits;
 
 use crate::verify::RootHash;
 
+use dpp::identifier::Identifier;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 
@@ -39,16 +40,15 @@ impl Drive {
     /// - The value size of the balance is incorrect.
     ///
     pub(crate) fn verify_identity_balances_for_identity_ids_v0<
-        T: FromIterator<([u8; 32], Option<Credits>)>,
+        T: FromIterator<(I, Option<Credits>)>,
+        I: From<[u8; 32]>,
     >(
         proof: &[u8],
         is_proof_subset: bool,
         identity_ids: &[[u8; 32]],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, T), Error> {
-        let mut path_query = Self::balances_for_identity_ids_query(
-            identity_ids,
-        );
+        let mut path_query = Self::balances_for_identity_ids_query(identity_ids);
         path_query.query.limit = Some(identity_ids.len() as u16);
         let (root_hash, proved_key_values) = if is_proof_subset {
             GroveDb::verify_subset_query_with_absence_proof(
@@ -73,7 +73,7 @@ impl Drive {
                         .map_err(|_| Error::Proof(ProofError::IncorrectValueSize("value size")))?;
                     let maybe_element = proved_key_value.2;
                     match maybe_element {
-                        None => Ok((key, None)),
+                        None => Ok((key.into(), None)),
                         Some(element) => {
                             let balance: Credits = element
                                 .as_sum_item_value()
@@ -84,7 +84,7 @@ impl Drive {
                                         "balance was negative",
                                     ))
                                 })?;
-                            Ok((key, Some(balance)))
+                            Ok((key.into(), Some(balance)))
                         }
                     }
                 })

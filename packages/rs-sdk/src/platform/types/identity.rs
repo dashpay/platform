@@ -1,10 +1,14 @@
 //! Identity related types and functions
 
 use crate::delegate_enum;
+use crate::platform::types::epoch::EpochQuery;
+use crate::platform::LimitQuery;
 use crate::{
     platform::{proto, Query},
     Error,
 };
+use dapi_grpc::platform::v0::get_identities_balances_request::get_identities_balances_request_v0::GetIdentitiesBalancesByKnownIdentityIds;
+use dapi_grpc::platform::v0::get_identities_balances_request::GetIdentitiesBalancesRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
@@ -12,9 +16,10 @@ use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityCon
 use dapi_grpc::platform::v0::get_identity_nonce_request::GetIdentityNonceRequestV0;
 use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
 use dapi_grpc::platform::v0::{
-    get_identity_balance_and_revision_request, get_identity_balance_request,
-    get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
-    get_identity_nonce_request, get_identity_request, GetIdentityBalanceAndRevisionRequest,
+    get_identities_balances_request, get_identity_balance_and_revision_request,
+    get_identity_balance_request, get_identity_by_public_key_hash_request,
+    get_identity_contract_nonce_request, get_identity_nonce_request, get_identity_request,
+    GetEpochsInfoRequest, GetIdentitiesBalancesRequest, GetIdentityBalanceAndRevisionRequest,
     GetIdentityBalanceRequest, GetIdentityByPublicKeyHashRequest, GetIdentityContractNonceRequest,
     GetIdentityNonceRequest, GetIdentityRequest, ResponseMetadata,
 };
@@ -138,6 +143,28 @@ impl Query<GetIdentityBalanceAndRevisionRequest> for dpp::prelude::Identifier {
         let request: GetIdentityBalanceAndRevisionRequest = GetIdentityBalanceAndRevisionRequest {
             version: Some(get_identity_balance_and_revision_request::Version::V0(
                 GetIdentityBalanceAndRevisionRequestV0 { id, prove },
+            )),
+        };
+
+        Ok(request)
+    }
+}
+
+impl Query<GetIdentitiesBalancesRequest> for Vec<dpp::prelude::Identifier> {
+    fn query(self, prove: bool) -> Result<GetIdentitiesBalancesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        let identities_ids = self.into_iter().map(|a| a.to_vec()).collect();
+
+        let request: GetIdentitiesBalancesRequest = GetIdentitiesBalancesRequest {
+            version: Some(get_identities_balances_request::Version::V0(
+                GetIdentitiesBalancesRequestV0 {
+                    identities_ids: Some(GetIdentitiesBalancesByKnownIdentityIds {
+                        identities_ids,
+                    }),
+                    prove,
+                },
             )),
         };
 

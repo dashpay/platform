@@ -4,6 +4,7 @@
 //!
 //! ## Traits
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
+use super::{Fetch, LimitQuery};
 use crate::{
     error::Error,
     mock::MockResponse,
@@ -13,12 +14,13 @@ use crate::{
 use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
-    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetVotePollsByEndDateRequest,
+    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetIdentitiesBalancesRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::data_contract::DataContract;
+use dpp::fee::Credits;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
@@ -30,14 +32,12 @@ use dpp::{
 use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
 use drive_proof_verifier::types::{
     Contenders, ContestedResource, ContestedResources, DataContracts, ExtendedEpochInfos,
-    IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes, ProtocolVersionUpgrades,
-    ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
+    IdentityBalances, IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes,
+    ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
-
-use super::LimitQuery;
 
 /// Fetch multiple objects from Platform.
 ///
@@ -372,4 +372,14 @@ impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
 /// * [VotePollsByEndDateDriveQuery]
 impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
     type Request = GetVotePollsByEndDateRequest;
+}
+
+//
+/// Fetch multiple identity balances.
+///
+/// ## Supported query types
+///
+/// * [Vec<Identifier>](dpp::prelude::Identifier) - list of identifiers of identities whose balance we want to fetch
+impl FetchMany<Identifier, IdentityBalances> for drive_proof_verifier::types::IdentityBalance {
+    type Request = GetIdentitiesBalancesRequest;
 }

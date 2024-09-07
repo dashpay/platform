@@ -229,11 +229,11 @@ impl Drive {
         limit: u16,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<I, Error> 
-    where I: FromIterator<([u8;32], u64)>,
+    ) -> Result<I, Error>
+    where
+        I: FromIterator<([u8; 32], u64)>,
     {
-        let balance_query =
-            Self::balances_for_range_query(start_at, ascending, limit);
+        let balance_query = Self::balances_for_range_query(start_at, ascending, limit);
         let (result_items, _) = self
             .grove
             .query_raw(

@@ -1,7 +1,7 @@
-use std::ops::RangeFull;
 use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::{identity_tree_path_vec, unique_key_hashes_tree_path_vec, Drive};
+use std::ops::RangeFull;
 
 use crate::error::Error;
 
@@ -134,9 +134,7 @@ impl Drive {
     }
 
     /// The query getting all balances and revision
-    pub fn balances_for_identity_ids_query(
-        identity_ids: &[[u8; 32]],
-    ) -> PathQuery {
+    pub fn balances_for_identity_ids_query(identity_ids: &[[u8; 32]]) -> PathQuery {
         let balance_path = balance_path_vec();
         let mut query = Query::new();
         query.insert_keys(identity_ids.into_iter().map(|key| key.to_vec()).collect());

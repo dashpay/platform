@@ -72,8 +72,6 @@ CF_EXTERN_C_BEGIN
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos;
 @class GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0;
-@class GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange;
-@class GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange_StartAtIdentity;
 @class GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds;
 @class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0;
 @class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances;
@@ -1386,36 +1384,19 @@ void GetIdentitiesBalancesRequest_ClearVersionOneOfCase(GetIdentitiesBalancesReq
 #pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0
 
 typedef GPB_ENUM(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber) {
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_ByKnownIdentityIds = 1,
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_ByRange = 2,
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_Ascending = 3,
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_Prove = 4,
-};
-
-typedef GPB_ENUM(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_RequestType_OneOfCase) {
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_RequestType_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_RequestType_OneOfCase_ByKnownIdentityIds = 1,
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_RequestType_OneOfCase_ByRange = 2,
+  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_IdentitiesIds = 1,
+  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_Prove = 2,
 };
 
 GPB_FINAL @interface GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0 : GPBMessage
 
-@property(nonatomic, readonly) GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_RequestType_OneOfCase requestTypeOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds *byKnownIdentityIds;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange *byRange;
-
-@property(nonatomic, readwrite) BOOL ascending;
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds *identitiesIds;
+/** Test to see if @c identitiesIds has been set. */
+@property(nonatomic, readwrite) BOOL hasIdentitiesIds;
 
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
-
-/**
- * Clears whatever value was set for the oneof 'requestType'.
- **/
-void GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_ClearRequestTypeOneOfCase(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0 *message);
 
 #pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds
 
@@ -1428,43 +1409,6 @@ GPB_FINAL @interface GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identitiesIdsArray;
 /** The number of items in @c identitiesIdsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger identitiesIdsArray_Count;
-
-@end
-
-#pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange
-
-typedef GPB_ENUM(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange_FieldNumber) {
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange_FieldNumber_StartAt = 1,
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange_FieldNumber_Limit = 2,
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange_FieldNumber_Offset = 3,
-};
-
-GPB_FINAL @interface GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange : GPBMessage
-
-@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange_StartAtIdentity *startAt;
-/** Test to see if @c startAt has been set. */
-@property(nonatomic, readwrite) BOOL hasStartAt;
-
-@property(nonatomic, readwrite) uint32_t limit;
-
-@property(nonatomic, readwrite) BOOL hasLimit;
-@property(nonatomic, readwrite) uint32_t offset;
-
-@property(nonatomic, readwrite) BOOL hasOffset;
-@end
-
-#pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange_StartAtIdentity
-
-typedef GPB_ENUM(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange_StartAtIdentity_FieldNumber) {
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange_StartAtIdentity_FieldNumber_StartIdentityId = 1,
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange_StartAtIdentity_FieldNumber_StartIdentityIdIncluded = 2,
-};
-
-GPB_FINAL @interface GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByIdentityIdRange_StartAtIdentity : GPBMessage
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *startIdentityId;
-
-@property(nonatomic, readwrite) BOOL startIdentityIdIncluded;
 
 @end
 

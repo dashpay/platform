@@ -407,6 +407,9 @@ pub type IdentityPublicKeys = RetrievedObjects<KeyID, IdentityPublicKey>;
 /// Collection of documents.
 pub type Documents = RetrievedObjects<Identifier, Document>;
 
+/// Collection of balances.
+pub type IdentityBalances = RetrievedObjects<Identifier, Credits>;
+
 /// Collection of epoch information
 pub type ExtendedEpochInfos = RetrievedObjects<EpochIndex, ExtendedEpochInfo>;
 

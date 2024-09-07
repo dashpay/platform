@@ -314,22 +314,8 @@ message GetIdentitiesBalancesRequest {
     message GetIdentitiesBalancesByKnownIdentityIds {
       repeated bytes identities_ids = 1;
     }
-    message GetIdentitiesBalancesByIdentityIdRange {
-      message StartAtIdentity {
-        bytes start_identity_id = 1;
-        bool start_identity_id_included = 2;
-      }
-
-      optional StartAtIdentity start_at = 1;
-      optional uint32 limit = 2;
-      optional uint32 offset = 3;
-    }
-    oneof request_type {
-        GetIdentitiesBalancesByKnownIdentityIds by_known_identity_ids = 1;
-        GetIdentitiesBalancesByIdentityIdRange by_range = 2;
-    }
-    bool ascending = 3;
-    bool prove = 4;
+    GetIdentitiesBalancesByKnownIdentityIds identities_ids = 1;
+    bool prove = 2;
   }
 
   oneof version {

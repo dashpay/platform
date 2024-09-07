@@ -25,8 +25,7 @@ use dapi_grpc::platform::v0::{
     GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
     GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
     GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
-    GetPathElementsRequest,
-    GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
     GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
     GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
@@ -535,7 +534,7 @@ impl PlatformService for QueryService {
         )
         .await
     }
-    
+
     async fn get_total_credits_in_platform(
         &self,
         request: Request<GetTotalCreditsInPlatformRequest>,
@@ -545,9 +544,9 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_total_credits_in_platform,
             "get_total_credits_in_platform",
         )
-            .await
+        .await
     }
-    
+
     async fn get_identities_balances(
         &self,
         request: Request<GetIdentitiesBalancesRequest>,
@@ -559,7 +558,7 @@ impl PlatformService for QueryService {
         )
         .await
     }
-    
+
     async fn get_status(
         &self,
         request: Request<GetStatusRequest>,
@@ -569,7 +568,7 @@ impl PlatformService for QueryService {
             Platform::<DefaultCoreRPC>::query_partial_status,
             "query_partial_status",
         )
-            .await
+        .await
     }
 }
 
