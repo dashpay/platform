@@ -20,7 +20,6 @@ use dapi_grpc::platform::v0::{
 };
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::data_contract::DataContract;
-use dpp::fee::Credits;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
@@ -283,12 +282,12 @@ impl FetchMany<EpochIndex, ExtendedEpochInfos> for ExtendedEpochInfo {
 /// ## Example
 ///
 /// ```rust
-/// use dash_sdk::{Sdk, platform::FetchMany};
-/// use drive_proof_verifier::types::ProtocolVersionVoteCount;
+/// use dash_sdk::{Sdk, platform::FetchMany, Error};
+/// use drive_proof_verifier::types::{ProtocolVersionUpgrades, ProtocolVersionVoteCount};
 ///
 /// # tokio_test::block_on(async {
 /// let sdk = Sdk::new_mock();
-/// let result = ProtocolVersionVoteCount::fetch_many(&sdk, ()).await;
+/// let result: Result<ProtocolVersionUpgrades, Error> = ProtocolVersionVoteCount::fetch_many(&sdk, ()).await;
 /// # });
 /// ```
 impl FetchMany<ProtocolVersion, ProtocolVersionUpgrades> for ProtocolVersionVoteCount {
