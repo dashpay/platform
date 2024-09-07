@@ -23,7 +23,7 @@ pub trait IdentityCreditWithdrawalTransitionMethodsV0 {
     fn try_from_identity<S: Signer>(
         identity: &Identity,
         withdrawal_key_to_use: Option<&IdentityPublicKey>,
-        output_script: CoreScript,
+        output_script: Option<CoreScript>,
         amount: u64,
         pooling: Pooling,
         core_fee_per_byte: u32,

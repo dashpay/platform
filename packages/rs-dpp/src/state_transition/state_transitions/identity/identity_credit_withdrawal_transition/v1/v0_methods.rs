@@ -27,7 +27,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
     fn try_from_identity<S: Signer>(
         identity: &Identity,
         withdrawal_key_to_use: Option<&IdentityPublicKey>,
-        output_script: CoreScript,
+        output_script: Option<CoreScript>,
         amount: u64,
         pooling: Pooling,
         core_fee_per_byte: u32,
@@ -58,7 +58,13 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
                     SecurityLevel::full_range().into(),
                     KeyType::all_key_types().into(),
                     true,
-                )
+                ).unwrap_or_else(|| identity
+                .get_first_public_key_matching(
+                    Purpose::AUTHENTICATION,
+                    SecurityLevel::full_range().into(),
+                    KeyType::all_key_types().into(),
+                    true,
+                ))
                 .ok_or_else(|| {
                     ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
                         "no withdrawal public key".to_string(),
