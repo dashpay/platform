@@ -71,31 +71,14 @@ function grpc_platform {
 function detect_platform() {
     NODE="$1"
 
-    err="$(grpc_platform "$NODE:${PORT}" org.dash.platform.dapi.v0.Platform/getTotalCreditsInPlatform 2>&1)"
-
+    json="$(grpc_platform "$NODE:${PORT}" org.dash.platform.dapi.v0.Platform/getStatus 2>&1)"
     echo "============ $NODE ============" >>/tmp/detect_platform.log
-    echo "$err" >>/tmp/detect_platform.log
+    echo "$json" >>/tmp/detect_platform.log
 
-    case "$err" in
-    *"decoding error: could not decode"*)
-        echo 1.1
-        ;;
-    *"upstream connect error or disconnect/reset before headers"*)
-        echo "upstream connect error; misconfiguration or drive down"
-        ;;
-    *"connect: connection refused"*)
-        echo "connection refused; no platform or firewalled"
-        ;;
-    *"Code: Unimplemented"*)
-        echo "1.0"
-        ;;
-    *"context deadline exceeded"*)
-        echo "timeout; firewalled?"
-        ;;
-    *)
-        echo "$err"
-        ;;
-    esac
+    drive_version="$(echo "$json" | jq -r .v0.version.software.drive 2>/dev/null)"
+    td_version="$(echo "$json" | jq -r .v0.version.software.tenderdash 2>/dev/null)"
+
+    echo "${drive_version:-unknown}/${td_version:-unknown}"
 }
 
 # Check if core is available by calling getBlockchainStatus
