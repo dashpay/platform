@@ -13,11 +13,12 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 
+use dpp::prelude::Identifier;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Insert a non unique public key hash reference that contains an identity id
+    /// Insert a non-unique public key hash reference that contains an identity id
     /// Contrary to the name this is not a reference but an Item containing the identity
     /// identifier
     pub(super) fn insert_non_unique_public_key_hash_reference_to_identity_operations_v0(
@@ -74,7 +75,7 @@ impl Drive {
 
                 if already_exists_for_identity {
                     return Err(Error::Identity(IdentityError::IdentityKeyAlreadyExists(
-                        "the key already exists for this user",
+                        format!("the key with a public hash of {} already exists for this identity {} ({})", hex::encode(public_key_hash) , Identifier::new(identity_id), hex::encode(identity_id.as_slice()))
                     )));
                 }
             }

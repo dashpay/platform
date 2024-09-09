@@ -89,7 +89,8 @@ pub(in crate::execution) mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
-    use dpp::platform_value::{Bytes32, Value};
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::platform_value::{BinaryData, Bytes32, Value};
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -469,7 +470,8 @@ pub(in crate::execution) mod tests {
                 .expect("expected a balance")
         );
     }
-    pub(in crate::execution) fn setup_masternode_identity(
+
+    pub(in crate::execution) fn setup_masternode_voting_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         platform_version: &PlatformVersion,
@@ -1768,7 +1770,7 @@ pub(in crate::execution) mod tests {
         let mut masternode_infos = vec![];
         for i in 0..count {
             let (pro_tx_hash_bytes, voting_identity, signer, voting_key) =
-                setup_masternode_identity(platform, start_seed + i, platform_version);
+                setup_masternode_voting_identity(platform, start_seed + i, platform_version);
 
             let platform_state = platform.state.load();
 
