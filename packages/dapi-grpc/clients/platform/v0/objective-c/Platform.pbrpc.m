@@ -230,6 +230,46 @@
              responseClass:[GetIdentityBalanceAndRevisionResponse class]];
 }
 
+#pragma mark getEvonodesProposedEpochBlocksByIds(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse)
+
+- (void)getEvonodesProposedEpochBlocksByIdsWithRequest:(GetEvonodesProposedEpochBlocksByIdsRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetEvonodesProposedEpochBlocksByIdsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetEvonodesProposedEpochBlocksByIdsWithRequest:(GetEvonodesProposedEpochBlocksByIdsRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getEvonodesProposedEpochBlocksByIds"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetEvonodesProposedEpochBlocksResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getEvonodesProposedEpochBlocksByIdsWithMessage:(GetEvonodesProposedEpochBlocksByIdsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getEvonodesProposedEpochBlocksByIds"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetEvonodesProposedEpochBlocksResponse class]];
+}
+
+#pragma mark getEvonodesProposedEpochBlocksByRange(GetEvonodesProposedEpochBlocksByRangeRequest) returns (GetEvonodesProposedEpochBlocksResponse)
+
+- (void)getEvonodesProposedEpochBlocksByRangeWithRequest:(GetEvonodesProposedEpochBlocksByRangeRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetEvonodesProposedEpochBlocksByRangeWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetEvonodesProposedEpochBlocksByRangeWithRequest:(GetEvonodesProposedEpochBlocksByRangeRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getEvonodesProposedEpochBlocksByRange"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetEvonodesProposedEpochBlocksResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getEvonodesProposedEpochBlocksByRangeWithMessage:(GetEvonodesProposedEpochBlocksByRangeRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getEvonodesProposedEpochBlocksByRange"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetEvonodesProposedEpochBlocksResponse class]];
+}
+
 #pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
 
 - (void)getProofsWithRequest:(GetProofsRequest *)request handler:(void(^)(GetProofsResponse *_Nullable response, NSError *_Nullable error))handler{

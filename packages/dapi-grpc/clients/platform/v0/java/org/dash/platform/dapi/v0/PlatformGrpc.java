@@ -263,6 +263,68 @@ public final class PlatformGrpc {
     return getGetIdentityBalanceAndRevisionMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByIdsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse> getGetEvonodesProposedEpochBlocksByIdsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getEvonodesProposedEpochBlocksByIds",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByIdsRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByIdsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse> getGetEvonodesProposedEpochBlocksByIdsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByIdsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse> getGetEvonodesProposedEpochBlocksByIdsMethod;
+    if ((getGetEvonodesProposedEpochBlocksByIdsMethod = PlatformGrpc.getGetEvonodesProposedEpochBlocksByIdsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetEvonodesProposedEpochBlocksByIdsMethod = PlatformGrpc.getGetEvonodesProposedEpochBlocksByIdsMethod) == null) {
+          PlatformGrpc.getGetEvonodesProposedEpochBlocksByIdsMethod = getGetEvonodesProposedEpochBlocksByIdsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByIdsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getEvonodesProposedEpochBlocksByIds"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByIdsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getEvonodesProposedEpochBlocksByIds"))
+              .build();
+        }
+      }
+    }
+    return getGetEvonodesProposedEpochBlocksByIdsMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByRangeRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse> getGetEvonodesProposedEpochBlocksByRangeMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getEvonodesProposedEpochBlocksByRange",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByRangeRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByRangeRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse> getGetEvonodesProposedEpochBlocksByRangeMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByRangeRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse> getGetEvonodesProposedEpochBlocksByRangeMethod;
+    if ((getGetEvonodesProposedEpochBlocksByRangeMethod = PlatformGrpc.getGetEvonodesProposedEpochBlocksByRangeMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetEvonodesProposedEpochBlocksByRangeMethod = PlatformGrpc.getGetEvonodesProposedEpochBlocksByRangeMethod) == null) {
+          PlatformGrpc.getGetEvonodesProposedEpochBlocksByRangeMethod = getGetEvonodesProposedEpochBlocksByRangeMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByRangeRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getEvonodesProposedEpochBlocksByRange"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByRangeRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getEvonodesProposedEpochBlocksByRange"))
+              .build();
+        }
+      }
+    }
+    return getGetEvonodesProposedEpochBlocksByRangeMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse> getGetProofsMethod;
 
@@ -989,6 +1051,20 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getEvonodesProposedEpochBlocksByIds(org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByIdsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetEvonodesProposedEpochBlocksByIdsMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getEvonodesProposedEpochBlocksByRange(org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByRangeRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetEvonodesProposedEpochBlocksByRangeMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void getProofs(org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetProofsMethod(), responseObserver);
@@ -1200,6 +1276,20 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse>(
                   this, METHODID_GET_IDENTITY_BALANCE_AND_REVISION)))
+          .addMethod(
+            getGetEvonodesProposedEpochBlocksByIdsMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByIdsRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse>(
+                  this, METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_IDS)))
+          .addMethod(
+            getGetEvonodesProposedEpochBlocksByRangeMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByRangeRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse>(
+                  this, METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_RANGE)))
           .addMethod(
             getGetProofsMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -1420,6 +1510,22 @@ public final class PlatformGrpc {
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetIdentityBalanceAndRevisionMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getEvonodesProposedEpochBlocksByIds(org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByIdsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetEvonodesProposedEpochBlocksByIdsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getEvonodesProposedEpochBlocksByRange(org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByRangeRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetEvonodesProposedEpochBlocksByRangeMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -1670,6 +1776,20 @@ public final class PlatformGrpc {
 
     /**
      */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse getEvonodesProposedEpochBlocksByIds(org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByIdsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetEvonodesProposedEpochBlocksByIdsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse getEvonodesProposedEpochBlocksByRange(org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByRangeRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetEvonodesProposedEpochBlocksByRangeMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse getProofs(org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetProofsMethod(), getCallOptions(), request);
@@ -1904,6 +2024,22 @@ public final class PlatformGrpc {
 
     /**
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse> getEvonodesProposedEpochBlocksByIds(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByIdsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetEvonodesProposedEpochBlocksByIdsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse> getEvonodesProposedEpochBlocksByRange(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByRangeRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetEvonodesProposedEpochBlocksByRangeMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse> getProofs(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -2086,26 +2222,28 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_IDENTITY_CONTRACT_NONCE = 5;
   private static final int METHODID_GET_IDENTITY_BALANCE = 6;
   private static final int METHODID_GET_IDENTITY_BALANCE_AND_REVISION = 7;
-  private static final int METHODID_GET_PROOFS = 8;
-  private static final int METHODID_GET_DATA_CONTRACT = 9;
-  private static final int METHODID_GET_DATA_CONTRACT_HISTORY = 10;
-  private static final int METHODID_GET_DATA_CONTRACTS = 11;
-  private static final int METHODID_GET_DOCUMENTS = 12;
-  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 13;
-  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 14;
-  private static final int METHODID_GET_CONSENSUS_PARAMS = 15;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 16;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 17;
-  private static final int METHODID_GET_EPOCHS_INFO = 18;
-  private static final int METHODID_GET_CONTESTED_RESOURCES = 19;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 20;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 21;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 22;
-  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 23;
-  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 24;
-  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 25;
-  private static final int METHODID_GET_PATH_ELEMENTS = 26;
-  private static final int METHODID_GET_STATUS = 27;
+  private static final int METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_IDS = 8;
+  private static final int METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_RANGE = 9;
+  private static final int METHODID_GET_PROOFS = 10;
+  private static final int METHODID_GET_DATA_CONTRACT = 11;
+  private static final int METHODID_GET_DATA_CONTRACT_HISTORY = 12;
+  private static final int METHODID_GET_DATA_CONTRACTS = 13;
+  private static final int METHODID_GET_DOCUMENTS = 14;
+  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 15;
+  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 16;
+  private static final int METHODID_GET_CONSENSUS_PARAMS = 17;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 18;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 19;
+  private static final int METHODID_GET_EPOCHS_INFO = 20;
+  private static final int METHODID_GET_CONTESTED_RESOURCES = 21;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 22;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 23;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 24;
+  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 25;
+  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 26;
+  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 27;
+  private static final int METHODID_GET_PATH_ELEMENTS = 28;
+  private static final int METHODID_GET_STATUS = 29;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -2155,6 +2293,14 @@ public final class PlatformGrpc {
         case METHODID_GET_IDENTITY_BALANCE_AND_REVISION:
           serviceImpl.getIdentityBalanceAndRevision((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse>) responseObserver);
+          break;
+        case METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_IDS:
+          serviceImpl.getEvonodesProposedEpochBlocksByIds((org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByIdsRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse>) responseObserver);
+          break;
+        case METHODID_GET_EVONODES_PROPOSED_EPOCH_BLOCKS_BY_RANGE:
+          serviceImpl.getEvonodesProposedEpochBlocksByRange((org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksByRangeRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetEvonodesProposedEpochBlocksResponse>) responseObserver);
           break;
         case METHODID_GET_PROOFS:
           serviceImpl.getProofs((org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest) request,
@@ -2305,6 +2451,8 @@ public final class PlatformGrpc {
               .addMethod(getGetIdentityContractNonceMethod())
               .addMethod(getGetIdentityBalanceMethod())
               .addMethod(getGetIdentityBalanceAndRevisionMethod())
+              .addMethod(getGetEvonodesProposedEpochBlocksByIdsMethod())
+              .addMethod(getGetEvonodesProposedEpochBlocksByRangeMethod())
               .addMethod(getGetProofsMethod())
               .addMethod(getGetDataContractMethod())
               .addMethod(getGetDataContractHistoryMethod())

@@ -36,6 +36,9 @@
 @class GetDocumentsResponse;
 @class GetEpochsInfoRequest;
 @class GetEpochsInfoResponse;
+@class GetEvonodesProposedEpochBlocksByIdsRequest;
+@class GetEvonodesProposedEpochBlocksByRangeRequest;
+@class GetEvonodesProposedEpochBlocksResponse;
 @class GetIdentitiesContractKeysRequest;
 @class GetIdentitiesContractKeysResponse;
 @class GetIdentityBalanceAndRevisionRequest;
@@ -131,6 +134,14 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest) returns (GetIdentityBalanceAndRevisionResponse)
 
 - (GRPCUnaryProtoCall *)getIdentityBalanceAndRevisionWithMessage:(GetIdentityBalanceAndRevisionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getEvonodesProposedEpochBlocksByIds(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse)
+
+- (GRPCUnaryProtoCall *)getEvonodesProposedEpochBlocksByIdsWithMessage:(GetEvonodesProposedEpochBlocksByIdsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getEvonodesProposedEpochBlocksByRange(GetEvonodesProposedEpochBlocksByRangeRequest) returns (GetEvonodesProposedEpochBlocksResponse)
+
+- (GRPCUnaryProtoCall *)getEvonodesProposedEpochBlocksByRangeWithMessage:(GetEvonodesProposedEpochBlocksByRangeRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
 
@@ -289,6 +300,20 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getIdentityBalanceAndRevisionWithRequest:(GetIdentityBalanceAndRevisionRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetIdentityBalanceAndRevisionWithRequest:(GetIdentityBalanceAndRevisionRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getEvonodesProposedEpochBlocksByIds(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse)
+
+- (void)getEvonodesProposedEpochBlocksByIdsWithRequest:(GetEvonodesProposedEpochBlocksByIdsRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetEvonodesProposedEpochBlocksByIdsWithRequest:(GetEvonodesProposedEpochBlocksByIdsRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getEvonodesProposedEpochBlocksByRange(GetEvonodesProposedEpochBlocksByRangeRequest) returns (GetEvonodesProposedEpochBlocksResponse)
+
+- (void)getEvonodesProposedEpochBlocksByRangeWithRequest:(GetEvonodesProposedEpochBlocksByRangeRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetEvonodesProposedEpochBlocksByRangeWithRequest:(GetEvonodesProposedEpochBlocksByRangeRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
