@@ -19,9 +19,9 @@ service Platform {
   rpc getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest)
       returns (GetIdentityBalanceAndRevisionResponse);
   rpc getEvonodesProposedEpochBlocksByIds(GetEvonodesProposedEpochBlocksByIdsRequest)
-      returns (GetEvonodesProposedEpochBlocksByIdsResponse);
+      returns (GetEvonodesProposedEpochBlocksResponse);
   rpc getEvonodesProposedEpochBlocksByRange(GetEvonodesProposedEpochBlocksByRangeRequest)
-      returns (GetEvonodesProposedEpochBlocksByRangeResponse);
+      returns (GetEvonodesProposedEpochBlocksResponse);
   rpc getProofs(GetProofsRequest) returns (GetProofsResponse);
   rpc getDataContract(GetDataContractRequest) returns (GetDataContractResponse);
   rpc getDataContractHistory(GetDataContractHistoryRequest)
@@ -314,37 +314,17 @@ message GetIdentitiesContractKeysResponse {
 message GetEvonodesProposedEpochBlocksByIdsRequest {
 
   message GetEvonodesProposedEpochBlocksByIdsRequestV0 {
-    repeated bytes ids = 1;    // IDs of the evonodes for which we want to get their proposed blocks
-    bool prove = 2;  // Flag to request a proof as the response
+    uint32 epoch = 1;
+    repeated bytes ids = 2;    // IDs of the evonodes for which we want to get their proposed blocks
+    bool prove = 3;  // Flag to request a proof as the response
   }
 
   oneof version { GetEvonodesProposedEpochBlocksByIdsRequestV0 v0 = 1; }
 }
 
-message GetEvonodesProposedEpochBlocksByIdsResponse {
+message GetEvonodesProposedEpochBlocksResponse {
 
-  message GetEvonodesProposedEpochBlocksByIdsResponseV0 {
-    message EvonodeProposedBlocks {
-      bytes pro_tx_hash = 1;
-      optional uint64 count = 2;
-    }
-
-    message EvonodesProposedBlocks {
-      repeated EvonodeProposedBlocks evonodes_proposed_block_counts = 1;
-    }
-
-    oneof result {
-      EvonodesProposedBlocks evonodes_proposed_block_counts_info = 1;    // The actual result
-      Proof proof = 2;  // Proof of the keys data, if requested
-    }
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
-  }
-  oneof version { GetEvonodesProposedEpochBlocksByIdsResponseV0 v0 = 1; }
-}
-
-message GetEvonodesProposedEpochBlocksByRangeResponse {
-
-  message GetEvonodesProposedEpochBlocksByRangeResponseV0 {
+  message GetEvonodesProposedEpochBlocksResponseV0 {
     message EvonodeProposedBlocks {
       bytes pro_tx_hash = 1;
       uint64 count = 2;
@@ -360,18 +340,19 @@ message GetEvonodesProposedEpochBlocksByRangeResponse {
     }
     ResponseMetadata metadata = 3;  // Metadata about the blockchain state
   }
-  oneof version { GetEvonodesProposedEpochBlocksByRangeResponseV0 v0 = 1; }
+  oneof version { GetEvonodesProposedEpochBlocksResponseV0 v0 = 1; }
 }
 
 message GetEvonodesProposedEpochBlocksByRangeRequest {
 
   message GetEvonodesProposedEpochBlocksByRangeRequestV0 {
-    uint32 limit = 1;            // Maximum number of documents to return
+    uint32 epoch = 1; // The epoch we are querying for
+    optional uint32 limit = 2;            // Maximum number of evonodes proposed epoch blocks to return
     oneof start {
-      bytes start_after = 2;  // Start retrieval after this document
-      bytes start_at = 3;     // Start retrieval at this document
+      bytes start_after = 3;  // Start retrieval after this document
+      bytes start_at = 4;     // Start retrieval at this document
     }
-    bool prove = 4;  // Flag to request a proof as the response
+    bool prove = 5;  // Flag to request a proof as the response
   }
 
   oneof version { GetEvonodesProposedEpochBlocksByRangeRequestV0 v0 = 1; }

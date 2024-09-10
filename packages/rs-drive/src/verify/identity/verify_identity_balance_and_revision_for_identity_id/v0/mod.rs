@@ -38,14 +38,14 @@ impl Drive {
         _verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<(u64, u64)>), Error> {
-        let (root_hash_0, signed_balance) = Self::verify_identity_balance_for_identity_id_v0(
+        let (root_hash_0, signed_balance) = Self::verify_identity_balance_for_identity_id(
             proof,
             identity_id,
             true,
             platform_version,
         )?;
 
-        let (root_hash_1, revision) = Self::verify_identity_revision_for_identity_id_v0(
+        let (root_hash_1, revision) = Self::verify_identity_revision_for_identity_id(
             proof,
             identity_id,
             true,

@@ -31,7 +31,7 @@ impl Drive {
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
     #[inline(always)]
-    pub(crate) fn verify_upgrade_state_v0(
+    pub(super) fn verify_upgrade_state_v0(
         proof: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, IntMap<ProtocolVersion, u64>), Error> {

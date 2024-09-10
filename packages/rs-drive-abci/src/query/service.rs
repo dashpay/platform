@@ -9,7 +9,31 @@ use crate::rpc::core::DefaultCoreRPC;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
-use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest, GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest, GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse, GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse, GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse, GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksByIdsResponse, GetEvonodesProposedEpochBlocksByRangeResponse};
+use dapi_grpc::platform::v0::{
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
+    GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
+    GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
+    GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
+    GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
+    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
+    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
+    GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
+    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
+    GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
+    GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
+    GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
+    GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
+    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    GetStatusRequest, GetStatusResponse, GetTotalCreditsInPlatformRequest,
+    GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+};
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
 use std::fmt::Debug;
@@ -536,22 +560,28 @@ impl PlatformService for QueryService {
         .await
     }
 
-    async fn get_evonodes_proposed_epoch_blocks_by_ids(&self, request: Request<GetEvonodesProposedEpochBlocksByIdsRequest>) -> Result<Response<GetEvonodesProposedEpochBlocksByIdsResponse>, Status> {
+    async fn get_evonodes_proposed_epoch_blocks_by_ids(
+        &self,
+        request: Request<GetEvonodesProposedEpochBlocksByIdsRequest>,
+    ) -> Result<Response<GetEvonodesProposedEpochBlocksResponse>, Status> {
         self.handle_blocking_query(
             request,
-            Platform::<DefaultCoreRPC>::query_evonodes_proposed_epoch_blocks_by_ids,
-            "query_evonodes_proposed_epoch_blocks_by_ids",
+            Platform::<DefaultCoreRPC>::query_proposed_block_counts_by_evonode_ids,
+            "query_proposed_block_counts_by_evonode_ids",
         )
-            .await
+        .await
     }
 
-    async fn get_evonodes_proposed_epoch_blocks_by_range(&self, request: Request<GetEvonodesProposedEpochBlocksByRangeRequest>) -> Result<Response<GetEvonodesProposedEpochBlocksByRangeResponse>, Status> {
+    async fn get_evonodes_proposed_epoch_blocks_by_range(
+        &self,
+        request: Request<GetEvonodesProposedEpochBlocksByRangeRequest>,
+    ) -> Result<Response<GetEvonodesProposedEpochBlocksResponse>, Status> {
         self.handle_blocking_query(
             request,
-            Platform::<DefaultCoreRPC>::query_evonodes_proposed_epoch_blocks_by_range,
-            "query_evonodes_proposed_epoch_blocks_by_range",
+            Platform::<DefaultCoreRPC>::query_proposed_block_counts_by_range,
+            "query_proposed_block_counts_by_range",
         )
-            .await
+        .await
     }
 }
 
