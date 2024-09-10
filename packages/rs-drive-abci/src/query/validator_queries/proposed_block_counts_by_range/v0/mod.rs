@@ -12,7 +12,7 @@ use dpp::block::epoch::Epoch;
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::credit_pools::epochs::proposers::ProposerQueryType;
+use drive::query::proposer_block_count_query::ProposerQueryType;
 use drive::error::query::QuerySyntaxError;
 
 impl<C> Platform<C> {

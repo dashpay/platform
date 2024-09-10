@@ -13,7 +13,7 @@ mod tests {
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::version::PlatformVersion;
     use drive::config::DriveConfig;
-    use drive::drive::credit_pools::epochs::proposers::ProposerQueryType;
+    use drive::query::proposer_block_count_query::ProposerQueryType;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,

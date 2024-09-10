@@ -11,7 +11,7 @@ use dpp::block::epoch::Epoch;
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::credit_pools::epochs::proposers::ProposerQueryType;
+use drive::query::proposer_block_count_query::ProposerQueryType;
 
 impl<C> Platform<C> {
     pub(super) fn query_proposed_block_counts_by_evonode_ids_v0(

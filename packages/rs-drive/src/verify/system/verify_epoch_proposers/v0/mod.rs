@@ -2,6 +2,7 @@ use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::proposer_block_count_query::ProposerQueryType;
 use crate::query::Query;
 use crate::verify::RootHash;
 use dpp::block::epoch::{Epoch, EpochIndex};
@@ -41,22 +42,19 @@ impl Drive {
     ///
     /// ```
     #[inline(always)]
-    pub(super) fn verify_epoch_proposers_v0<I, P>(
+    pub(super) fn verify_epoch_proposers_v0<I, P, E>(
         proof: &[u8],
         epoch_index: EpochIndex,
-        limit: u16,
+        proposer_query_type: ProposerQueryType,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, I), Error>
     where
         I: FromIterator<(P, u64)>,
-        P: TryFrom<Vec<u8>, Error = Vec<u8>>,
+        P: TryFrom<Vec<u8>, Error = E>,
     {
-        let path_as_vec = Epoch::new(epoch_index)?.get_proposers_path_vec();
+        let epoch = Epoch::new(epoch_index)?;
 
-        let mut query = Query::new();
-        query.insert_all();
-
-        let path_query = PathQuery::new(path_as_vec, SizedQuery::new(query, Some(limit), None));
+        let path_query = proposer_query_type.into_path_query(&epoch);
 
         let (root_hash, elements) =
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;

@@ -12,7 +12,7 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use drive::drive::credit_pools::epochs::proposers::ProposerQueryType;
+use drive::query::proposer_block_count_query::ProposerQueryType;
 use drive::util::batch::DriveOperation;
 use drive::util::batch::DriveOperation::IdentityOperation;
 use drive::util::batch::IdentityOperationType::AddToIdentityBalance;

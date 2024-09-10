@@ -1,8 +1,8 @@
 use grovedb::TransactionArg;
 
-use crate::drive::credit_pools::epochs::proposers::ProposerQueryType;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::query::proposer_block_count_query::ProposerQueryType;
 use dpp::block::epoch::Epoch;
 use platform_version::version::PlatformVersion;
 
@@ -53,8 +53,8 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
-    use crate::drive::credit_pools::epochs::proposers::ProposerQueryType;
     use crate::drive::Drive;
+    use crate::query::proposer_block_count_query::ProposerQueryType;
     use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::util::batch::GroveDbOpBatch;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;

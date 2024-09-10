@@ -1,10 +1,10 @@
 use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
 use grovedb::{Element, TransactionArg};
 
-use crate::drive::credit_pools::epochs::proposers::ProposerQueryType;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::proposer_block_count_query::ProposerQueryType;
 use dpp::block::epoch::Epoch;
 use platform_version::version::PlatformVersion;
 
@@ -130,7 +130,7 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
 
-    use crate::drive::credit_pools::epochs::proposers::ProposerQueryType;
+    use crate::query::proposer_block_count_query::ProposerQueryType;
     use dpp::version::PlatformVersion;
 
     #[test]

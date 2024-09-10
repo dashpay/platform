@@ -8,7 +8,7 @@ use crate::error::Error;
 
 use dpp::block::epoch::Epoch;
 
-use crate::drive::credit_pools::epochs::proposers::ProposerQueryType;
+use crate::query::proposer_block_count_query::ProposerQueryType;
 use dpp::version::PlatformVersion;
 
 impl Drive {

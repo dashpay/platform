@@ -52,6 +52,22 @@ use {
 /// * `O`: The type of the objects in the map.
 pub type RetrievedObjects<K, O> = BTreeMap<K, Option<O>>;
 
+/// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
+///
+/// This type is typically returned by functions that operate on multiple objects, such as fetching multiple objects
+/// from a server using [`FetchMany`](dash_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
+/// using [`FromProof`](crate::FromProof).
+///
+/// Each key in the `RetrievedObjects` corresponds to an object of generic type `O`.
+/// If a value is found for a given key, the value is `value`.
+/// If no value is found for a given key, the value is `0`.
+///
+/// # Generic Type Parameters
+///
+/// * `K`: The type of the keys in the map.
+/// * `I`: The type of the integer in the map.
+pub type RetrievedIntegerValue<K, I> = BTreeMap<K, I>;
+
 /// History of a data contract.
 ///
 /// Contains a map of data contract revisions to data contracts.
@@ -467,3 +483,48 @@ impl PlatformVersionedDecode for MasternodeProtocolVote {
 /// Information about protocol version voted by each node, returned by [ProtocolVersion::fetch_many()].
 /// Indexed by [ProTxHash] of nodes.
 pub type MasternodeProtocolVotes = RetrievedObjects<ProTxHash, MasternodeProtocolVote>;
+
+/// Proposed block count for an Evonode in an Epoch.
+#[derive(Debug)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProposerProposedBlockCount {
+    /// ProTxHash of the masternode
+    pub pro_tx_hash: ProTxHash,
+    /// Amount of blocks that were proposed
+    pub block_count: u64,
+}
+
+#[cfg(feature = "mocks")]
+impl PlatformVersionEncode for ProposerProposedBlockCount {
+    fn platform_encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &platform_version::PlatformVersion,
+    ) -> Result<(), bincode::error::EncodeError> {
+        let protx_bytes: [u8; 32] = self.pro_tx_hash.to_raw_hash().to_byte_array();
+        protx_bytes.platform_encode(encoder, platform_version)?;
+
+        self.block_count.platform_encode(encoder, platform_version)
+    }
+}
+
+#[cfg(feature = "mocks")]
+impl PlatformVersionedDecode for ProposerProposedBlockCount {
+    fn platform_versioned_decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let pro_tx_hash_bytes = <[u8; 32]>::platform_versioned_decode(decoder, platform_version)?;
+        let pro_tx_hash = ProTxHash::from_byte_array(pro_tx_hash_bytes);
+        let block_count = u64::platform_versioned_decode(decoder, platform_version)?;
+        Ok(Self {
+            pro_tx_hash,
+            block_count,
+        })
+    }
+}
+
+/// Proposer block counts
+///
+/// Mapping between proposers and the blocks they might have proposed
+pub type ProposerBlockCounts = RetrievedIntegerValue<Identifier, u64>;

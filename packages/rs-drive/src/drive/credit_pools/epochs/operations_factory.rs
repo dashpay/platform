@@ -476,7 +476,7 @@ mod tests {
 
     mod add_init_current_operations {
         use super::*;
-        use crate::drive::credit_pools::epochs::proposers::ProposerQueryType;
+        use crate::query::proposer_block_count_query::ProposerQueryType;
 
         #[test]
         fn test_values_are_set() {
@@ -901,7 +901,7 @@ mod tests {
 
     mod delete_proposers {
         use super::*;
-        use crate::drive::credit_pools::epochs::proposers::ProposerQueryType;
+        use crate::query::proposer_block_count_query::ProposerQueryType;
 
         #[test]
         fn test_values_are_being_deleted() {

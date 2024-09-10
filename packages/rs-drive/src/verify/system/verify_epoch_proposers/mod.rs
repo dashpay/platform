@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::query::proposer_block_count_query::ProposerQueryType;
 use crate::verify::RootHash;
 use dpp::block::epoch::EpochIndex;
 use dpp::version::PlatformVersion;
@@ -28,15 +29,15 @@ impl Drive {
     ///
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
-    pub fn verify_epoch_proposers<I, P>(
+    pub fn verify_epoch_proposers<I, P, E>(
         proof: &[u8],
         epoch_index: EpochIndex,
-        limit: u16,
+        proposer_query_type: ProposerQueryType,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, I), Error>
     where
         I: FromIterator<(P, u64)>,
-        P: TryFrom<Vec<u8>, Error = Vec<u8>>,
+        P: TryFrom<Vec<u8>, Error = E>,
     {
         match platform_version
             .drive
@@ -45,7 +46,12 @@ impl Drive {
             .system
             .verify_epoch_infos
         {
-            0 => Drive::verify_epoch_proposers_v0(proof, epoch_index, limit, platform_version),
+            0 => Drive::verify_epoch_proposers_v0(
+                proof,
+                epoch_index,
+                proposer_query_type,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_epoch_proposers".to_string(),
                 known_versions: vec![0],
