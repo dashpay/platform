@@ -50,13 +50,13 @@ impl ProposedBlockCountEx<ProTxHash> for ProposerProposedBlockCount {
                 start_info: None,
             },
         )
-        .await
+        .await.map(|a|)
     }
 }
 
 #[async_trait]
 impl ProposedBlockCountEx<ProTxHash> for ProposerBlockCounts {
-    async fn fetch_votes(
+    async fn fetch_proposed_blocks(
         sdk: &Sdk,
         start_protxhash: Option<ProTxHash>,
         limit: Option<u32>,
