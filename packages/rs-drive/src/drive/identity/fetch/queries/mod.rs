@@ -137,7 +137,7 @@ impl Drive {
     pub fn balances_for_identity_ids_query(identity_ids: &[[u8; 32]]) -> PathQuery {
         let balance_path = balance_path_vec();
         let mut query = Query::new();
-        query.insert_keys(identity_ids.into_iter().map(|key| key.to_vec()).collect());
+        query.insert_keys(identity_ids.iter().map(|key| key.to_vec()).collect());
         PathQuery {
             path: balance_path,
             query: SizedQuery {
