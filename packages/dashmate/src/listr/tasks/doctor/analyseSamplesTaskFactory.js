@@ -1,17 +1,26 @@
 import chalk from 'chalk';
 import { Listr } from 'listr2';
+import validateSslCertificateFiles from "../../prompts/validators/validateSslCertificateFiles.js";
+import fs from "fs";
+import path from "path";
+import validateZeroSslCertificateFactory, {ERRORS} from "../../../ssl/zerossl/validateZeroSslCertificateFactory.js";
+import Certificate from "../../../ssl/zerossl/Certificate.js";
 
 /**
  *
  * @param {DockerCompose} dockerCompose
  * @param {getServiceList} getServiceList
  * @param {verifySystemRequirements} verifySystemRequirements
+ * @param {HomeDir} homeDir
+ * @param {validateZeroSslCertificate} validateZeroSslCertificate
  * @return {analyseSamplesTask}
  */
 export default function analyseSamplesTaskFactory(
   dockerCompose,
   getServiceList,
   verifySystemRequirements,
+  homeDir,
+  validateZeroSslCertificate,
 ) {
   /**
    * @typedef {function} analyseSamplesTask
@@ -216,7 +225,7 @@ export default function analyseSamplesTaskFactory(
               problem = chalk`Services ${ctx.servicesNotStarted.map((e) => e.service.title).join(', ')} aren't started.`
             }
 
-            problem += chalk`\n\nTry {bold.blueBright dashmate start --force} to make sure all services are started`;
+            problem += chalk`\n\nTry {bold.cyanBright dashmate start --force} to make sure all services are started`;
 
             ctx.problems.push(problem);
           }
@@ -267,19 +276,160 @@ export default function analyseSamplesTaskFactory(
             ctx.problems.push(problem);
           }
 
-          if (ctx.systemResourceProblems.length > 0) {
+          const systemResourceProblems = Object.values(ctx.systemResourceProblems);
+          if (systemResourceProblems.length > 0) {
+            let problem;
+            if (systemResourceProblems.length === 1) {
+              problem = chalk`A system resource warning:\n${systemResourceProblems[0]}`;
+            } else {
+              problem = chalk`${systemResourceProblems.length} system resource warnings:\n${systemResourceProblems.join('\n')}`;
+            }
 
+            ctx.problems.push(problem);
           }
         },
       },
-      // TODO: dont have priavate ky to sign
       {
-        title: 'Services are started',
-        skip: (ctx) => ctx.skipOthers,
-        task: async (ctx, task) => {
+        title: 'Configuration',
+        task: async () => (
+          new Listr([
+            {
+              title: 'Gateway admin is enabled if metrics are enabled',
+              enabled: config.get('platform.enabled'),
+              task: async (ctx, task) => {
+                if (config.get('platform.gateway.metrics.enabled') && !config.get('platform.gateway.admin.enabled')) {
+                  const problem = chalk`Gateway admin is disabled while metrics are enabled
 
-          // TODO: metrics enabled but admin is not
-        },
+Please enable gateway admin: {bold.cyanBright dashmate config set platform.gateway.admin.enabled true}`;
+
+                  ctx.problems.push(problem);
+
+                  throw new Error(task.title);
+                }
+              },
+            },
+            {
+              title: 'Platform Node ID',
+              enabled: config.get('platform.enabled'),
+              task: async (ctx, task) => {
+                const masternodeStatus = ctx.samples.getServiceInfo('core', 'masternodeStatus');
+                const platformNodeId = masternodeStatus?.dmnState?.platformNodeId;
+                if (platformNodeId && config.get('platform.drive.tenderdash.node.id') !== platformNodeId) {
+                  const problem = chalk`Platform Node ID doesn't match the one in the ProReg transaction
+
+Please set correct Node ID and Node Key:
+{bold.cyanBright dashmate config set platform.drive.tenderdash.node.id ID
+dashmate config set platform.drive.tenderdash.node.key KEY}
+
+Or update Node ID in masternode list with ProServUp transaction`;
+
+                  ctx.problems.push(problem);
+
+                  throw new Error(task.title);
+                }
+              },
+            },
+            {
+              title: 'SSL certificate',
+              enabled: config.get('platform.enabled'),
+              task: async (ctx, task) => {
+                const certificatesDir = homeDir.joinPath(
+                  config.getName(),
+                  'platform',
+                  'gateway',
+                  'ssl',
+                );
+
+                const chainFilePath = path.join(certificatesDir, 'bundle.crt');
+                const privateFilePath = path.join(certificatesDir, 'private.key');
+
+                if (!fs.existsSync(chainFilePath) || !fs.existsSync(privateFilePath)) {
+                  const problem = chalk`SSL certificate files are not found
+
+Certificate chain file path: {bold.cyanBright ${chainFilePath}}
+Private key file path: {bold.cyanBright ${privateFilePath}}
+
+Please get certificates and place files to the correct location.
+Another optionUse ZeroSSL to obtain a new one https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate`;
+
+                  ctx.problems.push(problem);
+
+                  throw new Error(task.title);
+                }
+
+                const isValid = validateSslCertificateFiles(chainFilePath, privateFilePath);
+
+                if (!isValid) {
+                  const problem = chalk`SSL certificate files aren't valid
+
+Certificate chain file path: {bold.cyanBright ${chainFilePath}}
+Private key file path: {bold.cyanBright ${privateFilePath}}
+
+Please make sure certificate chain contains actual server certificate at the top of the file and it corresponds to private`;
+
+                  ctx.problems.push(problem);
+
+                  throw new Error(task.title);
+                }
+              },
+            },
+            {
+              title: 'ZeroSSL certificate',
+              enabled: config.get('platform.gateway.ssl.provider') === 'zerossl',
+              task: async (ctx, task) => {
+                const {
+                  error,
+                  data,
+                } = validateZeroSslCertificate(config, Certificate.EXPIRATION_LIMIT_DAYS);
+
+                const problem = {
+                  [ERRORS.API_KEY_IS_NOT_SET]: chalk`ZeroSSL API key is not set.
+
+Please obtain your API key in {underline.cyanBright https://app.zerossl.com/developer}
+And then update configuration with {block.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.zerossl.apiKey [KEY]}`,
+                  [ERRORS.EXTERNAL_IP_IS_NOT_SET]: chalk`External IP is not set.
+
+Please update configuration with your external IP using {block.cyanBright dashmate config set externalIp [IP]}`,
+                  [ERRORS.CERTIFICATE_ID_IS_NOT_SET]: chalk`ZeroSSL certificate is not configured
+
+Please run {bold.cyanBright dashmate ssl obtain} to get a new one`,
+                  [ERRORS.PRIVATE_KEY_IS_NOT_PRESENT]: chalk`ZeroSSL private key file not found in ${data.privateKeyFilePath}.
+
+Please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --force}
+and revoke the previous certificate in the ZeroSSL dashboard`,
+                  [ERRORS.EXTERNAL_IP_MISMATCH]: chalk`ZeroSSL IP ${data.certificate.common_name} does not match external IP ${data.externalIp}.
+
+Please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --force}
+and revoke the previous certificate in the ZeroSSL dashboard`,
+                  [ERRORS.CSR_FILE_IS_NOT_PRESENT]: chalk`ZeroSSL certificate request file not found in ${data.csrFilePath}.
+This makes auto renew impossible.
+
+If you need auto renew, please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --force}
+and revoke the previous certificate in the ZeroSSL dashboard`,
+                  [ERRORS.CERTIFICATE_EXPIRES_SOON]: chalk`ZeroSSL certificate expires at ${data.certificate.expires}.
+
+Please run {bold.cyanBright dashmate ssl obtain} to get a new one`,
+                  [ERRORS.CERTIFICATE_IS_NOT_VALIDATED]: chalk`ZeroSSL certificate expires at ${data.certificate.expires}.
+
+Please run {bold.cyanBright dashmate ssl obtain} to get a new one`,
+                  [ERRORS.CERTIFICATE_IS_NOT_VALID]: chalk`ZeroSSL certificate is not valid.
+
+  Please run {bold.cyanBright dashmate ssl zerossl obtain} to get a new one.`,
+                }[error];
+
+                if (problem) {
+                  ctx.problems.push(problem);
+
+                  throw new Error(task.title);
+                }
+              },
+            },
+            // TODO: Get checks from the status command
+            // TODO: Errors in logs
+          ], {
+            exitOnError: false,
+          })
+        ),
       },
     ], {
       exitOnError: false,
