@@ -4,7 +4,7 @@
 //!
 //! ## Traits
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
-use super::{Fetch, LimitQuery};
+use super::LimitQuery;
 use crate::{
     error::Error,
     mock::MockResponse,

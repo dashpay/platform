@@ -166,16 +166,14 @@ impl Drive {
             } else {
                 query.insert_item(QueryItem::RangeFull(RangeFull))
             }
-        } else {
-            if let Some((start_at, start_at_included)) = start_at {
-                if start_at_included {
-                    query.insert_item(QueryItem::RangeToInclusive(..=start_at.to_vec()))
-                } else {
-                    query.insert_item(QueryItem::RangeTo(..start_at.to_vec()))
-                }
+        } else if let Some((start_at, start_at_included)) = start_at {
+            if start_at_included {
+                query.insert_item(QueryItem::RangeToInclusive(..=start_at.to_vec()))
             } else {
-                query.insert_item(QueryItem::RangeFull(RangeFull))
+                query.insert_item(QueryItem::RangeTo(..start_at.to_vec()))
             }
+        } else {
+            query.insert_item(QueryItem::RangeFull(RangeFull))
         }
         PathQuery {
             path: balance_path,

@@ -11,7 +11,6 @@ use crate::verify::RootHash;
 
 use dpp::version::PlatformVersion;
 
-use dpp::identifier::Identifier;
 use std::iter::FromIterator;
 
 impl Drive {

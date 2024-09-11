@@ -6,7 +6,6 @@ use dpp::fee::Credits;
 
 use crate::verify::RootHash;
 
-use dpp::identifier::Identifier;
 use grovedb::GroveDb;
 use platform_version::version::PlatformVersion;
 
