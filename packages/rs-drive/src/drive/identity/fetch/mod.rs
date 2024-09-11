@@ -29,6 +29,10 @@ use grovedb::TransactionArg;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::{PathQuery, SizedQuery};
 
+#[cfg(feature = "server")]
+use dpp::fee::Credits;
+
+#[cfg(feature = "server")]
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "server")]
 use std::collections::BTreeMap;
@@ -160,52 +164,110 @@ impl Drive {
             .collect()
     }
 
-    // TODO: We deal with it in an upcoming PR (Sam!!)
-    // /// Given a vector of identities, fetches the identities with their keys
-    // /// matching the request from storage.
-    // pub fn fetch_identities_with_keys(
-    //     &self,
-    //     ids: Vec<[u8; 32]>,
-    //     key_ref_request: KeyRequestType,
-    //     transaction: TransactionArg,
-    // ) -> Result<Vec<Identity>, Error> {
-    //     let key_request = IdentityKeysRequest {
-    //         identity_id: [],
-    //         key_request: KeyRequestType::AllKeysRequest,
-    //         limit: None,
-    //         offset: None,
-    //     }
-    //     let mut query = Query::new();
-    //     query.set_subquery_key(IDENTITY_KEY.to_vec());
-    //
-    //     let (result_items, _) = self
-    //         .grove
-    //         .query_raw(&path_query, QueryElementResultType, transaction)
-    //         .unwrap()
-    //         .map_err(Error::GroveDB)?;
-    //
-    //     result_items
-    //         .to_elements()
-    //         .into_iter()
-    //         .map(|element| {
-    //             if let Element::Item(identity_cbor, element_flags) = &element {
-    //                 let identity =
-    //                     Identity::from_buffer(identity_cbor.as_slice()).map_err(|_| {
-    //                         Error::Identity(IdentityError::IdentitySerialization(
-    //                             "failed to deserialize an identity",
-    //                         ))
-    //                     })?;
-    //
-    //                 Ok((
-    //                     identity,
-    //                     StorageFlags::from_some_element_flags_ref(element_flags)?,
-    //                 ))
-    //             } else {
-    //                 Err(Error::Drive(DriveError::CorruptedIdentityNotItem(
-    //                     "identity must be an item",
-    //                 )))
-    //             }
-    //         })
-    //         .collect()
-    // }
+    #[cfg(feature = "server")]
+    /// Given a vector of identities, fetches the identities from storage.
+    pub fn fetch_optional_identities_balances(
+        &self,
+        ids: &Vec<[u8; 32]>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<[u8; 32], Option<Credits>>, Error> {
+        let mut query = Query::new();
+        for id in ids {
+            query.insert_item(QueryItem::Key(id.to_vec()));
+        }
+        let path_query = PathQuery {
+            path: vec![vec![RootTree::Balances as u8]],
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        };
+        let results = self
+            .grove
+            .query_raw_keys_optional(
+                &path_query,
+                true,
+                true,
+                true,
+                transaction,
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+            .map_err(Error::GroveDB)?;
+
+        results
+            .into_iter()
+            .map(|(_, key, element)| {
+                let identifier: [u8; 32] = key.try_into().map_err(|_| {
+                    Error::Drive(DriveError::CorruptedSerialization(String::from(
+                        "expected 32 bytes",
+                    )))
+                })?;
+
+                let balance = element
+                    .map(|element| {
+                        if let SumItem(balance, _) = &element {
+                            Ok(*balance as u64)
+                        } else {
+                            Err(Error::Drive(DriveError::CorruptedIdentityNotItem(
+                                "identity balance must be a sum item",
+                            )))
+                        }
+                    })
+                    .transpose()?;
+
+                Ok((identifier, balance))
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "server")]
+    /// Given a vector of identities, fetches the identities from storage.
+    pub fn fetch_many_identity_balances_by_range<I>(
+        &self,
+        start_at: Option<([u8; 32], bool)>,
+        ascending: bool,
+        limit: u16,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<I, Error>
+    where
+        I: FromIterator<([u8; 32], u64)>,
+    {
+        let balance_query = Self::balances_for_range_query(start_at, ascending, limit);
+        let (result_items, _) = self
+            .grove
+            .query_raw(
+                &balance_query,
+                true,
+                true,
+                true,
+                QueryKeyElementPairResultType,
+                transaction,
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+            .map_err(Error::GroveDB)?;
+
+        result_items
+            .to_key_elements()
+            .into_iter()
+            .map(|key_element| {
+                if let SumItem(balance, _) = &key_element.1 {
+                    let identifier: [u8; 32] = key_element.0.try_into().map_err(|_| {
+                        Error::Drive(DriveError::CorruptedSerialization(String::from(
+                            "expected 32 bytes",
+                        )))
+                    })?;
+                    Ok((identifier, *balance as u64))
+                } else {
+                    Err(Error::Drive(DriveError::CorruptedIdentityNotItem(
+                        "identity balance must be a sum item",
+                    )))
+                }
+            })
+            .collect()
+    }
 }

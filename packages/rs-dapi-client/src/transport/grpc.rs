@@ -209,6 +209,14 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    platform_proto::GetIdentitiesBalancesRequest,
+    platform_proto::GetIdentitiesBalancesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identities_balances
+);
+
+impl_transport_request_grpc!(
     platform_proto::GetIdentityNonceRequest,
     platform_proto::GetIdentityNonceResponse,
     PlatformGrpcClient,

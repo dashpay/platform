@@ -39,6 +39,8 @@
 @class GetEvonodesProposedEpochBlocksByIdsRequest;
 @class GetEvonodesProposedEpochBlocksByRangeRequest;
 @class GetEvonodesProposedEpochBlocksResponse;
+@class GetIdentitiesBalancesRequest;
+@class GetIdentitiesBalancesResponse;
 @class GetIdentitiesContractKeysRequest;
 @class GetIdentitiesContractKeysResponse;
 @class GetIdentityBalanceAndRevisionRequest;
@@ -130,6 +132,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse)
 
 - (GRPCUnaryProtoCall *)getIdentityBalanceWithMessage:(GetIdentityBalanceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getIdentitiesBalances(GetIdentitiesBalancesRequest) returns (GetIdentitiesBalancesResponse)
+
+- (GRPCUnaryProtoCall *)getIdentitiesBalancesWithMessage:(GetIdentitiesBalancesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest) returns (GetIdentityBalanceAndRevisionResponse)
 
@@ -293,6 +299,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getIdentityBalanceWithRequest:(GetIdentityBalanceRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetIdentityBalanceWithRequest:(GetIdentityBalanceRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getIdentitiesBalances(GetIdentitiesBalancesRequest) returns (GetIdentitiesBalancesResponse)
+
+- (void)getIdentitiesBalancesWithRequest:(GetIdentitiesBalancesRequest *)request handler:(void(^)(GetIdentitiesBalancesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentitiesBalancesWithRequest:(GetIdentitiesBalancesRequest *)request handler:(void(^)(GetIdentitiesBalancesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest) returns (GetIdentityBalanceAndRevisionResponse)
