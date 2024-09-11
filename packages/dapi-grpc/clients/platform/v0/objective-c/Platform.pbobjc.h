@@ -71,6 +71,11 @@ CF_EXTERN_C_BEGIN
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos;
+@class GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0;
+@class GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds;
+@class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0;
+@class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances;
+@class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance;
 @class GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0;
 @class GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0;
 @class GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentitiesKeys;
@@ -1347,6 +1352,148 @@ typedef GPB_ENUM(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResp
 GPB_FINAL @interface GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentitiesKeys : GPBMessage
 
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - GetIdentitiesBalancesRequest
+
+typedef GPB_ENUM(GetIdentitiesBalancesRequest_FieldNumber) {
+  GetIdentitiesBalancesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentitiesBalancesRequest_Version_OneOfCase) {
+  GetIdentitiesBalancesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentitiesBalancesRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentitiesBalancesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetIdentitiesBalancesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentitiesBalancesRequest_ClearVersionOneOfCase(GetIdentitiesBalancesRequest *message);
+
+#pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0
+
+typedef GPB_ENUM(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber) {
+  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_IdentitiesIds = 1,
+  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds *identitiesIds;
+/** Test to see if @c identitiesIds has been set. */
+@property(nonatomic, readwrite) BOOL hasIdentitiesIds;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds
+
+typedef GPB_ENUM(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds_FieldNumber) {
+  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds_FieldNumber_IdentitiesIdsArray = 1,
+};
+
+GPB_FINAL @interface GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identitiesIdsArray;
+/** The number of items in @c identitiesIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger identitiesIdsArray_Count;
+
+@end
+
+#pragma mark - GetIdentitiesBalancesResponse
+
+typedef GPB_ENUM(GetIdentitiesBalancesResponse_FieldNumber) {
+  GetIdentitiesBalancesResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentitiesBalancesResponse_Version_OneOfCase) {
+  GetIdentitiesBalancesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentitiesBalancesResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentitiesBalancesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetIdentitiesBalancesResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentitiesBalancesResponse_ClearVersionOneOfCase(GetIdentitiesBalancesResponse *message);
+
+#pragma mark - GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0
+
+typedef GPB_ENUM(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_FieldNumber) {
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_FieldNumber_IdentitiesBalances = 1,
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_FieldNumber_Proof = 2,
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_Result_OneOfCase) {
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_Result_OneOfCase_IdentitiesBalances = 1,
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances *identitiesBalances;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_ClearResultOneOfCase(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0 *message);
+
+#pragma mark - GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance
+
+typedef GPB_ENUM(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance_FieldNumber) {
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance_FieldNumber_IdentityId = 1,
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance_FieldNumber_Balance = 2,
+};
+
+GPB_FINAL @interface GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
+
+@property(nonatomic, readwrite) uint64_t balance;
+
+@property(nonatomic, readwrite) BOOL hasBalance;
+@end
+
+#pragma mark - GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances
+
+typedef GPB_ENUM(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances_FieldNumber) {
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance*> *entriesArray;
 /** The number of items in @c entriesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger entriesArray_Count;
 

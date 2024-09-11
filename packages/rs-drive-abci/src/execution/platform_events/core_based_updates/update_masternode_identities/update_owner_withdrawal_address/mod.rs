@@ -3,8 +3,6 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::ProTxHash;
-use dashcore_rpc::json::DMNStateDiff;
 use dpp::block::block_info::BlockInfo;
 
 use dpp::version::PlatformVersion;

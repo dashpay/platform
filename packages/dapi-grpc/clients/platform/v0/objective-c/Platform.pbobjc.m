@@ -91,6 +91,13 @@ GPBObjCClassDeclaration(GetEpochsInfoResponse);
 GPBObjCClassDeclaration(GetEpochsInfoResponse_GetEpochsInfoResponseV0);
 GPBObjCClassDeclaration(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo);
 GPBObjCClassDeclaration(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos);
+GPBObjCClassDeclaration(GetIdentitiesBalancesRequest);
+GPBObjCClassDeclaration(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0);
+GPBObjCClassDeclaration(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds);
+GPBObjCClassDeclaration(GetIdentitiesBalancesResponse);
+GPBObjCClassDeclaration(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0);
+GPBObjCClassDeclaration(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances);
+GPBObjCClassDeclaration(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance);
 GPBObjCClassDeclaration(GetIdentitiesContractKeysRequest);
 GPBObjCClassDeclaration(GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0);
 GPBObjCClassDeclaration(GetIdentitiesContractKeysResponse);
@@ -2979,6 +2986,405 @@ typedef struct GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysRespon
                                    storageSize:sizeof(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentitiesKeys__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentitiesBalancesRequest
+
+@implementation GetIdentitiesBalancesRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetIdentitiesBalancesRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0 *v0;
+} GetIdentitiesBalancesRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0),
+        .number = GetIdentitiesBalancesRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentitiesBalancesRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesBalancesRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesBalancesRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetIdentitiesBalancesRequest_ClearVersionOneOfCase(GetIdentitiesBalancesRequest *message) {
+  GPBDescriptor *descriptor = [GetIdentitiesBalancesRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0
+
+@implementation GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0
+
+@dynamic hasIdentitiesIds, identitiesIds;
+@dynamic prove;
+
+typedef struct GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds *identitiesIds;
+} GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identitiesIds",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds),
+        .number = GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_IdentitiesIds,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0__storage_, identitiesIds),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_Prove,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentitiesBalancesRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds
+
+@implementation GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds
+
+@dynamic identitiesIdsArray, identitiesIdsArray_Count;
+
+typedef struct GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *identitiesIdsArray;
+} GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identitiesIdsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds_FieldNumber_IdentitiesIdsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds__storage_, identitiesIdsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentitiesBalancesResponse
+
+@implementation GetIdentitiesBalancesResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetIdentitiesBalancesResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0 *v0;
+} GetIdentitiesBalancesResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0),
+        .number = GetIdentitiesBalancesResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentitiesBalancesResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesBalancesResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesBalancesResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetIdentitiesBalancesResponse_ClearVersionOneOfCase(GetIdentitiesBalancesResponse *message) {
+  GPBDescriptor *descriptor = [GetIdentitiesBalancesResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0
+
+@implementation GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic identitiesBalances;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances *identitiesBalances;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identitiesBalances",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances),
+        .number = GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_FieldNumber_IdentitiesBalances,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0__storage_, identitiesBalances),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentitiesBalancesResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_ClearResultOneOfCase(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance
+
+@implementation GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance
+
+@dynamic identityId;
+@dynamic hasBalance, balance;
+
+typedef struct GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *identityId;
+  uint64_t balance;
+} GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identityId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance_FieldNumber_IdentityId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance__storage_, identityId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "balance",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance_FieldNumber_Balance,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance__storage_, balance),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances
+
+@implementation GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances
+
+@dynamic entriesArray, entriesArray_Count;
+
+typedef struct GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *entriesArray;
+} GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "entriesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance),
+        .number = GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances_FieldNumber_EntriesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances__storage_, entriesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG

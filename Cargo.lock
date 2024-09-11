@@ -1567,7 +1567,6 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "mockall",
- "once_cell",
  "platform-version",
  "prost 0.12.6",
  "rand",

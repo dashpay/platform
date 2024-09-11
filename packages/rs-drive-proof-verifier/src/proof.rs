@@ -11,10 +11,11 @@ use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKi
 use dapi_grpc::platform::v0::{
     get_contested_resource_identity_votes_request, get_data_contract_history_request,
     get_data_contract_request, get_data_contracts_request, get_epochs_info_request,
-    get_identities_contract_keys_request, get_identity_balance_and_revision_request,
-    get_identity_balance_request, get_identity_by_public_key_hash_request,
-    get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request,
-    get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request,
+    get_identities_balances_request, get_identities_contract_keys_request,
+    get_identity_balance_and_revision_request, get_identity_balance_request,
+    get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
+    get_identity_keys_request, get_identity_nonce_request, get_identity_request,
+    get_path_elements_request, get_prefunded_specialized_balance_request,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
     GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
@@ -660,6 +661,64 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((maybe_identity, mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetIdentitiesBalancesRequest> for IdentityBalances {
+    type Request = platform::GetIdentitiesBalancesRequest;
+    type Response = platform::GetIdentitiesBalancesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        IdentityBalances: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let identities_ids = match request.version.ok_or(Error::EmptyVersion)? {
+            get_identities_balances_request::Version::V0(v0) => v0.identities_ids,
+        };
+
+        let Some(identities_ids) = identities_ids else {
+            return Err(Error::RequestError {
+                error: "expected identity ids".to_string(),
+            });
+        };
+
+        let identity_ids = identities_ids
+            .identities_ids
+            .into_iter()
+            .map(|identity_bytes| {
+                Identifier::from_bytes(&identity_bytes)
+                    .map(|identifier| identifier.into_buffer())
+                    .map_err(|e| Error::RequestError {
+                        error: format!("identities must be all 32 bytes {}", e),
+                    })
+            })
+            .collect::<Result<Vec<[u8; 32]>, Error>>()?;
+        let (root_hash, balances) = Drive::verify_identity_balances_for_identity_ids(
+            &proof.grovedb_proof,
+            false,
+            &identity_ids,
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((Some(balances), mtd.clone(), proof.clone()))
     }
 }
 

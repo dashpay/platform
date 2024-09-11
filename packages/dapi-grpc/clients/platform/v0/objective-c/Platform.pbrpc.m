@@ -210,6 +210,26 @@
              responseClass:[GetIdentityBalanceResponse class]];
 }
 
+#pragma mark getIdentitiesBalances(GetIdentitiesBalancesRequest) returns (GetIdentitiesBalancesResponse)
+
+- (void)getIdentitiesBalancesWithRequest:(GetIdentitiesBalancesRequest *)request handler:(void(^)(GetIdentitiesBalancesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentitiesBalancesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetIdentitiesBalancesWithRequest:(GetIdentitiesBalancesRequest *)request handler:(void(^)(GetIdentitiesBalancesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentitiesBalances"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentitiesBalancesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getIdentitiesBalancesWithMessage:(GetIdentitiesBalancesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentitiesBalances"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentitiesBalancesResponse class]];
+}
+
 #pragma mark getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest) returns (GetIdentityBalanceAndRevisionResponse)
 
 - (void)getIdentityBalanceAndRevisionWithRequest:(GetIdentityBalanceAndRevisionRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler{

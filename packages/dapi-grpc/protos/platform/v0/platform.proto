@@ -16,6 +16,8 @@ service Platform {
   rpc getIdentityContractNonce(GetIdentityContractNonceRequest) returns (GetIdentityContractNonceResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
       returns (GetIdentityBalanceResponse);
+  rpc getIdentitiesBalances(GetIdentitiesBalancesRequest)
+      returns (GetIdentitiesBalancesResponse);
   rpc getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest)
       returns (GetIdentityBalanceAndRevisionResponse);
   rpc getProofs(GetProofsRequest) returns (GetProofsResponse);
@@ -305,6 +307,41 @@ message GetIdentitiesContractKeysResponse {
   }
 
   oneof version { GetIdentitiesContractKeysResponseV0 v0 = 1; }
+}
+
+message GetIdentitiesBalancesRequest {
+  message GetIdentitiesBalancesRequestV0 {
+    message GetIdentitiesBalancesByKnownIdentityIds {
+      repeated bytes identities_ids = 1;
+    }
+    GetIdentitiesBalancesByKnownIdentityIds identities_ids = 1;
+    bool prove = 2;
+  }
+
+  oneof version {
+    GetIdentitiesBalancesRequestV0 v0 = 1;
+  }
+}
+
+message GetIdentitiesBalancesResponse {
+  message GetIdentitiesBalancesResponseV0 {
+    message IdentityBalance {
+      bytes identity_id = 1;
+      optional uint64 balance = 2;
+    }
+
+    message IdentitiesBalances {
+      repeated IdentityBalance entries = 1;
+    };
+
+    oneof result {
+      IdentitiesBalances identities_balances = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version { GetIdentitiesBalancesResponseV0 v0 = 1; }
 }
 
 message GetProofsRequest {

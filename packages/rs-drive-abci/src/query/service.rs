@@ -18,7 +18,8 @@ use dapi_grpc::platform::v0::{
     GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
     GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
     GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
+    GetEpochsInfoResponse, GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse,
+    GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
     GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
     GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
     GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
@@ -542,6 +543,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_total_credits_in_platform,
             "get_total_credits_in_platform",
+        )
+        .await
+    }
+
+    async fn get_identities_balances(
+        &self,
+        request: Request<GetIdentitiesBalancesRequest>,
+    ) -> Result<Response<GetIdentitiesBalancesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities_balances,
+            "get_identities_balances",
         )
         .await
     }

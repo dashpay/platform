@@ -318,6 +318,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentitiesBalances}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getIdentitiesBalancesCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} [response] GetIdentitiesBalancesResponse
+                         */
+
+                        /**
+                         * Calls getIdentitiesBalances.
+                         * @function getIdentitiesBalances
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest} request GetIdentitiesBalancesRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getIdentitiesBalancesCallback} callback Node-style callback called with the error, if any, and GetIdentitiesBalancesResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getIdentitiesBalances = function getIdentitiesBalances(request, callback) {
+                            return this.rpcCall(getIdentitiesBalances, $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest, $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse, request, callback);
+                        }, "name", { value: "getIdentitiesBalances" });
+
+                        /**
+                         * Calls getIdentitiesBalances.
+                         * @function getIdentitiesBalances
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest} request GetIdentitiesBalancesRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentityBalanceAndRevision}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getIdentityBalanceAndRevisionCallback
@@ -11233,6 +11266,1563 @@ $root.org = (function() {
                         })();
 
                         return GetIdentitiesContractKeysResponse;
+                    })();
+
+                    v0.GetIdentitiesBalancesRequest = (function() {
+
+                        /**
+                         * Properties of a GetIdentitiesBalancesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentitiesBalancesRequest
+                         * @property {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0|null} [v0] GetIdentitiesBalancesRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetIdentitiesBalancesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentitiesBalancesRequest.
+                         * @implements IGetIdentitiesBalancesRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest=} [properties] Properties to set
+                         */
+                        function GetIdentitiesBalancesRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentitiesBalancesRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @instance
+                         */
+                        GetIdentitiesBalancesRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentitiesBalancesRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentitiesBalancesRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetIdentitiesBalancesRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} GetIdentitiesBalancesRequest instance
+                         */
+                        GetIdentitiesBalancesRequest.create = function create(properties) {
+                            return new GetIdentitiesBalancesRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesBalancesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest} message GetIdentitiesBalancesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesBalancesRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesBalancesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest} message GetIdentitiesBalancesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesBalancesRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesBalancesRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} GetIdentitiesBalancesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesBalancesRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesBalancesRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} GetIdentitiesBalancesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesBalancesRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentitiesBalancesRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentitiesBalancesRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentitiesBalancesRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} GetIdentitiesBalancesRequest
+                         */
+                        GetIdentitiesBalancesRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentitiesBalancesRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} message GetIdentitiesBalancesRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentitiesBalancesRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentitiesBalancesRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentitiesBalancesRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetIdentitiesBalancesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                             * @interface IGetIdentitiesBalancesRequestV0
+                             * @property {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds|null} [identitiesIds] GetIdentitiesBalancesRequestV0 identitiesIds
+                             * @property {boolean|null} [prove] GetIdentitiesBalancesRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetIdentitiesBalancesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                             * @classdesc Represents a GetIdentitiesBalancesRequestV0.
+                             * @implements IGetIdentitiesBalancesRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0=} [properties] Properties to set
+                             */
+                            function GetIdentitiesBalancesRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentitiesBalancesRequestV0 identitiesIds.
+                             * @member {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds|null|undefined} identitiesIds
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesRequestV0.prototype.identitiesIds = null;
+
+                            /**
+                             * GetIdentitiesBalancesRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetIdentitiesBalancesRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} GetIdentitiesBalancesRequestV0 instance
+                             */
+                            GetIdentitiesBalancesRequestV0.create = function create(properties) {
+                                return new GetIdentitiesBalancesRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentitiesBalancesRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0} message GetIdentitiesBalancesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentitiesBalancesRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identitiesIds != null && Object.hasOwnProperty.call(message, "identitiesIds"))
+                                    $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.encode(message.identitiesIds, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentitiesBalancesRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0} message GetIdentitiesBalancesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentitiesBalancesRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentitiesBalancesRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} GetIdentitiesBalancesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentitiesBalancesRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.identitiesIds = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentitiesBalancesRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} GetIdentitiesBalancesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentitiesBalancesRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentitiesBalancesRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentitiesBalancesRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.identitiesIds != null && message.hasOwnProperty("identitiesIds")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.verify(message.identitiesIds);
+                                    if (error)
+                                        return "identitiesIds." + error;
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentitiesBalancesRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} GetIdentitiesBalancesRequestV0
+                             */
+                            GetIdentitiesBalancesRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0();
+                                if (object.identitiesIds != null) {
+                                    if (typeof object.identitiesIds !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.identitiesIds: object expected");
+                                    message.identitiesIds = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.fromObject(object.identitiesIds);
+                                }
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentitiesBalancesRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} message GetIdentitiesBalancesRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentitiesBalancesRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.identitiesIds = null;
+                                    object.prove = false;
+                                }
+                                if (message.identitiesIds != null && message.hasOwnProperty("identitiesIds"))
+                                    object.identitiesIds = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.toObject(message.identitiesIds, options);
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentitiesBalancesRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentitiesBalancesRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds = (function() {
+
+                                /**
+                                 * Properties of a GetIdentitiesBalancesByKnownIdentityIds.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                                 * @interface IGetIdentitiesBalancesByKnownIdentityIds
+                                 * @property {Array.<Uint8Array>|null} [identitiesIds] GetIdentitiesBalancesByKnownIdentityIds identitiesIds
+                                 */
+
+                                /**
+                                 * Constructs a new GetIdentitiesBalancesByKnownIdentityIds.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                                 * @classdesc Represents a GetIdentitiesBalancesByKnownIdentityIds.
+                                 * @implements IGetIdentitiesBalancesByKnownIdentityIds
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds=} [properties] Properties to set
+                                 */
+                                function GetIdentitiesBalancesByKnownIdentityIds(properties) {
+                                    this.identitiesIds = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * GetIdentitiesBalancesByKnownIdentityIds identitiesIds.
+                                 * @member {Array.<Uint8Array>} identitiesIds
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @instance
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.prototype.identitiesIds = $util.emptyArray;
+
+                                /**
+                                 * Creates a new GetIdentitiesBalancesByKnownIdentityIds instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} GetIdentitiesBalancesByKnownIdentityIds instance
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.create = function create(properties) {
+                                    return new GetIdentitiesBalancesByKnownIdentityIds(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified GetIdentitiesBalancesByKnownIdentityIds message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds} message GetIdentitiesBalancesByKnownIdentityIds message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.identitiesIds != null && message.identitiesIds.length)
+                                        for (var i = 0; i < message.identitiesIds.length; ++i)
+                                            writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identitiesIds[i]);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified GetIdentitiesBalancesByKnownIdentityIds message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds} message GetIdentitiesBalancesByKnownIdentityIds message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a GetIdentitiesBalancesByKnownIdentityIds message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} GetIdentitiesBalancesByKnownIdentityIds
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.identitiesIds && message.identitiesIds.length))
+                                                message.identitiesIds = [];
+                                            message.identitiesIds.push(reader.bytes());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a GetIdentitiesBalancesByKnownIdentityIds message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} GetIdentitiesBalancesByKnownIdentityIds
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a GetIdentitiesBalancesByKnownIdentityIds message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.identitiesIds != null && message.hasOwnProperty("identitiesIds")) {
+                                        if (!Array.isArray(message.identitiesIds))
+                                            return "identitiesIds: array expected";
+                                        for (var i = 0; i < message.identitiesIds.length; ++i)
+                                            if (!(message.identitiesIds[i] && typeof message.identitiesIds[i].length === "number" || $util.isString(message.identitiesIds[i])))
+                                                return "identitiesIds: buffer[] expected";
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a GetIdentitiesBalancesByKnownIdentityIds message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} GetIdentitiesBalancesByKnownIdentityIds
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds();
+                                    if (object.identitiesIds) {
+                                        if (!Array.isArray(object.identitiesIds))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.identitiesIds: array expected");
+                                        message.identitiesIds = [];
+                                        for (var i = 0; i < object.identitiesIds.length; ++i)
+                                            if (typeof object.identitiesIds[i] === "string")
+                                                $util.base64.decode(object.identitiesIds[i], message.identitiesIds[i] = $util.newBuffer($util.base64.length(object.identitiesIds[i])), 0);
+                                            else if (object.identitiesIds[i].length >= 0)
+                                                message.identitiesIds[i] = object.identitiesIds[i];
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a GetIdentitiesBalancesByKnownIdentityIds message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} message GetIdentitiesBalancesByKnownIdentityIds
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.identitiesIds = [];
+                                    if (message.identitiesIds && message.identitiesIds.length) {
+                                        object.identitiesIds = [];
+                                        for (var j = 0; j < message.identitiesIds.length; ++j)
+                                            object.identitiesIds[j] = options.bytes === String ? $util.base64.encode(message.identitiesIds[j], 0, message.identitiesIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.identitiesIds[j]) : message.identitiesIds[j];
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this GetIdentitiesBalancesByKnownIdentityIds to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return GetIdentitiesBalancesByKnownIdentityIds;
+                            })();
+
+                            return GetIdentitiesBalancesRequestV0;
+                        })();
+
+                        return GetIdentitiesBalancesRequest;
+                    })();
+
+                    v0.GetIdentitiesBalancesResponse = (function() {
+
+                        /**
+                         * Properties of a GetIdentitiesBalancesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentitiesBalancesResponse
+                         * @property {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0|null} [v0] GetIdentitiesBalancesResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetIdentitiesBalancesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentitiesBalancesResponse.
+                         * @implements IGetIdentitiesBalancesResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesResponse=} [properties] Properties to set
+                         */
+                        function GetIdentitiesBalancesResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentitiesBalancesResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @instance
+                         */
+                        GetIdentitiesBalancesResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentitiesBalancesResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentitiesBalancesResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetIdentitiesBalancesResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} GetIdentitiesBalancesResponse instance
+                         */
+                        GetIdentitiesBalancesResponse.create = function create(properties) {
+                            return new GetIdentitiesBalancesResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesBalancesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesResponse} message GetIdentitiesBalancesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesBalancesResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesBalancesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesResponse} message GetIdentitiesBalancesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesBalancesResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesBalancesResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} GetIdentitiesBalancesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesBalancesResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesBalancesResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} GetIdentitiesBalancesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesBalancesResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentitiesBalancesResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentitiesBalancesResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentitiesBalancesResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} GetIdentitiesBalancesResponse
+                         */
+                        GetIdentitiesBalancesResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentitiesBalancesResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} message GetIdentitiesBalancesResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentitiesBalancesResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentitiesBalancesResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentitiesBalancesResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetIdentitiesBalancesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                             * @interface IGetIdentitiesBalancesResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances|null} [identitiesBalances] GetIdentitiesBalancesResponseV0 identitiesBalances
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentitiesBalancesResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentitiesBalancesResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetIdentitiesBalancesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                             * @classdesc Represents a GetIdentitiesBalancesResponseV0.
+                             * @implements IGetIdentitiesBalancesResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0=} [properties] Properties to set
+                             */
+                            function GetIdentitiesBalancesResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentitiesBalancesResponseV0 identitiesBalances.
+                             * @member {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances|null|undefined} identitiesBalances
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesResponseV0.prototype.identitiesBalances = null;
+
+                            /**
+                             * GetIdentitiesBalancesResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetIdentitiesBalancesResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetIdentitiesBalancesResponseV0 result.
+                             * @member {"identitiesBalances"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetIdentitiesBalancesResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["identitiesBalances", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetIdentitiesBalancesResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} GetIdentitiesBalancesResponseV0 instance
+                             */
+                            GetIdentitiesBalancesResponseV0.create = function create(properties) {
+                                return new GetIdentitiesBalancesResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentitiesBalancesResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0} message GetIdentitiesBalancesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentitiesBalancesResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identitiesBalances != null && Object.hasOwnProperty.call(message, "identitiesBalances"))
+                                    $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.encode(message.identitiesBalances, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentitiesBalancesResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0} message GetIdentitiesBalancesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentitiesBalancesResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentitiesBalancesResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} GetIdentitiesBalancesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentitiesBalancesResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.identitiesBalances = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentitiesBalancesResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} GetIdentitiesBalancesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentitiesBalancesResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentitiesBalancesResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentitiesBalancesResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.identitiesBalances != null && message.hasOwnProperty("identitiesBalances")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.verify(message.identitiesBalances);
+                                        if (error)
+                                            return "identitiesBalances." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentitiesBalancesResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} GetIdentitiesBalancesResponseV0
+                             */
+                            GetIdentitiesBalancesResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0();
+                                if (object.identitiesBalances != null) {
+                                    if (typeof object.identitiesBalances !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.identitiesBalances: object expected");
+                                    message.identitiesBalances = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.fromObject(object.identitiesBalances);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentitiesBalancesResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} message GetIdentitiesBalancesResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentitiesBalancesResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.identitiesBalances != null && message.hasOwnProperty("identitiesBalances")) {
+                                    object.identitiesBalances = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.toObject(message.identitiesBalances, options);
+                                    if (options.oneofs)
+                                        object.result = "identitiesBalances";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentitiesBalancesResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentitiesBalancesResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetIdentitiesBalancesResponseV0.IdentityBalance = (function() {
+
+                                /**
+                                 * Properties of an IdentityBalance.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                                 * @interface IIdentityBalance
+                                 * @property {Uint8Array|null} [identityId] IdentityBalance identityId
+                                 * @property {number|Long|null} [balance] IdentityBalance balance
+                                 */
+
+                                /**
+                                 * Constructs a new IdentityBalance.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                                 * @classdesc Represents an IdentityBalance.
+                                 * @implements IIdentityBalance
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance=} [properties] Properties to set
+                                 */
+                                function IdentityBalance(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * IdentityBalance identityId.
+                                 * @member {Uint8Array} identityId
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @instance
+                                 */
+                                IdentityBalance.prototype.identityId = $util.newBuffer([]);
+
+                                /**
+                                 * IdentityBalance balance.
+                                 * @member {number|Long} balance
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @instance
+                                 */
+                                IdentityBalance.prototype.balance = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Creates a new IdentityBalance instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} IdentityBalance instance
+                                 */
+                                IdentityBalance.create = function create(properties) {
+                                    return new IdentityBalance(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityBalance message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance} message IdentityBalance message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityBalance.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.identityId != null && Object.hasOwnProperty.call(message, "identityId"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identityId);
+                                    if (message.balance != null && Object.hasOwnProperty.call(message, "balance"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.balance);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityBalance message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance} message IdentityBalance message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityBalance.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an IdentityBalance message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} IdentityBalance
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityBalance.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.identityId = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.balance = reader.uint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an IdentityBalance message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} IdentityBalance
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityBalance.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an IdentityBalance message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                IdentityBalance.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                        if (!(message.identityId && typeof message.identityId.length === "number" || $util.isString(message.identityId)))
+                                            return "identityId: buffer expected";
+                                    if (message.balance != null && message.hasOwnProperty("balance"))
+                                        if (!$util.isInteger(message.balance) && !(message.balance && $util.isInteger(message.balance.low) && $util.isInteger(message.balance.high)))
+                                            return "balance: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an IdentityBalance message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} IdentityBalance
+                                 */
+                                IdentityBalance.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance();
+                                    if (object.identityId != null)
+                                        if (typeof object.identityId === "string")
+                                            $util.base64.decode(object.identityId, message.identityId = $util.newBuffer($util.base64.length(object.identityId)), 0);
+                                        else if (object.identityId.length >= 0)
+                                            message.identityId = object.identityId;
+                                    if (object.balance != null)
+                                        if ($util.Long)
+                                            (message.balance = $util.Long.fromValue(object.balance)).unsigned = true;
+                                        else if (typeof object.balance === "string")
+                                            message.balance = parseInt(object.balance, 10);
+                                        else if (typeof object.balance === "number")
+                                            message.balance = object.balance;
+                                        else if (typeof object.balance === "object")
+                                            message.balance = new $util.LongBits(object.balance.low >>> 0, object.balance.high >>> 0).toNumber(true);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an IdentityBalance message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} message IdentityBalance
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                IdentityBalance.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.identityId = "";
+                                        else {
+                                            object.identityId = [];
+                                            if (options.bytes !== Array)
+                                                object.identityId = $util.newBuffer(object.identityId);
+                                        }
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.balance = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.balance = options.longs === String ? "0" : 0;
+                                    }
+                                    if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                        object.identityId = options.bytes === String ? $util.base64.encode(message.identityId, 0, message.identityId.length) : options.bytes === Array ? Array.prototype.slice.call(message.identityId) : message.identityId;
+                                    if (message.balance != null && message.hasOwnProperty("balance"))
+                                        if (typeof message.balance === "number")
+                                            object.balance = options.longs === String ? String(message.balance) : message.balance;
+                                        else
+                                            object.balance = options.longs === String ? $util.Long.prototype.toString.call(message.balance) : options.longs === Number ? new $util.LongBits(message.balance.low >>> 0, message.balance.high >>> 0).toNumber(true) : message.balance;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this IdentityBalance to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                IdentityBalance.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return IdentityBalance;
+                            })();
+
+                            GetIdentitiesBalancesResponseV0.IdentitiesBalances = (function() {
+
+                                /**
+                                 * Properties of an IdentitiesBalances.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                                 * @interface IIdentitiesBalances
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance>|null} [entries] IdentitiesBalances entries
+                                 */
+
+                                /**
+                                 * Constructs a new IdentitiesBalances.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                                 * @classdesc Represents an IdentitiesBalances.
+                                 * @implements IIdentitiesBalances
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances=} [properties] Properties to set
+                                 */
+                                function IdentitiesBalances(properties) {
+                                    this.entries = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * IdentitiesBalances entries.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance>} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @instance
+                                 */
+                                IdentitiesBalances.prototype.entries = $util.emptyArray;
+
+                                /**
+                                 * Creates a new IdentitiesBalances instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} IdentitiesBalances instance
+                                 */
+                                IdentitiesBalances.create = function create(properties) {
+                                    return new IdentitiesBalances(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified IdentitiesBalances message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances} message IdentitiesBalances message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentitiesBalances.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.entries != null && message.entries.length)
+                                        for (var i = 0; i < message.entries.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified IdentitiesBalances message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances} message IdentitiesBalances message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentitiesBalances.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an IdentitiesBalances message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} IdentitiesBalances
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentitiesBalances.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.entries && message.entries.length))
+                                                message.entries = [];
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an IdentitiesBalances message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} IdentitiesBalances
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentitiesBalances.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an IdentitiesBalances message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                IdentitiesBalances.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        if (!Array.isArray(message.entries))
+                                            return "entries: array expected";
+                                        for (var i = 0; i < message.entries.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.verify(message.entries[i]);
+                                            if (error)
+                                                return "entries." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an IdentitiesBalances message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} IdentitiesBalances
+                                 */
+                                IdentitiesBalances.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances();
+                                    if (object.entries) {
+                                        if (!Array.isArray(object.entries))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.entries: array expected");
+                                        message.entries = [];
+                                        for (var i = 0; i < object.entries.length; ++i) {
+                                            if (typeof object.entries[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.entries: object expected");
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.fromObject(object.entries[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an IdentitiesBalances message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} message IdentitiesBalances
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                IdentitiesBalances.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.entries = [];
+                                    if (message.entries && message.entries.length) {
+                                        object.entries = [];
+                                        for (var j = 0; j < message.entries.length; ++j)
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.toObject(message.entries[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this IdentitiesBalances to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                IdentitiesBalances.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return IdentitiesBalances;
+                            })();
+
+                            return GetIdentitiesBalancesResponseV0;
+                        })();
+
+                        return GetIdentitiesBalancesResponse;
                     })();
 
                     v0.GetProofsRequest = (function() {
