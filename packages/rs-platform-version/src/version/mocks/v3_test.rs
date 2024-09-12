@@ -196,7 +196,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 },
             },
             document: DriveDocumentMethodVersions {
-                query: DriveDocumentQueryMethodVersions { query_documents: 0, query_documents_with_flags: 0 },
+                query: DriveDocumentQueryMethodVersions { query_documents: 0, query_contested_documents: 0, query_contested_documents_vote_state: 0, query_documents_with_flags: 0 },
                 delete: DriveDocumentDeleteMethodVersions {
                     add_estimation_costs_for_remove_document_to_primary_storage: 0,
                     delete_document_for_contract: 0,

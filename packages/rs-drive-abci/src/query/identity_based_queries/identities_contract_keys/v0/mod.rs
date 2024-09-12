@@ -150,7 +150,8 @@ mod tests {
 
     #[test]
     fn test_identities_contract_keys_missing_identity() {
-        let (platform, state, platform_version) = setup_platform(Some((1, 1)), Network::Testnet);
+        let (platform, state, platform_version) =
+            setup_platform(Some((1, 1)), Network::Testnet, None);
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
@@ -180,7 +181,8 @@ mod tests {
 
     #[test]
     fn test_identities_contract_keys_missing_identity_proved() {
-        let (platform, state, platform_version) = setup_platform(Some((1, 1)), Network::Testnet);
+        let (platform, state, platform_version) =
+            setup_platform(Some((1, 1)), Network::Testnet, None);
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
@@ -231,7 +233,7 @@ mod tests {
 
     #[test]
     fn test_identities_contract_keys_missing_identity_absent_contract() {
-        let (platform, state, platform_version) = setup_platform(None, Network::Testnet);
+        let (platform, state, platform_version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetIdentitiesContractKeysRequestV0 {
             identities_ids: vec![vec![1; 32]],
@@ -259,7 +261,7 @@ mod tests {
 
     #[test]
     fn test_identities_contract_keys_missing_identity_absent_contract_proved() {
-        let (platform, state, platform_version) = setup_platform(None, Network::Testnet);
+        let (platform, state, platform_version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetIdentitiesContractKeysRequestV0 {
             identities_ids: vec![vec![1; 32]],
@@ -306,7 +308,7 @@ mod tests {
 
     #[test]
     fn test_identities_contract_keys_with_identity_absent_contract() {
-        let (platform, state, platform_version) = setup_platform(None, Network::Testnet);
+        let (platform, state, platform_version) = setup_platform(None, Network::Testnet, None);
 
         let mut rng = StdRng::seed_from_u64(10);
 
@@ -348,7 +350,7 @@ mod tests {
 
     #[test]
     fn test_identities_contract_keys_with_identity_absent_contract_proved() {
-        let (platform, state, platform_version) = setup_platform(None, Network::Testnet);
+        let (platform, state, platform_version) = setup_platform(None, Network::Testnet, None);
 
         let mut rng = StdRng::seed_from_u64(10);
 
@@ -409,7 +411,8 @@ mod tests {
 
     #[test]
     fn test_identities_contract_keys_missing_identity_keys() {
-        let (platform, state, platform_version) = setup_platform(Some((1, 1)), Network::Testnet);
+        let (platform, state, platform_version) =
+            setup_platform(Some((1, 1)), Network::Testnet, None);
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
@@ -453,7 +456,8 @@ mod tests {
 
     #[test]
     fn test_identities_contract_keys_missing_identity_keys_proved() {
-        let (platform, state, platform_version) = setup_platform(Some((1, 1)), Network::Testnet);
+        let (platform, state, platform_version) =
+            setup_platform(Some((1, 1)), Network::Testnet, None);
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
@@ -516,7 +520,8 @@ mod tests {
 
     #[test]
     fn test_identities_contract_keys() {
-        let (platform, state, platform_version) = setup_platform(Some((1, 1)), Network::Testnet);
+        let (platform, state, platform_version) =
+            setup_platform(Some((1, 1)), Network::Testnet, None);
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
@@ -674,7 +679,8 @@ mod tests {
 
     #[test]
     fn test_identities_contract_keys_proof() {
-        let (platform, state, platform_version) = setup_platform(Some((1, 1)), Network::Testnet);
+        let (platform, state, platform_version) =
+            setup_platform(Some((1, 1)), Network::Testnet, None);
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
@@ -769,7 +775,8 @@ mod tests {
 
     #[test]
     fn test_multiple_identities_contract_keys() {
-        let (platform, state, platform_version) = setup_platform(Some((1, 1)), Network::Testnet);
+        let (platform, state, platform_version) =
+            setup_platform(Some((1, 1)), Network::Testnet, None);
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 
@@ -969,7 +976,8 @@ mod tests {
 
     #[test]
     fn test_multiple_identities_contract_keys_proof() {
-        let (platform, state, platform_version) = setup_platform(Some((1, 1)), Network::Testnet);
+        let (platform, state, platform_version) =
+            setup_platform(Some((1, 1)), Network::Testnet, None);
 
         let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
 

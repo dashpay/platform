@@ -356,6 +356,11 @@ pub(super) fn create_domain_data_trigger_v0(
     }
 
     let mut salted_domain_buffer: Vec<u8> = vec![];
+    println!(
+        "p {} {}",
+        hex::encode(preorder_salt),
+        full_domain_name.as_str()
+    );
     salted_domain_buffer.extend(preorder_salt);
     salted_domain_buffer.extend(full_domain_name.as_bytes());
 
@@ -413,7 +418,10 @@ pub(super) fn create_domain_data_trigger_v0(
                     "expecting action to have a base",
                 )))?
                 .id(),
-            "preorderDocument was not found".to_string(),
+            format!(
+                "preorderDocument was not found with a salted domain hash of {}",
+                hex::encode(salted_domain_hash)
+            ),
         );
         result.add_error(err)
     }

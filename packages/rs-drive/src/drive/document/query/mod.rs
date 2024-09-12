@@ -3,9 +3,13 @@
 //! Defines and implements in Drive functions relevant to querying.
 //!
 
-mod query_contested_documents_vote_state;
+/// query of the vote state
+pub mod query_contested_documents_vote_state;
 mod query_documents;
 mod query_documents_with_flags;
+
+/// query of the contested documents in their storage
+pub mod query_contested_documents_storage;
 
 pub use query_documents::*;
 pub use query_documents_with_flags::*;

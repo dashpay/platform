@@ -56,7 +56,8 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
         match self.result_type {
-            ContestedDocumentVotePollDriveQueryResultType::Documents => {
+            ContestedDocumentVotePollDriveQueryResultType::Documents
+            | ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(_) => {
                 let contenders = proved_key_values
                     .into_iter()
                     .map(|(mut path, _key, document)| {

@@ -7452,7 +7452,7 @@ mod tests {
                         signature: [0u8; 96],
                         round: 0,
                     }
-                        .into(),
+                    .into(),
                 ));
 
                 platform.state.store(Arc::new(platform_state));
@@ -7478,7 +7478,7 @@ mod tests {
                     .expect("expected to commit transaction");
 
                 // At this point the document should have been awarded to contender 1.
-                
+
                 // Let's check that the contest is still seen (even though it's closed)
 
                 let domain = dpns_contract
@@ -7562,10 +7562,13 @@ mod tests {
                         platform_version,
                     );
 
-                    assert_eq!(finished_info,                         Some((
-                        ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
-                        block_info
-                    )));
+                    assert_eq!(
+                        finished_info,
+                        Some((
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
+                            block_info
+                        ))
+                    );
 
                     assert_eq!(contenders.len(), 2);
 
@@ -7625,10 +7628,13 @@ mod tests {
                         platform_version,
                     );
 
-                    assert_eq!(finished_info,                         Some((
-                        ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
-                        block_info
-                    )));
+                    assert_eq!(
+                        finished_info,
+                        Some((
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
+                            block_info
+                        ))
+                    );
 
                     assert_eq!(contenders.len(), 2);
 

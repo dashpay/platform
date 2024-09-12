@@ -133,6 +133,9 @@ pub fn contract_lookup_fn_for_contract<'a>(
 #[cfg(any(feature = "server", feature = "verify"))]
 /// A query to get the votes given out by an identity
 pub mod contested_resource_votes_given_by_identity_query;
+#[cfg(any(feature = "server", feature = "verify"))]
+/// A query to get contested documents before they have been awarded
+pub mod drive_contested_document_query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct
