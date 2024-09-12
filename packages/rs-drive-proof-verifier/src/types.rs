@@ -486,46 +486,6 @@ impl PlatformVersionedDecode for MasternodeProtocolVote {
 /// Information about protocol version voted by each node, returned by [ProtocolVersion::fetch_many()].
 /// Indexed by [ProTxHash] of nodes.
 pub type MasternodeProtocolVotes = RetrievedObjects<ProTxHash, MasternodeProtocolVote>;
-//
-// /// Proposed block count for an Evonode in an Epoch.
-// #[derive(Debug)]
-// #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
-// pub struct ProposerProposedBlockCount {
-//     /// ProTxHash of the masternode
-//     pub pro_tx_hash: ProTxHash,
-//     /// Amount of blocks that were proposed
-//     pub block_count: u64,
-// }
-//
-// #[cfg(feature = "mocks")]
-// impl PlatformVersionEncode for ProposerProposedBlockCount {
-//     fn platform_encode<E: bincode::enc::Encoder>(
-//         &self,
-//         encoder: &mut E,
-//         platform_version: &platform_version::PlatformVersion,
-//     ) -> Result<(), bincode::error::EncodeError> {
-//         let protx_bytes: [u8; 32] = self.pro_tx_hash.to_raw_hash().to_byte_array();
-//         protx_bytes.platform_encode(encoder, platform_version)?;
-//
-//         self.block_count.platform_encode(encoder, platform_version)
-//     }
-// }
-//
-// #[cfg(feature = "mocks")]
-// impl PlatformVersionedDecode for ProposerProposedBlockCount {
-//     fn platform_versioned_decode<D: bincode::de::Decoder>(
-//         decoder: &mut D,
-//         platform_version: &PlatformVersion,
-//     ) -> Result<Self, bincode::error::DecodeError> {
-//         let pro_tx_hash_bytes = <[u8; 32]>::platform_versioned_decode(decoder, platform_version)?;
-//         let pro_tx_hash = ProTxHash::from_byte_array(pro_tx_hash_bytes);
-//         let block_count = u64::platform_versioned_decode(decoder, platform_version)?;
-//         Ok(Self {
-//             pro_tx_hash,
-//             block_count,
-//         })
-//     }
-// }
 
 /// Proposer block counts
 ///
