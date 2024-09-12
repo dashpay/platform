@@ -356,11 +356,6 @@ pub(super) fn create_domain_data_trigger_v0(
     }
 
     let mut salted_domain_buffer: Vec<u8> = vec![];
-    println!(
-        "p {} {}",
-        hex::encode(preorder_salt),
-        full_domain_name.as_str()
-    );
     salted_domain_buffer.extend(preorder_salt);
     salted_domain_buffer.extend(full_domain_name.as_bytes());
 
