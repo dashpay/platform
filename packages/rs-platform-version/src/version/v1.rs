@@ -1005,7 +1005,8 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 unique_index_limit: 10,
             },
             voting: VotingValidationVersions {
-                allow_other_contenders_time_ms: 604_800_000, // 1 week in ms
+                allow_other_contenders_time_mainnet_ms: 604_800_000, // 1 week in ms
+                allow_other_contenders_time_testing_ms: 604_800_000, // 1 week in ms for v1 (changes in v2)
                 votes_allowed_per_masternode: 5,
             },
         },
@@ -1226,7 +1227,8 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
         },
         voting_versions: VotingVersions {
-            default_vote_poll_time_duration_ms: 1_209_600_000, //2 weeks
+            default_vote_poll_time_duration_mainnet_ms: 1_209_600_000, //2 weeks
+            default_vote_poll_time_duration_test_network_ms: 1_209_600_000, //2 weeks
             contested_document_vote_poll_stored_info_version: 0,
         },
         asset_lock_versions: AssetLockVersions {
