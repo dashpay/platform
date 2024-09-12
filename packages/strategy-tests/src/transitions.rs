@@ -672,10 +672,8 @@ pub fn create_identities_state_transitions(
                         platform_version,
                     )?;
                     identity.add_public_key(key.clone());
-                    let key_num = i * (key_count as usize + extra_keys.len())
-                        + identity.public_keys().len()
-                        - 1;
-                    keys.insert(key_num, (key, private_key));
+                    let key_num = key_count as usize * (i + 1) + i;
+                    keys.insert(key_num, (key, private_key))
                 }
             }
         }
@@ -723,7 +721,7 @@ pub fn create_identities_state_transitions(
                     Ok(identity_create_transition) => {
                         identity.set_id(identity_create_transition.owner_id());
 
-                        // Log public and private keys here
+                        // Log public and private keys
                         let identity_id = identity.id().to_string(Encoding::Base58);
                         for (key_index, public_key) in identity.public_keys().iter().enumerate() {
                             let key_num = index * (key_count as usize + extra_keys.len()) + key_index;
