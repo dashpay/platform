@@ -76,7 +76,7 @@ const MAX_INDEXED_ARRAY_ITEMS: usize = 1024;
 impl DocumentTypeV0 {
     // TODO: Split into multiple functions
     #[allow(unused_variables)]
-    pub(crate) fn try_from_schema_v0(
+    pub(super) fn try_from_schema_v0(
         data_contract_id: Identifier,
         name: &str,
         schema: Value,

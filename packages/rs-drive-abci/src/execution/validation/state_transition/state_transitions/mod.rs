@@ -80,7 +80,6 @@ pub(in crate::execution) mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContract;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use dpp::data_contract::document_type::DocumentTypeRef;
     use dpp::data_contract::document_type::random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType};
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -89,8 +88,7 @@ pub(in crate::execution) mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
-    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::platform_value::{BinaryData, Bytes32, Value};
+    use dpp::platform_value::{Bytes32, Value};
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;

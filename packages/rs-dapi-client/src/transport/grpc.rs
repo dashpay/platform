@@ -331,6 +331,24 @@ impl_transport_request_grpc!(
     get_vote_polls_by_end_date
 );
 
+// rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetEvonodesProposedEpochBlocksByIdsRequest,
+    platform_proto::GetEvonodesProposedEpochBlocksResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_evonodes_proposed_epoch_blocks_by_ids
+);
+
+// rpc GetEvonodesProposedEpochBlocksByRangeRequest(GetEvonodesProposedEpochBlocksByRangeRequest) returns (GetEvonodesProposedEpochBlocksResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetEvonodesProposedEpochBlocksByRangeRequest,
+    platform_proto::GetEvonodesProposedEpochBlocksResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_evonodes_proposed_epoch_blocks_by_range
+);
+
 // rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
 impl_transport_request_grpc!(
     platform_proto::GetPrefundedSpecializedBalanceRequest,

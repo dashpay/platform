@@ -36,12 +36,6 @@ mod add_contested_indices_for_contract_operations;
 mod add_contested_reference_and_vote_subtree_to_document_operations;
 mod add_contested_vote_subtrees_for_non_identities_operations;
 
-#[cfg(all(
-    feature = "fixtures-and-mocks",
-    feature = "data-contract-cbor-conversion"
-))]
-use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
-
 #[cfg(test)]
 mod tests {
     use std::option::Option::None;
