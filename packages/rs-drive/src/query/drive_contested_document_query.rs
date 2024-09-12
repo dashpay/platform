@@ -1,14 +1,20 @@
 use crate::drive::contract::paths::DataContractPaths;
 use crate::drive::Drive;
 use crate::error::Error;
+#[cfg(feature = "server")]
 use crate::fees::op::LowLevelDriveOperation;
-use crate::query::{GroveError, Query};
+#[cfg(feature = "server")]
+use crate::query::GroveError;
+use crate::query::Query;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::prelude::Identifier;
-use grovedb::{PathQuery, SizedQuery, TransactionArg};
+#[cfg(feature = "server")]
+use grovedb::TransactionArg;
+#[cfg(any(feature = "server", feature = "verify"))]
+use grovedb::{PathQuery, SizedQuery};
 use platform_version::version::PlatformVersion;
 use std::ops::BitXor;
 
