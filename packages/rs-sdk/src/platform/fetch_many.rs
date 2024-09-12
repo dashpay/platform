@@ -265,9 +265,9 @@ impl FetchMany<KeyID, IdentityPublicKeys> for IdentityPublicKey {
 ///
 /// * [EpochQuery](super::types::epoch::EpochQuery) - query that specifies epoch matching criteria
 /// * [EpochIndex](dpp::block::epoch::EpochIndex) - epoch index of first object to find; will return up to
-/// [DEFAULT_EPOCH_QUERY_LIMIT](super::query::DEFAULT_EPOCH_QUERY_LIMIT) objects starting from this index
+///   [DEFAULT_EPOCH_QUERY_LIMIT](super::query::DEFAULT_EPOCH_QUERY_LIMIT) objects starting from this index
 /// * [`LimitQuery<EpochQuery>`](super::LimitQuery), [`LimitQuery<EpochIndex>`](super::LimitQuery) - limit query
-/// that allows to specify maximum number of objects to fetch; see also [FetchMany::fetch_many_with_limit()].
+///   that allows to specify maximum number of objects to fetch; see also [FetchMany::fetch_many_with_limit()].
 impl FetchMany<EpochIndex, ExtendedEpochInfos> for ExtendedEpochInfo {
     type Request = GetEpochsInfoRequest;
 }
@@ -305,11 +305,11 @@ impl FetchMany<ProtocolVersion, ProtocolVersionUpgrades> for ProtocolVersionVote
 /// ## Supported query types
 ///
 /// * [ProTxHash](dashcore_rpc::dashcore::ProTxHash) - proTxHash of first object to find; will return up to
-/// [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
+///   [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
 /// * [`Option<ProTxHash>`](dashcore_rpc::dashcore::ProTxHash) - proTxHash that can be and [Option]; if it is `None`,
-/// the query will return all objects
+///   the query will return all objects
 /// * [`LimitQuery<ProTxHash>`](super::LimitQuery) - limit query that allows to specify maximum number of objects
-/// to fetch; see also [FetchMany::fetch_many_with_limit()].
+///   to fetch; see also [FetchMany::fetch_many_with_limit()].
 impl FetchMany<ProTxHash, MasternodeProtocolVotes> for MasternodeProtocolVote {
     type Request = GetProtocolVersionUpgradeVoteStatusRequest;
 }
@@ -323,11 +323,11 @@ impl FetchMany<ProTxHash, MasternodeProtocolVotes> for MasternodeProtocolVote {
 /// ## Supported query types
 ///
 /// * [ProTxHash](dashcore_rpc::dashcore::ProTxHash) - proTxHash of first object to find; will return up to
-/// [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
+///   [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
 /// * [`Option<ProTxHash>`](dashcore_rpc::dashcore::ProTxHash) - proTxHash that can be and [Option]; if it is `None`,
-/// the query will return all objects
+///   the query will return all objects
 /// * [`LimitQuery<ProTxHash>`](super::LimitQuery) - limit query that allows to specify maximum number of objects
-/// to fetch; see also [FetchMany::fetch_many_with_limit()].
+///   to fetch; see also [FetchMany::fetch_many_with_limit()].
 impl FetchMany<ProTxHash, ProposerBlockCounts> for ProposerBlockCountByRange {
     type Request = GetEvonodesProposedEpochBlocksByRangeRequest;
 }

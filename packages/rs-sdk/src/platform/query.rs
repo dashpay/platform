@@ -35,10 +35,12 @@ use drive_proof_verifier::from_request::TryFromRequest;
 use drive_proof_verifier::types::{KeysInPath, NoParamQuery};
 use rs_dapi_client::transport::TransportRequest;
 use std::fmt::Debug;
+
 /// Default limit of epoch records returned by Platform.
 pub const DEFAULT_EPOCH_QUERY_LIMIT: u32 = 100;
 /// Default limit of epoch records returned by Platform.
 pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
+
 /// Trait implemented by objects that can be used as queries.
 ///
 /// [Query] trait is used to specify criteria for fetching data from Platform.
@@ -47,11 +49,10 @@ pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 /// Some examples of queries include:
 ///
 /// 1. [`Identifier`](crate::platform::Identifier) - fetches an object by its identifier; implemented for
-/// [Identity](dpp::prelude::Identity), [DataContract](dpp::prelude::DataContract) and [Document](dpp::document::Document).
-/// 2. [`DocumentQuery`] - fetches [Document](dpp::document::Document) based on search
-/// conditions; see
-/// [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
-/// for more details.
+///    [Identity](dpp::prelude::Identity), [DataContract](dpp::prelude::DataContract) and [Document](dpp::document::Document).
+/// 2. [`DocumentQuery`] - fetches [Document](dpp::document::Document) based on search conditions; see
+///    [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
+///    for more details.
 ///
 /// ## Example
 ///
@@ -615,5 +616,35 @@ impl Query<GetTotalCreditsInPlatformRequest> for NoParamQuery {
         };
 
         Ok(request)
+    }
+}
+
+impl Query<proto::GetEvonodesProposedEpochBlocksByRangeRequest> for LimitQuery<Option<EpochIndex>> {
+    fn query(
+        self,
+        prove: bool,
+    ) -> Result<proto::GetEvonodesProposedEpochBlocksByRangeRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(proto::GetEvonodesProposedEpochBlocksByRangeRequest {
+            version: Some(proto::get_evonodes_proposed_epoch_blocks_by_range_request::Version::V0(
+                proto::get_evonodes_proposed_epoch_blocks_by_range_request::GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+                    epoch: self.query.map(|v| v as u32).unwrap_or_default(), // TODO: fix this
+                    start: self.start_info.map(|v| {
+                        use proto::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
+                        if v.start_included {
+                            Start::StartAt(v.start_key)
+                        } else {
+                            Start::StartAfter(v.start_key)
+                        }
+                    }),
+                    limit: self.limit,
+
+                    prove,
+                },
+            )),
+        })
     }
 }
