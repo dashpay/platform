@@ -23,7 +23,6 @@ impl Drive {
         contested_document_resource_vote_poll: ContestedDocumentResourceVotePollWithContractInfo,
         insert_without_check: bool,
         block_info: &BlockInfo,
-        network: &Network,
         also_insert_vote_poll_stored_info: Option<ContestedDocumentVotePollStoredInfo>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -44,7 +43,6 @@ impl Drive {
                 contested_document_resource_vote_poll,
                 insert_without_check,
                 block_info,
-                network,
                 also_insert_vote_poll_stored_info,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
