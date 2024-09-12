@@ -4,7 +4,6 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::object_size_info::DocumentAndContractInfo;
 use dpp::block::block_info::BlockInfo;
-use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use dpp::voting::vote_polls::VotePoll;
