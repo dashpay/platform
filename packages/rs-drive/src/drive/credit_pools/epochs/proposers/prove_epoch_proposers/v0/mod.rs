@@ -99,9 +99,13 @@ mod tests {
             )
             .expect("should get proposers");
 
-        let (_, epoch_proposers): (_, Vec<([u8; 32], u64)>) =
-            Drive::verify_epoch_proposers(&proof, epoch.index, ProposerQueryType::ByRange(Some(100), None), platform_version)
-                .expect("expected to verify epoch proposers");
+        let (_, epoch_proposers): (_, Vec<([u8; 32], u64)>) = Drive::verify_epoch_proposers(
+            &proof,
+            epoch.index,
+            ProposerQueryType::ByRange(Some(100), None),
+            platform_version,
+        )
+        .expect("expected to verify epoch proposers");
 
         assert_eq!(epoch_proposers, vec!((pro_tx_hash, block_count)));
     }

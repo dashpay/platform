@@ -12,6 +12,7 @@ use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::query::proposer_block_count_query::ProposerQueryType;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 impl<C> Platform<C> {
     pub(super) fn query_proposed_block_counts_by_evonode_ids_v0(
@@ -33,19 +34,26 @@ impl<C> Platform<C> {
             })
             .collect::<Result<Vec<Vec<u8>>, QueryError>>());
 
-        if epoch > (u16::MAX - 1) as u32 {
-            return Ok(QueryValidationResult::new_with_error(
-                QueryError::InvalidArgument(
-                    "epoch must be within a normal range (less than u16::Max - 1)".to_string(),
-                ),
-            ));
-        }
+        let epoch = if let Some(epoch) = epoch {
+            if epoch > (u16::MAX - 1) as u32 {
+                return Ok(QueryValidationResult::new_with_error(
+                    QueryError::InvalidArgument(
+                        "epoch must be within a normal range (less than u16::Max - 1)".to_string(),
+                    ),
+                ));
+            }
 
-        let epoch = check_validation_result_with_data!(Epoch::new(epoch as u16).map_err(|_| {
-            QueryError::InvalidArgument(
-                "epoch must be within a normal range (less than u16::Max - 1)".to_string(),
-            )
-        }));
+            let epoch =
+                check_validation_result_with_data!(Epoch::new(epoch as u16).map_err(|_| {
+                    QueryError::InvalidArgument(
+                        "epoch must be within a normal range (less than u16::Max - 1)".to_string(),
+                    )
+                }));
+            epoch
+        } else {
+            // Get current epoch instead
+            platform_state.last_committed_block_epoch()
+        };
 
         let response = if prove {
             let proof = check_validation_result_with_data!(self.drive.prove_epoch_proposers(

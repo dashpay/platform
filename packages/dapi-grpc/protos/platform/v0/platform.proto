@@ -316,7 +316,7 @@ message GetIdentitiesContractKeysResponse {
 message GetEvonodesProposedEpochBlocksByIdsRequest {
 
   message GetEvonodesProposedEpochBlocksByIdsRequestV0 {
-    uint32 epoch = 1;
+    optional uint32 epoch = 1; // The epoch we are querying for, if none is set, get current epoch
     repeated bytes ids = 2;    // IDs of the evonodes for which we want to get their proposed blocks
     bool prove = 3;  // Flag to request a proof as the response
   }
@@ -348,7 +348,7 @@ message GetEvonodesProposedEpochBlocksResponse {
 message GetEvonodesProposedEpochBlocksByRangeRequest {
 
   message GetEvonodesProposedEpochBlocksByRangeRequestV0 {
-    uint32 epoch = 1; // The epoch we are querying for
+    optional uint32 epoch = 1; // The epoch we are querying for, if none is set, get current epoch
     optional uint32 limit = 2;            // Maximum number of evonodes proposed epoch blocks to return
     oneof start {
       bytes start_after = 3;  // Start retrieval after this document

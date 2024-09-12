@@ -619,19 +619,16 @@ impl Query<GetTotalCreditsInPlatformRequest> for NoParamQuery {
     }
 }
 
-impl Query<proto::GetEvonodesProposedEpochBlocksByRangeRequest> for LimitQuery<Option<EpochIndex>> {
-    fn query(
-        self,
-        prove: bool,
-    ) -> Result<proto::GetEvonodesProposedEpochBlocksByRangeRequest, Error> {
+impl Query<GetEvonodesProposedEpochBlocksByRangeRequest> for LimitQuery<Option<EpochIndex>> {
+    fn query(self, prove: bool) -> Result<GetEvonodesProposedEpochBlocksByRangeRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
 
-        Ok(proto::GetEvonodesProposedEpochBlocksByRangeRequest {
+        Ok(GetEvonodesProposedEpochBlocksByRangeRequest {
             version: Some(proto::get_evonodes_proposed_epoch_blocks_by_range_request::Version::V0(
-                proto::get_evonodes_proposed_epoch_blocks_by_range_request::GetEvonodesProposedEpochBlocksByRangeRequestV0 {
-                    epoch: self.query.map(|v| v as u32).unwrap_or_default(), // TODO: fix this
+                GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+                    epoch: self.query.map(|v| v as u32),
                     start: self.start_info.map(|v| {
                         use proto::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
                         if v.start_included {

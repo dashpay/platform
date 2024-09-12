@@ -1770,7 +1770,9 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByIdsRequest> for Propose
 
         let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
             &proof.grovedb_proof,
-            epoch as u16,
+            epoch
+                .map(|epoch_index| epoch_index as u16)
+                .unwrap_or_else(|| mtd.epoch as u16),
             ProposerQueryType::ByIds(ids),
             platform_version,
         )
@@ -1832,7 +1834,9 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByRangeRequest> for Propo
 
         let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
             &proof.grovedb_proof,
-            epoch as u16,
+            epoch
+                .map(|epoch_index| epoch_index as u16)
+                .unwrap_or_else(|| mtd.epoch as u16),
             ProposerQueryType::ByRange(limit.map(|l| l as u16), formatted_start),
             platform_version,
         )
