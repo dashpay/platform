@@ -852,6 +852,37 @@ public final class PlatformGrpc {
     return getGetPathElementsMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse> getGetStatusMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getStatus",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse> getGetStatusMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse> getGetStatusMethod;
+    if ((getGetStatusMethod = PlatformGrpc.getGetStatusMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetStatusMethod = PlatformGrpc.getGetStatusMethod) == null) {
+          PlatformGrpc.getGetStatusMethod = getGetStatusMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getStatus"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getStatus"))
+              .build();
+        }
+      }
+    }
+    return getGetStatusMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -1104,6 +1135,13 @@ public final class PlatformGrpc {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetPathElementsMethod(), responseObserver);
     }
 
+    /**
+     */
+    public void getStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetStatusMethod(), responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
@@ -1295,6 +1333,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse>(
                   this, METHODID_GET_PATH_ELEMENTS)))
+          .addMethod(
+            getGetStatusMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse>(
+                  this, METHODID_GET_STATUS)))
           .build();
     }
   }
@@ -1543,6 +1588,14 @@ public final class PlatformGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetPathElementsMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     */
+    public void getStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetStatusMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -1761,6 +1814,13 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse getPathElements(org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetPathElementsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse getStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetStatusMethod(), getCallOptions(), request);
     }
   }
 
@@ -2008,6 +2068,14 @@ public final class PlatformGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetPathElementsMethod(), getCallOptions()), request);
     }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse> getStatus(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetStatusMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_BROADCAST_STATE_TRANSITION = 0;
@@ -2037,6 +2105,7 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 24;
   private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 25;
   private static final int METHODID_GET_PATH_ELEMENTS = 26;
+  private static final int METHODID_GET_STATUS = 27;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -2163,6 +2232,10 @@ public final class PlatformGrpc {
           serviceImpl.getPathElements((org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetPathElementsResponse>) responseObserver);
           break;
+        case METHODID_GET_STATUS:
+          serviceImpl.getStatus((org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse>) responseObserver);
+          break;
         default:
           throw new AssertionError();
       }
@@ -2251,6 +2324,7 @@ public final class PlatformGrpc {
               .addMethod(getGetPrefundedSpecializedBalanceMethod())
               .addMethod(getGetTotalCreditsInPlatformMethod())
               .addMethod(getGetPathElementsMethod())
+              .addMethod(getGetStatusMethod())
               .build();
         }
       }

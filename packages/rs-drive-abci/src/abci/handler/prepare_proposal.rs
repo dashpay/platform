@@ -9,6 +9,7 @@ use crate::platform_types::state_transitions_processing_result::StateTransitionE
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
 use dpp::version::TryIntoPlatformVersioned;
+use drive::grovedb_storage::Error::{RocksDBError, StorageError};
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
@@ -87,11 +88,15 @@ where
         if transaction_guard.is_none() {
             Err(Error::Abci(AbciError::BadRequest("received a prepare proposal request for the genesis height before an init chain request".to_string())))?;
         };
-        if request.round > 0 {
-            transaction_guard
-                .as_ref()
-                .map(|tx| tx.rollback_to_savepoint());
-        };
+        tracing::debug!(
+            "rolling back to savepoint to process genesis proposal for round: {}",
+            request.round,
+        );
+        if let Some(tx) = transaction_guard.as_ref() {
+            tx.rollback_to_savepoint()
+                .map_err(|e| drive::grovedb::error::Error::StorageError(RocksDBError(e)))?;
+            tx.set_savepoint();
+        }
         transaction_guard
     } else {
         app.start_transaction();

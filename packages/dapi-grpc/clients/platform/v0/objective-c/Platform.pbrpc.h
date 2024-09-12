@@ -62,6 +62,8 @@
 @class GetProtocolVersionUpgradeStateResponse;
 @class GetProtocolVersionUpgradeVoteStatusRequest;
 @class GetProtocolVersionUpgradeVoteStatusResponse;
+@class GetStatusRequest;
+@class GetStatusResponse;
 @class GetTotalCreditsInPlatformRequest;
 @class GetTotalCreditsInPlatformResponse;
 @class GetVotePollsByEndDateRequest;
@@ -220,6 +222,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
 
 - (GRPCUnaryProtoCall *)getPathElementsWithMessage:(GetPathElementsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getStatus(GetStatusRequest) returns (GetStatusResponse)
+
+- (GRPCUnaryProtoCall *)getStatusWithMessage:(GetStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -466,6 +472,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getStatus(GetStatusRequest) returns (GetStatusResponse)
+
+- (void)getStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

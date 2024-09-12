@@ -41,7 +41,8 @@ where
     /// if the existing withdrawal address is already disabled.
     pub(in crate::execution::platform_events::core_based_updates::update_masternode_identities) fn update_owner_withdrawal_address(
         &self,
-        masternode: &(ProTxHash, DMNStateDiff),
+        owner_identifier: [u8; 32],
+        new_withdrawal_address: [u8; 20],
         block_info: &BlockInfo,
         transaction: &Transaction,
         drive_operations: &mut Vec<DriveOperation>,
@@ -55,7 +56,8 @@ where
             .update_owner_withdrawal_address
         {
             0 => self.update_owner_withdrawal_address_v0(
-                masternode,
+                owner_identifier,
+                new_withdrawal_address,
                 block_info,
                 transaction,
                 drive_operations,

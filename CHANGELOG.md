@@ -1,3 +1,53 @@
+## [1.2.0](https://github.com/dashpay/platform/compare/v1.1.1...v1.2.0) (2024-08-30)
+
+
+### Features
+
+* **dapi:** serve even if tenderdash is not connected ([#2086](https://github.com/dashpay/platform/issues/2086))
+* **dashmate:** validate SSL certificate files ([#2089](https://github.com/dashpay/platform/issues/2089))
+* platform status endpoint ([#2088](https://github.com/dashpay/platform/issues/2088))
+* script to check which nodes are updated to v1.1 ([#2083](https://github.com/dashpay/platform/issues/2083))
+
+
+### Bug Fixes
+
+* **dashmate:** docker-compose version is obsolete ([#2073](https://github.com/dashpay/platform/issues/2073))
+* replay issue when round is 0 on replay. ([#2091](https://github.com/dashpay/platform/issues/2091))
+* security vulnerability in webpack ([#2090](https://github.com/dashpay/platform/issues/2090))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash version ([#2093](https://github.com/dashpay/platform/issues/2093))
+* **dashmate:** update tenderdash version to 1.2.0 ([#2078](https://github.com/dashpay/platform/issues/2078))
+* update rust to 1.80 ([#2070](https://github.com/dashpay/platform/issues/2070))
+
+
+
+## [1.2.0-rc.1](https://github.com/dashpay/platform/compare/v1.1.1...v1.2.0-rc.1) (2024-08-30)
+
+
+### Features
+
+* **dapi:** serve even if tenderdash is not connected ([#2086](https://github.com/dashpay/platform/issues/2086))
+* **dashmate:** validate SSL certificate files ([#2089](https://github.com/dashpay/platform/issues/2089))
+* platform status endpoint ([#2088](https://github.com/dashpay/platform/issues/2088))
+* script to check which nodes are updated to v1.1 ([#2083](https://github.com/dashpay/platform/issues/2083))
+
+
+### Bug Fixes
+
+* **dashmate:** docker-compose version is obsolete ([#2073](https://github.com/dashpay/platform/issues/2073))
+* replay issue when round is 0 on replay. ([#2091](https://github.com/dashpay/platform/issues/2091))
+* security vulnerability in webpack ([#2090](https://github.com/dashpay/platform/issues/2090))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash version ([#2093](https://github.com/dashpay/platform/issues/2093))
+* **dashmate:** update tenderdash version to 1.2.0 ([#2078](https://github.com/dashpay/platform/issues/2078))
+* update rust to 1.80 ([#2070](https://github.com/dashpay/platform/issues/2070))
+
 ### [1.1.1](https://github.com/dashpay/platform/compare/v1.1.0...v1.1.1) (2024-08-25)
 
 
