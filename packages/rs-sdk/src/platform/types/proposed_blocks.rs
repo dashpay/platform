@@ -1,10 +1,10 @@
 //! Helpers for managing platform version votes
 
+use crate::platform::{FetchMany, LimitQuery, QueryStartInfo};
 use crate::{Error, Sdk};
 use async_trait::async_trait;
 use dashcore_rpc::dashcore::ProTxHash;
 use drive_proof_verifier::types::{ProposerBlockCountByRange, ProposerBlockCounts};
-use crate::platform::{FetchMany, LimitQuery, QueryStartInfo};
 // Trait needed here to implement functions on foreign type.
 
 /// A helper trait for fetching block proposal counts for specific proposers.

@@ -14,7 +14,11 @@ use dpp::{
     },
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
-use drive_proof_verifier::types::{Contenders, ContestedResources, ElementFetchRequestItem, IdentityBalanceAndRevision, MasternodeProtocolVote, PrefundedSpecializedBalance, ProposerBlockCounts, RetrievedIntegerValue, TotalCreditsInPlatform, VotePollsGroupedByTimestamp, Voters};
+use drive_proof_verifier::types::{
+    Contenders, ContestedResources, ElementFetchRequestItem, IdentityBalanceAndRevision,
+    MasternodeProtocolVote, PrefundedSpecializedBalance, ProposerBlockCounts,
+    RetrievedIntegerValue, TotalCreditsInPlatform, VotePollsGroupedByTimestamp, Voters,
+};
 use std::collections::BTreeMap;
 
 static BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();

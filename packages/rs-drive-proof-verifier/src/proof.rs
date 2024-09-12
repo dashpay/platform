@@ -1780,7 +1780,11 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByIdsRequest> for Propose
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((Some(ProposerBlockCounts(proposer_block_counts)), mtd.clone(), proof.clone()))
+        Ok((
+            Some(ProposerBlockCounts(proposer_block_counts)),
+            mtd.clone(),
+            proof.clone(),
+        ))
     }
 }
 
@@ -1838,7 +1842,11 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByRangeRequest> for Propo
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((Some(ProposerBlockCounts(proposer_block_counts)), mtd.clone(), proof.clone()))
+        Ok((
+            Some(ProposerBlockCounts(proposer_block_counts)),
+            mtd.clone(),
+            proof.clone(),
+        ))
     }
 }
 

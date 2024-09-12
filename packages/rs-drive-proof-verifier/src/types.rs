@@ -486,7 +486,7 @@ impl PlatformVersionedDecode for MasternodeProtocolVote {
 /// Information about protocol version voted by each node, returned by [ProtocolVersion::fetch_many()].
 /// Indexed by [ProTxHash] of nodes.
 pub type MasternodeProtocolVotes = RetrievedObjects<ProTxHash, MasternodeProtocolVote>;
-// 
+//
 // /// Proposed block count for an Evonode in an Epoch.
 // #[derive(Debug)]
 // #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
@@ -496,7 +496,7 @@ pub type MasternodeProtocolVotes = RetrievedObjects<ProTxHash, MasternodeProtoco
 //     /// Amount of blocks that were proposed
 //     pub block_count: u64,
 // }
-// 
+//
 // #[cfg(feature = "mocks")]
 // impl PlatformVersionEncode for ProposerProposedBlockCount {
 //     fn platform_encode<E: bincode::enc::Encoder>(
@@ -506,11 +506,11 @@ pub type MasternodeProtocolVotes = RetrievedObjects<ProTxHash, MasternodeProtoco
 //     ) -> Result<(), bincode::error::EncodeError> {
 //         let protx_bytes: [u8; 32] = self.pro_tx_hash.to_raw_hash().to_byte_array();
 //         protx_bytes.platform_encode(encoder, platform_version)?;
-// 
+//
 //         self.block_count.platform_encode(encoder, platform_version)
 //     }
 // }
-// 
+//
 // #[cfg(feature = "mocks")]
 // impl PlatformVersionedDecode for ProposerProposedBlockCount {
 //     fn platform_versioned_decode<D: bincode::de::Decoder>(
@@ -535,12 +535,15 @@ pub type MasternodeProtocolVotes = RetrievedObjects<ProTxHash, MasternodeProtoco
 pub struct ProposerBlockCounts(pub RetrievedIntegerValue<Identifier, u64>);
 
 impl FromIterator<(ProTxHash, Option<ProposerBlockCountByRange>)> for ProposerBlockCounts {
-    fn from_iter<I: IntoIterator<Item = (ProTxHash, Option<ProposerBlockCountByRange>)>>(iter: I) -> Self {
+    fn from_iter<I: IntoIterator<Item = (ProTxHash, Option<ProposerBlockCountByRange>)>>(
+        iter: I,
+    ) -> Self {
         let map = iter
             .into_iter()
             .map(|(pro_tx_hash, proposer_block_count_by_range)| {
-                let block_count = proposer_block_count_by_range.map_or(0, |proposer_block_count | proposer_block_count.0);
-                let identifier = Identifier::from(pro_tx_hash.to_byte_array());  // Adjust this conversion logic as needed
+                let block_count = proposer_block_count_by_range
+                    .map_or(0, |proposer_block_count| proposer_block_count.0);
+                let identifier = Identifier::from(pro_tx_hash.to_byte_array()); // Adjust this conversion logic as needed
                 (identifier, block_count)
             })
             .collect::<BTreeMap<Identifier, u64>>();
@@ -550,12 +553,15 @@ impl FromIterator<(ProTxHash, Option<ProposerBlockCountByRange>)> for ProposerBl
 }
 
 impl FromIterator<(ProTxHash, Option<ProposerBlockCountById>)> for ProposerBlockCounts {
-    fn from_iter<I: IntoIterator<Item = (ProTxHash, Option<ProposerBlockCountById>)>>(iter: I) -> Self {
+    fn from_iter<I: IntoIterator<Item = (ProTxHash, Option<ProposerBlockCountById>)>>(
+        iter: I,
+    ) -> Self {
         let map = iter
             .into_iter()
             .map(|(pro_tx_hash, proposer_block_count_by_range)| {
-                let block_count = proposer_block_count_by_range.map_or(0, |proposer_block_count | proposer_block_count.0);
-                let identifier = Identifier::from(pro_tx_hash.to_byte_array());  // Adjust this conversion logic as needed
+                let block_count = proposer_block_count_by_range
+                    .map_or(0, |proposer_block_count| proposer_block_count.0);
+                let identifier = Identifier::from(pro_tx_hash.to_byte_array()); // Adjust this conversion logic as needed
                 (identifier, block_count)
             })
             .collect::<BTreeMap<Identifier, u64>>();

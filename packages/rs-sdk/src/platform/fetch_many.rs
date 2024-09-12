@@ -11,7 +11,14 @@ use crate::{
     platform::{document_query::DocumentQuery, query::Query},
     Sdk,
 };
-use dapi_grpc::platform::v0::{GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest, GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest, GetIdentitiesBalancesRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest, GetEvonodesProposedEpochBlocksByRangeRequest};
+use dapi_grpc::platform::v0::{
+    GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
+    GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
+    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
+    GetIdentitiesBalancesRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest,
+};
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::data_contract::DataContract;
 use dpp::identity::KeyID;
@@ -23,7 +30,12 @@ use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, voting::votes::resource_vote::ResourceVote,
 };
 use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
-use drive_proof_verifier::types::{Contenders, ContestedResource, ContestedResources, DataContracts, ExtendedEpochInfos, IdentityBalances, IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes, ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters, ProposerBlockCounts, ProposerBlockCountByRange, ProposerBlockCountById};
+use drive_proof_verifier::types::{
+    Contenders, ContestedResource, ContestedResources, DataContracts, ExtendedEpochInfos,
+    IdentityBalances, IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes,
+    ProposerBlockCountById, ProposerBlockCountByRange, ProposerBlockCounts,
+    ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
+};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
