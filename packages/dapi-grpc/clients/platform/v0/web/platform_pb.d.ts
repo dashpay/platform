@@ -1320,6 +1320,264 @@ export namespace GetIdentitiesContractKeysResponse {
   }
 }
 
+export class GetEvonodesProposedEpochBlocksByIdsRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0 | undefined;
+  setV0(value?: GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0): void;
+
+  getVersionCase(): GetEvonodesProposedEpochBlocksByIdsRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetEvonodesProposedEpochBlocksByIdsRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetEvonodesProposedEpochBlocksByIdsRequest): GetEvonodesProposedEpochBlocksByIdsRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetEvonodesProposedEpochBlocksByIdsRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetEvonodesProposedEpochBlocksByIdsRequest;
+  static deserializeBinaryFromReader(message: GetEvonodesProposedEpochBlocksByIdsRequest, reader: jspb.BinaryReader): GetEvonodesProposedEpochBlocksByIdsRequest;
+}
+
+export namespace GetEvonodesProposedEpochBlocksByIdsRequest {
+  export type AsObject = {
+    v0?: GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.AsObject,
+  }
+
+  export class GetEvonodesProposedEpochBlocksByIdsRequestV0 extends jspb.Message {
+    getEpoch(): number;
+    setEpoch(value: number): void;
+
+    clearIdsList(): void;
+    getIdsList(): Array<Uint8Array | string>;
+    getIdsList_asU8(): Array<Uint8Array>;
+    getIdsList_asB64(): Array<string>;
+    setIdsList(value: Array<Uint8Array | string>): void;
+    addIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetEvonodesProposedEpochBlocksByIdsRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetEvonodesProposedEpochBlocksByIdsRequestV0): GetEvonodesProposedEpochBlocksByIdsRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetEvonodesProposedEpochBlocksByIdsRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetEvonodesProposedEpochBlocksByIdsRequestV0;
+    static deserializeBinaryFromReader(message: GetEvonodesProposedEpochBlocksByIdsRequestV0, reader: jspb.BinaryReader): GetEvonodesProposedEpochBlocksByIdsRequestV0;
+  }
+
+  export namespace GetEvonodesProposedEpochBlocksByIdsRequestV0 {
+    export type AsObject = {
+      epoch: number,
+      idsList: Array<Uint8Array | string>,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetEvonodesProposedEpochBlocksResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0 | undefined;
+  setV0(value?: GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0): void;
+
+  getVersionCase(): GetEvonodesProposedEpochBlocksResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetEvonodesProposedEpochBlocksResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetEvonodesProposedEpochBlocksResponse): GetEvonodesProposedEpochBlocksResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetEvonodesProposedEpochBlocksResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetEvonodesProposedEpochBlocksResponse;
+  static deserializeBinaryFromReader(message: GetEvonodesProposedEpochBlocksResponse, reader: jspb.BinaryReader): GetEvonodesProposedEpochBlocksResponse;
+}
+
+export namespace GetEvonodesProposedEpochBlocksResponse {
+  export type AsObject = {
+    v0?: GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.AsObject,
+  }
+
+  export class GetEvonodesProposedEpochBlocksResponseV0 extends jspb.Message {
+    hasEvonodesProposedBlockCountsInfo(): boolean;
+    clearEvonodesProposedBlockCountsInfo(): void;
+    getEvonodesProposedBlockCountsInfo(): GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks | undefined;
+    setEvonodesProposedBlockCountsInfo(value?: GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetEvonodesProposedEpochBlocksResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetEvonodesProposedEpochBlocksResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetEvonodesProposedEpochBlocksResponseV0): GetEvonodesProposedEpochBlocksResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetEvonodesProposedEpochBlocksResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetEvonodesProposedEpochBlocksResponseV0;
+    static deserializeBinaryFromReader(message: GetEvonodesProposedEpochBlocksResponseV0, reader: jspb.BinaryReader): GetEvonodesProposedEpochBlocksResponseV0;
+  }
+
+  export namespace GetEvonodesProposedEpochBlocksResponseV0 {
+    export type AsObject = {
+      evonodesProposedBlockCountsInfo?: GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class EvonodeProposedBlocks extends jspb.Message {
+      getProTxHash(): Uint8Array | string;
+      getProTxHash_asU8(): Uint8Array;
+      getProTxHash_asB64(): string;
+      setProTxHash(value: Uint8Array | string): void;
+
+      getCount(): number;
+      setCount(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): EvonodeProposedBlocks.AsObject;
+      static toObject(includeInstance: boolean, msg: EvonodeProposedBlocks): EvonodeProposedBlocks.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: EvonodeProposedBlocks, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): EvonodeProposedBlocks;
+      static deserializeBinaryFromReader(message: EvonodeProposedBlocks, reader: jspb.BinaryReader): EvonodeProposedBlocks;
+    }
+
+    export namespace EvonodeProposedBlocks {
+      export type AsObject = {
+        proTxHash: Uint8Array | string,
+        count: number,
+      }
+    }
+
+    export class EvonodesProposedBlocks extends jspb.Message {
+      clearEvonodesProposedBlockCountsList(): void;
+      getEvonodesProposedBlockCountsList(): Array<GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks>;
+      setEvonodesProposedBlockCountsList(value: Array<GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks>): void;
+      addEvonodesProposedBlockCounts(value?: GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks, index?: number): GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): EvonodesProposedBlocks.AsObject;
+      static toObject(includeInstance: boolean, msg: EvonodesProposedBlocks): EvonodesProposedBlocks.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: EvonodesProposedBlocks, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): EvonodesProposedBlocks;
+      static deserializeBinaryFromReader(message: EvonodesProposedBlocks, reader: jspb.BinaryReader): EvonodesProposedBlocks;
+    }
+
+    export namespace EvonodesProposedBlocks {
+      export type AsObject = {
+        evonodesProposedBlockCountsList: Array<GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.AsObject>,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      EVONODES_PROPOSED_BLOCK_COUNTS_INFO = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetEvonodesProposedEpochBlocksByRangeRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0 | undefined;
+  setV0(value?: GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0): void;
+
+  getVersionCase(): GetEvonodesProposedEpochBlocksByRangeRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetEvonodesProposedEpochBlocksByRangeRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetEvonodesProposedEpochBlocksByRangeRequest): GetEvonodesProposedEpochBlocksByRangeRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetEvonodesProposedEpochBlocksByRangeRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetEvonodesProposedEpochBlocksByRangeRequest;
+  static deserializeBinaryFromReader(message: GetEvonodesProposedEpochBlocksByRangeRequest, reader: jspb.BinaryReader): GetEvonodesProposedEpochBlocksByRangeRequest;
+}
+
+export namespace GetEvonodesProposedEpochBlocksByRangeRequest {
+  export type AsObject = {
+    v0?: GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.AsObject,
+  }
+
+  export class GetEvonodesProposedEpochBlocksByRangeRequestV0 extends jspb.Message {
+    getEpoch(): number;
+    setEpoch(value: number): void;
+
+    hasLimit(): boolean;
+    clearLimit(): void;
+    getLimit(): number;
+    setLimit(value: number): void;
+
+    hasStartAfter(): boolean;
+    clearStartAfter(): void;
+    getStartAfter(): Uint8Array | string;
+    getStartAfter_asU8(): Uint8Array;
+    getStartAfter_asB64(): string;
+    setStartAfter(value: Uint8Array | string): void;
+
+    hasStartAt(): boolean;
+    clearStartAt(): void;
+    getStartAt(): Uint8Array | string;
+    getStartAt_asU8(): Uint8Array;
+    getStartAt_asB64(): string;
+    setStartAt(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    getStartCase(): GetEvonodesProposedEpochBlocksByRangeRequestV0.StartCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetEvonodesProposedEpochBlocksByRangeRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetEvonodesProposedEpochBlocksByRangeRequestV0): GetEvonodesProposedEpochBlocksByRangeRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetEvonodesProposedEpochBlocksByRangeRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetEvonodesProposedEpochBlocksByRangeRequestV0;
+    static deserializeBinaryFromReader(message: GetEvonodesProposedEpochBlocksByRangeRequestV0, reader: jspb.BinaryReader): GetEvonodesProposedEpochBlocksByRangeRequestV0;
+  }
+
+  export namespace GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+    export type AsObject = {
+      epoch: number,
+      limit: number,
+      startAfter: Uint8Array | string,
+      startAt: Uint8Array | string,
+      prove: boolean,
+    }
+
+    export enum StartCase {
+      START_NOT_SET = 0,
+      START_AFTER = 3,
+      START_AT = 4,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetIdentitiesBalancesRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;

@@ -25,7 +25,7 @@ use crate::version::drive_abci_versions::{
     DriveAbciPlatformStateStorageMethodVersions, DriveAbciProtocolUpgradeMethodVersions,
     DriveAbciQueryDataContractVersions, DriveAbciQueryIdentityVersions,
     DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQuerySystemVersions,
-    DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
+    DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
     DriveAbciStateTransitionCommonValidationVersions,
     DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion,
     DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
@@ -126,7 +126,8 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                     get_epoch_start_block_core_height: 0,
                     get_epoch_start_block_height: 0,
                     get_first_epoch_start_block_info_between_epochs: 0,
-                    get_epoch_proposers: 0,
+                    fetch_epoch_proposers: 0,
+                    prove_epoch_proposers: 0,
                     get_epochs_proposer_block_count: 0,
                     add_update_pending_epoch_refunds_operations: 0,
                     is_epochs_proposers_tree_empty: 0,
@@ -314,6 +315,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                     verify_identity_nonce: 0,
                     verify_identity_contract_nonce: 0,
                     verify_identities_contract_keys: 0,
+                    verify_identity_revision_for_identity_id: 0,
                 },
                 single_document: DriveVerifySingleDocumentMethodVersions {
                     verify_proof: 0,
@@ -321,6 +323,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                 },
                 system: DriveVerifySystemMethodVersions {
                     verify_epoch_infos: 0,
+                    verify_epoch_proposers: 0,
                     verify_elements: 0,
                     verify_total_credits_in_system: 0,
                     verify_upgrade_state: 0,
@@ -897,6 +900,18 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 identity_by_public_key_hash: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
+            validator_queries: DriveAbciQueryValidatorVersions {
+                proposed_block_counts_by_evonode_ids: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                proposed_block_counts_by_range: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,

@@ -138,6 +138,10 @@ pub mod contested_resource_votes_given_by_identity_query;
 pub mod drive_contested_document_query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
+/// A query to get the block counts of proposers in an epoch
+pub mod proposer_block_count_query;
+
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct InternalClauses {

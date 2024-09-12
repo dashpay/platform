@@ -36,11 +36,6 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::query::DriveDocumentQuery;
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use crate::verify::RootHash;
-#[cfg(all(
-    feature = "fixtures-and-mocks",
-    feature = "data-contract-cbor-conversion"
-))]
-use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]

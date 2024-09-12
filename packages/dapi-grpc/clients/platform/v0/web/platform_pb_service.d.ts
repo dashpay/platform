@@ -85,6 +85,24 @@ type PlatformgetIdentityBalanceAndRevision = {
   readonly responseType: typeof platform_pb.GetIdentityBalanceAndRevisionResponse;
 };
 
+type PlatformgetEvonodesProposedEpochBlocksByIds = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetEvonodesProposedEpochBlocksByIdsRequest;
+  readonly responseType: typeof platform_pb.GetEvonodesProposedEpochBlocksResponse;
+};
+
+type PlatformgetEvonodesProposedEpochBlocksByRange = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetEvonodesProposedEpochBlocksByRangeRequest;
+  readonly responseType: typeof platform_pb.GetEvonodesProposedEpochBlocksResponse;
+};
+
 type PlatformgetProofs = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -276,6 +294,8 @@ export class Platform {
   static readonly getIdentityBalance: PlatformgetIdentityBalance;
   static readonly getIdentitiesBalances: PlatformgetIdentitiesBalances;
   static readonly getIdentityBalanceAndRevision: PlatformgetIdentityBalanceAndRevision;
+  static readonly getEvonodesProposedEpochBlocksByIds: PlatformgetEvonodesProposedEpochBlocksByIds;
+  static readonly getEvonodesProposedEpochBlocksByRange: PlatformgetEvonodesProposedEpochBlocksByRange;
   static readonly getProofs: PlatformgetProofs;
   static readonly getDataContract: PlatformgetDataContract;
   static readonly getDataContractHistory: PlatformgetDataContractHistory;
@@ -410,6 +430,24 @@ export class PlatformClient {
   getIdentityBalanceAndRevision(
     requestMessage: platform_pb.GetIdentityBalanceAndRevisionRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityBalanceAndRevisionResponse|null) => void
+  ): UnaryResponse;
+  getEvonodesProposedEpochBlocksByIds(
+    requestMessage: platform_pb.GetEvonodesProposedEpochBlocksByIdsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetEvonodesProposedEpochBlocksResponse|null) => void
+  ): UnaryResponse;
+  getEvonodesProposedEpochBlocksByIds(
+    requestMessage: platform_pb.GetEvonodesProposedEpochBlocksByIdsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetEvonodesProposedEpochBlocksResponse|null) => void
+  ): UnaryResponse;
+  getEvonodesProposedEpochBlocksByRange(
+    requestMessage: platform_pb.GetEvonodesProposedEpochBlocksByRangeRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetEvonodesProposedEpochBlocksResponse|null) => void
+  ): UnaryResponse;
+  getEvonodesProposedEpochBlocksByRange(
+    requestMessage: platform_pb.GetEvonodesProposedEpochBlocksByRangeRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetEvonodesProposedEpochBlocksResponse|null) => void
   ): UnaryResponse;
   getProofs(
     requestMessage: platform_pb.GetProofsRequest,
