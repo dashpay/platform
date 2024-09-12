@@ -1,66 +1,70 @@
 //! Helpers for managing platform version votes
 
-use crate::platform::fetch_many::FetchMany;
-use crate::{platform::LimitQuery, Error, Sdk};
+use crate::{Error, Sdk};
 use async_trait::async_trait;
 use dashcore_rpc::dashcore::ProTxHash;
-use drive_proof_verifier::types::{
-    MasternodeProtocolVote, MasternodeProtocolVotes, ProposerBlockCounts,
-    ProposerProposedBlockCount,
-};
-
+use drive_proof_verifier::types::{ProposerBlockCountByRange, ProposerBlockCounts};
+use crate::platform::{FetchMany, LimitQuery, QueryStartInfo};
 // Trait needed here to implement functions on foreign type.
 
-/// Helper trait for managing MasternodeProtocolVote objects
+/// A helper trait for fetching block proposal counts for specific proposers.
+///
+/// This trait defines an asynchronous method to retrieve block counts for proposers within a specified range.
+/// It allows fetching a set of proposers and their corresponding block counts, either by setting a limit
+/// or starting from a specific proposer hash.
+///
+/// # Type Parameters
+///
+/// * `K`: The type of the keys in the map, which must implement the `Ord` trait.
 #[async_trait]
 pub trait ProposedBlockCountEx<K: Ord> {
-    /// Fetch masternode votes for version update from Platform.
+    /// Fetches the proposed block counts for proposers within a given range.
+    ///
+    /// This asynchronous method retrieves the number of blocks proposed by various proposers,
+    /// starting from an optional proposer transaction hash (`ProTxHash`) and returning a limited
+    /// number of results if specified. If a proposer transaction hash is provided, the query will
+    /// start at that hash. The optional boolean flag determines whether to include the proposer
+    /// identified by the `ProTxHash` in the results.
     ///
     /// ## Parameters
     ///
-    /// - `sdk`: An instance of [Sdk].
-    /// - `start_protxhash`: [ProTxHash] of the first masternode to fetch votes for.
-    /// Use `None` to start from the beginning.
-    /// - `limit`: Maximum number of votes to fetch. Defaults to
-    /// [DEFAULT_NODES_VOTING_LIMIT](crate::platform::query::DEFAULT_NODES_VOTING_LIMIT)
+    /// * `sdk`: A reference to the `Sdk` instance, which handles the platform interaction.
+    /// * `limit`: An optional `u16` representing the maximum number of proposer block counts to retrieve.
+    /// * `start_pro_tx_hash`: An optional tuple where the first element is a `ProTxHash` to start
+    ///    from, and the second element is a boolean indicating whether to include the starting proposer
+    ///    in the results.
+    ///
+    /// ## Returns
+    ///
+    /// A `Result` containing `ProposerBlockCounts`, which is a mapping between proposers and the number of blocks they proposed,
+    /// or an `Error` if the operation fails.
     ///
     /// ## See also
     ///
-    /// - [MasternodeProtocolVote::fetch_many()]
-    /// - [MasternodeProtocolVote::fetch_many_with_limit()]
-    async fn fetch_proposed_blocks(
-        sdk: &Sdk,
-        start_protxhash: Option<ProTxHash>,
-        limit: Option<u32>,
-    ) -> Result<MasternodeProtocolVotes, Error>;
-}
+    /// - [`ProposerBlockCounts`](crate::ProposerBlockCounts): The data structure holding the result of this operation.
 
-#[async_trait]
-impl ProposedBlockCountEx<ProTxHash> for ProposerProposedBlockCount {
-    async fn fetch_proposed_blocks(
+    async fn fetch_proposed_blocks_by_range(
         sdk: &Sdk,
-        start_protxhash: Option<ProTxHash>,
         limit: Option<u32>,
-    ) -> Result<ProposerBlockCounts, Error> {
-        Self::fetch_many(
-            sdk,
-            LimitQuery {
-                query: start_protxhash,
-                limit,
-                start_info: None,
-            },
-        )
-        .await.map(|a|)
-    }
+        start_pro_tx_hash: Option<QueryStartInfo>,
+    ) -> Result<ProposerBlockCounts, Error>;
 }
 
 #[async_trait]
 impl ProposedBlockCountEx<ProTxHash> for ProposerBlockCounts {
-    async fn fetch_proposed_blocks(
+    async fn fetch_proposed_blocks_by_range(
         sdk: &Sdk,
-        start_protxhash: Option<ProTxHash>,
         limit: Option<u32>,
-    ) -> Result<MasternodeProtocolVotes, Error> {
-        ProposerProposedBlockCount::fetch_proposed_blocks(sdk, start_protxhash, limit).await
+        start_pro_tx_hash: Option<QueryStartInfo>,
+    ) -> Result<ProposerBlockCounts, Error> {
+        ProposerBlockCountByRange::fetch_many(
+            sdk,
+            LimitQuery {
+                query: 1,
+                limit,
+                start_info: start_pro_tx_hash,
+            },
+        )
+        .await
     }
 }

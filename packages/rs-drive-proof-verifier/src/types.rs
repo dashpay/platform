@@ -486,48 +486,90 @@ impl PlatformVersionedDecode for MasternodeProtocolVote {
 /// Information about protocol version voted by each node, returned by [ProtocolVersion::fetch_many()].
 /// Indexed by [ProTxHash] of nodes.
 pub type MasternodeProtocolVotes = RetrievedObjects<ProTxHash, MasternodeProtocolVote>;
-
-/// Proposed block count for an Evonode in an Epoch.
-#[derive(Debug)]
-#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
-pub struct ProposerProposedBlockCount {
-    /// ProTxHash of the masternode
-    pub pro_tx_hash: ProTxHash,
-    /// Amount of blocks that were proposed
-    pub block_count: u64,
-}
-
-#[cfg(feature = "mocks")]
-impl PlatformVersionEncode for ProposerProposedBlockCount {
-    fn platform_encode<E: bincode::enc::Encoder>(
-        &self,
-        encoder: &mut E,
-        platform_version: &platform_version::PlatformVersion,
-    ) -> Result<(), bincode::error::EncodeError> {
-        let protx_bytes: [u8; 32] = self.pro_tx_hash.to_raw_hash().to_byte_array();
-        protx_bytes.platform_encode(encoder, platform_version)?;
-
-        self.block_count.platform_encode(encoder, platform_version)
-    }
-}
-
-#[cfg(feature = "mocks")]
-impl PlatformVersionedDecode for ProposerProposedBlockCount {
-    fn platform_versioned_decode<D: bincode::de::Decoder>(
-        decoder: &mut D,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, bincode::error::DecodeError> {
-        let pro_tx_hash_bytes = <[u8; 32]>::platform_versioned_decode(decoder, platform_version)?;
-        let pro_tx_hash = ProTxHash::from_byte_array(pro_tx_hash_bytes);
-        let block_count = u64::platform_versioned_decode(decoder, platform_version)?;
-        Ok(Self {
-            pro_tx_hash,
-            block_count,
-        })
-    }
-}
+// 
+// /// Proposed block count for an Evonode in an Epoch.
+// #[derive(Debug)]
+// #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+// pub struct ProposerProposedBlockCount {
+//     /// ProTxHash of the masternode
+//     pub pro_tx_hash: ProTxHash,
+//     /// Amount of blocks that were proposed
+//     pub block_count: u64,
+// }
+// 
+// #[cfg(feature = "mocks")]
+// impl PlatformVersionEncode for ProposerProposedBlockCount {
+//     fn platform_encode<E: bincode::enc::Encoder>(
+//         &self,
+//         encoder: &mut E,
+//         platform_version: &platform_version::PlatformVersion,
+//     ) -> Result<(), bincode::error::EncodeError> {
+//         let protx_bytes: [u8; 32] = self.pro_tx_hash.to_raw_hash().to_byte_array();
+//         protx_bytes.platform_encode(encoder, platform_version)?;
+// 
+//         self.block_count.platform_encode(encoder, platform_version)
+//     }
+// }
+// 
+// #[cfg(feature = "mocks")]
+// impl PlatformVersionedDecode for ProposerProposedBlockCount {
+//     fn platform_versioned_decode<D: bincode::de::Decoder>(
+//         decoder: &mut D,
+//         platform_version: &PlatformVersion,
+//     ) -> Result<Self, bincode::error::DecodeError> {
+//         let pro_tx_hash_bytes = <[u8; 32]>::platform_versioned_decode(decoder, platform_version)?;
+//         let pro_tx_hash = ProTxHash::from_byte_array(pro_tx_hash_bytes);
+//         let block_count = u64::platform_versioned_decode(decoder, platform_version)?;
+//         Ok(Self {
+//             pro_tx_hash,
+//             block_count,
+//         })
+//     }
+// }
 
 /// Proposer block counts
 ///
 /// Mapping between proposers and the blocks they might have proposed
-pub type ProposerBlockCounts = RetrievedIntegerValue<Identifier, u64>;
+#[derive(Debug, Default)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProposerBlockCounts(pub RetrievedIntegerValue<Identifier, u64>);
+
+impl FromIterator<(ProTxHash, Option<ProposerBlockCountByRange>)> for ProposerBlockCounts {
+    fn from_iter<I: IntoIterator<Item = (ProTxHash, Option<ProposerBlockCountByRange>)>>(iter: I) -> Self {
+        let map = iter
+            .into_iter()
+            .map(|(pro_tx_hash, proposer_block_count_by_range)| {
+                let block_count = proposer_block_count_by_range.map_or(0, |proposer_block_count | proposer_block_count.0);
+                let identifier = Identifier::from(pro_tx_hash.to_byte_array());  // Adjust this conversion logic as needed
+                (identifier, block_count)
+            })
+            .collect::<BTreeMap<Identifier, u64>>();
+
+        ProposerBlockCounts(map)
+    }
+}
+
+impl FromIterator<(ProTxHash, Option<ProposerBlockCountById>)> for ProposerBlockCounts {
+    fn from_iter<I: IntoIterator<Item = (ProTxHash, Option<ProposerBlockCountById>)>>(iter: I) -> Self {
+        let map = iter
+            .into_iter()
+            .map(|(pro_tx_hash, proposer_block_count_by_range)| {
+                let block_count = proposer_block_count_by_range.map_or(0, |proposer_block_count | proposer_block_count.0);
+                let identifier = Identifier::from(pro_tx_hash.to_byte_array());  // Adjust this conversion logic as needed
+                (identifier, block_count)
+            })
+            .collect::<BTreeMap<Identifier, u64>>();
+
+        ProposerBlockCounts(map)
+    }
+}
+
+/// A block count struct
+#[derive(Debug)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProposerBlockCountByRange(pub u64);
+
+/// A block count struct
+#[derive(Debug)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProposerBlockCountById(pub u64);

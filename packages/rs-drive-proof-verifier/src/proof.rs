@@ -8,19 +8,7 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
 };
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
-use dapi_grpc::platform::v0::{
-    get_contested_resource_identity_votes_request, get_data_contract_history_request,
-    get_data_contract_request, get_data_contracts_request, get_epochs_info_request,
-    get_identities_balances_request, get_identities_contract_keys_request,
-    get_identity_balance_and_revision_request, get_identity_balance_request,
-    get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
-    get_identity_keys_request, get_identity_nonce_request, get_identity_request,
-    get_path_elements_request, get_prefunded_specialized_balance_request,
-    GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
-    GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata,
-};
+use dapi_grpc::platform::v0::{get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
@@ -1792,7 +1780,7 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByIdsRequest> for Propose
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((Some(proposer_block_counts), mtd.clone(), proof.clone()))
+        Ok((Some(ProposerBlockCounts(proposer_block_counts)), mtd.clone(), proof.clone()))
     }
 }
 
@@ -1850,7 +1838,7 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByRangeRequest> for Propo
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((Some(proposer_block_counts), mtd.clone(), proof.clone()))
+        Ok((Some(ProposerBlockCounts(proposer_block_counts)), mtd.clone(), proof.clone()))
     }
 }
 
