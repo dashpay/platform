@@ -1465,6 +1465,7 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
             .collect();
 
         let response = Contenders {
+            winner: contested_resource_vote_state.winner,
             contenders,
             abstain_vote_tally: contested_resource_vote_state.abstaining_vote_tally,
             lock_vote_tally: contested_resource_vote_state.locked_vote_tally,

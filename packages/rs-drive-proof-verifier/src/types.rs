@@ -35,6 +35,8 @@ use {
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
+use dpp::block::block_info::BlockInfo;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
@@ -73,6 +75,8 @@ pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
     platform_serialize(unversioned)
 )]
 pub struct Contenders {
+    /// The winner if the contest is finished
+    pub winner: Option<(ContestedDocumentVotePollWinnerInfo, BlockInfo)>,
     /// Contenders indexed by their identity IDs.
     pub contenders: BTreeMap<Identifier, ContenderWithSerializedDocument>,
     /// Tally of abstain votes.
@@ -107,6 +111,7 @@ impl FromIterator<(Identifier, Option<ContenderWithSerializedDocument>)> for Con
         iter: T,
     ) -> Self {
         Self {
+            winner: None,
             contenders: BTreeMap::from_iter(
                 iter.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))),
             ),
