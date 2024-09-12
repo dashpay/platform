@@ -1,6 +1,7 @@
 use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::{identity_tree_path_vec, unique_key_hashes_tree_path_vec, Drive};
+use std::ops::RangeFull;
 
 use crate::error::Error;
 
@@ -13,7 +14,7 @@ use crate::drive::identity::{
 use crate::error::query::QuerySyntaxError;
 use dpp::identity::Purpose;
 use grovedb::query_result_type::Key;
-use grovedb::{PathQuery, Query, SizedQuery};
+use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 use grovedb_version::version::GroveVersion;
 
 /// An enumeration representing the types of identity prove requests.
@@ -133,15 +134,55 @@ impl Drive {
     }
 
     /// The query getting all balances and revision
-    pub fn balances_for_identity_ids_query(
-        identity_ids: &[[u8; 32]],
-        grove_version: &GroveVersion,
-    ) -> Result<PathQuery, Error> {
-        let path_queries: Vec<PathQuery> = identity_ids
-            .iter()
-            .map(Self::identity_balance_query)
-            .collect::<Vec<PathQuery>>();
-        PathQuery::merge(path_queries.iter().collect(), grove_version).map_err(Error::GroveDB)
+    pub fn balances_for_identity_ids_query(identity_ids: &[[u8; 32]]) -> PathQuery {
+        let balance_path = balance_path_vec();
+        let mut query = Query::new();
+        query.insert_keys(identity_ids.iter().map(|key| key.to_vec()).collect());
+        PathQuery {
+            path: balance_path,
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        }
+    }
+
+    /// The query getting all balances and revision
+    pub fn balances_for_range_query(
+        start_at: Option<([u8; 32], bool)>,
+        ascending: bool,
+        limit: u16,
+    ) -> PathQuery {
+        let balance_path = balance_path_vec();
+        let mut query = Query::new_with_direction(ascending);
+        if ascending {
+            if let Some((start_at, start_at_included)) = start_at {
+                if start_at_included {
+                    query.insert_item(QueryItem::RangeFrom(start_at.to_vec()..))
+                } else {
+                    query.insert_item(QueryItem::RangeAfter(start_at.to_vec()..))
+                }
+            } else {
+                query.insert_item(QueryItem::RangeFull(RangeFull))
+            }
+        } else if let Some((start_at, start_at_included)) = start_at {
+            if start_at_included {
+                query.insert_item(QueryItem::RangeToInclusive(..=start_at.to_vec()))
+            } else {
+                query.insert_item(QueryItem::RangeTo(..start_at.to_vec()))
+            }
+        } else {
+            query.insert_item(QueryItem::RangeFull(RangeFull))
+        }
+        PathQuery {
+            path: balance_path,
+            query: SizedQuery {
+                query,
+                limit: Some(limit),
+                offset: None,
+            },
+        }
     }
 
     /// The query getting all keys and balance and revision

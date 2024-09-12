@@ -16,8 +16,8 @@ use dpp::{
 };
 use drive_proof_verifier::types::{
     Contenders, ContestedResources, ElementFetchRequestItem, IdentityBalanceAndRevision,
-    MasternodeProtocolVote, PrefundedSpecializedBalance, TotalCreditsInPlatform,
-    VotePollsGroupedByTimestamp, Voters,
+    MasternodeProtocolVote, PrefundedSpecializedBalance, ProposerBlockCounts,
+    RetrievedIntegerValue, TotalCreditsInPlatform, VotePollsGroupedByTimestamp, Voters,
 };
 use std::collections::BTreeMap;
 
@@ -207,6 +207,20 @@ impl MockResponse for ProTxHash {
         let data = platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
             .expect("decode ProTxHash");
         ProTxHash::from_raw_hash(Hash::from_byte_array(data))
+    }
+}
+
+impl MockResponse for ProposerBlockCounts {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.0.mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let data = RetrievedIntegerValue::<Identifier, u64>::mock_deserialize(sdk, buf);
+        ProposerBlockCounts(data)
     }
 }
 

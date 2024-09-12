@@ -6,6 +6,7 @@ mod proofs;
 mod response_metadata;
 mod service;
 mod system;
+mod validator_queries;
 mod voting;
 
 use crate::error::query::QueryError;
