@@ -1,12 +1,10 @@
-use crate::drive::credit_pools::epochs::paths::EpochProposers;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::proposer_block_count_query::ProposerQueryType;
-use crate::query::Query;
 use crate::verify::RootHash;
 use dpp::block::epoch::{Epoch, EpochIndex};
-use grovedb::{Element, GroveDb, PathQuery, SizedQuery};
+use grovedb::{Element, GroveDb};
 use platform_version::version::PlatformVersion;
 
 impl Drive {

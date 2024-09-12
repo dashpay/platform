@@ -1,4 +1,4 @@
-//! Helpers for managing platform version votes
+//! Helpers for managing platform proposed block counts per epoch
 
 use crate::platform::{FetchMany, LimitQuery, QueryStartInfo};
 use crate::{Error, Sdk};
