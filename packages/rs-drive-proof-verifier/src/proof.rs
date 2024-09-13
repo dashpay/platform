@@ -43,7 +43,6 @@ use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
-use dpp::check_validation_result_with_data;
 use drive::query::proposer_block_count_query::ProposerQueryType;
 
 /// Parse and verify the received proof and retrieve the requested object, if any.

@@ -3,16 +3,17 @@ use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::query::QueryItem;
+use crate::query::vote_poll_vote_state_query::{
+    ContestedDocumentVotePollDriveQueryResultType, ResolvedContestedDocumentVotePollDriveQuery,
+};
 use crate::util::grove_operations::BatchDeleteApplyType;
+use dpp::document::DocumentV0Getters;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use grovedb::query_result_type::QueryResultType;
-use grovedb::{PathQuery, TransactionArg};
+use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
-use std::ops::RangeFull;
 
 impl Drive {
     /// We add documents poll references by end date in order to be able to check on every new block if
@@ -29,23 +30,37 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         for (vote_poll, _, vote_choices) in vote_polls {
+            let query = ResolvedContestedDocumentVotePollDriveQuery {
+                vote_poll: (*vote_poll).into(),
+                result_type: ContestedDocumentVotePollDriveQueryResultType::Documents,
+                offset: None,
+                limit: None,
+                start_at: None,
+                allow_include_locked_and_abstaining_vote_tally: false,
+            };
+
+            let contested_document_vote_poll_drive_query_execution_result =
+                query.execute(self, transaction, &mut vec![], platform_version)?;
+
+            let document_type = vote_poll.document_type()?;
+            let document_keys = contested_document_vote_poll_drive_query_execution_result
+                .contenders
+                .into_iter()
+                .filter_map(|contender| {
+                    let maybe_document_result =
+                        match contender.try_into_contender(document_type, platform_version) {
+                            Ok(mut contender) => contender.take_document(),
+                            Err(e) => return Some(Err(e.into())),
+                        };
+
+                    match maybe_document_result {
+                        Some(document) => Some(Ok(document.id().to_vec())), // Assuming document.id holds the document key
+                        None => None, // Handle the case where no document is found
+                    }
+                })
+                .collect::<Result<Vec<Vec<u8>>, Error>>()?;
+
             let documents_storage_path = vote_poll.documents_storage_path_vec();
-
-            let path_query = PathQuery::new_single_query_item(
-                documents_storage_path.clone(),
-                QueryItem::RangeFull(RangeFull),
-            );
-
-            let document_keys = self
-                .grove_get_raw_path_query(
-                    &path_query,
-                    transaction,
-                    QueryResultType::QueryKeyElementPairResultType,
-                    &mut vec![],
-                    &platform_version.drive,
-                )?
-                .0
-                .to_keys();
 
             for document_key in document_keys {
                 self.batch_delete(

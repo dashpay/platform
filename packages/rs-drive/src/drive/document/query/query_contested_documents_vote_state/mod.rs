@@ -70,10 +70,8 @@ impl Drive {
         query: ContestedDocumentVotePollDriveQuery,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
-        protocol_version: Option<u32>,
+        platform_version: &PlatformVersion,
     ) -> Result<QueryContestedDocumentsVoteStateOutcome, Error> {
-        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
-
         match platform_version
             .drive
             .methods
