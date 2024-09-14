@@ -10457,9 +10457,9 @@ mod tests {
                 }
 
                 // At this point the alpha document should not have been awarded
-                
+
                 // Prove that we have a corrupted reference due to deletion of all documents
-                // of the same document type on the first (quantum) contest completion 
+                // of the same document type on the first (quantum) contest completion
 
                 {
                     let config = bincode::config::standard()
@@ -10509,7 +10509,7 @@ mod tests {
                 // Now that we know the error exists, let's make sure it is fixed when going to v2
 
                 let mut platform_state = (**platform_state).clone();
-                
+
                 // Jump to v2
 
                 let block_info_later = BlockInfo {
@@ -10703,7 +10703,7 @@ mod tests {
 
                 // We want to create the same contest to make sure that there are no
                 // leftovers and now logic works correctly
-                
+
                 // We keep seed 9 to use on the same identities
 
                 let (contender_3, contender_4, _) =
@@ -10734,7 +10734,7 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let mut platform_state = (**platform_state).clone();
-                
+
                 // Jump to the future to make sure the new alpha contest is finished
 
                 let block_info = BlockInfo {
