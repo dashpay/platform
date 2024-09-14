@@ -75,6 +75,7 @@ export default function collectSamplesTaskFactory(
               rpcClient.quorum('listextended'),
               rpcClient.getBlockchainInfo(),
               rpcClient.getPeerInfo(),
+              rpcClient.mnsync('status'),
             ];
 
             if (config.get('core.masternode.enable')) {
@@ -87,6 +88,7 @@ export default function collectSamplesTaskFactory(
               getBlockchainInfo,
               getPeerInfo,
               masternodeStatus,
+              masternodeSyncStatus
             ] = (await Promise.allSettled(coreCalls))
               .map((e) => e.value?.result || e.reason);
 
@@ -95,6 +97,7 @@ export default function collectSamplesTaskFactory(
             ctx.samples.setServiceInfo('core', 'blockchainInfo', getBlockchainInfo);
             ctx.samples.setServiceInfo('core', 'peerInfo', getPeerInfo);
             ctx.samples.setServiceInfo('core', 'masternodeStatus', masternodeStatus);
+            ctx.samples.setServiceInfo('core', 'masternodeSyncStatus', masternodeSyncStatus);
           },
         },
         {

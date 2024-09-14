@@ -1,10 +1,11 @@
 import chalk from 'chalk';
 import { Listr } from 'listr2';
-import validateSslCertificateFiles from "../../prompts/validators/validateSslCertificateFiles.js";
-import fs from "fs";
-import path from "path";
-import validateZeroSslCertificateFactory, {ERRORS} from "../../../ssl/zerossl/validateZeroSslCertificateFactory.js";
-import Certificate from "../../../ssl/zerossl/Certificate.js";
+import fs from 'fs';
+import path from 'path';
+import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
+import { ERRORS } from '../../../ssl/zerossl/validateZeroSslCertificateFactory.js';
+import Certificate from '../../../ssl/zerossl/Certificate.js';
+import providers from '../../../status/providers.js';
 
 /**
  *
@@ -220,9 +221,9 @@ export default function analyseSamplesTaskFactory(
           if (ctx.servicesNotStarted.length > 0) {
             let problem;
             if (ctx.servicesNotStarted.length === 1) {
-              problem = chalk`Service ${ctx.servicesNotStarted[0].service.title} isn't started.`
+              problem = chalk`Service ${ctx.servicesNotStarted[0].service.title} isn't started.`;
             } else {
-              problem = chalk`Services ${ctx.servicesNotStarted.map((e) => e.service.title).join(', ')} aren't started.`
+              problem = chalk`Services ${ctx.servicesNotStarted.map((e) => e.service.title).join(', ')} aren't started.`;
             }
 
             problem += chalk`\n\nTry {bold.cyanBright dashmate start --force} to make sure all services are started`;
@@ -424,8 +425,160 @@ Please run {bold.cyanBright dashmate ssl obtain} to get a new one`,
                 }
               },
             },
-            // TODO: Get checks from the status command
-            // TODO: Errors in logs
+            {
+              title: 'Core P2P port',
+              task: async (ctx, task) => {
+                const port = config.get('core.p2p.port');
+                const externalIp = config.get('externalIp');
+                const response = await providers.mnowatch.checkPortStatus(port);
+
+                if (response !== 'OPEN') {
+                  const problem = chalk`Core P2P port is unavailable for incoming connections.
+
+Please ensure that port ${port} on your public IP address ${externalIp} is open
+for incoming connections. You may need to configure your firewall to
+ensure this port is accessible from the public internet. If you are using
+Network Address Translation (NAT), please enable port forwarding for port 80
+and all Dash service ports listed above.`;
+
+                  ctx.problems.push(problem);
+
+                  throw new Error(task.title);
+                }
+              },
+            },
+            {
+              title: 'Gateway HTTP port',
+              task: async (ctx, task) => {
+                const port = config.get('platform.gateway.listeners.dapiAndDrive.port');
+                const externalIp = config.get('externalIp');
+                const response = await providers.mnowatch.checkPortStatus(port);
+
+                if (response !== 'OPEN') {
+                  const problem = chalk`Gateway HTTP port is unavailable for incoming connections.
+
+Please ensure that port ${port} on your public IP address ${externalIp} is open
+for incoming connections. You may need to configure your firewall to
+ensure this port is accessible from the public internet. If you are using
+Network Address Translation (NAT), please enable port forwarding for port 80
+and all Dash service ports listed above.`;
+
+                  ctx.problems.push(problem);
+
+                  throw new Error(task.title);
+                }
+              },
+            },
+            {
+              title: 'Tenderdash P2P port',
+              task: async (ctx, task) => {
+                const port = config.get('platform.drive.tenderdash.p2p.port');
+                const externalIp = config.get('externalIp');
+                const response = await providers.mnowatch.checkPortStatus(port);
+
+                if (response !== 'OPEN') {
+                  const problem = chalk`Gateway HTTP port is unavailable for incoming connections.
+
+Please ensure that port ${port} on your public IP address ${externalIp} is open
+for incoming connections. You may need to configure your firewall to
+ensure this port is accessible from the public internet. If you are using
+Network Address Translation (NAT), please enable port forwarding for port 80
+and all Dash service ports listed above.`;
+
+                  ctx.problems.push(problem);
+
+                  throw new Error(task.title);
+                }
+              },
+            },
+          ], {
+            exitOnError: false,
+          })
+        ),
+      },
+      {
+        title: 'Core',
+        task: () => (
+          new Listr([
+            {
+              title: 'Core is synced',
+              task: (ctx, task) => {
+                const { IsSynced: isSynced } = ctx.samples.getServiceInfo('core', 'masternodeSyncStatus');
+                const { verificationprogress: verificationProgress } = ctx.samples.getServiceInfo('core', 'blockchainInfo');
+
+                if (isSynced === false) {
+                  const problem = chalk`Core syncs blockchain data. Some of the node services might not respond.
+
+${(verificationProgress * 100).toFixed(1)}% is synced. Please wait until Core will be fully synced`;
+
+                  ctx.problems.push(problem);
+
+                  throw new Error(task.title);
+                }
+              },
+            },
+            {
+              enabled: config.get('core.masternode.enable'),
+              title: 'PoSe',
+              task: (ctx, task) => {
+                const masternodeStatus = ctx.samples.getServiceInfo('core', 'masternodeStatus');
+
+                const problem = {
+                  WAITING_FOR_PROTX: chalk`Problem
+
+Solution`,
+                  POSE_BANNED: chalk`Problem
+
+Solution`,
+                  REMOVED: chalk`Problem
+
+Solution`,
+                  OPERATOR_KEY_CHANGED: chalk`Problem
+
+Solution`,
+                  PROTX_IP_CHANGED: chalk`Problem
+
+Solution`,
+                  ERROR: chalk`Problem
+
+Solution`,
+                  UNKNOWN: chalk`Problem
+
+Solution`,
+                }[masternodeStatus?.state];
+
+                if (problem) {
+                  ctx.problems.push(problem);
+
+                  throw new Error(task.title);
+                }
+              },
+            },
+          ], {
+            exitOnError: false,
+          })
+        ),
+      },
+      {
+        title: 'Platform',
+        task: () => (
+          new Listr([
+            {
+              title: 'Drive is synced',
+              task: (ctx, task) => {
+                const status = ctx.samples.getServiceInfo('drive_tenderdash', 'status');
+
+                if (status?.sync_info?.catching_up) {
+                  const problem = chalk`Drive syncs blockchain data. Some of the node services might not respond.
+
+Please wait until Drive will be fully synced`;
+
+                  ctx.problems.push(problem);
+
+                  throw new Error(task.title);
+                }
+              },
+            },
           ], {
             exitOnError: false,
           })
