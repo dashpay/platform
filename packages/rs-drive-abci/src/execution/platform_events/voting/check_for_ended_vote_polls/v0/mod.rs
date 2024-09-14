@@ -79,13 +79,7 @@ where
                                 vote_poll: (&resolved_contested_document_resource_vote_poll).into(),
                                 result_type: ContestedDocumentVotePollDriveQueryResultType::VoteTally,
                                 offset: None,
-                                limit: Some(
-                                    platform_version
-                                        .drive_abci
-                                        .validation_and_processing
-                                        .event_constants
-                                        .maximum_contenders_to_consider,
-                                ),
+                                limit: None, // There should be no limit here
                                 start_at: None,
                                 allow_include_locked_and_abstaining_vote_tally: true,
                             };
