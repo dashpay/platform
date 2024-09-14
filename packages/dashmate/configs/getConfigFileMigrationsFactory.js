@@ -300,16 +300,16 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 );
 
                 if (fs.existsSync(oldFilePath)) {
-                  fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
+                  fs.mkdirSync(path.dirname(newFilePath), {recursive: true});
                   fs.copyFileSync(oldFilePath, newFilePath);
-                  fs.rmSync(oldFilePath, { recursive: true });
+                  fs.rmSync(oldFilePath, {recursive: true});
                 }
               }
             }
           });
 
         if (fs.existsSync(homeDir.joinPath('ssl'))) {
-          fs.rmSync(homeDir.joinPath('ssl'), { recursive: true });
+          fs.rmSync(homeDir.joinPath('ssl'), {recursive: true});
         }
 
         return configFile;
@@ -626,9 +626,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 );
 
                 if (fs.existsSync(oldFilePath)) {
-                  fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
+                  fs.mkdirSync(path.dirname(newFilePath), {recursive: true});
                   fs.copyFileSync(oldFilePath, newFilePath);
-                  fs.rmSync(oldFilePath, { recursive: true });
+                  fs.rmSync(oldFilePath, {recursive: true});
                 }
               }
             }
@@ -850,6 +850,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.network === NETWORK_TESTNET) {
               delete options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
             }
+          });
+        return configFile;
+      },
+      '1.3.0-dev.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
           });
         return configFile;
       },
