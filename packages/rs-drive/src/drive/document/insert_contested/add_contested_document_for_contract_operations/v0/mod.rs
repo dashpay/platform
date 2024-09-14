@@ -10,6 +10,7 @@ use dpp::voting::vote_polls::VotePoll;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use dpp::dashcore::Network;
 
 impl Drive {
     /// Gathers the operations to add a contested document to a contract.
