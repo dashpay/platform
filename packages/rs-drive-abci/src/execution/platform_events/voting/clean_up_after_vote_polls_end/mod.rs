@@ -18,6 +18,7 @@ where
     pub(in crate::execution) fn clean_up_after_vote_polls_end(
         &self,
         vote_polls: &BTreeMap<TimestampMillis, Vec<ResolvedVotePollWithVotes>>,
+        clean_up_testnet_corrupted_reference_issue: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -27,7 +28,12 @@ where
             .voting
             .clean_up_after_vote_poll_end
         {
-            0 => self.clean_up_after_vote_polls_end_v0(vote_polls, transaction, platform_version),
+            0 => self.clean_up_after_vote_polls_end_v0(
+                vote_polls,
+                clean_up_testnet_corrupted_reference_issue,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "clean_up_after_vote_polls_end".to_string(),
                 known_versions: vec![0],

@@ -1551,7 +1551,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 // There is no last_clause which means we are using an index most likely because of an order_by, however we have no
                 // clauses, in this case we should use the first value of the index.
                 let first_index = index.properties.first().ok_or(Error::Drive(
-                    DriveError::CorruptedContractIndexes("index must have properties"),
+                    DriveError::CorruptedContractIndexes("index must have properties".to_string()),
                 ))?; // Index must have properties
                 Self::recursive_insert_on_query(
                     None,
@@ -1605,7 +1605,7 @@ impl<'a> DriveDocumentQuery<'a> {
                             .iter()
                             .find(|field| where_clause.field == field.name)
                             .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(
-                                "index must have last_clause field",
+                                "index must have last_clause field".to_string(),
                             )))?;
                         Self::recursive_insert_on_query(
                             Some(&mut query),
@@ -1637,7 +1637,7 @@ impl<'a> DriveDocumentQuery<'a> {
                             .iter()
                             .find(|field| subquery_where_clause.field == field.name)
                             .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(
-                                "index must have subquery_clause field",
+                                "index must have subquery_clause field".to_string(),
                             )))?;
                         Self::recursive_insert_on_query(
                             Some(&mut subquery),

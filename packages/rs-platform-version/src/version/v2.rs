@@ -238,10 +238,12 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                 cleanup: DriveVoteCleanupMethodVersions {
                     remove_specific_vote_references_given_by_identity: 0,
                     remove_specific_votes_given_by_identity: 0,
-                    remove_contested_resource_vote_poll_end_date_query_operations: 0,
+                    remove_contested_resource_vote_poll_end_date_query_operations: 1,
                     remove_contested_resource_vote_poll_votes_operations: 0,
-                    remove_contested_resource_vote_poll_documents_operations: 0,
-                    remove_contested_resource_vote_poll_contenders_operations: 0,
+                    remove_contested_resource_vote_poll_documents_operations: 1,
+                    remove_contested_resource_vote_poll_contenders_operations: 1,
+                    remove_contested_resource_top_level_index_operations: 0,
+                    remove_contested_resource_info_operations: 0,
                 },
                 setup: DriveVoteSetupMethodVersions {
                     add_initial_vote_tree_main_structure_operations: 0,

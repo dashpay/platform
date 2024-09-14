@@ -1671,6 +1671,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -1926,6 +1927,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -2236,6 +2238,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -2361,6 +2364,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -2518,6 +2522,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -2678,6 +2683,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -5726,7 +5732,19 @@ mod tests {
 
         mod document_distribution {
             use super::*;
-            use crate::execution::validation::state_transition::tests::create_dpns_contract_name_contest;
+            use crate::config::PlatformConfig;
+            use crate::execution::validation::state_transition::tests::{
+                create_dpns_contract_name_contest,
+                create_dpns_identity_name_contest_skip_creating_identities,
+                setup_identity_without_adding_it,
+            };
+            use assert_matches::assert_matches;
+            use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
+            use dapi_grpc::platform::v0::{
+                get_contested_resource_vote_state_request, GetContestedResourceVoteStateRequest,
+            };
+            use dpp::dashcore::Network;
+            use platform_version::version::INITIAL_PROTOCOL_VERSION;
 
             #[test]
             fn test_document_distribution() {
@@ -5756,6 +5774,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -5830,6 +5849,7 @@ mod tests {
 
                 platform
                     .check_for_ended_vote_polls(
+                        &platform_state,
                         &platform_state,
                         &block_info,
                         Some(&transaction),
@@ -5942,6 +5962,1212 @@ mod tests {
             }
 
             #[test]
+            fn test_document_distribution_many_votes() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let votes = 10; //let's do this 10 times
+
+                for i in 0..votes {
+                    let platform_state = platform.state.load();
+
+                    let name = format!("quantum{}", (b'A' + i as u8) as char);
+                    let (contender_1, contender_2, dpns_contract) =
+                        create_dpns_identity_name_contest(
+                            &mut platform,
+                            &platform_state,
+                            7 + i,
+                            name.as_str(),
+                            platform_version,
+                        );
+
+                    perform_votes_multi(
+                        &mut platform,
+                        dpns_contract.as_ref(),
+                        vec![
+                            (TowardsIdentity(contender_1.id()), 50),
+                            (TowardsIdentity(contender_2.id()), 5),
+                            (ResourceVoteChoice::Abstain, 10),
+                            (ResourceVoteChoice::Lock, 3),
+                        ],
+                        name.as_str(),
+                        i * 500 + 10,
+                        None,
+                        platform_version,
+                    );
+
+                    let platform_state = platform.state.load();
+
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        name.as_str(),
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(finished_vote_info, None);
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_ne!(first_contender.document(), second_contender.document());
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+
+                    let mut platform_state = (**platform_state).clone();
+
+                    let block_info = BlockInfo {
+                        time_ms: 1_209_900_000 * (i + 1), //2 weeks and 300s
+                        height: 10000 + i,
+                        core_height: 42,
+                        epoch: Default::default(),
+                    };
+
+                    platform_state.set_last_committed_block_info(Some(
+                        ExtendedBlockInfoV0 {
+                            basic_info: block_info,
+                            app_hash: platform
+                                .drive
+                                .grove
+                                .root_hash(None, &platform_version.drive.grove_version)
+                                .unwrap()
+                                .unwrap(),
+                            quorum_hash: [0u8; 32],
+                            block_id_hash: [0u8; 32],
+                            proposer_pro_tx_hash: [0u8; 32],
+                            signature: [0u8; 96],
+                            round: 0,
+                        }
+                        .into(),
+                    ));
+
+                    platform.state.store(Arc::new(platform_state));
+
+                    let platform_state = platform.state.load();
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    platform
+                        .check_for_ended_vote_polls(
+                            &platform_state,
+                            &platform_state,
+                            &block_info,
+                            Some(&transaction),
+                            platform_version,
+                        )
+                        .expect("expected to check for ended vote polls");
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    // At this point the document should have been awarded to contender 1.
+
+                    {
+                        let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            name.as_str(),
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                        assert_eq!(
+                            finished_vote_info,
+                            Some(FinishedVoteInfo {
+                                finished_vote_outcome:
+                                    finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                                won_by_identity_id: Some(contender_1.id().to_vec()),
+                                finished_at_block_height: 10000 + i,
+                                finished_at_core_block_height: 42,
+                                finished_at_block_time_ms: 1_209_900_000 * (i + 1),
+                                finished_at_epoch: 0
+                            })
+                        );
+
+                        assert_eq!(contenders.len(), 2);
+
+                        let first_contender = contenders.first().unwrap();
+
+                        let second_contender = contenders.last().unwrap();
+
+                        assert_eq!(first_contender.document(), &None);
+
+                        assert_eq!(second_contender.document(), &None);
+
+                        assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                        assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                        assert_eq!(first_contender.vote_tally(), Some(50));
+
+                        assert_eq!(second_contender.vote_tally(), Some(5));
+
+                        assert_eq!(abstaining, Some(10));
+
+                        assert_eq!(locking, Some(3));
+                    }
+
+                    {
+                        let (contenders, abstaining, locking, finished_vote_info) =
+                            get_proved_vote_states(
+                                &platform,
+                                &platform_state,
+                                &dpns_contract,
+                                name.as_str(),
+                                None,
+                                true,
+                                None,
+                                ResultType::DocumentsAndVoteTally,
+                                platform_version,
+                            );
+
+                        assert_eq!(
+                            finished_vote_info,
+                            Some((
+                                ContestedDocumentVotePollWinnerInfo::WonByIdentity(
+                                    contender_1.id()
+                                ),
+                                block_info
+                            ))
+                        );
+
+                        assert_eq!(contenders.len(), 2);
+
+                        let first_contender = contenders.first().unwrap();
+
+                        let second_contender = contenders.last().unwrap();
+
+                        assert_eq!(first_contender.document(), &None);
+
+                        assert_eq!(second_contender.document(), &None);
+
+                        assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                        assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                        assert_eq!(first_contender.vote_tally(), Some(50));
+
+                        assert_eq!(second_contender.vote_tally(), Some(5));
+
+                        assert_eq!(abstaining, Some(10));
+
+                        assert_eq!(locking, Some(3));
+                    }
+                }
+            }
+
+            #[test]
+            fn test_document_distribution_many_votes_two_contests_same_time() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let votes = 10; //let's do this 10 times
+
+                for i in 0..votes {
+                    let platform_state = platform.state.load();
+
+                    let name = format!("quantum{}", (b'A' + i as u8) as char);
+                    let (contender_1, contender_2, dpns_contract) =
+                        create_dpns_identity_name_contest(
+                            &mut platform,
+                            &platform_state,
+                            7 + i,
+                            name.as_str(),
+                            platform_version,
+                        );
+
+                    perform_votes_multi(
+                        &mut platform,
+                        dpns_contract.as_ref(),
+                        vec![
+                            (TowardsIdentity(contender_1.id()), 50),
+                            (TowardsIdentity(contender_2.id()), 5),
+                            (ResourceVoteChoice::Abstain, 10),
+                            (ResourceVoteChoice::Lock, 3),
+                        ],
+                        name.as_str(),
+                        i * 500 + 50,
+                        None,
+                        platform_version,
+                    );
+
+                    let name2 = format!("alpha{}", (b'A' + i as u8) as char);
+                    let (contender_3, contender_4, dpns_contract) =
+                        create_dpns_identity_name_contest(
+                            &mut platform,
+                            &platform_state,
+                            100007 + i,
+                            name2.as_str(),
+                            platform_version,
+                        );
+
+                    perform_votes_multi(
+                        &mut platform,
+                        dpns_contract.as_ref(),
+                        vec![
+                            (TowardsIdentity(contender_3.id()), 30),
+                            (TowardsIdentity(contender_4.id()), 53),
+                            (ResourceVoteChoice::Abstain, 2),
+                            (ResourceVoteChoice::Lock, 5),
+                        ],
+                        name2.as_str(),
+                        i * 750 + 500000,
+                        None,
+                        platform_version,
+                    );
+
+                    let platform_state = platform.state.load();
+
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        name.as_str(),
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(finished_vote_info, None);
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_ne!(first_contender.document(), second_contender.document());
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        name2.as_str(),
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(finished_vote_info, None);
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_ne!(first_contender.document(), second_contender.document());
+
+                    assert_eq!(first_contender.identity_id(), contender_3.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_4.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(30));
+
+                    assert_eq!(second_contender.vote_tally(), Some(53));
+
+                    assert_eq!(abstaining, Some(2));
+
+                    assert_eq!(locking, Some(5));
+
+                    let mut platform_state = (**platform_state).clone();
+
+                    let block_info = BlockInfo {
+                        time_ms: 1_209_900_000 * (i + 1), //2 weeks and 300s
+                        height: 10000 + i,
+                        core_height: 42,
+                        epoch: Default::default(),
+                    };
+
+                    platform_state.set_last_committed_block_info(Some(
+                        ExtendedBlockInfoV0 {
+                            basic_info: block_info,
+                            app_hash: platform
+                                .drive
+                                .grove
+                                .root_hash(None, &platform_version.drive.grove_version)
+                                .unwrap()
+                                .unwrap(),
+                            quorum_hash: [0u8; 32],
+                            block_id_hash: [0u8; 32],
+                            proposer_pro_tx_hash: [0u8; 32],
+                            signature: [0u8; 96],
+                            round: 0,
+                        }
+                        .into(),
+                    ));
+
+                    platform.state.store(Arc::new(platform_state));
+
+                    let platform_state = platform.state.load();
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    platform
+                        .check_for_ended_vote_polls(
+                            &platform_state,
+                            &platform_state,
+                            &block_info,
+                            Some(&transaction),
+                            platform_version,
+                        )
+                        .expect("expected to check for ended vote polls");
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    // At this point the document should have been awarded to contender 1.
+
+                    {
+                        let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            name.as_str(),
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                        assert_eq!(
+                            finished_vote_info,
+                            Some(FinishedVoteInfo {
+                                finished_vote_outcome:
+                                    finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                                won_by_identity_id: Some(contender_1.id().to_vec()),
+                                finished_at_block_height: 10000 + i,
+                                finished_at_core_block_height: 42,
+                                finished_at_block_time_ms: 1_209_900_000 * (i + 1),
+                                finished_at_epoch: 0
+                            })
+                        );
+
+                        assert_eq!(contenders.len(), 2);
+
+                        let first_contender = contenders.first().unwrap();
+
+                        let second_contender = contenders.last().unwrap();
+
+                        assert_eq!(first_contender.document(), &None);
+
+                        assert_eq!(second_contender.document(), &None);
+
+                        assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                        assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                        assert_eq!(first_contender.vote_tally(), Some(50));
+
+                        assert_eq!(second_contender.vote_tally(), Some(5));
+
+                        assert_eq!(abstaining, Some(10));
+
+                        assert_eq!(locking, Some(3));
+                    }
+
+                    {
+                        let (contenders, abstaining, locking, finished_vote_info) =
+                            get_proved_vote_states(
+                                &platform,
+                                &platform_state,
+                                &dpns_contract,
+                                name.as_str(),
+                                None,
+                                true,
+                                None,
+                                ResultType::DocumentsAndVoteTally,
+                                platform_version,
+                            );
+
+                        assert_eq!(
+                            finished_vote_info,
+                            Some((
+                                ContestedDocumentVotePollWinnerInfo::WonByIdentity(
+                                    contender_1.id()
+                                ),
+                                block_info
+                            ))
+                        );
+
+                        assert_eq!(contenders.len(), 2);
+
+                        let first_contender = contenders.first().unwrap();
+
+                        let second_contender = contenders.last().unwrap();
+
+                        assert_eq!(first_contender.document(), &None);
+
+                        assert_eq!(second_contender.document(), &None);
+
+                        assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                        assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                        assert_eq!(first_contender.vote_tally(), Some(50));
+
+                        assert_eq!(second_contender.vote_tally(), Some(5));
+
+                        assert_eq!(abstaining, Some(10));
+
+                        assert_eq!(locking, Some(3));
+                    }
+
+                    // At this point the document should have been awarded to contender 4.
+
+                    {
+                        let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            name2.as_str(),
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                        assert_eq!(
+                            finished_vote_info,
+                            Some(FinishedVoteInfo {
+                                finished_vote_outcome:
+                                    finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                                won_by_identity_id: Some(contender_4.id().to_vec()),
+                                finished_at_block_height: 10000 + i,
+                                finished_at_core_block_height: 42,
+                                finished_at_block_time_ms: 1_209_900_000 * (i + 1),
+                                finished_at_epoch: 0
+                            })
+                        );
+
+                        assert_eq!(contenders.len(), 2);
+
+                        let first_contender = contenders.first().unwrap();
+
+                        let second_contender = contenders.last().unwrap();
+
+                        assert_eq!(first_contender.document(), &None);
+
+                        assert_eq!(second_contender.document(), &None);
+
+                        assert_eq!(first_contender.identity_id(), contender_3.id());
+
+                        assert_eq!(second_contender.identity_id(), contender_4.id());
+
+                        assert_eq!(first_contender.vote_tally(), Some(30));
+
+                        assert_eq!(second_contender.vote_tally(), Some(53));
+
+                        assert_eq!(abstaining, Some(2));
+
+                        assert_eq!(locking, Some(5));
+                    }
+
+                    {
+                        let (contenders, abstaining, locking, finished_vote_info) =
+                            get_proved_vote_states(
+                                &platform,
+                                &platform_state,
+                                &dpns_contract,
+                                name2.as_str(),
+                                None,
+                                true,
+                                None,
+                                ResultType::DocumentsAndVoteTally,
+                                platform_version,
+                            );
+
+                        assert_eq!(
+                            finished_vote_info,
+                            Some((
+                                ContestedDocumentVotePollWinnerInfo::WonByIdentity(
+                                    contender_4.id()
+                                ),
+                                block_info
+                            ))
+                        );
+
+                        assert_eq!(contenders.len(), 2);
+
+                        let first_contender = contenders.first().unwrap();
+
+                        let second_contender = contenders.last().unwrap();
+
+                        assert_eq!(first_contender.document(), &None);
+
+                        assert_eq!(second_contender.document(), &None);
+
+                        assert_eq!(first_contender.identity_id(), contender_3.id());
+
+                        assert_eq!(second_contender.identity_id(), contender_4.id());
+
+                        assert_eq!(first_contender.vote_tally(), Some(30));
+
+                        assert_eq!(second_contender.vote_tally(), Some(53));
+
+                        assert_eq!(abstaining, Some(2));
+
+                        assert_eq!(locking, Some(5));
+                    }
+                }
+            }
+
+            #[test]
+            fn test_document_distribution_many_votes_three_contests_same_time() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let votes = 10; //let's do this 10 times
+
+                for i in 0..votes {
+                    let platform_state = platform.state.load();
+
+                    let name = format!("quantum{}", (b'A' + i as u8) as char);
+                    let (contender_1, contender_2, dpns_contract) =
+                        create_dpns_identity_name_contest(
+                            &mut platform,
+                            &platform_state,
+                            7 + i,
+                            name.as_str(),
+                            platform_version,
+                        );
+
+                    perform_votes_multi(
+                        &mut platform,
+                        dpns_contract.as_ref(),
+                        vec![
+                            (TowardsIdentity(contender_1.id()), 2),
+                            (TowardsIdentity(contender_2.id()), 1),
+                            (ResourceVoteChoice::Abstain, 4),
+                            (ResourceVoteChoice::Lock, 0),
+                        ],
+                        name.as_str(),
+                        i * 500 + 50,
+                        None,
+                        platform_version,
+                    );
+
+                    let name2 = format!("alpha{}", (b'A' + i as u8) as char);
+                    let (contender_3, contender_4, dpns_contract) =
+                        create_dpns_identity_name_contest(
+                            &mut platform,
+                            &platform_state,
+                            100007 + i,
+                            name2.as_str(),
+                            platform_version,
+                        );
+
+                    perform_votes_multi(
+                        &mut platform,
+                        dpns_contract.as_ref(),
+                        vec![
+                            (TowardsIdentity(contender_3.id()), 5),
+                            (TowardsIdentity(contender_4.id()), 6),
+                            (ResourceVoteChoice::Abstain, 2),
+                            (ResourceVoteChoice::Lock, 6),
+                        ],
+                        name2.as_str(),
+                        i * 750 + 500000,
+                        None,
+                        platform_version,
+                    );
+
+                    let name3 = format!("beta{}", (b'A' + i as u8) as char);
+                    let (contender_5, contender_6, dpns_contract) =
+                        create_dpns_identity_name_contest(
+                            &mut platform,
+                            &platform_state,
+                            200007 + i,
+                            name3.as_str(),
+                            platform_version,
+                        );
+
+                    perform_votes_multi(
+                        &mut platform,
+                        dpns_contract.as_ref(),
+                        vec![
+                            (TowardsIdentity(contender_5.id()), 5),
+                            (TowardsIdentity(contender_6.id()), 6),
+                            (ResourceVoteChoice::Abstain, 2),
+                            (ResourceVoteChoice::Lock, 6),
+                        ],
+                        name3.as_str(),
+                        i * 500 + 600000,
+                        None,
+                        platform_version,
+                    );
+
+                    let platform_state = platform.state.load();
+
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        name.as_str(),
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(finished_vote_info, None);
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_ne!(first_contender.document(), second_contender.document());
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(2));
+
+                    assert_eq!(second_contender.vote_tally(), Some(1));
+
+                    assert_eq!(abstaining, Some(4));
+
+                    assert_eq!(locking, Some(0));
+
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        name2.as_str(),
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(finished_vote_info, None);
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_ne!(first_contender.document(), second_contender.document());
+
+                    assert_eq!(first_contender.identity_id(), contender_3.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_4.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(5));
+
+                    assert_eq!(second_contender.vote_tally(), Some(6));
+
+                    assert_eq!(abstaining, Some(2));
+
+                    assert_eq!(locking, Some(6));
+
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        name3.as_str(),
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(finished_vote_info, None);
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_ne!(first_contender.document(), second_contender.document());
+
+                    assert_eq!(first_contender.identity_id(), contender_5.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_6.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(5));
+
+                    assert_eq!(second_contender.vote_tally(), Some(6));
+
+                    assert_eq!(abstaining, Some(2));
+
+                    assert_eq!(locking, Some(6));
+
+                    let mut platform_state = (**platform_state).clone();
+
+                    let block_info = BlockInfo {
+                        time_ms: 1_209_900_000 * (i + 1), //2 weeks and 300s
+                        height: 10000 + i * 2,
+                        core_height: 42,
+                        epoch: Default::default(),
+                    };
+
+                    platform_state.set_last_committed_block_info(Some(
+                        ExtendedBlockInfoV0 {
+                            basic_info: block_info,
+                            app_hash: platform
+                                .drive
+                                .grove
+                                .root_hash(None, &platform_version.drive.grove_version)
+                                .unwrap()
+                                .unwrap(),
+                            quorum_hash: [0u8; 32],
+                            block_id_hash: [0u8; 32],
+                            proposer_pro_tx_hash: [0u8; 32],
+                            signature: [0u8; 96],
+                            round: 0,
+                        }
+                        .into(),
+                    ));
+
+                    platform.state.store(Arc::new(platform_state));
+
+                    let platform_state = platform.state.load();
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    platform
+                        .check_for_ended_vote_polls(
+                            &platform_state,
+                            &platform_state,
+                            &block_info,
+                            Some(&transaction),
+                            platform_version,
+                        )
+                        .expect("expected to check for ended vote polls");
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    // At this point 1 of the 3 should not have been awarded, we are not sure which one it is though
+                    {
+                        // Check the first poll
+                        let (_contenders1, _abstaining1, _locking1, finished_vote_info1) =
+                            get_vote_states(
+                                &platform,
+                                &platform_state,
+                                &dpns_contract,
+                                name.as_str(),
+                                None,
+                                true,
+                                None,
+                                ResultType::DocumentsAndVoteTally,
+                                platform_version,
+                            );
+
+                        // Check the second poll
+                        let (_contenders2, _abstaining2, _locking2, finished_vote_info2) =
+                            get_vote_states(
+                                &platform,
+                                &platform_state,
+                                &dpns_contract,
+                                name2.as_str(),
+                                None,
+                                true,
+                                None,
+                                ResultType::DocumentsAndVoteTally,
+                                platform_version,
+                            );
+
+                        // Check the third poll
+                        let (_contenders3, _abstaining3, _locking3, finished_vote_info3) =
+                            get_vote_states(
+                                &platform,
+                                &platform_state,
+                                &dpns_contract,
+                                name3.as_str(),
+                                None,
+                                true,
+                                None,
+                                ResultType::DocumentsAndVoteTally,
+                                platform_version,
+                            );
+
+                        // Now check that exactly one of the 'finished_vote_info's is None, and the other two are Some(_)
+                        let finished_vote_infos = vec![
+                            finished_vote_info1.is_some(),
+                            finished_vote_info2.is_some(),
+                            finished_vote_info3.is_some(),
+                        ];
+
+                        // Count how many polls have been awarded
+                        let awarded_count = finished_vote_infos
+                            .iter()
+                            .filter(|&&is_awarded| is_awarded)
+                            .count();
+
+                        // Assert that exactly two polls have been awarded
+                        assert_eq!(
+                            awarded_count, 2,
+                            "Exactly two polls should have been awarded for event {}",
+                            i
+                        );
+
+                        // Assert that exactly one poll has not been awarded
+                        assert_eq!(
+                            finished_vote_infos.len() - awarded_count,
+                            1,
+                            "Exactly one poll should not have been awarded for event {}",
+                            i
+                        );
+                    }
+
+                    let mut platform_state = (**platform_state).clone();
+
+                    let block_info = BlockInfo {
+                        time_ms: 1_209_900_000 * (i + 1) + 50, //2 weeks and 350s
+                        height: 10001 + i * 2,
+                        core_height: 42,
+                        epoch: Default::default(),
+                    };
+
+                    platform_state.set_last_committed_block_info(Some(
+                        ExtendedBlockInfoV0 {
+                            basic_info: block_info,
+                            app_hash: platform
+                                .drive
+                                .grove
+                                .root_hash(None, &platform_version.drive.grove_version)
+                                .unwrap()
+                                .unwrap(),
+                            quorum_hash: [0u8; 32],
+                            block_id_hash: [0u8; 32],
+                            proposer_pro_tx_hash: [0u8; 32],
+                            signature: [0u8; 96],
+                            round: 0,
+                        }
+                        .into(),
+                    ));
+
+                    platform.state.store(Arc::new(platform_state));
+
+                    let platform_state = platform.state.load();
+
+                    let transaction = platform.drive.grove.start_transaction();
+
+                    platform
+                        .check_for_ended_vote_polls(
+                            &platform_state,
+                            &platform_state,
+                            &block_info,
+                            Some(&transaction),
+                            platform_version,
+                        )
+                        .expect("expected to check for ended vote polls");
+
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    // At this point the document should have been awarded to contender 1.
+
+                    {
+                        let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            name.as_str(),
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                        assert_matches!(finished_vote_info, Some(_));
+
+                        assert_eq!(contenders.len(), 2);
+
+                        let first_contender = contenders.first().unwrap();
+
+                        let second_contender = contenders.last().unwrap();
+
+                        assert_eq!(first_contender.document(), &None);
+
+                        assert_eq!(second_contender.document(), &None);
+
+                        assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                        assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                        assert_eq!(first_contender.vote_tally(), Some(2));
+
+                        assert_eq!(second_contender.vote_tally(), Some(1));
+
+                        assert_eq!(abstaining, Some(4));
+
+                        assert_eq!(locking, Some(0));
+                    }
+
+                    {
+                        let (contenders, abstaining, locking, finished_vote_info) =
+                            get_proved_vote_states(
+                                &platform,
+                                &platform_state,
+                                &dpns_contract,
+                                name.as_str(),
+                                None,
+                                true,
+                                None,
+                                ResultType::DocumentsAndVoteTally,
+                                platform_version,
+                            );
+
+                        assert_matches!(finished_vote_info, Some(_));
+
+                        assert_eq!(contenders.len(), 2);
+
+                        let first_contender = contenders.first().unwrap();
+
+                        let second_contender = contenders.last().unwrap();
+
+                        assert_eq!(first_contender.document(), &None);
+
+                        assert_eq!(second_contender.document(), &None);
+
+                        assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                        assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                        assert_eq!(first_contender.vote_tally(), Some(2));
+
+                        assert_eq!(second_contender.vote_tally(), Some(1));
+
+                        assert_eq!(abstaining, Some(4));
+
+                        assert_eq!(locking, Some(0));
+                    }
+
+                    // At this point the document should have been awarded to contender 4.
+
+                    {
+                        let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            name2.as_str(),
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                        assert_matches!(finished_vote_info, Some(_));
+
+                        assert_eq!(contenders.len(), 2);
+
+                        let first_contender = contenders.first().unwrap();
+
+                        let second_contender = contenders.last().unwrap();
+
+                        assert_eq!(first_contender.document(), &None);
+
+                        assert_eq!(second_contender.document(), &None);
+
+                        assert_eq!(first_contender.identity_id(), contender_3.id());
+
+                        assert_eq!(second_contender.identity_id(), contender_4.id());
+
+                        assert_eq!(first_contender.vote_tally(), Some(5));
+
+                        assert_eq!(second_contender.vote_tally(), Some(6));
+
+                        assert_eq!(abstaining, Some(2));
+
+                        assert_eq!(locking, Some(6));
+                    }
+
+                    {
+                        let (contenders, abstaining, locking, finished_vote_info) =
+                            get_proved_vote_states(
+                                &platform,
+                                &platform_state,
+                                &dpns_contract,
+                                name2.as_str(),
+                                None,
+                                true,
+                                None,
+                                ResultType::DocumentsAndVoteTally,
+                                platform_version,
+                            );
+
+                        assert_matches!(finished_vote_info, Some(_));
+
+                        assert_eq!(contenders.len(), 2);
+
+                        let first_contender = contenders.first().unwrap();
+
+                        let second_contender = contenders.last().unwrap();
+
+                        assert_eq!(first_contender.document(), &None);
+
+                        assert_eq!(second_contender.document(), &None);
+
+                        assert_eq!(first_contender.identity_id(), contender_3.id());
+
+                        assert_eq!(second_contender.identity_id(), contender_4.id());
+
+                        assert_eq!(first_contender.vote_tally(), Some(5));
+
+                        assert_eq!(second_contender.vote_tally(), Some(6));
+
+                        assert_eq!(abstaining, Some(2));
+
+                        assert_eq!(locking, Some(6));
+                    }
+
+                    // At this point the document should have been awarded to contender 6.
+
+                    {
+                        let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            name3.as_str(),
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                        assert_matches!(finished_vote_info, Some(_));
+
+                        assert_eq!(contenders.len(), 2);
+
+                        let first_contender = contenders.first().unwrap();
+
+                        let second_contender = contenders.last().unwrap();
+
+                        assert_eq!(first_contender.document(), &None);
+
+                        assert_eq!(second_contender.document(), &None);
+
+                        assert_eq!(first_contender.identity_id(), contender_5.id());
+
+                        assert_eq!(second_contender.identity_id(), contender_6.id());
+
+                        assert_eq!(first_contender.vote_tally(), Some(5));
+
+                        assert_eq!(second_contender.vote_tally(), Some(6));
+
+                        assert_eq!(abstaining, Some(2));
+
+                        assert_eq!(locking, Some(6));
+                    }
+
+                    {
+                        let (contenders, abstaining, locking, finished_vote_info) =
+                            get_proved_vote_states(
+                                &platform,
+                                &platform_state,
+                                &dpns_contract,
+                                name3.as_str(),
+                                None,
+                                true,
+                                None,
+                                ResultType::DocumentsAndVoteTally,
+                                platform_version,
+                            );
+
+                        assert_matches!(finished_vote_info, Some(_));
+
+                        assert_eq!(contenders.len(), 2);
+
+                        let first_contender = contenders.first().unwrap();
+
+                        let second_contender = contenders.last().unwrap();
+
+                        assert_eq!(first_contender.document(), &None);
+
+                        assert_eq!(second_contender.document(), &None);
+
+                        assert_eq!(first_contender.identity_id(), contender_5.id());
+
+                        assert_eq!(second_contender.identity_id(), contender_6.id());
+
+                        assert_eq!(first_contender.vote_tally(), Some(5));
+
+                        assert_eq!(second_contender.vote_tally(), Some(6));
+
+                        assert_eq!(abstaining, Some(2));
+
+                        assert_eq!(locking, Some(6));
+                    }
+                }
+            }
+
+            #[test]
             fn test_document_distribution_abstain_very_high() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
@@ -5969,6 +7195,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -6043,6 +7270,7 @@ mod tests {
 
                 platform
                     .check_for_ended_vote_polls(
+                        &platform_state,
                         &platform_state,
                         &block_info,
                         Some(&transaction),
@@ -6182,6 +7410,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -6256,6 +7485,7 @@ mod tests {
 
                 platform
                     .check_for_ended_vote_polls(
+                        &platform_state,
                         &platform_state,
                         &block_info,
                         Some(&transaction),
@@ -6390,6 +7620,7 @@ mod tests {
                     vec![(TowardsIdentity(contender_1.id()), 1)],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -6464,6 +7695,7 @@ mod tests {
 
                 platform
                     .check_for_ended_vote_polls(
+                        &platform_state,
                         &platform_state,
                         &block_info,
                         Some(&transaction),
@@ -6664,6 +7896,7 @@ mod tests {
                 platform
                     .check_for_ended_vote_polls(
                         &platform_state,
+                        &platform_state,
                         &block_info,
                         Some(&transaction),
                         platform_version,
@@ -6802,6 +8035,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -6876,6 +8110,7 @@ mod tests {
 
                 platform
                     .check_for_ended_vote_polls(
+                        &platform_state,
                         &platform_state,
                         &block_info,
                         Some(&transaction),
@@ -7011,6 +8246,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -7085,6 +8321,7 @@ mod tests {
 
                 platform
                     .check_for_ended_vote_polls(
+                        &platform_state,
                         &platform_state,
                         &block_info,
                         Some(&transaction),
@@ -7200,6 +8437,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -7274,6 +8512,7 @@ mod tests {
 
                 platform
                     .check_for_ended_vote_polls(
+                        &platform_state,
                         &platform_state,
                         &block_info,
                         Some(&transaction),
@@ -7389,6 +8628,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -7463,6 +8703,7 @@ mod tests {
 
                 platform
                     .check_for_ended_vote_polls(
+                        &platform_state,
                         &platform_state,
                         &block_info,
                         Some(&transaction),
@@ -7688,6 +8929,7 @@ mod tests {
                     ],
                     "cards",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -7762,6 +9004,7 @@ mod tests {
 
                 platform
                     .check_for_ended_vote_polls(
+                        &platform_state,
                         &platform_state,
                         &block_info,
                         Some(&transaction),
@@ -7901,6 +9144,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -7950,6 +9194,7 @@ mod tests {
                 platform
                     .check_for_ended_vote_polls(
                         &platform_state,
+                        &platform_state,
                         &block_info,
                         Some(&transaction),
                         platform_version,
@@ -7998,6 +9243,7 @@ mod tests {
 
                 platform
                     .check_for_ended_vote_polls(
+                        &platform_state,
                         &platform_state,
                         &block_info,
                         Some(&transaction),
@@ -8185,6 +9431,1537 @@ mod tests {
                     assert_eq!(abstaining, Some(0));
 
                     assert_eq!(locking, Some(0));
+                }
+            }
+
+            #[test]
+            fn test_document_distribution_fix_for_testnet_no_votes_v1() {
+                // There was an issue that we need to repair on testnet.
+                // Documents will have been deleted
+                // Let's verify that the fix works as intended
+                let platform_version = PlatformVersion::first();
+
+                let platform_config = PlatformConfig::default_for_network(Network::Testnet);
+
+                let mut platform = TestPlatformBuilder::new()
+                    .with_config(platform_config)
+                    .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_identity_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                perform_votes_multi(
+                    &mut platform,
+                    dpns_contract.as_ref(),
+                    vec![
+                        (TowardsIdentity(contender_1.id()), 50),
+                        (TowardsIdentity(contender_2.id()), 5),
+                        (ResourceVoteChoice::Abstain, 10),
+                        (ResourceVoteChoice::Lock, 3),
+                    ],
+                    "quantum",
+                    10,
+                    None,
+                    platform_version,
+                );
+
+                let platform_state = platform.state.load();
+
+                let mut platform_state = (**platform_state).clone();
+
+                let block_info = BlockInfo {
+                    time_ms: 1_000_000_000, // Less than 2 weeks
+                    height: 5000,
+                    core_height: 42,
+                    epoch: Default::default(),
+                };
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: block_info,
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                platform.state.store(Arc::new(platform_state));
+
+                let platform_state = platform.state.load();
+
+                let (_contender_3, _contender_4, _) = create_dpns_identity_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    9,
+                    "alpha",
+                    platform_version,
+                );
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                platform
+                    .check_for_ended_vote_polls(
+                        &platform_state,
+                        &platform_state,
+                        &block_info,
+                        Some(&transaction),
+                        platform_version,
+                    )
+                    .expect("expected to check for ended vote polls");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let mut platform_state = (**platform_state).clone();
+
+                let block_info = BlockInfo {
+                    time_ms: 1_209_900_000, //2 weeks and 300s
+                    height: 10000,
+                    core_height: 42,
+                    epoch: Default::default(),
+                };
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: block_info,
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                platform.state.store(Arc::new(platform_state));
+
+                let platform_state = platform.state.load();
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                platform
+                    .check_for_ended_vote_polls(
+                        &platform_state,
+                        &platform_state,
+                        &block_info,
+                        Some(&transaction),
+                        platform_version,
+                    )
+                    .expect("expected to check for ended vote polls");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                // At this point the quantum document should have been awarded to contender 1.
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some(FinishedVoteInfo {
+                            finished_vote_outcome:
+                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                            won_by_identity_id: Some(contender_1.id().to_vec()),
+                            finished_at_block_height: 10000,
+                            finished_at_core_block_height: 42,
+                            finished_at_block_time_ms: 1209900000,
+                            finished_at_epoch: 0
+                        })
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "quantum",
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some((
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
+                            block_info
+                        ))
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                // At this point the alpha document should not have been awarded
+
+                {
+                    let config = bincode::config::standard()
+                        .with_big_endian()
+                        .with_no_limit();
+
+                    let dash_encoded =
+                        bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                            .expect("expected to encode the word dash");
+
+                    let alpha_encoded = bincode::encode_to_vec(
+                        Value::Text(convert_to_homograph_safe_chars("alpha")),
+                        config,
+                    )
+                    .expect("expected to encode the word quantum");
+
+                    let index_name = "parentNameAndLabel".to_string();
+
+                    let query_validation_result = platform.query_contested_resource_vote_state(
+                        GetContestedResourceVoteStateRequest {
+                            version: Some(get_contested_resource_vote_state_request::Version::V0(
+                                GetContestedResourceVoteStateRequestV0 {
+                                    contract_id: dpns_contract.id().to_vec(),
+                                    document_type_name: "domain".to_string(),
+                                    index_name: index_name.clone(),
+                                    index_values: vec![dash_encoded.clone(), alpha_encoded.clone()],
+                                    result_type: ResultType::DocumentsAndVoteTally as i32,
+                                    allow_include_locked_and_abstaining_vote_tally: true,
+                                    start_at_identifier_info: None,
+                                    count: None,
+                                    prove: false,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    );
+
+                    assert_matches!(
+                        query_validation_result,
+                        Err(Error::Drive(drive::error::Error::GroveDB(
+                            drive::grovedb::Error::CorruptedReferencePathKeyNotFound(_)
+                        )))
+                    )
+                }
+
+                // Now that we know the error exists, let's make sure it is fixed when going to v2
+
+                let mut platform_state = (**platform_state).clone();
+
+                let block_info_later = BlockInfo {
+                    time_ms: 1_409_900_000, //a bit later
+                    height: 10050,
+                    core_height: 42,
+                    epoch: Default::default(),
+                };
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: block_info_later,
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                platform.state.store(Arc::new(platform_state));
+
+                let platform_state = platform.state.load();
+
+                let mut block_platform_state = (**platform_state).clone();
+
+                block_platform_state.set_current_protocol_version_in_consensus(2);
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                platform
+                    .check_for_ended_vote_polls(
+                        &platform_state,
+                        &block_platform_state,
+                        &block_info,
+                        Some(&transaction),
+                        PlatformVersion::get(2).unwrap(),
+                    )
+                    .expect("expected to check for ended vote polls");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                // The quantum document should still be awarded to contender 1.
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some(FinishedVoteInfo {
+                            finished_vote_outcome:
+                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                            won_by_identity_id: Some(contender_1.id().to_vec()),
+                            finished_at_block_height: 10000,
+                            finished_at_core_block_height: 42,
+                            finished_at_block_time_ms: 1209900000,
+                            finished_at_epoch: 0
+                        })
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "quantum",
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some((
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
+                            block_info
+                        ))
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                // The alpha document should not exist at all
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "alpha",
+                        None,
+                        false,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(finished_vote_info, None);
+
+                    assert_eq!(contenders.len(), 0);
+                }
+
+                {
+                    let (contenders, _abstaining, _locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "alpha",
+                            None,
+                            false,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                    assert_eq!(finished_vote_info, None);
+
+                    assert_eq!(contenders.len(), 0);
+                }
+
+                // At this point everything should be "clean" except previously awarded contests, let's make sure they still are good
+
+                // The quantum document should still be awarded to contender 1.
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some(FinishedVoteInfo {
+                            finished_vote_outcome:
+                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                            won_by_identity_id: Some(contender_1.id().to_vec()),
+                            finished_at_block_height: 10000,
+                            finished_at_core_block_height: 42,
+                            finished_at_block_time_ms: 1209900000,
+                            finished_at_epoch: 0
+                        })
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "quantum",
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some((
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
+                            block_info
+                        ))
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                // We keep seed 9 to use on the same identities
+
+                let (contender_3, contender_4, _) =
+                    create_dpns_identity_name_contest_skip_creating_identities(
+                        &mut platform,
+                        &platform_state,
+                        9,
+                        "alpha",
+                        Some(2), // We need a nonce offset
+                        platform_version,
+                    );
+
+                perform_votes_multi(
+                    &mut platform,
+                    dpns_contract.as_ref(),
+                    vec![
+                        (TowardsIdentity(contender_3.id()), 50),
+                        (TowardsIdentity(contender_4.id()), 5),
+                        (ResourceVoteChoice::Abstain, 10),
+                        (ResourceVoteChoice::Lock, 3),
+                    ],
+                    "alpha",
+                    658,
+                    Some(1),
+                    platform_version,
+                );
+
+                let platform_state = platform.state.load();
+
+                let mut platform_state = (**platform_state).clone();
+
+                let block_info = BlockInfo {
+                    time_ms: 3_000_000_000, // more than 2 weeks more
+                    height: 5100,
+                    core_height: 42,
+                    epoch: Default::default(),
+                };
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: block_info,
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                platform.state.store(Arc::new(platform_state));
+
+                let platform_state = platform.state.load();
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                platform
+                    .check_for_ended_vote_polls(
+                        &platform_state,
+                        &platform_state,
+                        &block_info,
+                        Some(&transaction),
+                        platform_version,
+                    )
+                    .expect("expected to check for ended vote polls");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                // At this point the alpha document should have been awarded to contender 1.
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "alpha",
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some(FinishedVoteInfo {
+                            finished_vote_outcome:
+                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                            won_by_identity_id: Some(contender_3.id().to_vec()),
+                            finished_at_block_height: 5100,
+                            finished_at_core_block_height: 42,
+                            finished_at_block_time_ms: 3_000_000_000,
+                            finished_at_epoch: 0
+                        })
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_3.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_4.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "alpha",
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some((
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_3.id()),
+                            block_info
+                        ))
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_3.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_4.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+            }
+
+            #[test]
+            fn test_document_distribution_fix_for_testnet_with_votes_v1() {
+                // There was an issue that we need to repair on testnet.
+                // Documents will have been deleted
+                // Let's verify that the fix works as intended
+                let platform_version = PlatformVersion::first();
+
+                let platform_config = PlatformConfig::default_for_network(Network::Testnet);
+
+                let mut platform = TestPlatformBuilder::new()
+                    .with_config(platform_config)
+                    .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (contender_1, contender_2, dpns_contract) = create_dpns_identity_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    7,
+                    "quantum",
+                    platform_version,
+                );
+
+                perform_votes_multi(
+                    &mut platform,
+                    dpns_contract.as_ref(),
+                    vec![
+                        (TowardsIdentity(contender_1.id()), 50),
+                        (TowardsIdentity(contender_2.id()), 5),
+                        (ResourceVoteChoice::Abstain, 10),
+                        (ResourceVoteChoice::Lock, 3),
+                    ],
+                    "quantum",
+                    10,
+                    None,
+                    platform_version,
+                );
+
+                let platform_state = platform.state.load();
+
+                let mut platform_state = (**platform_state).clone();
+
+                let block_info = BlockInfo {
+                    time_ms: 1_000_000_000, // Less than 2 weeks
+                    height: 5000,
+                    core_height: 42,
+                    epoch: Default::default(),
+                };
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: block_info,
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                platform.state.store(Arc::new(platform_state));
+
+                let platform_state = platform.state.load();
+
+                let (contender_3, contender_4, _) = create_dpns_identity_name_contest(
+                    &mut platform,
+                    &platform_state,
+                    9,
+                    "alpha",
+                    platform_version,
+                );
+
+                perform_votes_multi(
+                    &mut platform,
+                    dpns_contract.as_ref(),
+                    vec![
+                        (TowardsIdentity(contender_3.id()), 10),
+                        (TowardsIdentity(contender_4.id()), 5),
+                        (ResourceVoteChoice::Abstain, 10),
+                        (ResourceVoteChoice::Lock, 3),
+                    ],
+                    "alpha",
+                    540500,
+                    None,
+                    platform_version,
+                );
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                platform
+                    .check_for_ended_vote_polls(
+                        &platform_state,
+                        &platform_state,
+                        &block_info,
+                        Some(&transaction),
+                        platform_version,
+                    )
+                    .expect("expected to check for ended vote polls");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let mut platform_state = (**platform_state).clone();
+
+                let block_info = BlockInfo {
+                    time_ms: 1_209_900_000, //2 weeks and 300s
+                    height: 10000,
+                    core_height: 42,
+                    epoch: Default::default(),
+                };
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: block_info,
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                platform.state.store(Arc::new(platform_state));
+
+                let platform_state = platform.state.load();
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                platform
+                    .check_for_ended_vote_polls(
+                        &platform_state,
+                        &platform_state,
+                        &block_info,
+                        Some(&transaction),
+                        platform_version,
+                    )
+                    .expect("expected to check for ended vote polls");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                // At this point the quantum document should have been awarded to contender 1.
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some(FinishedVoteInfo {
+                            finished_vote_outcome:
+                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                            won_by_identity_id: Some(contender_1.id().to_vec()),
+                            finished_at_block_height: 10000,
+                            finished_at_core_block_height: 42,
+                            finished_at_block_time_ms: 1209900000,
+                            finished_at_epoch: 0
+                        })
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "quantum",
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some((
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
+                            block_info
+                        ))
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                // At this point the alpha document should not have been awarded
+
+                {
+                    let config = bincode::config::standard()
+                        .with_big_endian()
+                        .with_no_limit();
+
+                    let dash_encoded =
+                        bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+                            .expect("expected to encode the word dash");
+
+                    let alpha_encoded = bincode::encode_to_vec(
+                        Value::Text(convert_to_homograph_safe_chars("alpha")),
+                        config,
+                    )
+                    .expect("expected to encode the word quantum");
+
+                    let index_name = "parentNameAndLabel".to_string();
+
+                    let query_validation_result = platform.query_contested_resource_vote_state(
+                        GetContestedResourceVoteStateRequest {
+                            version: Some(get_contested_resource_vote_state_request::Version::V0(
+                                GetContestedResourceVoteStateRequestV0 {
+                                    contract_id: dpns_contract.id().to_vec(),
+                                    document_type_name: "domain".to_string(),
+                                    index_name: index_name.clone(),
+                                    index_values: vec![dash_encoded.clone(), alpha_encoded.clone()],
+                                    result_type: ResultType::DocumentsAndVoteTally as i32,
+                                    allow_include_locked_and_abstaining_vote_tally: true,
+                                    start_at_identifier_info: None,
+                                    count: None,
+                                    prove: false,
+                                },
+                            )),
+                        },
+                        &platform_state,
+                        platform_version,
+                    );
+
+                    assert_matches!(
+                        query_validation_result,
+                        Err(Error::Drive(drive::error::Error::GroveDB(
+                            drive::grovedb::Error::CorruptedReferencePathKeyNotFound(_)
+                        )))
+                    )
+                }
+
+                // Now that we know the error exists, let's make sure it is fixed when going to v2
+
+                let mut platform_state = (**platform_state).clone();
+
+                let block_info_later = BlockInfo {
+                    time_ms: 1_409_900_000, //a bit later
+                    height: 10050,
+                    core_height: 42,
+                    epoch: Default::default(),
+                };
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: block_info_later,
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                platform.state.store(Arc::new(platform_state));
+
+                let platform_state = platform.state.load();
+
+                let mut block_platform_state = (**platform_state).clone();
+
+                block_platform_state.set_current_protocol_version_in_consensus(2);
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                platform
+                    .check_for_ended_vote_polls(
+                        &platform_state,
+                        &block_platform_state,
+                        &block_info,
+                        Some(&transaction),
+                        PlatformVersion::get(2).unwrap(),
+                    )
+                    .expect("expected to check for ended vote polls");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                // The quantum document should still be awarded to contender 1.
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some(FinishedVoteInfo {
+                            finished_vote_outcome:
+                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                            won_by_identity_id: Some(contender_1.id().to_vec()),
+                            finished_at_block_height: 10000,
+                            finished_at_core_block_height: 42,
+                            finished_at_block_time_ms: 1209900000,
+                            finished_at_epoch: 0
+                        })
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "quantum",
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some((
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
+                            block_info
+                        ))
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                // The alpha document should not exist at all
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "alpha",
+                        None,
+                        false,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(finished_vote_info, None);
+
+                    assert_eq!(contenders.len(), 0);
+                }
+
+                {
+                    let (contenders, _abstaining, _locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "alpha",
+                            None,
+                            false,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                    assert_eq!(finished_vote_info, None);
+
+                    assert_eq!(contenders.len(), 0);
+                }
+
+                // At this point everything should be "clean" except previously awarded contests, let's make sure they still are good
+
+                // The quantum document should still be awarded to contender 1.
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "quantum",
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some(FinishedVoteInfo {
+                            finished_vote_outcome:
+                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                            won_by_identity_id: Some(contender_1.id().to_vec()),
+                            finished_at_block_height: 10000,
+                            finished_at_core_block_height: 42,
+                            finished_at_block_time_ms: 1209900000,
+                            finished_at_epoch: 0
+                        })
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "quantum",
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some((
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
+                            block_info
+                        ))
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_1.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_2.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                // We keep seed 9 to use on the same identities
+
+                let (contender_3, contender_4, _) =
+                    create_dpns_identity_name_contest_skip_creating_identities(
+                        &mut platform,
+                        &platform_state,
+                        9,
+                        "alpha",
+                        Some(2), // We need a nonce offset
+                        platform_version,
+                    );
+
+                perform_votes_multi(
+                    &mut platform,
+                    dpns_contract.as_ref(),
+                    vec![
+                        (TowardsIdentity(contender_3.id()), 50),
+                        (TowardsIdentity(contender_4.id()), 5),
+                        (ResourceVoteChoice::Abstain, 10),
+                        (ResourceVoteChoice::Lock, 3),
+                    ],
+                    "alpha",
+                    658,
+                    Some(1),
+                    platform_version,
+                );
+
+                let platform_state = platform.state.load();
+
+                let mut platform_state = (**platform_state).clone();
+
+                let block_info = BlockInfo {
+                    time_ms: 3_000_000_000, // more than 2 weeks more
+                    height: 5100,
+                    core_height: 42,
+                    epoch: Default::default(),
+                };
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: block_info,
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                platform.state.store(Arc::new(platform_state));
+
+                let platform_state = platform.state.load();
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                platform
+                    .check_for_ended_vote_polls(
+                        &platform_state,
+                        &platform_state,
+                        &block_info,
+                        Some(&transaction),
+                        platform_version,
+                    )
+                    .expect("expected to check for ended vote polls");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                // At this point the alpha document should have been awarded to contender 1.
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
+                        &platform,
+                        &platform_state,
+                        &dpns_contract,
+                        "alpha",
+                        None,
+                        true,
+                        None,
+                        ResultType::DocumentsAndVoteTally,
+                        platform_version,
+                    );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some(FinishedVoteInfo {
+                            finished_vote_outcome:
+                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                            won_by_identity_id: Some(contender_3.id().to_vec()),
+                            finished_at_block_height: 5100,
+                            finished_at_core_block_height: 42,
+                            finished_at_block_time_ms: 3_000_000_000,
+                            finished_at_epoch: 0
+                        })
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_3.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_4.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
+                }
+
+                {
+                    let (contenders, abstaining, locking, finished_vote_info) =
+                        get_proved_vote_states(
+                            &platform,
+                            &platform_state,
+                            &dpns_contract,
+                            "alpha",
+                            None,
+                            true,
+                            None,
+                            ResultType::DocumentsAndVoteTally,
+                            platform_version,
+                        );
+
+                    assert_eq!(
+                        finished_vote_info,
+                        Some((
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_3.id()),
+                            block_info
+                        ))
+                    );
+
+                    assert_eq!(contenders.len(), 2);
+
+                    let first_contender = contenders.first().unwrap();
+
+                    let second_contender = contenders.last().unwrap();
+
+                    assert_eq!(first_contender.document(), &None);
+
+                    assert_eq!(second_contender.document(), &None);
+
+                    assert_eq!(first_contender.identity_id(), contender_3.id());
+
+                    assert_eq!(second_contender.identity_id(), contender_4.id());
+
+                    assert_eq!(first_contender.vote_tally(), Some(50));
+
+                    assert_eq!(second_contender.vote_tally(), Some(5));
+
+                    assert_eq!(abstaining, Some(10));
+
+                    assert_eq!(locking, Some(3));
                 }
             }
         }
@@ -8462,6 +11239,7 @@ mod tests {
                     ],
                     "quantum",
                     10,
+                    None,
                     platform_version,
                 );
 
@@ -8573,6 +11351,7 @@ mod tests {
 
                 platform
                     .check_for_ended_vote_polls(
+                        &platform_state,
                         &platform_state,
                         &block_info,
                         Some(&transaction),

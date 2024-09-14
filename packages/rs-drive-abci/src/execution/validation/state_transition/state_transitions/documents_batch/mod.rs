@@ -1718,6 +1718,7 @@ mod tests {
                 ],
                 "quantum",
                 10,
+                None,
                 platform_version,
             );
 
@@ -1877,6 +1878,7 @@ mod tests {
                 ],
                 "quantum",
                 10,
+                None,
                 platform_version,
             );
 
@@ -1901,6 +1903,7 @@ mod tests {
 
             platform
                 .check_for_ended_vote_polls(
+                    &platform_state,
                     &platform_state,
                     &BlockInfo {
                         time_ms: 2_000_000_000,

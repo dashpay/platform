@@ -204,6 +204,7 @@ impl Drive {
                                 if would_be_unique {
                                     Some(Ok(SimpleConsensusValidationResult::default()))
                                 } else {
+                                    println!("properties of previous are {:?}", documents);
                                     Some(Ok(SimpleConsensusValidationResult::new_with_error(
                                         StateError::DuplicateUniqueIndexError(
                                             DuplicateUniqueIndexError::new(
