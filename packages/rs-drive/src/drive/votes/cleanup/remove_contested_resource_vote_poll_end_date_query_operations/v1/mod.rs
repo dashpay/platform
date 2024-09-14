@@ -100,7 +100,6 @@ impl Drive {
             };
 
             if should_delete_parent_time_tree {
-                println!("deleting tree at {}", end_date);
                 self.batch_delete(
                     vote_end_date_queries_tree_path_vec().as_slice().into(),
                     encode_u64(end_date).as_slice(),

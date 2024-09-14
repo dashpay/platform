@@ -1242,8 +1242,6 @@ mod tests {
             let salt_2: [u8; 32] = rng.gen();
             let salt_3: [u8; 32] = rng.gen();
 
-            println!("salt 3 is {}", hex::encode(salt_3));
-
             let mut salted_domain_buffer_1: Vec<u8> = vec![];
             salted_domain_buffer_1.extend(salt_1);
             salted_domain_buffer_1.extend("quantum.dash".as_bytes());
@@ -1261,11 +1259,6 @@ mod tests {
             salted_domain_buffer_3.extend("cry.dash".as_bytes());
 
             let salted_domain_hash_3 = hash_double(salted_domain_buffer_3);
-
-            println!(
-                "salted_domain_buffer_3 is {}",
-                hex::encode(salted_domain_hash_3)
-            );
 
             preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
             preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
