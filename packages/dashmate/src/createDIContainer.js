@@ -15,6 +15,12 @@ import ConfigFileJsonRepository from './config/configFile/ConfigFileJsonReposito
 import createConfigFileFactory from './config/configFile/createConfigFileFactory.js';
 import migrateConfigFileFactory from './config/configFile/migrateConfigFileFactory.js';
 import DefaultConfigs from './config/DefaultConfigs.js';
+import analyseConfigFactory from './doctor/analyse/analyseConfigFactory.js';
+import analyseCoreFactory from './doctor/analyse/analyseCoreFactory.js';
+import analysePlatformFactory from './doctor/analyse/analysePlatformFactory.js';
+import analyseServiceContainersFactory from './doctor/analyse/analyseServiceContainersFactory.js';
+import analyseSystemResourcesFactory from './doctor/analyse/analyseSystemResourcesFactory.js';
+import analyseSamplesFactory from './doctor/analyseSamplesFactory.js';
 
 import renderTemplateFactory from './templates/renderTemplateFactory.js';
 import renderServiceTemplatesFactory from './templates/renderServiceTemplatesFactory.js';
@@ -113,7 +119,6 @@ import writeConfigTemplatesFactory from './templates/writeConfigTemplatesFactory
 import importCoreDataTaskFactory from './listr/tasks/setup/regular/importCoreDataTaskFactory.js';
 import verifySystemRequirementsTaskFactory
   from './listr/tasks/setup/regular/verifySystemRequirementsTaskFactory.js';
-import analyseSamplesTaskFactory from './listr/tasks/doctor/analyseSamplesTaskFactory.js';
 import collectSamplesTaskFactory from './listr/tasks/doctor/collectSamplesTaskFactory.js';
 import prescriptionTaskFactory from './listr/tasks/doctor/prescriptionTaskFactory.js';
 import verifySystemRequirementsFactory from './doctor/verifySystemRequirementsFactory.js';
@@ -311,7 +316,6 @@ export default async function createDIContainer(options = {}) {
     importCoreDataTask: asFunction(importCoreDataTaskFactory).singleton(),
     verifySystemRequirementsTask: asFunction(verifySystemRequirementsTaskFactory)
       .singleton(),
-    analyseSamplesTask: asFunction(analyseSamplesTaskFactory).singleton(),
     collectSamplesTask: asFunction(collectSamplesTaskFactory).singleton(),
     prescriptionTask: asFunction(prescriptionTaskFactory).singleton(),
   });
@@ -328,6 +332,12 @@ export default async function createDIContainer(options = {}) {
    */
   container.register({
     verifySystemRequirements: asFunction(verifySystemRequirementsFactory),
+    analyseSamples: asFunction(analyseSamplesFactory).singleton(),
+    analyseSystemResources: asFunction(analyseSystemResourcesFactory).singleton(),
+    analyseServiceContainers: asFunction(analyseServiceContainersFactory).singleton(),
+    analyseConfig: asFunction(analyseConfigFactory).singleton(),
+    analyseCore: asFunction(analyseCoreFactory).singleton(),
+    analysePlatform: asFunction(analysePlatformFactory).singleton(),
   });
 
   /**

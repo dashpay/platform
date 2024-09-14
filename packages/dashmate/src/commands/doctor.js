@@ -21,7 +21,7 @@ export default class DoctorCommand extends ConfigBaseCommand {
    * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
-   * @param {analyseSamplesTask} analyseSamplesTask
+   * @param {analyseSamples} analyseSamples
    * @param {collectSamplesTask} collectSamplesTask
    * @param {prescriptionTask} prescriptionTask
    * @return {Promise<void>}
@@ -33,7 +33,7 @@ export default class DoctorCommand extends ConfigBaseCommand {
       samples: samplesFile,
     },
     config,
-    analyseSamplesTask,
+    analyseSamples,
     collectSamplesTask,
     prescriptionTask,
   ) {
@@ -46,13 +46,16 @@ export default class DoctorCommand extends ConfigBaseCommand {
         },
         {
           title: 'Analyzing samples',
-          task: async () => analyseSamplesTask(config),
+          task: async (ctx) => {
+            ctx.prescription = analyseSamples(ctx.samples);
+          },
         },
         {
           title: 'Prescription',
           task: prescriptionTask,
           options: {
             persistentOutput: true,
+            bottomBar: true,
           },
         },
         {

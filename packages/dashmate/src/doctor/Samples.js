@@ -1,12 +1,32 @@
 export default class Samples {
+  /**
+   * @type {Date}
+   */
   date;
 
+  /**
+   * @type {Object}
+   */
   systemInfo = {};
 
-  #dashmateVersion = null;
+  /**
+   * @type {string}
+   */
+  #dockerError;
 
-  #dashmateConfig = null;
+  /**
+   * @type {string}
+   */
+  #dashmateVersion;
 
+  /**
+   * @type {Config}
+   */
+  #dashmateConfig;
+
+  /**
+   * @type {Object}
+   */
   #services = {};
 
   constructor() {
@@ -21,6 +41,27 @@ export default class Samples {
     return this.systemInfo;
   }
 
+  /**
+   * @param {Error} error
+   */
+  setDockerError(error) {
+    this.#dockerError = error.toString();
+  }
+
+  /**
+   * @param {string} errorString
+   */
+  setStringifiedDockerError(errorString) {
+    this.#dockerError = errorString;
+  }
+
+  /**
+   * @return {string}
+   */
+  getStringifiedDockerError() {
+    return this.#dockerError;
+  }
+
   setDashmateVersion(version) {
     this.#dashmateVersion = version;
   }
@@ -29,10 +70,16 @@ export default class Samples {
     return this.#dashmateVersion;
   }
 
+  /**
+   * @param {Config} config
+   */
   setDashmateConfig(config) {
     this.#dashmateConfig = config;
   }
 
+  /**
+   * @return {Config}
+   */
   getDashmateConfig() {
     return this.#dashmateConfig;
   }
@@ -46,10 +93,6 @@ export default class Samples {
 
   getServices() {
     return this.#services;
-  }
-
-  getServiceInfo(service) {
-    return this.#services[service];
   }
 
   getServiceInfo(service, key) {

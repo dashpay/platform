@@ -36,6 +36,7 @@ export default async function archiveSamples(samples, folderPath) {
   const archiveDir = path.join(tempDir, archiveName);
 
   writeSampleFile(archiveDir, null, 'systemInfo', samples.getSystemInfo());
+  writeSampleFile(archiveDir, null, 'dockerError', samples.getStringifiedDockerError());
   writeSampleFile(archiveDir, null, 'dashmateConfig', samples.getDashmateConfig());
   writeSampleFile(archiveDir, null, 'dashmateVersion', samples.getDashmateVersion());
 

@@ -1,9 +1,14 @@
+import fs from 'fs';
 import { Listr } from 'listr2';
+import path from 'path';
 import process from 'process';
 import obfuscateConfig from '../../../config/obfuscateConfig.js';
 import { DASHMATE_VERSION } from '../../../constants.js';
+import Certificate from '../../../ssl/zerossl/Certificate.js';
+import providers from '../../../status/providers.js';
 import hideString from '../../../util/hideString.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
+import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
 
 /**
  *
@@ -27,6 +32,8 @@ async function fetchTextOrError(url) {
  * @param {createTenderdashRpcClient} createTenderdashRpcClient
  * @param {getServiceList} getServiceList
  * @param {getOperatingSystemInfo} getOperatingSystemInfo
+ * @param {HomeDir} homeDir
+ * @param {validateZeroSslCertificate} validateZeroSslCertificate
  * @return {collectSamplesTask}
  */
 export default function collectSamplesTaskFactory(
@@ -36,6 +43,8 @@ export default function collectSamplesTaskFactory(
   createTenderdashRpcClient,
   getServiceList,
   getOperatingSystemInfo,
+  homeDir,
+  validateZeroSslCertificate,
 ) {
   /**
    * @typedef {function} collectSamplesTask
@@ -48,16 +57,140 @@ export default function collectSamplesTaskFactory(
         {
           title: 'System information',
           task: async (ctx) => {
+            // Sample docker installation errors
+            try {
+              await dockerCompose.throwErrorIfNotInstalled();
+            } catch (e) {
+              ctx.samples.setDockerError(e);
+            }
+
+            // Operating system info
             const osInfo = await getOperatingSystemInfo();
 
             ctx.samples.setSystemInfo(osInfo);
           },
         },
         {
-          title: 'The node configuration',
+          title: 'Configuration',
           task: async (ctx) => {
             ctx.samples.setDashmateVersion(DASHMATE_VERSION);
             ctx.samples.setDashmateConfig(obfuscateConfig(config));
+
+            return new Listr([
+              {
+                enabled: () => config.get('platform.enable'),
+                title: 'Gateway SSL certificates',
+                task: async () => {
+                  if (!config.get('platform.gateway.ssl.enabled')) {
+                    ctx.samples.setServiceInfo('gateway', 'ssl', {
+                      error: 'disabled',
+                    });
+
+                    return;
+                  }
+
+                  switch (config.get('platform.gateway.ssl.provider')) {
+                    case 'self-signed': {
+                      ctx.samples.setServiceInfo('gateway', 'ssl', {
+                        error: 'self-signed',
+                      });
+
+                      return;
+                    }
+                    case 'zerossl': {
+                      const {
+                        error,
+                        data,
+                      } = validateZeroSslCertificate(config, Certificate.EXPIRATION_LIMIT_DAYS);
+
+                      obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string' ? value.replaceAll(
+                        process.env.USER,
+                        hideString(process.env.USER),
+                      ) : value));
+
+                      ctx.samples.setServiceInfo('gateway', 'ssl', {
+                        error,
+                        data,
+                      });
+
+                      return;
+                    }
+                    case 'file': {
+                      // SSL certificate
+                      const certificatesDir = homeDir.joinPath(
+                        config.getName(),
+                        'platform',
+                        'gateway',
+                        'ssl',
+                      );
+
+                      const chainFilePath = path.join(certificatesDir, 'bundle.crt');
+                      const privateFilePath = path.join(certificatesDir, 'private.key');
+
+                      const data = {
+                        chainFilePath,
+                        privateFilePath,
+                      };
+
+                      obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string' ? value.replaceAll(
+                        process.env.USER,
+                        hideString(process.env.USER),
+                      ) : value));
+
+                      if (!fs.existsSync(chainFilePath) || !fs.existsSync(privateFilePath)) {
+                        ctx.samples.setServiceInfo('gateway', 'ssl', {
+                          error: 'not-exist',
+                          data,
+                        });
+
+                        return;
+                      }
+
+                      const isValid = validateSslCertificateFiles(chainFilePath, privateFilePath);
+
+                      if (!isValid) {
+                        ctx.samples.setServiceInfo('gateway', 'ssl', {
+                          error: 'not-valid',
+                          data,
+                        });
+                      }
+
+                      return;
+                    }
+                    default:
+                      throw new Error('Unknown SSL provider');
+                  }
+                },
+              },
+              {
+                title: 'Core P2P port',
+                task: async () => {
+                  const port = config.get('core.p2p.port');
+                  const response = await providers.mnowatch.checkPortStatus(port);
+
+                  ctx.samples.setServiceInfo('core', 'p2pPort', response);
+                },
+              },
+              {
+                title: 'Gateway HTTP port',
+                enabled: () => config.get('platform.enable'),
+                task: async () => {
+                  const port = config.get('platform.gateway.listeners.dapiAndDrive.port');
+                  const response = await providers.mnowatch.checkPortStatus(port);
+
+                  ctx.samples.setServiceInfo('gateway', 'httpPort', response);
+                },
+              },
+              {
+                title: 'Tenderdash P2P port',
+                task: async () => {
+                  const port = config.get('platform.drive.tenderdash.p2p.port');
+                  const response = await providers.mnowatch.checkPortStatus(port);
+
+                  ctx.samples.setServiceInfo('drive_tenderdash', 'p2pPort', response);
+                },
+              },
+            ]);
           },
         },
         {
@@ -225,7 +358,8 @@ export default function collectSamplesTaskFactory(
             );
           },
         },
-      ],
+
+        ],
     );
   }
 

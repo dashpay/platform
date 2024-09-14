@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { Listr } from 'listr2';
+import { SEVERITY } from '../../../../doctor/Prescription.js';
 
 /**
  *
@@ -28,9 +29,7 @@ export default function verifySystemRequirementsTaskFactory(
 
           const systemInfo = await getOperatingSystemInfo();
 
-          const warnings = Object.values(
-            verifySystemRequirements(systemInfo, ctx.isHP),
-          );
+          const problems = verifySystemRequirements(systemInfo, ctx.isHP);
 
           let message = '';
           if (ctx.isHP) {
@@ -47,12 +46,13 @@ export default function verifySystemRequirementsTaskFactory(
     Upgrading system resources is recommended before proceeding.`;
           }
 
-          if (warnings.length > 0) {
-            const warningsText = warnings.map((warning) => `    - ${warning}`).join('\n');
+          if (problems.length > 0) {
+            const problemsText = problems
+              .map((p) => `    - ${p.getDescription()}`).join('\n');
 
             const header = chalk`  Minimum requirements have not been met:
 
-{red ${warningsText}}
+{red ${problemsText}}
 
     ${message}\n`;
 

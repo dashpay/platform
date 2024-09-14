@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { extract } from 'tar';
 import Samples from './Samples.js';
+import Config from '../config/Config.js';
 
 function readSampleFile(filePath) {
   const data = fs.readFileSync(filePath, 'utf8');
@@ -35,7 +36,16 @@ export default async function unarchiveSamples(archiveFilePath) {
   });
 
   samples.setSystemInfo(readSampleFile(path.join(extractDir, 'systemInfo.json')));
-  samples.setDashmateConfig(readSampleFile(path.join(extractDir, 'dashmateConfig.json')));
+
+  samples.setStringifiedDockerError(readSampleFile(path.join(extractDir, 'dockerError.txt')));
+
+  const configProperties = readSampleFile(path.join(extractDir, 'dashmateConfig.json'));
+
+  if (configProperties?.options) {
+    const config = new Config(configProperties.name, configProperties.options);
+    samples.setDashmateConfig(config);
+  }
+
   samples.setDashmateVersion(readSampleFile(path.join(extractDir, 'dashmateVersion.json')));
 
   const servicesDir = path.join(extractDir, 'services');
