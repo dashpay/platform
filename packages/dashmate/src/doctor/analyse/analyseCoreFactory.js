@@ -31,7 +31,7 @@ export default function analyseCoreFactory() {
     }
 
     // PoSe
-    if (samples.getDashmateConfig().get('core.masternode.enable')) {
+    if (samples?.getDashmateConfig()?.get('core.masternode.enable')) {
       const masternodeStatus = samples.getServiceInfo('core', 'masternodeStatus');
 
       const { description, solution, severity } = {

@@ -14,7 +14,7 @@ export default function analysePlatformFactory() {
     const problems = [];
 
     // Tenderdash is synced
-    if (samples.getDashmateConfig().get('platform.enable')) {
+    if (samples?.getDashmateConfig()?.get('platform.enable')) {
       const status = samples.getServiceInfo('drive_tenderdash', 'status');
 
       if (status?.sync_info?.catching_up) {

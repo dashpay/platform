@@ -76,6 +76,7 @@ export default function analyseSystemResourcesFactory(verifySystemRequirements) 
       }
     }
 
+    // IO wait time
     if (diskIO?.tWaitPercent) {
       const THRESHOLD = 40;
 
