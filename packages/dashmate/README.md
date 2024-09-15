@@ -280,7 +280,7 @@ $ dashmate core cli "getblockcount"
 
 ### Doctor
 
-The `doctor` command analyzes the node configuration and state and provides list of potential problems ans solutions.
+The `doctor` command analyzes the node configuration and state. As a result, it provides a list of potential problems ans solutions.
 
 ```
 Dashmate node diagnostic. Bring your node to a doctor
@@ -300,7 +300,7 @@ COMMANDS
   doctor report  Dashmate node diagnostic report
 ```
 
-The `doctor report` command collects all useful debugging info into a .tar archive in your current working directory.
+The `doctor report` command collects all useful debugging info into a `.tar.gz` archive in your current working directory.
 
 The archive will include:
 
