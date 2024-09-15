@@ -34,15 +34,15 @@ export default function analyseServiceContainersFactory(
           message: dockerInspect.message,
         });
       } else if (
-        dockerInspect.State.Restarting === true
-        && dockerInspect.State.ExitCode !== 0
+        dockerInspect.State?.Restarting === true
+        && dockerInspect.State?.ExitCode !== 0
       ) {
         servicesFailed.push({
           service,
           message: dockerInspect.State.Error,
           code: dockerInspect.State.ExitCode,
         });
-      } else if (dockerInspect.State.OOMKilled === true) {
+      } else if (dockerInspect.State?.OOMKilled === true) {
         servicesOOMKilled.push({
           service,
         });
