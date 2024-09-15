@@ -116,9 +116,12 @@ pub struct DriveConfig {
     pub grovedb_visualizer_enabled: bool,
 
     /// The network type
-    #[serde(
-        default = "DriveConfig::default_network",
-        deserialize_with = "from_str_to_network_with_aliases"
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default = "DriveConfig::default_network",
+            deserialize_with = "from_str_to_network_with_aliases"
+        )
     )]
     pub network: Network,
 }
