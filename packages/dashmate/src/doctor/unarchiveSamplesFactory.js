@@ -44,6 +44,7 @@ export default function unarchiveSamplesFactory(getServiceList) {
     });
 
     if (process.env.DEBUG) {
+      // eslint-disable-next-line no-console
       console.debug(`Extracted samples to: ${extractDir}`);
     }
 

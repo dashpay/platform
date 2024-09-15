@@ -1,6 +1,5 @@
 import chalk from 'chalk';
 import { Listr } from 'listr2';
-import { SEVERITY } from '../../../../doctor/Prescription.js';
 
 /**
  *

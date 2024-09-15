@@ -221,7 +221,7 @@ export default function collectSamplesTaskFactory(
               getBlockchainInfo,
               getPeerInfo,
               masternodeStatus,
-              masternodeSyncStatus
+              masternodeSyncStatus,
             ] = (await Promise.allSettled(coreCalls))
               .map((e) => e.value?.result || e.reason);
 
@@ -358,8 +358,7 @@ export default function collectSamplesTaskFactory(
             );
           },
         },
-
-        ],
+      ],
     );
   }
 
