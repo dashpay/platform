@@ -24,6 +24,10 @@ export default function analyseServiceContainersFactory(
     for (const service of services) {
       const dockerInspect = samples.getServiceInfo(service.name, 'dockerInspect');
 
+      if (!dockerInspect) {
+        continue;
+      }
+
       if (dockerInspect.message) {
         servicesNotStarted.push({
           service,

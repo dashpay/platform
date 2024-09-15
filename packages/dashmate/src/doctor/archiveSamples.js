@@ -4,6 +4,10 @@ import fs from 'fs';
 import { create } from 'tar';
 
 function writeSampleFile(archiveDir, service, filename, data) {
+  if (data === undefined || data === null) {
+    return;
+  }
+
   const serviceDir = path.join(archiveDir, service ?? '');
 
   let buffer;
@@ -32,9 +36,10 @@ function writeSampleFile(archiveDir, service, filename, data) {
  */
 export default async function archiveSamples(samples, folderPath) {
   const tempDir = os.tmpdir();
-  const archiveName = `dashmate-report-${this.date.toISOString()}`;
+  const archiveName = `dashmate-report-${samples.date.toISOString()}`;
   const archiveDir = path.join(tempDir, archiveName);
 
+  writeSampleFile(archiveDir, null, 'date', samples.date.toISOString());
   writeSampleFile(archiveDir, null, 'systemInfo', samples.getSystemInfo());
   writeSampleFile(archiveDir, null, 'dockerError', samples.getStringifiedDockerError());
   writeSampleFile(archiveDir, null, 'dashmateConfig', samples.getDashmateConfig());

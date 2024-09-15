@@ -21,6 +21,8 @@ import analysePlatformFactory from './doctor/analyse/analysePlatformFactory.js';
 import analyseServiceContainersFactory from './doctor/analyse/analyseServiceContainersFactory.js';
 import analyseSystemResourcesFactory from './doctor/analyse/analyseSystemResourcesFactory.js';
 import analyseSamplesFactory from './doctor/analyseSamplesFactory.js';
+import archiveSamples from './doctor/archiveSamples.js';
+import unarchiveSamplesFactory from './doctor/unarchiveSamplesFactory.js';
 
 import renderTemplateFactory from './templates/renderTemplateFactory.js';
 import renderServiceTemplatesFactory from './templates/renderServiceTemplatesFactory.js';
@@ -120,7 +122,6 @@ import importCoreDataTaskFactory from './listr/tasks/setup/regular/importCoreDat
 import verifySystemRequirementsTaskFactory
   from './listr/tasks/setup/regular/verifySystemRequirementsTaskFactory.js';
 import collectSamplesTaskFactory from './listr/tasks/doctor/collectSamplesTaskFactory.js';
-import prescriptionTaskFactory from './listr/tasks/doctor/prescriptionTaskFactory.js';
 import verifySystemRequirementsFactory from './doctor/verifySystemRequirementsFactory.js';
 import validateZeroSslCertificateFactory from './ssl/zerossl/validateZeroSslCertificateFactory.js';
 
@@ -317,7 +318,6 @@ export default async function createDIContainer(options = {}) {
     verifySystemRequirementsTask: asFunction(verifySystemRequirementsTaskFactory)
       .singleton(),
     collectSamplesTask: asFunction(collectSamplesTaskFactory).singleton(),
-    prescriptionTask: asFunction(prescriptionTaskFactory).singleton(),
   });
 
   /**
@@ -338,6 +338,8 @@ export default async function createDIContainer(options = {}) {
     analyseConfig: asFunction(analyseConfigFactory).singleton(),
     analyseCore: asFunction(analyseCoreFactory).singleton(),
     analysePlatform: asFunction(analysePlatformFactory).singleton(),
+    unarchiveSamples: asFunction(unarchiveSamplesFactory).singleton(),
+    archiveSamples: asValue(archiveSamples),
   });
 
   /**

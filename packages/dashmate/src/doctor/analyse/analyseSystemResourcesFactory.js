@@ -37,7 +37,8 @@ export default function analyseSystemResourcesFactory(verifySystemRequirements) 
     );
 
     // Current CPU load
-    if (currentLoad && currentLoad.avgLoad > 0.8) {
+    const cpuCores = dockerSystemInfo?.NCPU ?? cpu?.cores;
+    if (cpuCores && currentLoad && (currentLoad.avgLoad / cpuCores) > 0.8) {
       const problem = new Problem(
         `Average system load ${currentLoad.avgLoad.toFixed(2)} is higher than normal`,
         'Consider to upgrade CPU',
