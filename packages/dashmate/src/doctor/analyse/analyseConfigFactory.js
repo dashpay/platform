@@ -45,7 +45,7 @@ export default function analyseConfigFactory() {
 
       // SSL certificate
       const ssl = samples.getServiceInfo('gateway', 'ssl');
-      if (ssl && ssl.error) {
+      if (ssl?.error) {
         switch (ssl.error) {
           case 'disabled':
             if (config.get('network') !== NETWORK_LOCAL) {
