@@ -12,13 +12,15 @@ use dpp::voting::contender_structs::FinalizedContender;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
 use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
-use drive::grovedb::TransactionArg;
+use drive::grovedb::{QueryItem, TransactionArg};
 use drive::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
 };
-use drive::query::VotePollsByEndDateDriveQuery;
+use drive::query::{PathQuery, Query, QueryResultType, VotePollsByEndDateDriveQuery};
+use drive::util::common::encode::encode_u64;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 
@@ -63,6 +65,35 @@ where
 
         // Check if awarding is disabled
         let vote_polls_with_info = if clean_up_testnet_corrupted_reference_issue {
+            // We need to remove all empty trees before the current time
+            // This is because before this fix on testnet empty trees were left in the query by end date tree
+            let path = vote_end_date_queries_tree_path_vec();
+            let query =
+                Query::new_single_query_item(QueryItem::RangeTo(..encode_u64(block_info.time_ms)));
+            let path_query = PathQuery::new_unsized(path.clone(), query);
+
+            let keys = self
+                .drive
+                .grove_get_raw_path_query(
+                    &path_query,
+                    transaction,
+                    QueryResultType::QueryKeyElementPairResultType,
+                    &mut vec![],
+                    &platform_version.drive,
+                )?
+                .0
+                .to_keys();
+
+            for key in keys {
+                self.drive.grove_delete(
+                    path.as_slice().into(),
+                    key.as_slice(),
+                    transaction,
+                    &mut vec![],
+                    &platform_version.drive,
+                )?;
+            }
+
             // Skip processing, just collect resolved vote polls for cleanup
             vote_polls_by_timestamp.into_iter().map(|(end_date, vote_polls)| {
                 let vote_polls_with_votes = vote_polls.into_iter().map(|vote_poll| {
