@@ -19,6 +19,7 @@ Distribution package for Dash node installation
   - [Restart node](#restart-node)
   - [Show node status](#show-node-status)
   - [Execute Core CLI command](#execute-core-cli-command)
+  - [Doctor](#doctor)
   - [Reset node data](#reset-node-data)
   - [Full node](#full-node)
   - [Node groups](#node-groups)
@@ -277,6 +278,55 @@ $ dashmate core cli "getblockcount"
 1337
 ```
 
+### Doctor
+
+The `doctor` command analyzes the node configuration and state and provides list of potential problems ans solutions.
+
+```
+Dashmate node diagnostic. Bring your node to a doctor
+
+USAGE
+  $ dashmate doctor [--config <value>] [-v] [-s <value>]
+
+FLAGS
+  -s, --samples=<value>  path to the samples archive
+  -v, --verbose          use verbose mode for output
+      --config=<value>   configuration name to use
+
+DESCRIPTION
+  Dashmate node diagnostic. Bring your node to a doctor
+
+COMMANDS
+  doctor report  Dashmate node diagnostic report
+```
+
+The `doctor report` command collects all useful debugging info into a .tar archive in your current working directory.
+
+The archive will include:
+
+- System information
+- The node configuration
+- Service logs, metrics and status
+
+Collected data will not contain any private information which is already not available publicly.
+All sensitive data like private keys or passwords is obfuscated.
+
+```
+Dashmate node diagnostic report
+
+USAGE
+  $ dashmate doctor report [--config <value>] [-v]
+
+FLAGS
+  -v, --verbose         use verbose mode for output
+      --config=<value>  configuration name to use
+
+DESCRIPTION
+  Dashmate node diagnostic report
+
+  The command collect diagnostic information and create an obfuscated archive for further investigation
+```
+
 ### Reset node data
 
 The `reset` command removes all data corresponding to the specified config and allows you to start a node from scratch.
@@ -338,29 +388,6 @@ FLAGS
 
 DESCRIPTION
   Reindex Core data
-```
-
-### Full node
-It is also possible to start a full node instead of a masternode. Modify the config setting as follows:
-```bash
-dashmate config set core.masternode.enable false
-```
-### Doctor
-
-The `doctor` command collects all useful debugging info into a .tar archive in your current working directory.
-
-Archive will contain all core and platform debugging data and logs for each running service.
-
-```
-USAGE
-  $ dashmate doctor [--config <value>] [-v]
-
-FLAGS
-  -v, --verbose         use verbose mode for output
-      --config=<value>  configuration name to use
-
-DESCRIPTION
-  Generate a report about masternode
 ```
 
 ### Full node
