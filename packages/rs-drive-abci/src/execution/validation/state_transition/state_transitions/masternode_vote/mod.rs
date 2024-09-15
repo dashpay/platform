@@ -174,6 +174,7 @@ mod tests {
             fn test_not_proved_contests_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -275,6 +276,7 @@ mod tests {
             fn test_proved_contests_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -369,6 +371,7 @@ mod tests {
             fn test_empty_string_start_index_value() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -502,6 +505,7 @@ mod tests {
             fn test_no_start_index_value() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -642,6 +646,7 @@ mod tests {
             fn test_existing_end_index_value() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -786,6 +791,7 @@ mod tests {
             fn test_non_existing_end_index_value() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -920,6 +926,7 @@ mod tests {
             fn test_non_existing_end_index_value_many_values() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -1018,6 +1025,7 @@ mod tests {
             fn test_limit() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -1169,6 +1177,7 @@ mod tests {
             fn test_start_at() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -1350,6 +1359,7 @@ mod tests {
             fn test_not_proved_vote_state_query_request_after_vote() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -1500,6 +1510,7 @@ mod tests {
             fn test_proved_vote_state_query_request_after_vote() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -1647,6 +1658,7 @@ mod tests {
             fn test_not_proved_vote_state_query_request_after_many_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -1903,6 +1915,7 @@ mod tests {
             fn test_proved_vote_state_query_request_after_many_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -2214,6 +2227,7 @@ mod tests {
             fn test_vote_state_query_request_with_no_index_values_should_return_error() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -2340,6 +2354,7 @@ mod tests {
             fn test_vote_state_query_request_with_limit_too_high_should_return_error() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -2481,6 +2496,7 @@ mod tests {
             fn test_vote_state_query_request_with_limit_4_should_return_4_contenders() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -2642,6 +2658,7 @@ mod tests {
             fn test_proved_vote_state_query_request_with_limit_4_should_return_4_contenders() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -3006,6 +3023,7 @@ mod tests {
             fn test_non_proved_contestant_votes_query_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -3249,6 +3267,7 @@ mod tests {
             fn test_proved_contestant_votes_query_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -3556,6 +3575,7 @@ mod tests {
             fn test_not_proved_identity_given_votes_query_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -3718,6 +3738,7 @@ mod tests {
             fn test_proved_identity_given_votes_query_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -3878,11 +3899,14 @@ mod tests {
 
         mod end_date_query {
             use super::*;
+            use crate::config::PlatformConfig;
 
             #[test]
             fn test_not_proved_end_date_query_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_config(PlatformConfig::default_mainnet())
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -3984,6 +4008,8 @@ mod tests {
             fn test_proved_end_date_query_request() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_config(PlatformConfig::default_mainnet())
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -4072,6 +4098,8 @@ mod tests {
             fn test_not_proved_end_date_query_multiple_contests() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_config(PlatformConfig::default_mainnet())
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -4259,6 +4287,8 @@ mod tests {
             fn test_proved_end_date_query_multiple_contests() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_config(PlatformConfig::default_mainnet())
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -4409,6 +4439,8 @@ mod tests {
             fn test_not_proved_end_date_query_multiple_contests_with_start_at() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_config(PlatformConfig::default_mainnet())
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -4665,6 +4697,8 @@ mod tests {
             fn test_not_proved_end_date_query_multiple_contests_with_end_at() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_config(PlatformConfig::default_mainnet())
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -4823,6 +4857,7 @@ mod tests {
             fn test_not_proved_end_date_query_multiple_contests_with_end_at_before_start_at() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -4977,6 +5012,8 @@ mod tests {
             fn test_not_proved_end_date_query_multiple_contests_with_start_at_ascending_false() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_config(PlatformConfig::default_mainnet())
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -5148,6 +5185,8 @@ mod tests {
             fn test_proved_end_date_query_multiple_contests_with_start_at() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_config(PlatformConfig::default_mainnet())
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -5517,6 +5556,7 @@ mod tests {
             fn test_non_proved_prefunded_specialized_balance_request_after_many_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -5625,6 +5665,7 @@ mod tests {
             fn test_proved_prefunded_specialized_balance_request_after_many_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -5750,6 +5791,7 @@ mod tests {
             fn test_document_distribution() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -5965,6 +6007,7 @@ mod tests {
             fn test_document_distribution_many_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -6188,6 +6231,7 @@ mod tests {
             fn test_document_distribution_many_votes_two_contests_same_time() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -6568,6 +6612,7 @@ mod tests {
             fn test_document_distribution_many_votes_three_contests_same_time() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -7171,6 +7216,7 @@ mod tests {
             fn test_document_distribution_abstain_very_high() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -7386,6 +7432,7 @@ mod tests {
             fn test_document_distribution_low_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -7601,6 +7648,7 @@ mod tests {
             fn test_document_distribution_single_vote() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -7811,6 +7859,7 @@ mod tests {
             fn test_document_distribution_no_votes() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -8011,6 +8060,7 @@ mod tests {
             fn test_document_locking() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -8222,6 +8272,7 @@ mod tests {
             fn test_new_vote_after_document_distribution() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -8413,6 +8464,7 @@ mod tests {
             fn test_new_vote_after_lock() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -8604,6 +8656,7 @@ mod tests {
             fn test_queries_after_document_distribution() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -8905,6 +8958,7 @@ mod tests {
             fn test_document_distribution_to_contract() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -9120,6 +9174,7 @@ mod tests {
             fn test_document_distribution_does_not_affect_other_contests() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -9148,12 +9203,18 @@ mod tests {
                     platform_version,
                 );
 
+                let max_join_time = platform_version
+                    .dpp
+                    .validation
+                    .voting
+                    .allow_other_contenders_time_testing_ms;
+
                 let platform_state = platform.state.load();
 
                 let mut platform_state = (**platform_state).clone();
 
                 let block_info = BlockInfo {
-                    time_ms: 1_000_000_000, // Less than 2 weeks
+                    time_ms: max_join_time + 100, // Less than 2 weeks
                     height: 5000,
                     core_height: 42,
                     epoch: Default::default(),
@@ -9210,8 +9271,14 @@ mod tests {
 
                 let mut platform_state = (**platform_state).clone();
 
+                let time_after_distribution = platform_version
+                    .dpp
+                    .voting_versions
+                    .default_vote_poll_time_duration_test_network_ms
+                    + 10_000;
+
                 let block_info = BlockInfo {
-                    time_ms: 1_209_900_000, //2 weeks and 300s
+                    time_ms: time_after_distribution,
                     height: 10000,
                     core_height: 42,
                     epoch: Default::default(),
@@ -9281,7 +9348,7 @@ mod tests {
                             won_by_identity_id: Some(contender_1.id().to_vec()),
                             finished_at_block_height: 10000,
                             finished_at_core_block_height: 42,
-                            finished_at_block_time_ms: 1209900000,
+                            finished_at_block_time_ms: time_after_distribution,
                             finished_at_epoch: 0
                         })
                     );
@@ -10889,6 +10956,7 @@ mod tests {
             fn test_masternode_vote_again_same_vote_should_return_error() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -10940,6 +11008,7 @@ mod tests {
             fn test_masternode_vote_again_different_choice() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -11021,6 +11090,7 @@ mod tests {
             fn test_masternode_vote_again_different_choice_too_many_times() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
@@ -11132,6 +11202,7 @@ mod tests {
             fn test_masternode_vote_removals() {
                 let platform_version = PlatformVersion::latest();
                 let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
