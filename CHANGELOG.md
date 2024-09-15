@@ -1,3 +1,28 @@
+## [1.3.0-dev.1](https://github.com/dashpay/platform/compare/v1.2.0...v1.3.0-dev.1) (2024-09-12)
+
+
+### Features
+
+* query block count per Evonode proposed in any given epoch ([#2114](https://github.com/dashpay/platform/issues/2114))
+* query many identity balances at a time ([#2112](https://github.com/dashpay/platform/issues/2112))
+
+
+### Bug Fixes
+
+* **sdk:** use proofs when waiting for asset lock ([#2067](https://github.com/dashpay/platform/issues/2067))
+
+
+### Build System
+
+* cache Rust dependencies build as a docker layer ([#1900](https://github.com/dashpay/platform/issues/1900))
+* **drive-abci:** debug docker image with grovedb visualizer and tokio console ([#2012](https://github.com/dashpay/platform/issues/2012))
+
+
+### Miscellaneous Chores
+
+* add change base branch script ([#2082](https://github.com/dashpay/platform/issues/2082))
+* creation of protocol V2 ([#2104](https://github.com/dashpay/platform/issues/2104))
+
 ## [1.2.0](https://github.com/dashpay/platform/compare/v1.1.1...v1.2.0) (2024-08-30)
 
 

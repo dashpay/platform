@@ -38,7 +38,7 @@ impl Drive {
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
     #[inline(always)]
-    pub(crate) fn verify_total_credits_in_system_v0(
+    pub(super) fn verify_total_credits_in_system_v0(
         proof: &[u8],
         core_subsidy_halving_interval: u32,
         request_activation_core_height: impl Fn() -> Result<CoreBlockHeight, Error>,

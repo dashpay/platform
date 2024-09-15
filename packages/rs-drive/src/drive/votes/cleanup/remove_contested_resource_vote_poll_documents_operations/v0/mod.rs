@@ -17,6 +17,8 @@ use std::ops::RangeFull;
 impl Drive {
     /// We add documents poll references by end date in order to be able to check on every new block if
     /// any vote polls should be closed.
+    /// !!!!! THIS VERSION CONTAINED A SERIOUS ISSUE !!!!!
+    /// However, it should never have made it to mainnet.
     pub(in crate::drive::votes) fn remove_contested_resource_vote_poll_documents_operations_v0(
         &self,
         vote_polls: &[(

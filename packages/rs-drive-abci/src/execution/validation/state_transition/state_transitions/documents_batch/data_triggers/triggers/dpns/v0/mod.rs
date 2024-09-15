@@ -413,7 +413,10 @@ pub(super) fn create_domain_data_trigger_v0(
                     "expecting action to have a base",
                 )))?
                 .id(),
-            "preorderDocument was not found".to_string(),
+            format!(
+                "preorderDocument was not found with a salted domain hash of {}",
+                hex::encode(salted_domain_hash)
+            ),
         );
         result.add_error(err)
     }

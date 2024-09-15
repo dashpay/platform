@@ -44,6 +44,8 @@ pub enum ContestedDocumentVotePollDriveQueryResultType {
     VoteTally,
     /// Both the documents and the vote tally results are returned in the query result.
     DocumentsAndVoteTally,
+    /// We are searching for a single document only.
+    SingleDocumentByContender(Identifier),
 }
 
 impl ContestedDocumentVotePollDriveQueryResultType {
@@ -51,6 +53,7 @@ impl ContestedDocumentVotePollDriveQueryResultType {
     pub fn has_vote_tally(&self) -> bool {
         match self {
             ContestedDocumentVotePollDriveQueryResultType::Documents => false,
+            ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(_) => false,
             ContestedDocumentVotePollDriveQueryResultType::VoteTally => true,
             ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => true,
         }
@@ -60,6 +63,7 @@ impl ContestedDocumentVotePollDriveQueryResultType {
     pub fn has_documents(&self) -> bool {
         match self {
             ContestedDocumentVotePollDriveQueryResultType::Documents => true,
+            ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(_) => true,
             ContestedDocumentVotePollDriveQueryResultType::VoteTally => false,
             ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => true,
         }
@@ -74,6 +78,9 @@ impl TryFrom<i32> for ContestedDocumentVotePollDriveQueryResultType {
             0 => Ok(ContestedDocumentVotePollDriveQueryResultType::Documents),
             1 => Ok(ContestedDocumentVotePollDriveQueryResultType::VoteTally),
             2 => Ok(ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally),
+            3 => Err(Error::Query(QuerySyntaxError::Unsupported(
+                "unsupported to get SingleDocumentByContender query result type".to_string()
+            ))),
             n => Err(Error::Query(QuerySyntaxError::Unsupported(format!(
                 "unsupported contested document vote poll drive query result type {}, only 0, 1, 2 and 3 are supported",
                 n
@@ -397,62 +404,73 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
         // Stored Info [[0;31],0] Abstain votes [[0;31],1] Lock Votes [[0;31],2]
 
         // this is a range on all elements
-        let limit =
-            match &self.start_at {
-                None => {
-                    if allow_include_locked_and_abstaining_vote_tally {
-                        match &self.result_type {
-                        ContestedDocumentVotePollDriveQueryResultType::Documents => {
-                            // Documents don't care about the vote tallies
-                            query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
-                            self.limit
-                        }
-                        ContestedDocumentVotePollDriveQueryResultType::VoteTally => {
-                            query.insert_all();
-                            self.limit.map(|limit| limit.saturating_add(3))
-                        }
-                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
-                            query.insert_all();
-                            self.limit.map(|limit| limit.saturating_mul(2).saturating_add(3))
-                        }
-                    }
-                    } else {
-                        match &self.result_type {
-                        ContestedDocumentVotePollDriveQueryResultType::Documents => {
-                            query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
-                            self.limit
-                        }
-                        ContestedDocumentVotePollDriveQueryResultType::VoteTally => {
-                            query.insert_key(RESOURCE_STORED_INFO_KEY_U8_32.to_vec());
-                            query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
-                            self.limit.map(|limit| limit.saturating_add(1))
-                        }
-                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
-                            query.insert_key(RESOURCE_STORED_INFO_KEY_U8_32.to_vec());
-                            query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
-                            self.limit.map(|limit| limit.saturating_mul(2).saturating_add(1))
-                        }
-                    }
-                    }
-                }
-                Some((starts_at_key_bytes, start_at_included)) => {
-                    let starts_at_key = starts_at_key_bytes.to_vec();
-                    match start_at_included {
-                        true => query.insert_range_from(starts_at_key..),
-                        false => query.insert_range_after(starts_at_key..),
-                    }
+        let limit = match &self.start_at {
+            None => {
+                if allow_include_locked_and_abstaining_vote_tally {
                     match &self.result_type {
-                        ContestedDocumentVotePollDriveQueryResultType::Documents
-                        | ContestedDocumentVotePollDriveQueryResultType::VoteTally => self.limit,
-                        ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
-                            self.limit.map(|limit| limit.saturating_mul(2))
+                            ContestedDocumentVotePollDriveQueryResultType::Documents => {
+                                // Documents don't care about the vote tallies
+                                query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
+                                self.limit
+                            }
+                            ContestedDocumentVotePollDriveQueryResultType::VoteTally => {
+                                query.insert_all();
+                                self.limit.map(|limit| limit.saturating_add(3))
+                            }
+                            ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
+                                query.insert_all();
+                                self.limit.map(|limit| limit.saturating_mul(2).saturating_add(3))
+                            }
+                            ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(contender_id) => {
+                                query.insert_key(contender_id.to_vec());
+                                self.limit
+                            }
                         }
+                } else {
+                    match &self.result_type {
+                            ContestedDocumentVotePollDriveQueryResultType::Documents => {
+                                query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
+                                self.limit
+                            }
+                            ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(contender_id) => {
+                                query.insert_key(contender_id.to_vec());
+                                self.limit
+                            }
+                            ContestedDocumentVotePollDriveQueryResultType::VoteTally => {
+                                query.insert_key(RESOURCE_STORED_INFO_KEY_U8_32.to_vec());
+                                query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
+                                self.limit.map(|limit| limit.saturating_add(1))
+                            }
+                            ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
+                                query.insert_key(RESOURCE_STORED_INFO_KEY_U8_32.to_vec());
+                                query.insert_range_after(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec()..);
+                                self.limit.map(|limit| limit.saturating_mul(2).saturating_add(1))
+                            }
+                        }
+                }
+            }
+            Some((starts_at_key_bytes, start_at_included)) => {
+                let starts_at_key = starts_at_key_bytes.to_vec();
+                match start_at_included {
+                    true => query.insert_range_from(starts_at_key..),
+                    false => query.insert_range_after(starts_at_key..),
+                }
+                match &self.result_type {
+                    ContestedDocumentVotePollDriveQueryResultType::Documents
+                    | ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(_)
+                    | ContestedDocumentVotePollDriveQueryResultType::VoteTally => self.limit,
+                    ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
+                        self.limit.map(|limit| limit.saturating_mul(2))
                     }
                 }
-            };
+            }
+        };
 
         let (subquery_path, subquery) = match self.result_type {
-            ContestedDocumentVotePollDriveQueryResultType::Documents => (Some(vec![vec![0]]), None),
+            ContestedDocumentVotePollDriveQueryResultType::Documents
+            | ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(_) => {
+                (Some(vec![vec![0]]), None)
+            }
             ContestedDocumentVotePollDriveQueryResultType::VoteTally => (Some(vec![vec![1]]), None),
             ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => {
                 let mut query = Query::new();
@@ -520,7 +538,9 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
             Err(e) => Err(e),
             Ok((query_result_elements, skipped)) => {
                 match self.result_type {
-                    ContestedDocumentVotePollDriveQueryResultType::Documents => {
+                    ContestedDocumentVotePollDriveQueryResultType::Documents
+                    | ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(_) =>
+                    {
                         // with documents only we don't need to work about lock and abstaining tree
                         let contenders = query_result_elements
                             .to_path_key_elements()

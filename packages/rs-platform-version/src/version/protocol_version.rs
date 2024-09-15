@@ -15,6 +15,7 @@ use crate::version::v1::PLATFORM_V1;
 use std::sync::OnceLock;
 
 use crate::version::limits::SystemLimits;
+use crate::version::v2::PLATFORM_V2;
 use crate::version::ProtocolVersion;
 pub use versioned_feature_core::*;
 
@@ -37,7 +38,7 @@ pub struct PlatformVersion {
     pub system_limits: SystemLimits,
 }
 
-pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[PLATFORM_V1];
+pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[PLATFORM_V1, PLATFORM_V2];
 
 #[cfg(feature = "mock-versions")]
 // We use OnceLock to be able to modify the version mocks
@@ -45,7 +46,7 @@ pub static PLATFORM_TEST_VERSIONS: OnceLock<Vec<PlatformVersion>> = OnceLock::ne
 #[cfg(feature = "mock-versions")]
 const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, TEST_PLATFORM_V3];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V1;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V2;
 
 impl PlatformVersion {
     pub fn get<'a>(version: ProtocolVersion) -> Result<&'a Self, PlatformVersionError> {

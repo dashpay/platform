@@ -45,7 +45,7 @@ use crate::query::{ContractLookupFn, SingleDocumentDriveQuery, SingleDocumentDri
 
 impl Drive {
     #[inline(always)]
-    pub(crate) fn verify_state_transition_was_executed_with_proof_v0(
+    pub(super) fn verify_state_transition_was_executed_with_proof_v0(
         state_transition: &StateTransition,
         block_info: &BlockInfo,
         proof: &[u8],

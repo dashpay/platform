@@ -476,6 +476,7 @@ mod tests {
 
     mod add_init_current_operations {
         use super::*;
+        use crate::query::proposer_block_count_query::ProposerQueryType;
 
         #[test]
         fn test_values_are_set() {
@@ -543,7 +544,12 @@ mod tests {
                 .expect_err("should not get processing fee");
 
             let proposers = drive
-                .get_epoch_proposers(&epoch, Some(1), Some(&transaction), platform_version)
+                .fetch_epoch_proposers(
+                    &epoch,
+                    ProposerQueryType::ByRange(Some(1), None),
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get proposers");
 
             assert_eq!(proposers, vec!());
@@ -895,6 +901,7 @@ mod tests {
 
     mod delete_proposers {
         use super::*;
+        use crate::query::proposer_block_count_query::ProposerQueryType;
 
         #[test]
         fn test_values_are_being_deleted() {
@@ -928,7 +935,12 @@ mod tests {
                 .expect("should apply batch");
 
             let mut stored_proposers = drive
-                .get_epoch_proposers(&epoch, Some(20), Some(&transaction), platform_version)
+                .fetch_epoch_proposers(
+                    &epoch,
+                    ProposerQueryType::ByRange(Some(20), None),
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get proposers");
 
             let mut awaited_result = pro_tx_hashes
@@ -961,7 +973,12 @@ mod tests {
                 .expect("should apply batch");
 
             let stored_proposers = drive
-                .get_epoch_proposers(&epoch, Some(20), Some(&transaction), platform_version)
+                .fetch_epoch_proposers(
+                    &epoch,
+                    ProposerQueryType::ByRange(Some(20), None),
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get proposers");
 
             let mut stored_hexes: Vec<String> = stored_proposers

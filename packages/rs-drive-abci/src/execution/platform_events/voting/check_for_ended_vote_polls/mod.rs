@@ -1,5 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
@@ -16,6 +17,7 @@ where
     /// Checks for ended vote polls
     pub(in crate::execution) fn check_for_ended_vote_polls(
         &self,
+        last_committed_platform_state: &PlatformState,
         block_platform_state: &PlatformState,
         block_info: &BlockInfo,
         transaction: TransactionArg,
@@ -28,6 +30,7 @@ where
             .check_for_ended_vote_polls
         {
             0 => self.check_for_ended_vote_polls_v0(
+                last_committed_platform_state,
                 block_platform_state,
                 block_info,
                 transaction,
