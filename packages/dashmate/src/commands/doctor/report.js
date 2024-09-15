@@ -28,7 +28,6 @@ The command collect diagnostic information and create an obfuscated archive for 
     args,
     {
       verbose: isVerbose,
-      samples: samplesFile,
     },
     config,
     collectSamplesTask,
@@ -38,7 +37,6 @@ The command collect diagnostic information and create an obfuscated archive for 
       [
         {
           title: 'Collecting samples',
-          enabled: () => !samplesFile,
           task: async () => collectSamplesTask(config),
         },
         {
