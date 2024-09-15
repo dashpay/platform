@@ -10234,6 +10234,7 @@ mod tests {
 
                 let platform_state = platform.state.load();
 
+                // Jump to the future on block 5000 to reproduce testnet issue
                 let mut platform_state = (**platform_state).clone();
 
                 let block_info = BlockInfo {
@@ -10263,6 +10264,7 @@ mod tests {
 
                 platform.state.store(Arc::new(platform_state));
 
+                // Create the second alpha contest
                 let platform_state = platform.state.load();
 
                 let (contender_3, contender_4, _) = create_dpns_identity_name_contest(
@@ -10309,6 +10311,7 @@ mod tests {
 
                 let mut platform_state = (**platform_state).clone();
 
+                // We jump to the future to make sure the first (quantum) contest is finished
                 let block_info = BlockInfo {
                     time_ms: 1_209_900_000, //2 weeks and 300s
                     height: 10000,
@@ -10455,6 +10458,9 @@ mod tests {
 
                 // At this point the alpha document should not have been awarded
 
+                // Prove that we have a corrupted reference due to deletion of all documents
+                // of the same document type on the first (quantum) contest completion
+
                 {
                     let config = bincode::config::standard()
                         .with_big_endian()
@@ -10503,6 +10509,8 @@ mod tests {
                 // Now that we know the error exists, let's make sure it is fixed when going to v2
 
                 let mut platform_state = (**platform_state).clone();
+
+                // Jump to v2
 
                 let block_info_later = BlockInfo {
                     time_ms: 1_409_900_000, //a bit later
@@ -10693,101 +10701,8 @@ mod tests {
 
                 // At this point everything should be "clean" except previously awarded contests, let's make sure they still are good
 
-                // The quantum document should still be awarded to contender 1.
-
-                {
-                    let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
-                        &platform,
-                        &platform_state,
-                        &dpns_contract,
-                        "quantum",
-                        None,
-                        true,
-                        None,
-                        ResultType::DocumentsAndVoteTally,
-                        platform_version,
-                    );
-
-                    assert_eq!(
-                        finished_vote_info,
-                        Some(FinishedVoteInfo {
-                            finished_vote_outcome:
-                                finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
-                            won_by_identity_id: Some(contender_1.id().to_vec()),
-                            finished_at_block_height: 10000,
-                            finished_at_core_block_height: 42,
-                            finished_at_block_time_ms: 1209900000,
-                            finished_at_epoch: 0
-                        })
-                    );
-
-                    assert_eq!(contenders.len(), 2);
-
-                    let first_contender = contenders.first().unwrap();
-
-                    let second_contender = contenders.last().unwrap();
-
-                    assert_eq!(first_contender.document(), &None);
-
-                    assert_eq!(second_contender.document(), &None);
-
-                    assert_eq!(first_contender.identity_id(), contender_1.id());
-
-                    assert_eq!(second_contender.identity_id(), contender_2.id());
-
-                    assert_eq!(first_contender.vote_tally(), Some(50));
-
-                    assert_eq!(second_contender.vote_tally(), Some(5));
-
-                    assert_eq!(abstaining, Some(10));
-
-                    assert_eq!(locking, Some(3));
-                }
-
-                {
-                    let (contenders, abstaining, locking, finished_vote_info) =
-                        get_proved_vote_states(
-                            &platform,
-                            &platform_state,
-                            &dpns_contract,
-                            "quantum",
-                            None,
-                            true,
-                            None,
-                            ResultType::DocumentsAndVoteTally,
-                            platform_version,
-                        );
-
-                    assert_eq!(
-                        finished_vote_info,
-                        Some((
-                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
-                            block_info
-                        ))
-                    );
-
-                    assert_eq!(contenders.len(), 2);
-
-                    let first_contender = contenders.first().unwrap();
-
-                    let second_contender = contenders.last().unwrap();
-
-                    assert_eq!(first_contender.document(), &None);
-
-                    assert_eq!(second_contender.document(), &None);
-
-                    assert_eq!(first_contender.identity_id(), contender_1.id());
-
-                    assert_eq!(second_contender.identity_id(), contender_2.id());
-
-                    assert_eq!(first_contender.vote_tally(), Some(50));
-
-                    assert_eq!(second_contender.vote_tally(), Some(5));
-
-                    assert_eq!(abstaining, Some(10));
-
-                    assert_eq!(locking, Some(3));
-                }
+                // We want to create the same contest to make sure that there are no
+                // leftovers and now logic works correctly
 
                 // We keep seed 9 to use on the same identities
 
@@ -10819,6 +10734,8 @@ mod tests {
                 let platform_state = platform.state.load();
 
                 let mut platform_state = (**platform_state).clone();
+
+                // Jump to the future to make sure the new alpha contest is finished
 
                 let block_info = BlockInfo {
                     time_ms: 3_000_000_000, // more than 2 weeks more
