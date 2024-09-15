@@ -35,8 +35,10 @@ export default function startNodeTaskFactory(
       throw new Error(`'core.miner.enable' option only works with local network. Your network is ${config.get('network')}.`);
     }
 
-    const coreLogFilePath = config.get('core.log.file.path');
-    ensureFileMountExists(coreLogFilePath, 0o666);
+    const coreLogFilePath = config.get('core.log.filePath');
+    if (coreLogFilePath !== null) {
+      ensureFileMountExists(coreLogFilePath, 0o666);
+    }
 
     // Check Drive log files are created
     if (config.get('platform.enable')) {

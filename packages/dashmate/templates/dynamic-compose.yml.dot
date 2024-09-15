@@ -7,6 +7,10 @@ services:
       {{~ it.core.docker.commandArgs :arg }}
       - {{=arg}}
       {{~}}
+    {{? it.core.log.filePath !== null }}
+    volumes:
+      - {{=it.core.log.filePath}}:/var/log/dash/debug.log
+    {{?}}
 
   {{ driveLogs = Object.entries(it.platform.drive.abci.logs).filter(([, settings]) => settings.destination !== 'stderr' && settings.destination !== 'stdout'); }}
   {{? driveLogs.length > 0 }}

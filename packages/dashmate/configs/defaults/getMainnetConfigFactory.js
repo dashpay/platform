@@ -26,13 +26,6 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
           subnet: '172.26.24.0/24',
         },
       },
-      core: {
-        log: {
-          file: {
-            path: homeDir.joinPath('logs', 'mainnet', 'core.log'),
-          },
-        },
-      },
       network: NETWORK_MAINNET,
       platform: {
         enable: false,

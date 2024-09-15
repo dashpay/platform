@@ -858,6 +858,31 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
             options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
+
+            // Update core log settings
+            options.core.log.filePath = null;
+            options.core.log.debug = {
+              enabled: false,
+              ips: !!options.core.logIps,
+              sourceLocations: false,
+              threadNames: false,
+              timeMicros: false,
+              includeOnly: [],
+              exclude: [],
+            };
+
+            // If debug log was enabled
+            if (options.core.log.file.categories.length > 0) {
+              options.core.log.filePath = options.core.log.file.path;
+              options.core.log.debug.enabled = true;
+
+              if (!options.core.log.file.categories.includes('all')) {
+                options.core.log.debug.includeOnly = options.core.log.file.categories;
+              }
+            }
+
+            delete options.core.log.file;
+            delete options.core.logIps;
           });
         return configFile;
       },

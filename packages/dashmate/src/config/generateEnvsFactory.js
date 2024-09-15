@@ -20,7 +20,6 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
    * COMPOSE_PROJECT_NAME: string,
    * COMPOSE_FILE: string,
    * COMPOSE_PATH_SEPARATOR: string,
-   * CORE_LOG_DIRECTORY_PATH: string
    * }}
    */
   function generateEnvs(config) {
@@ -92,9 +91,6 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       COMPOSE_PATH_SEPARATOR: ':',
       DOCKER_BUILDKIT: 1,
       COMPOSE_DOCKER_CLI_BUILD: 1,
-      CORE_LOG_DIRECTORY_PATH: path.dirname(
-        config.get('core.log.file.path'),
-      ),
       DASHMATE_HELPER_DOCKER_IMAGE,
       PLATFORM_DRIVE_TENDERDASH_LOG_DIRECTORY_PATH: tenderdashLogDirectoryPath,
       PLATFORM_GATEWAY_RATE_LIMITER_METRICS_DISABLED: !config.get('platform.gateway.rateLimiter.metrics.enabled'),
