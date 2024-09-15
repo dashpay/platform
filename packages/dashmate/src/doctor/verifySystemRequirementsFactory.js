@@ -37,7 +37,7 @@ export default function verifySystemRequirementsFactory() {
     // CPU cores
     const cpuCores = dockerSystemInfo?.NCPU ?? cpu?.cores;
 
-    if (cpuCores) {
+    if (Number.isInteger(cpuCores)) {
       if (cpuCores < MINIMUM_CPU_CORES) {
         const problem = new Problem(
           `${cpuCores} CPU cores detected. At least ${MINIMUM_CPU_CORES} are required`,
@@ -56,7 +56,7 @@ to the network in time and will not get PoSe banned`,
     // Memory
     const totalMemory = dockerSystemInfo?.MemTotal ?? memory?.total;
 
-    if (totalMemory) {
+    if (Number.isInteger(totalMemory)) {
       const totalMemoryGb = totalMemory / (1024 ** 3); // Convert to GB
 
       if (totalMemoryGb < MINIMUM_RAM) {
@@ -75,7 +75,7 @@ to the network in time and will not get PoSe banned`,
     }
 
     // CPU speed
-    if (cpu && cpu.speed !== 0) {
+    if (cpu && Number.isFinite(cpu.speed) && cpu.speed !== 0) {
       if (cpu.speed < MINIMUM_CPU_FREQUENCY) {
         const problem = new Problem(
           `${cpu.speed.toFixed(1)}GHz CPU frequency detected. At least ${MINIMUM_CPU_FREQUENCY}GHz is required`,
@@ -92,7 +92,7 @@ to the network in time and will not get PoSe banned`,
     }
 
     // Check swap information
-    if (memory) {
+    if (memory && Number.isInteger(memory.swaptotal)) {
       const swapTotalGb = (memory.swaptotal / (1024 ** 3)); // Convert bytes to GB
 
       if (swapTotalGb < 2) {
