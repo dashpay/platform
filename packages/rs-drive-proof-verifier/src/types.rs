@@ -27,6 +27,8 @@ use dpp::{
 use drive::grovedb::Element;
 use std::collections::{BTreeMap, BTreeSet};
 
+use dpp::block::block_info::BlockInfo;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::grovedb::query_result_type::Path;
 #[cfg(feature = "mocks")]
 use {
@@ -89,6 +91,8 @@ pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
     platform_serialize(unversioned)
 )]
 pub struct Contenders {
+    /// The winner if the contest is finished
+    pub winner: Option<(ContestedDocumentVotePollWinnerInfo, BlockInfo)>,
     /// Contenders indexed by their identity IDs.
     pub contenders: BTreeMap<Identifier, ContenderWithSerializedDocument>,
     /// Tally of abstain votes.
@@ -123,6 +127,7 @@ impl FromIterator<(Identifier, Option<ContenderWithSerializedDocument>)> for Con
         iter: T,
     ) -> Self {
         Self {
+            winner: None,
             contenders: BTreeMap::from_iter(
                 iter.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))),
             ),

@@ -44,7 +44,7 @@ pub struct VotePollsByEndDateDriveQuery {
 }
 
 impl VotePollsByEndDateDriveQuery {
-    /// Get the path query for an abci query that gets vote polls by the end time
+    /// Get the path query for an abci query that gets vote polls until an end time
     pub fn path_query_for_end_time_included(end_time: TimestampMillis, limit: u16) -> PathQuery {
         let path = vote_end_date_queries_tree_path_vec();
 
@@ -53,6 +53,32 @@ impl VotePollsByEndDateDriveQuery {
         let encoded_time = encode_u64(end_time);
 
         query.insert_range_to_inclusive(..=encoded_time);
+
+        let mut sub_query = Query::new();
+
+        sub_query.insert_all();
+
+        query.default_subquery_branch.subquery = Some(sub_query.into());
+
+        PathQuery {
+            path,
+            query: SizedQuery {
+                query,
+                limit: Some(limit),
+                offset: None,
+            },
+        }
+    }
+
+    /// Get the path query for an abci query that gets vote polls at an the end time
+    pub fn path_query_for_single_end_time(end_time: TimestampMillis, limit: u16) -> PathQuery {
+        let path = vote_end_date_queries_tree_path_vec();
+
+        let mut query = Query::new_with_direction(true);
+
+        let encoded_time = encode_u64(end_time);
+
+        query.insert_key(encoded_time);
 
         let mut sub_query = Query::new();
 
@@ -122,6 +148,48 @@ impl VotePollsByEndDateDriveQuery {
                         },
                     );
                 Ok(vote_polls_by_end_date)
+            }
+        }
+    }
+
+    #[cfg(feature = "server")]
+    /// Executes a special query with no proof to get contested document resource vote polls.
+    /// This is meant for platform abci to get votes that have finished
+    pub fn execute_no_proof_for_specialized_end_time_query_only_check_end_time(
+        end_time: TimestampMillis,
+        limit: u16,
+        drive: &Drive,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<VotePoll>, Error> {
+        let path_query = Self::path_query_for_single_end_time(end_time, limit);
+        let query_result = drive.grove_get_path_query(
+            &path_query,
+            transaction,
+            QueryResultType::QueryPathKeyElementTrioResultType,
+            drive_operations,
+            &platform_version.drive,
+        );
+        match query_result {
+            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
+            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
+            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(vec![]),
+            Err(e) => Err(e),
+            Ok((query_result_elements, _)) => {
+                // Process the query result elements and collect VotePolls
+                let vote_polls = query_result_elements
+                    .to_path_key_elements()
+                    .into_iter()
+                    .map(|(_, _, element)| {
+                        // Extract the bytes from the element
+                        let vote_poll_bytes = element.into_item_bytes().map_err(Error::from)?;
+                        // Deserialize the bytes into a VotePoll
+                        let vote_poll = VotePoll::deserialize_from_bytes(&vote_poll_bytes)?;
+                        Ok(vote_poll)
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?;
+                Ok(vote_polls)
             }
         }
     }

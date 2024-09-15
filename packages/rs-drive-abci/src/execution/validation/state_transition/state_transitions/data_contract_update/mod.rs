@@ -221,7 +221,6 @@ mod tests {
         use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
         use crate::execution::validation::state_transition::ValidationMode;
         use dpp::version::TryFromPlatformVersioned;
-        use platform_version::version::LATEST_PLATFORM_VERSION;
         use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
 
         #[test]
@@ -516,7 +515,7 @@ mod tests {
                     updated_document_type.into(),
                     true,
                     &mut vec![],
-                    LATEST_PLATFORM_VERSION,
+                    platform_version,
                 )
                 .expect("to be able to set document schema");
 
@@ -524,7 +523,7 @@ mod tests {
             data_contract.config_mut().set_keeps_history(false);
 
             let state_transition: DataContractUpdateTransitionV0 = (data_contract, 1)
-                .try_into_platform_versioned(LATEST_PLATFORM_VERSION)
+                .try_into_platform_versioned(platform_version)
                 .expect("expected an update transition");
 
             let state_transition: DataContractUpdateTransition = state_transition.into();

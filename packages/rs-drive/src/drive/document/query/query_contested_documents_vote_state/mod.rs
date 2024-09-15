@@ -70,20 +70,23 @@ impl Drive {
         query: ContestedDocumentVotePollDriveQuery,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
-        protocol_version: Option<u32>,
+        platform_version: &PlatformVersion,
     ) -> Result<QueryContestedDocumentsVoteStateOutcome, Error> {
-        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
-
         match platform_version
             .drive
             .methods
             .document
             .query
-            .query_documents
+            .query_contested_documents_vote_state
         {
-            0 => self.query_contested_documents_v0(query, epoch, transaction, platform_version),
+            0 => self.query_contested_documents_vote_state_v0(
+                query,
+                epoch,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "query_documents".to_string(),
+                method: "query_contested_documents_vote_state".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

@@ -123,6 +123,7 @@ impl Cli {
                     config.db_path.clone(),
                     Some(config.clone()),
                     core_rpc,
+                    None,
                 )
                 .expect("Failed to open platform");
 

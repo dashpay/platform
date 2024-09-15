@@ -823,8 +823,8 @@ mod refund_tests {
             .calculate_refunds_amount_for_identity(identity.id())
             .expect("expected refunds for identity");
 
-        println!("{}", insertion_fee_result.storage_fee);
-        println!("{}", refund_amount);
+        // println!("{}", insertion_fee_result.storage_fee);
+        // println!("{}", refund_amount);
 
         // we should be refunding around 21% after 25 years.
         let refunded_percentage = refund_amount * 100 / insertion_fee_result.storage_fee;

@@ -81,10 +81,10 @@ use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{PlatformArchitectureVersion, ProtocolVersion};
 use grovedb_version::version::v1::GROVE_V1;
 
-pub const PROTOCOL_VERSION_2: ProtocolVersion = 1;
+pub const PROTOCOL_VERSION_2: ProtocolVersion = 2;
 
 pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
-    protocol_version: 1,
+    protocol_version: 2,
     proofs: FeatureVersionBounds {
         min_version: 0,
         max_version: 0,
@@ -167,7 +167,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                 calculate_total_credits_balance: 0,
             },
             document: DriveDocumentMethodVersions {
-                query: DriveDocumentQueryMethodVersions { query_documents: 0, query_documents_with_flags: 0 },
+                query: DriveDocumentQueryMethodVersions { query_documents: 0, query_contested_documents: 0, query_contested_documents_vote_state: 0, query_documents_with_flags: 0 },
                 delete: DriveDocumentDeleteMethodVersions {
                     add_estimation_costs_for_remove_document_to_primary_storage: 0,
                     delete_document_for_contract: 0,
@@ -238,10 +238,12 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                 cleanup: DriveVoteCleanupMethodVersions {
                     remove_specific_vote_references_given_by_identity: 0,
                     remove_specific_votes_given_by_identity: 0,
-                    remove_contested_resource_vote_poll_end_date_query_operations: 0,
+                    remove_contested_resource_vote_poll_end_date_query_operations: 1,
                     remove_contested_resource_vote_poll_votes_operations: 0,
-                    remove_contested_resource_vote_poll_documents_operations: 0,
-                    remove_contested_resource_vote_poll_contenders_operations: 0,
+                    remove_contested_resource_vote_poll_documents_operations: 1,
+                    remove_contested_resource_vote_poll_contenders_operations: 1,
+                    remove_contested_resource_top_level_index_operations: 0,
+                    remove_contested_resource_info_operations: 0,
                 },
                 setup: DriveVoteSetupMethodVersions {
                     add_initial_vote_tree_main_structure_operations: 0,
@@ -817,7 +819,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                     document_transfer_transition_structure_validation: 0,
                     document_purchase_transition_structure_validation: 0,
                     document_update_price_transition_structure_validation: 0,
-                    document_create_transition_state_validation: 0,
+                    document_create_transition_state_validation: 1,
                     document_delete_transition_state_validation: 0,
                     document_replace_transition_state_validation: 0,
                     document_transfer_transition_state_validation: 0,

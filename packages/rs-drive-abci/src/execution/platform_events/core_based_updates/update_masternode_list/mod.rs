@@ -134,11 +134,11 @@ mod test {
                     let file_path = adjust_path_based_on_current_dir(
                         "tests/supporting_files/mainnet_protx_list_diffs/1-2128896.json",
                     );
-                    println!(
-                        "Current directory: {:?}, using {:?}",
-                        std::env::current_dir(),
-                        &file_path
-                    );
+                    // println!(
+                    //     "Current directory: {:?}, using {:?}",
+                    //     std::env::current_dir(),
+                    //     &file_path
+                    // );
                     // Deserialize the first JSON file
                     let file = File::open(file_path).expect("expected to open file");
                     let reader = BufReader::new(file);

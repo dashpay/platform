@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_invalid_identity_ids() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetProofsRequestV0 {
             identities: vec![IdentityRequest {
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn test_invalid_identity_prove_request_type() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request_type = 10;
 
@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn test_invalid_contract_ids() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetProofsRequestV0 {
             identities: vec![],
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_invalid_contract_id_for_documents_proof() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetProofsRequestV0 {
             identities: vec![],
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_invalid_document_id() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetProofsRequestV0 {
             identities: vec![],
@@ -298,7 +298,7 @@ mod tests {
 
     #[test]
     fn test_proof_of_absence() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetProofsRequestV0 {
             identities: vec![],
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn test_proof_of_absence_of_vote() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let dpns_contract = platform
             .drive
@@ -377,7 +377,7 @@ mod tests {
 
     #[test]
     fn test_prove_all() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetProofsRequestV0 {
             identities: vec![IdentityRequest {
