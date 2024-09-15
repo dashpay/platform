@@ -676,17 +676,10 @@ impl FromProof<platform::GetIdentitiesBalancesRequest> for IdentityBalances {
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let identities_ids = match request.version.ok_or(Error::EmptyVersion)? {
-            get_identities_balances_request::Version::V0(v0) => v0.identities_ids,
-        };
-
-        let Some(identities_ids) = identities_ids else {
-            return Err(Error::RequestError {
-                error: "expected identity ids".to_string(),
-            });
+            get_identities_balances_request::Version::V0(v0) => v0.ids,
         };
 
         let identity_ids = identities_ids
-            .identities_ids
             .into_iter()
             .map(|identity_bytes| {
                 Identifier::from_bytes(&identity_bytes)

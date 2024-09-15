@@ -15,18 +15,11 @@ use dpp::version::PlatformVersion;
 impl<C> Platform<C> {
     pub(super) fn query_identities_balances_v0(
         &self,
-        GetIdentitiesBalancesRequestV0 {
-            identities_ids,
-            prove,
-        }: GetIdentitiesBalancesRequestV0,
+        GetIdentitiesBalancesRequestV0 { ids, prove }: GetIdentitiesBalancesRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentitiesBalancesResponseV0>, Error> {
-        let identities_ids = check_validation_result_with_data!(identities_ids.ok_or(
-            QueryError::InvalidArgument("identities_ids must be set".to_string())
-        ))
-        .identities_ids;
-        let identifiers = check_validation_result_with_data!(identities_ids
+        let identifiers = check_validation_result_with_data!(ids
             .into_iter()
             .map(|identity_id| {
                 let identifier: Identifier = identity_id.try_into().map_err(|_| {
