@@ -36,38 +36,40 @@ export default function analyseCoreFactory() {
 
       const { description, solution, severity } = {
         WAITING_FOR_PROTX: {
-          description: 'Problem',
-          solution: chalk`Solution`,
+          description: 'The masternode is waiting for ProTx registration confirmation',
+          solution: chalk`Ensure the ProRegTx transaction has been broadcasted and confirmed on the network.`,
           severity: SEVERITY.HIGH,
         },
         POSE_BANNED: {
-          description: 'Problem',
-          solution: chalk`Solution`,
+          description: 'The masternode has been banned due to failing Proof-of-Service checks.',
+          solution: chalk`Submit a ProUpServTx transaction to unban your masternode and ensure
+it meets all network requirements.`,
           severity: SEVERITY.HIGH,
         },
         REMOVED: {
-          description: 'Problem',
-          solution: chalk`Solution`,
+          description: 'The masternode has been removed from the network masternode list.',
+          solution: chalk`Re-register the masternode with a new ProRegTx transaction.`,
           severity: SEVERITY.HIGH,
         },
         OPERATOR_KEY_CHANGED: {
-          description: 'Problem',
-          solution: chalk`Solution`,
+          description: 'The operator key for the masternode has been changed.',
+          solution: chalk`Update the masternode configuration with the new operator key
+using {bold.cyanBright dashmate config set core.masternode.operatorKey <operatorKey>}.`,
           severity: SEVERITY.HIGH,
         },
         PROTX_IP_CHANGED: {
-          description: 'Problem',
-          solution: chalk`Solution`,
+          description: 'The IP address registered in the ProTx has changed.',
+          solution: chalk`Update your masternode's configuration with the new IP address.`,
           severity: SEVERITY.HIGH,
         },
         ERROR: {
-          description: 'Problem',
-          solution: chalk`Solution`,
+          description: 'An unknown error has occurred with the masternode.',
+          solution: chalk`Check the Core logs for detailed error information and troubleshoot accordingly.`,
           severity: SEVERITY.HIGH,
         },
         UNKNOWN: {
-          description: 'Problem',
-          solution: chalk`Solution`,
+          description: 'The masternode status cannot be determined.',
+          solution: chalk`Check the Core logs for detailed error information and troubleshoot accordingly.`,
           severity: SEVERITY.HIGH,
         },
       }[masternodeStatus?.state] || {};
