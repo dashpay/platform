@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import getCertificate from './getCertificate.js';
 
 export const ERRORS = {
   API_KEY_IS_NOT_SET: 'API_KEY_IS_NOT_SET',
@@ -16,9 +15,10 @@ export const ERRORS = {
 
 /**
  * @param {HomeDir} homeDir
+ * @param {getCertificate} getCertificate
  * @return {validateZeroSslCertificate}
  */
-export default function validateZeroSslCertificateFactory(homeDir) {
+export default function validateZeroSslCertificateFactory(homeDir, getCertificate) {
   /**
    * @typedef {validateZeroSslCertificate}
    * @param {Config} config

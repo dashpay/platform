@@ -325,6 +325,7 @@ export default async function createDIContainer(options = {}) {
    */
   container.register({
     validateZeroSslCertificate: asFunction(validateZeroSslCertificateFactory).singleton(),
+    getCertificate: asValue(getCertificate),
   });
 
   /**
