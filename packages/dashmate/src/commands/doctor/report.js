@@ -36,11 +36,6 @@ The command collect diagnostic information and create an obfuscated archive for 
     const tasks = new Listr(
       [
         {
-          title: 'Collecting samples',
-          task: async () => collectSamplesTask(config),
-        },
-        {
-          title: 'Archive samples',
           task: async (ctx, task) => {
             const agreement = await task.prompt({
               type: 'toggle',
@@ -64,11 +59,17 @@ The command collect diagnostic information and create an obfuscated archive for 
             });
 
             if (!agreement) {
-              task.skip();
-
-              return;
+              throw new Error('An archive creation is decline');
             }
-
+          },
+        },
+        {
+          title: 'Collecting samples',
+          task: async () => collectSamplesTask(config),
+        },
+        {
+          title: 'Archive samples',
+          task: async (ctx, task) => {
             const archivePath = process.cwd();
 
             await archiveSamples(ctx.samples, archivePath);
