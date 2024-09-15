@@ -229,4 +229,12 @@ impl DriveConfig {
     fn default_network() -> Network {
         Network::Dash
     }
+
+    /// The default testnet configuration
+    pub fn default_testnet() -> Self {
+        Self {
+            network: Network::Testnet,
+            ..Default::default()
+        }
+    }
 }
