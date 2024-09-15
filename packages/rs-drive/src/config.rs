@@ -126,6 +126,7 @@ pub struct DriveConfig {
     pub network: Network,
 }
 
+#[cfg(feature = "serde")]
 fn from_str_to_network_with_aliases<'de, D>(deserializer: D) -> Result<Network, D::Error>
 where
     D: serde::Deserializer<'de>,
