@@ -32,11 +32,11 @@ export default function analyseConfigFactory() {
       const platformNodeId = masternodeStatus?.dmnState?.platformNodeId;
       if (platformNodeId && config.get('platform.drive.tenderdash.node.id') !== platformNodeId) {
         const problem = new Problem(
-          'Platform Node ID doesn\'t match the one in the ProReg transaction',
-          chalk`Please set correct Node ID and Node Key:
+          'Platform Node ID doesn\'t match the one found in the ProReg transaction',
+          chalk`Please set the correct Node ID and Node Key:
   {bold.cyanBright dashmate config set platform.drive.tenderdash.node.id ID
   dashmate config set platform.drive.tenderdash.node.key KEY}
-  Or update Node ID in masternode list with ProServUp transaction`,
+  Or update the Node ID in the masternode list using a ProServUp transaction`,
           SEVERITY.HIGH,
         );
 
