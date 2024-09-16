@@ -853,7 +853,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
-      '1.3.0-dev.2': (configFile) => {
+      '1.3.0-dev.3': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
