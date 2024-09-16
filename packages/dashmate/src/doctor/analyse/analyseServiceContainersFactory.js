@@ -79,7 +79,7 @@ export default function analyseServiceContainersFactory(
 
       const problem = new Problem(
         description,
-        'Please check corresponding logs or share them with Dash Core Group',
+        'Please check service logs or share them with Dash Core Group',
         SEVERITY.HIGH,
       );
 
@@ -89,9 +89,9 @@ export default function analyseServiceContainersFactory(
     if (servicesOOMKilled.length > 0) {
       let description;
       if (servicesNotStarted.length === 1) {
-        description = chalk`Service ${servicesNotStarted[0].service.title} is killed due to lack of memory.`;
+        description = chalk`Service ${servicesNotStarted[0].service.title} was killed due to a lack of memory.`;
       } else {
-        description = chalk`Services ${servicesNotStarted.map((e) => e.service.title).join(', ')} are killed due to lack of memory.`;
+        description = chalk`Services ${servicesNotStarted.map((e) => e.service.title).join(', ')} were killed due to lack of memory.`;
       }
 
       const problem = new Problem(

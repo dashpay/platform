@@ -69,13 +69,13 @@ export default function obtainZeroSSLCertificateTaskFactory(
               // If certificate exists but private key does not, then we can't set up TLS connection
               // In this case we need to regenerate certificate or put back this private key
               throw new Error(`Certificate private key file not found in ${ctx.privateKeyFilePath}.\n`
-                + 'Please regenerate the certificate using the the obtain'
-                + ' command with the --force flag, and revoke the previous certificate in'
+                + 'Please regenerate the certificate using the obtain'
+                + ' command with the --force flag and revoke the previous certificate in'
                 + ' the ZeroSSL dashboard');
             case ERRORS.EXTERNAL_IP_MISMATCH:
               throw new Error(`Certificate IPe ${ctx.certificate.common_name} does not match external IP ${ctx.externalIp}.\n`
-                + 'Please change the external IP in config or regenerate the certificate '
-                + ' using the obtain command with the --force flag, and revoke the previous'
+                + 'Please change the external IP in config. Otherwise, regenerate the certificate '
+                + ' using the obtain command with the --force flag and revoke the previous'
                 + ' certificate in the ZeroSSL dashboard');
             case ERRORS.CSR_FILE_IS_NOT_PRESENT:
               throw new Error(`Certificate request file not found in ${ctx.csrFilePath}.\n`
@@ -88,7 +88,7 @@ export default function obtainZeroSSLCertificateTaskFactory(
               break;
             case ERRORS.CERTIFICATE_IS_NOT_VALIDATED:
               // eslint-disable-next-line no-param-reassign
-              task.output = 'Certificate was already created, but not validated yet.';
+              task.output = 'Certificate was already created, but has not been validated yet.';
               break;
             case ERRORS.CERTIFICATE_IS_NOT_VALID:
               // eslint-disable-next-line no-param-reassign

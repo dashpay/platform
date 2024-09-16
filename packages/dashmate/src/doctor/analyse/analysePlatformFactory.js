@@ -19,8 +19,8 @@ export default function analysePlatformFactory() {
 
       if (status?.sync_info?.catching_up) {
         const problem = new Problem(
-          'Drive syncs blockchain data. Some of the node services might not respond.',
-          'Please wait until Drive will be fully synced',
+          'Drive is syncing blockchain data. Some node services may temporarily be unresponsive.',
+          'Please wait until Drive is fully synced',
           SEVERITY.MEDIUM,
         );
 

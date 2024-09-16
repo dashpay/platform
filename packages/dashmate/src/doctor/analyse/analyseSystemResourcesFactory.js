@@ -41,7 +41,7 @@ export default function analyseSystemResourcesFactory(verifySystemRequirements) 
     if (cpuCores && currentLoad && (currentLoad.avgLoad / cpuCores) > 0.8) {
       const problem = new Problem(
         `Average system load ${currentLoad.avgLoad.toFixed(2)} is higher than normal`,
-        'Consider to upgrade CPU',
+        'Consider upgrading CPUs',
         SEVERITY.LOW,
       );
 
@@ -54,7 +54,7 @@ export default function analyseSystemResourcesFactory(verifySystemRequirements) 
       if (memoryGb < 0.5) {
         const problem = new Problem(
           `Only ${memoryGb.toFixed(1)}GB RAM is available`,
-          'Consider to upgrade RAM',
+          'Consider adding RAM',
           SEVERITY.LOW,
         );
 
@@ -68,7 +68,7 @@ export default function analyseSystemResourcesFactory(verifySystemRequirements) 
       if (available < 1000) {
         const problem = new Problem(
           `${available} available file descriptors left`,
-          'Please increase maximum open file descriptor limit or stop unnecessary running processes.',
+          'Please increase the maximum open file descriptor limit or stop unnecessary processes.',
           SEVERITY.HIGH,
         );
 
@@ -89,7 +89,7 @@ export default function analyseSystemResourcesFactory(verifySystemRequirements) 
       if (maxDiskIOWaitPercent > THRESHOLD) {
         const problem = new Problem(
           `Disk IO wait time is ${maxDiskIOWaitPercent.toFixed(0)}%`,
-          'Consider to upgrade to faster disk',
+          'Consider upgrading to faster storage',
           SEVERITY.LOW,
         );
 

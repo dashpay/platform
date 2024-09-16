@@ -51,7 +51,7 @@ export default function analyseConfigFactory() {
             if (config.get('network') !== NETWORK_LOCAL) {
               const problem = new Problem(
                 'SSL certificates are disabled. Clients won\'t be able to connect securely',
-                chalk`Please enable and setup SSL certificates {bold.cyanBright https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate}`,
+                chalk`Please enable and set up SSL certificates {bold.cyanBright https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate}`,
                 SEVERITY.HIGH,
               );
 
@@ -77,7 +77,7 @@ export default function analyseConfigFactory() {
               // File provider error
               'not-valid': {
                 description: 'SSL certificate files are not valid',
-                solution: chalk`Please make sure certificate chain contains actual server certificate at the top of the file and it corresponds to private key
+                solution: chalk`Please make sure the certificate chain contains the actual server certificate at the top of the file, and it corresponds to the private key
 
 Certificate chain file path: {bold.cyanBright ${ssl?.data?.chainFilePath}}
 Private key file path: {bold.cyanBright ${ssl?.data?.privateFilePath}}`,
@@ -85,7 +85,7 @@ Private key file path: {bold.cyanBright ${ssl?.data?.privateFilePath}}`,
               // File provider error
               'not-exist': {
                 description: 'SSL certificate files are not found',
-                solution: chalk`Please get certificates and place files to the correct location.
+                solution: chalk`Please get an SSL certificate and place the certificate files in the correct location.
 
 Certificate chain file path: {bold.cyanBright ${ssl?.data?.chainFilePath}}
 Private key file path: {bold.cyanBright ${ssl?.data?.privateFilePath}}
@@ -95,16 +95,16 @@ Or use ZeroSSL https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-cer
               // ZeroSSL validation errors
               [ERRORS.API_KEY_IS_NOT_SET]: {
                 description: 'ZeroSSL API key is not set.',
-                solution: chalk`Please obtain your API key in {underline.cyanBright https://app.zerossl.com/developer}
-And then update configuration with {block.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.zerossl.apiKey [KEY]}`,
+                solution: chalk`Please obtain your API key from {underline.cyanBright https://app.zerossl.com/developer}
+And then update your configuration with {block.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.zerossl.apiKey [KEY]}`,
               },
               [ERRORS.EXTERNAL_IP_IS_NOT_SET]: {
                 description: 'External IP is not set.',
-                solution: chalk`Please update configuration with your external IP using {block.cyanBright dashmate config set externalIp [IP]}`,
+                solution: chalk`Please update your configuration to include your external IP using {block.cyanBright dashmate config set externalIp [IP]}`,
               },
               [ERRORS.CERTIFICATE_ID_IS_NOT_SET]: {
                 description: 'ZeroSSL certificate is not configured',
-                solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to get a new one`,
+                solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to get a new certificate`,
               },
               [ERRORS.PRIVATE_KEY_IS_NOT_PRESENT]: {
                 description: chalk`ZeroSSL private key file not found in ${ssl?.data?.privateKeyFilePath}.`,
@@ -118,7 +118,7 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
               },
               [ERRORS.CSR_FILE_IS_NOT_PRESENT]: {
                 description: chalk`ZeroSSL certificate request file not found in ${ssl?.data?.csrFilePath}.
-This makes auto renew impossible.`,
+This makes auto-renewal impossible.`,
                 solution: chalk`If you need auto renew, please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --force}
 and revoke the previous certificate in the ZeroSSL dashboard`,
               },
