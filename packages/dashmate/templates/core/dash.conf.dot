@@ -5,6 +5,11 @@ maxconnections=256
 reindex={{?it.reindex}}1{{??}}0{{?}}
 
 {{? it.core.log.debug.enabled }}
+logips={{? it.core.log.debug.ips }}1{{??}}0{{?}}
+logsourcelocations={{? it.core.log.debug.sourceLocations }}1{{??}}0{{?}}
+logthreadnames={{? it.core.log.debug.threadNames }}1{{??}}0{{?}}
+logtimemicros={{? it.core.log.debug.timeMicros }}1{{??}}0{{?}}
+
   {{? it.core.log.debug.includeOnly.length === 0 }}
 debug=1
   {{??}}
@@ -22,8 +27,6 @@ nodebuglogfile=1
 {{??}}
 debuglogfile=/var/log/dash/debug.log }}
 {{?}}
-
-logips={{=it.core.logIps }}
 
 # JSON RPC
 server=1
