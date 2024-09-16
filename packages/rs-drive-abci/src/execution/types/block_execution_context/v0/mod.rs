@@ -57,9 +57,6 @@ pub trait BlockExecutionContextV0Getters {
     /// Returns a reference of the epoch_info field.
     fn epoch_info(&self) -> &EpochInfo;
 
-    /// Returns the hpmn_count field.
-    fn hpmn_count(&self) -> u32;
-
     /// Returns a reference of the withdrawal_transactions field.
     fn unsigned_withdrawal_transactions(&self) -> &UnsignedWithdrawalTxs;
 
@@ -77,9 +74,6 @@ pub trait BlockExecutionContextV0Setters {
 
     /// Sets the epoch_info field.
     fn set_epoch_info(&mut self, info: EpochInfo);
-
-    /// Sets the hpmn_count field.
-    fn set_hpmn_count(&mut self, count: u32);
 
     /// Sets the withdrawal_transactions field.
     fn set_unsigned_withdrawal_transactions(&mut self, transactions: UnsignedWithdrawalTxs);
