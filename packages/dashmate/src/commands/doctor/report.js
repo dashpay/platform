@@ -40,7 +40,7 @@ The command collect diagnostic information and create an obfuscated archive for 
             const agreement = await task.prompt({
               type: 'toggle',
               name: 'confirm',
-              header: chalk`  Do you want to create an archive of diagnostic information for problems investigation?
+              header: chalk`  Do you want to create an archive of diagnostic information to help with debugging?
 
   The archive will include:
 
