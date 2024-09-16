@@ -28,7 +28,7 @@ export default function unarchiveSamplesFactory(getServiceList) {
    */
   async function unarchiveSamples(archiveFilePath) {
     if (!fs.existsSync(archiveFilePath)) {
-      throw new Error(`Archive file with samples not found: ${archiveFilePath}`);
+      throw new Error(`Archive file with logged data not found: ${archiveFilePath}`);
     }
 
     const samples = new Samples();
@@ -45,7 +45,7 @@ export default function unarchiveSamplesFactory(getServiceList) {
 
     if (process.env.DEBUG) {
       // eslint-disable-next-line no-console
-      console.debug(`Extracted samples to: ${extractDir}`);
+      console.debug(`Extracted logged data to: ${extractDir}`);
     }
 
     const dateFilePath = path.join(extractDir, 'date.txt');

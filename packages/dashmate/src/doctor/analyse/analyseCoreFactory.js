@@ -22,8 +22,8 @@ export default function analyseCoreFactory() {
       const verificationProgress = blockchainInfo?.verificationprogress ?? 0;
 
       const problem = new Problem(
-        'Core syncs blockchain data. Some of the node services might not respond',
-        chalk`${(verificationProgress * 100).toFixed(1)}% is synced. Please wait until Core will be fully synced`,
+        'Core is syncing blockchain data. Some node services may be temporarily unresponsive',
+        chalk`Sync is ${(verificationProgress * 100).toFixed(1)}% complete. Please wait until Core is fully synced`,
         SEVERITY.MEDIUM,
       );
 
@@ -37,7 +37,7 @@ export default function analyseCoreFactory() {
       const { description, solution, severity } = {
         WAITING_FOR_PROTX: {
           description: 'The masternode is waiting for ProTx registration confirmation',
-          solution: chalk`Ensure the ProRegTx transaction has been broadcasted and confirmed on the network.`,
+          solution: chalk`Ensure the ProRegTx transaction has been sent and is confirmed on the network.`,
           severity: SEVERITY.HIGH,
         },
         POSE_BANNED: {
