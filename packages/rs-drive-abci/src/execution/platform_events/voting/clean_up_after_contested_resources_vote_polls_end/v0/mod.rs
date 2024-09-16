@@ -24,6 +24,7 @@ where
             &TimestampMillis,
             &BTreeMap<ResourceVoteChoice, Vec<Identifier>>,
         )>,
+        clean_up_testnet_corrupted_reference_issue: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -52,6 +53,7 @@ where
         self.drive
             .remove_contested_resource_vote_poll_documents_operations(
                 vote_polls.as_slice(),
+                clean_up_testnet_corrupted_reference_issue,
                 &mut operations,
                 transaction,
                 platform_version,
@@ -103,6 +105,23 @@ where
                 .remove_specific_vote_references_given_by_identity(
                     identity,
                     vote_ids.as_slice(),
+                    &mut operations,
+                    transaction,
+                    platform_version,
+                )?;
+        }
+
+        if clean_up_testnet_corrupted_reference_issue {
+            self.drive.remove_contested_resource_info_operations(
+                vote_polls.as_slice(),
+                &mut operations,
+                transaction,
+                platform_version,
+            )?;
+            // We remove the last index
+            self.drive
+                .remove_contested_resource_top_level_index_operations(
+                    vote_polls.as_slice(),
                     &mut operations,
                     transaction,
                     platform_version,

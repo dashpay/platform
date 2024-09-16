@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn test_invalid_identity_id() {
-        let (platform, state, _unused_version) = setup_platform(None, Network::Testnet);
+        let (platform, state, _unused_version) = setup_platform(None, Network::Testnet, None);
 
         let version = PlatformVersion::latest();
 
@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn test_identity_not_found() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let id = vec![0; 32];
         let request = GetIdentityRequestV0 {
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_identity_absence_proof() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let id = vec![0; 32];
         let request = GetIdentityRequestV0 {

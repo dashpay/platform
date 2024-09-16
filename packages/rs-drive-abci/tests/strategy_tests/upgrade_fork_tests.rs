@@ -27,6 +27,7 @@ mod tests {
     use platform_version::version::mocks::v3_test::TEST_PROTOCOL_VERSION_3;
     use platform_version::version::patches::PatchFn;
     use platform_version::version::v1::PROTOCOL_VERSION_1;
+    use platform_version::version::INITIAL_PROTOCOL_VERSION;
     use std::collections::{BTreeMap, HashMap};
     use strategy_tests::frequency::Frequency;
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
@@ -90,6 +91,7 @@ mod tests {
                 };
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(config.clone())
+                    .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
                     .build_with_mock_rpc();
                 platform
                     .core_rpc
@@ -373,6 +375,7 @@ mod tests {
                 };
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(config.clone())
+                    .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
                     .build_with_mock_rpc();
                 platform
                     .core_rpc
@@ -625,6 +628,7 @@ mod tests {
 
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
+            .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
             .build_with_mock_rpc();
 
         let ChainExecutionOutcome {
@@ -793,6 +797,7 @@ mod tests {
                 };
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(config.clone())
+                    .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
                     .build_with_mock_rpc();
                 platform
                     .core_rpc
@@ -1032,6 +1037,7 @@ mod tests {
                 };
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(config.clone())
+                    .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
                     .build_with_mock_rpc();
                 platform
                     .core_rpc
@@ -1376,6 +1382,7 @@ mod tests {
                 };
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(config.clone())
+                    .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
                     .build_with_mock_rpc();
                 platform
                     .core_rpc

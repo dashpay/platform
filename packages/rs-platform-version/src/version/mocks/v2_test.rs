@@ -168,7 +168,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 calculate_total_credits_balance: 0,
             },
             document: DriveDocumentMethodVersions {
-                query: DriveDocumentQueryMethodVersions { query_documents: 0, query_documents_with_flags: 0 },
+                query: DriveDocumentQueryMethodVersions { query_documents: 0, query_contested_documents: 0, query_contested_documents_vote_state: 0, query_documents_with_flags: 0 },
                 delete: DriveDocumentDeleteMethodVersions {
                     add_estimation_costs_for_remove_document_to_primary_storage: 0,
                     delete_document_for_contract: 0,
@@ -243,6 +243,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     remove_contested_resource_vote_poll_votes_operations: 0,
                     remove_contested_resource_vote_poll_documents_operations: 0,
                     remove_contested_resource_vote_poll_contenders_operations: 0,
+                    remove_contested_resource_top_level_index_operations: 0,
+                    remove_contested_resource_info_operations: 0,
                 },
                 setup: DriveVoteSetupMethodVersions {
                     add_initial_vote_tree_main_structure_operations: 0,
@@ -1021,7 +1023,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 unique_index_limit: 10,
             },
             voting: VotingValidationVersions {
-                allow_other_contenders_time_ms: 604_800_000, // 1 week in ms
+                allow_other_contenders_time_mainnet_ms: 604_800_000, // 1 week in ms
+                allow_other_contenders_time_testing_ms: 2_700_000, //45 minutes
                 votes_allowed_per_masternode: 5,
             },
         },
@@ -1242,7 +1245,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             },
         },
         voting_versions: VotingVersions {
-            default_vote_poll_time_duration_ms: 1_209_600_000, //2 weeks
+            default_vote_poll_time_duration_mainnet_ms: 1_209_600_000, //2 weeks
+            default_vote_poll_time_duration_test_network_ms: 5_400_000, //90 minutes
             contested_document_vote_poll_stored_info_version: 0,
         },
         asset_lock_versions: AssetLockVersions {

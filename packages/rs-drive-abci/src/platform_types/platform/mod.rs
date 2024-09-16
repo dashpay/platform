@@ -18,6 +18,7 @@ use dashcore_rpc::dashcore::BlockHash;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use dpp::version::ProtocolVersion;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use serde_json::json;
 
@@ -116,7 +117,7 @@ impl Platform<DefaultCoreRPC> {
                 "Could not setup Dash Core RPC client",
             ))
         })?;
-        Self::open_with_client(path, Some(config), core_rpc)
+        Self::open_with_client(path, Some(config), core_rpc, None)
     }
 }
 
@@ -126,6 +127,7 @@ impl Platform<MockCoreRPCLike> {
     pub fn open<P: AsRef<Path>>(
         path: P,
         config: Option<PlatformConfig>,
+        initial_protocol_version: Option<ProtocolVersion>,
     ) -> Result<Platform<MockCoreRPCLike>, Error> {
         let mut core_rpc_mock = MockCoreRPCLike::new();
 
@@ -141,7 +143,7 @@ impl Platform<MockCoreRPCLike> {
                 "tx": [],
             }))
         });
-        Self::open_with_client(path, config, core_rpc_mock)
+        Self::open_with_client(path, config, core_rpc_mock, initial_protocol_version)
     }
 
     /// Fetch and reload the state from the backing store
@@ -171,6 +173,7 @@ impl<C> Platform<C> {
         path: P,
         config: Option<PlatformConfig>,
         core_rpc: C,
+        initial_protocol_version: Option<ProtocolVersion>,
     ) -> Result<Platform<C>, Error>
     where
         C: CoreRPCLike,
@@ -203,8 +206,8 @@ impl<C> Platform<C> {
             drive,
             core_rpc,
             config,
-            INITIAL_PROTOCOL_VERSION,
-            INITIAL_PROTOCOL_VERSION,
+            initial_protocol_version.unwrap_or(INITIAL_PROTOCOL_VERSION),
+            initial_protocol_version.unwrap_or(INITIAL_PROTOCOL_VERSION),
         )
     }
 

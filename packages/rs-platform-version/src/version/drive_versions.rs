@@ -321,6 +321,8 @@ pub struct DriveVoteCleanupMethodVersions {
     pub remove_contested_resource_vote_poll_votes_operations: FeatureVersion,
     pub remove_contested_resource_vote_poll_documents_operations: FeatureVersion,
     pub remove_contested_resource_vote_poll_contenders_operations: FeatureVersion,
+    pub remove_contested_resource_top_level_index_operations: FeatureVersion,
+    pub remove_contested_resource_info_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -350,6 +352,8 @@ pub struct DriveDocumentMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
     pub query_documents: FeatureVersion,
+    pub query_contested_documents: FeatureVersion,
+    pub query_contested_documents_vote_state: FeatureVersion,
     pub query_documents_with_flags: FeatureVersion,
 }
 

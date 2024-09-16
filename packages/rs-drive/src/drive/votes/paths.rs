@@ -88,6 +88,20 @@ pub trait VotePollPaths {
     /// The contenders path as a vec
     fn contenders_path(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error>;
 
+    /// the last index path as a path vec and a key
+    fn last_index_path(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Vec<Vec<u8>>, Option<Vec<u8>>), Error> {
+        let mut contenders_path = self.contenders_path(platform_version)?;
+        if contenders_path.is_empty() {
+            Ok((vec![], None))
+        } else {
+            let last_index = contenders_path.remove(contenders_path.len() - 1);
+            Ok((contenders_path, Some(last_index)))
+        }
+    }
+
     /// The path that would store the contender information for a single contender
     fn contender_path(
         &self,

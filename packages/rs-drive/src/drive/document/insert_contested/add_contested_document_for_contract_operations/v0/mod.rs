@@ -4,6 +4,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::object_size_info::DocumentAndContractInfo;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
 use dpp::voting::vote_polls::VotePoll;
@@ -50,12 +51,22 @@ impl Drive {
             platform_version,
         )?;
 
-        let end_date = block_info.time_ms.saturating_add(
-            platform_version
-                .dpp
-                .voting_versions
-                .default_vote_poll_time_duration_ms,
-        );
+        let poll_time = match self.config.network {
+            Network::Dash => {
+                platform_version
+                    .dpp
+                    .voting_versions
+                    .default_vote_poll_time_duration_mainnet_ms
+            }
+            _ => {
+                platform_version
+                    .dpp
+                    .voting_versions
+                    .default_vote_poll_time_duration_test_network_ms
+            }
+        };
+
+        let end_date = block_info.time_ms.saturating_add(poll_time);
 
         let contest_already_existed = self.add_contested_indices_for_contract_operations(
             &document_and_contract_info,

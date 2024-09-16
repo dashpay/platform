@@ -43,7 +43,6 @@ use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
-use dpp::check_validation_result_with_data;
 use drive::query::proposer_block_count_query::ProposerQueryType;
 
 /// Parse and verify the received proof and retrieve the requested object, if any.
@@ -677,17 +676,10 @@ impl FromProof<platform::GetIdentitiesBalancesRequest> for IdentityBalances {
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let identities_ids = match request.version.ok_or(Error::EmptyVersion)? {
-            get_identities_balances_request::Version::V0(v0) => v0.identities_ids,
-        };
-
-        let Some(identities_ids) = identities_ids else {
-            return Err(Error::RequestError {
-                error: "expected identity ids".to_string(),
-            });
+            get_identities_balances_request::Version::V0(v0) => v0.ids,
         };
 
         let identity_ids = identities_ids
-            .identities_ids
             .into_iter()
             .map(|identity_bytes| {
                 Identifier::from_bytes(&identity_bytes)
@@ -1456,6 +1448,7 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
             .collect();
 
         let response = Contenders {
+            winner: contested_resource_vote_state.winner,
             contenders,
             abstain_vote_tally: contested_resource_vote_state.abstaining_vote_tally,
             lock_vote_tally: contested_resource_vote_state.locked_vote_tally,
