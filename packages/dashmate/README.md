@@ -283,7 +283,7 @@ $ dashmate core cli "getblockcount"
 The `doctor` command analyzes the node configuration and state to provide a list of potential problems and solutions.
 
 ```
-Dashmate node diagnostic. Bring your node to a doctor
+Dashmate node diagnostic. Bring your node to the doctor
 
 USAGE
   $ dashmate doctor [--config <value>] [-v] [-s <value>]
@@ -294,7 +294,7 @@ FLAGS
       --config=<value>   configuration name to use
 
 DESCRIPTION
-  Dashmate node diagnostic. Bring your node to a doctor
+  Dashmate node diagnostic. Bring your node to the doctor
 
 COMMANDS
   doctor report  Dashmate node diagnostic report
