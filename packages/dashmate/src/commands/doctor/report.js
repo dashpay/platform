@@ -9,7 +9,7 @@ import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 export default class ReportCommand extends ConfigBaseCommand {
   static description = `Dashmate node diagnostic report
 
-The command collect diagnostic information and create an obfuscated archive for further investigation`;
+The command collects diagnostic information and creates an obfuscated archive for further investigation`;
 
   static flags = {
     ...ConfigBaseCommand.flags,
