@@ -3,9 +3,9 @@
 x-default-logging: &default-logging
   driver: local
   options:
-    max-size: 500m
-    max-file: 5
-    compress: true
+    max-size: "500m"
+    max-file: "5"
+    compress: "true"
 
 services:
   core_insight:
