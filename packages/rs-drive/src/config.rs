@@ -1,9 +1,11 @@
 //! Drive Configuration File
 //!
 
+use dpp::dashcore::Network;
 use dpp::fee::epoch::DEFAULT_EPOCHS_PER_ERA;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 /// Boolean if GroveDB batching consistency verification is enabled by default
 pub const DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED: bool = false;
@@ -112,6 +114,31 @@ pub struct DriveConfig {
         serde(default, deserialize_with = "from_str_to_bool")
     )]
     pub grovedb_visualizer_enabled: bool,
+
+    /// The network type
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default = "DriveConfig::default_network",
+            deserialize_with = "from_str_to_network_with_aliases"
+        )
+    )]
+    pub network: Network,
+}
+
+#[cfg(feature = "serde")]
+fn from_str_to_network_with_aliases<'de, D>(deserializer: D) -> Result<Network, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let network_name = String::deserialize(deserializer)?;
+
+    match network_name.as_str() {
+        "mainnet" => Ok(Network::Dash),
+        "local" => Ok(Network::Regtest),
+        _ => Network::from_str(network_name.as_str())
+            .map_err(|e| serde::de::Error::custom(format!("can't parse network name: {e}"))),
+    }
 }
 
 // TODO: some weird envy behavior requries this to exist
@@ -197,6 +224,21 @@ impl Default for DriveConfig {
             grovedb_visualizer_address: default_grovedb_visualizer_address(),
             #[cfg(feature = "grovedbg")]
             grovedb_visualizer_enabled: false,
+            network: Network::Dash,
+        }
+    }
+}
+
+impl DriveConfig {
+    fn default_network() -> Network {
+        Network::Dash
+    }
+
+    /// The default testnet configuration
+    pub fn default_testnet() -> Self {
+        Self {
+            network: Network::Testnet,
+            ..Default::default()
         }
     }
 }

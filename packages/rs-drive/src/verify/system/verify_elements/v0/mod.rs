@@ -29,7 +29,7 @@ impl Drive {
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
     #[inline(always)]
-    pub(crate) fn verify_elements_v0(
+    pub(super) fn verify_elements_v0(
         proof: &[u8],
         path: Vec<Vec<u8>>,
         keys: Vec<Vec<u8>>,

@@ -149,11 +149,12 @@ mod test {
     use crate::data_contract::document_type::DocumentType;
 
     use platform_value::Identifier;
-    use platform_version::version::LATEST_PLATFORM_VERSION;
+    use platform_version::version::PlatformVersion;
     use serde_json::json;
 
     #[test]
     fn test_extract_indices() {
+        let platform_version = PlatformVersion::latest();
         let input = json!({
             "type": "object",
             "indices": [
@@ -215,7 +216,7 @@ mod test {
             false,
             false,
             &mut vec![],
-            LATEST_PLATFORM_VERSION,
+            platform_version,
         )
         .unwrap();
 

@@ -8,18 +8,7 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
 };
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
-use dapi_grpc::platform::v0::{
-    get_contested_resource_identity_votes_request, get_data_contract_history_request,
-    get_data_contract_request, get_data_contracts_request, get_epochs_info_request,
-    get_identities_contract_keys_request, get_identity_balance_and_revision_request,
-    get_identity_balance_request, get_identity_by_public_key_hash_request,
-    get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request,
-    get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request,
-    GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
-    GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata,
-};
+use dapi_grpc::platform::v0::{get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
@@ -53,6 +42,8 @@ use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
+use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
+use drive::query::proposer_block_count_query::ProposerQueryType;
 
 /// Parse and verify the received proof and retrieve the requested object, if any.
 ///
@@ -318,7 +309,7 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
                     v0.public_key_hash
                         .try_into()
                         .map_err(|_| Error::DriveError {
-                            error: "Ivalid public key hash length".to_string(),
+                            error: "Invalid public key hash length".to_string(),
                         })?;
                 public_key_hash
             }
@@ -660,6 +651,57 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((maybe_identity, mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetIdentitiesBalancesRequest> for IdentityBalances {
+    type Request = platform::GetIdentitiesBalancesRequest;
+    type Response = platform::GetIdentitiesBalancesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        IdentityBalances: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let identities_ids = match request.version.ok_or(Error::EmptyVersion)? {
+            get_identities_balances_request::Version::V0(v0) => v0.ids,
+        };
+
+        let identity_ids = identities_ids
+            .into_iter()
+            .map(|identity_bytes| {
+                Identifier::from_bytes(&identity_bytes)
+                    .map(|identifier| identifier.into_buffer())
+                    .map_err(|e| Error::RequestError {
+                        error: format!("identities must be all 32 bytes {}", e),
+                    })
+            })
+            .collect::<Result<Vec<[u8; 32]>, Error>>()?;
+        let (root_hash, balances) = Drive::verify_identity_balances_for_identity_ids(
+            &proof.grovedb_proof,
+            false,
+            &identity_ids,
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((Some(balances), mtd.clone(), proof.clone()))
     }
 }
 
@@ -1406,6 +1448,7 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
             .collect();
 
         let response = Contenders {
+            winner: contested_resource_vote_state.winner,
             contenders,
             abstain_vote_tally: contested_resource_vote_state.abstaining_vote_tally,
             lock_vote_tally: contested_resource_vote_state.locked_vote_tally,
@@ -1686,6 +1729,118 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
 
         Ok((
             Some(TotalCreditsInPlatform(credits)),
+            mtd.clone(),
+            proof.clone(),
+        ))
+    }
+}
+
+impl FromProof<platform::GetEvonodesProposedEpochBlocksByIdsRequest> for ProposerBlockCounts {
+    type Request = platform::GetEvonodesProposedEpochBlocksByIdsRequest;
+    type Response = platform::GetEvonodesProposedEpochBlocksResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (ids, epoch) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_evonodes_proposed_epoch_blocks_by_ids_request::Version::V0(v0) => {
+                (v0.ids, v0.epoch)
+            }
+        };
+
+        let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
+            &proof.grovedb_proof,
+            epoch
+                .map(|epoch_index| epoch_index as u16)
+                .unwrap_or_else(|| mtd.epoch as u16),
+            ProposerQueryType::ByIds(ids),
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((
+            Some(ProposerBlockCounts(proposer_block_counts)),
+            mtd.clone(),
+            proof.clone(),
+        ))
+    }
+}
+
+impl FromProof<platform::GetEvonodesProposedEpochBlocksByRangeRequest> for ProposerBlockCounts {
+    type Request = platform::GetEvonodesProposedEpochBlocksByRangeRequest;
+    type Response = platform::GetEvonodesProposedEpochBlocksResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (epoch, limit, start) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_evonodes_proposed_epoch_blocks_by_range_request::Version::V0(v0) => {
+                (v0.epoch, v0.limit, v0.start)
+            }
+        };
+
+        let formatted_start = match start {
+            None => None,
+            Some(Start::StartAfter(after)) => {
+                let id: [u8; 32] = after.try_into().map_err(|_| Error::DriveError {
+                    error: "Invalid public key hash length".to_string(),
+                })?;
+                Some((id, false))
+            }
+            Some(Start::StartAt(at)) => {
+                let id: [u8; 32] = at.try_into().map_err(|_| Error::DriveError {
+                    error: "Invalid public key hash length".to_string(),
+                })?;
+                Some((id, true))
+            }
+        };
+
+        let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
+            &proof.grovedb_proof,
+            epoch
+                .map(|epoch_index| epoch_index as u16)
+                .unwrap_or_else(|| mtd.epoch as u16),
+            ProposerQueryType::ByRange(limit.map(|l| l as u16), formatted_start),
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((
+            Some(ProposerBlockCounts(proposer_block_counts)),
             mtd.clone(),
             proof.clone(),
         ))

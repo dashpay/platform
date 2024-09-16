@@ -16,6 +16,7 @@ pub struct DriveAbciQueryVersions {
     pub document_query: FeatureVersionBounds,
     pub prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions,
     pub identity_based_queries: DriveAbciQueryIdentityVersions,
+    pub validator_queries: DriveAbciQueryValidatorVersions,
     pub data_contract_based_queries: DriveAbciQueryDataContractVersions,
     pub voting_based_queries: DriveAbciQueryVotingVersions,
     pub system: DriveAbciQuerySystemVersions,
@@ -34,8 +35,15 @@ pub struct DriveAbciQueryIdentityVersions {
     pub identity_nonce: FeatureVersionBounds,
     pub identity_contract_nonce: FeatureVersionBounds,
     pub balance: FeatureVersionBounds,
+    pub identities_balances: FeatureVersionBounds,
     pub balance_and_revision: FeatureVersionBounds,
     pub identity_by_public_key_hash: FeatureVersionBounds,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryValidatorVersions {
+    pub proposed_block_counts_by_evonode_ids: FeatureVersionBounds,
+    pub proposed_block_counts_by_range: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

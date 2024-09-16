@@ -27,6 +27,8 @@ use dpp::{
 use drive::grovedb::Element;
 use std::collections::{BTreeMap, BTreeSet};
 
+use dpp::block::block_info::BlockInfo;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::grovedb::query_result_type::Path;
 #[cfg(feature = "mocks")]
 use {
@@ -52,6 +54,22 @@ use {
 /// * `O`: The type of the objects in the map.
 pub type RetrievedObjects<K, O> = BTreeMap<K, Option<O>>;
 
+/// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
+///
+/// This type is typically returned by functions that operate on multiple objects, such as fetching multiple objects
+/// from a server using [`FetchMany`](dash_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
+/// using [`FromProof`](crate::FromProof).
+///
+/// Each key in the `RetrievedObjects` corresponds to an object of generic type `O`.
+/// If a value is found for a given key, the value is `value`.
+/// If no value is found for a given key, the value is `0`.
+///
+/// # Generic Type Parameters
+///
+/// * `K`: The type of the keys in the map.
+/// * `I`: The type of the integer in the map.
+pub type RetrievedIntegerValue<K, I> = BTreeMap<K, I>;
+
 /// History of a data contract.
 ///
 /// Contains a map of data contract revisions to data contracts.
@@ -73,6 +91,8 @@ pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
     platform_serialize(unversioned)
 )]
 pub struct Contenders {
+    /// The winner if the contest is finished
+    pub winner: Option<(ContestedDocumentVotePollWinnerInfo, BlockInfo)>,
     /// Contenders indexed by their identity IDs.
     pub contenders: BTreeMap<Identifier, ContenderWithSerializedDocument>,
     /// Tally of abstain votes.
@@ -107,6 +127,7 @@ impl FromIterator<(Identifier, Option<ContenderWithSerializedDocument>)> for Con
         iter: T,
     ) -> Self {
         Self {
+            winner: None,
             contenders: BTreeMap::from_iter(
                 iter.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))),
             ),
@@ -407,6 +428,9 @@ pub type IdentityPublicKeys = RetrievedObjects<KeyID, IdentityPublicKey>;
 /// Collection of documents.
 pub type Documents = RetrievedObjects<Identifier, Document>;
 
+/// Collection of balances.
+pub type IdentityBalances = RetrievedObjects<Identifier, Credits>;
+
 /// Collection of epoch information
 pub type ExtendedEpochInfos = RetrievedObjects<EpochIndex, ExtendedEpochInfo>;
 
@@ -467,3 +491,56 @@ impl PlatformVersionedDecode for MasternodeProtocolVote {
 /// Information about protocol version voted by each node, returned by [ProtocolVersion::fetch_many()].
 /// Indexed by [ProTxHash] of nodes.
 pub type MasternodeProtocolVotes = RetrievedObjects<ProTxHash, MasternodeProtocolVote>;
+
+/// Proposer block counts
+///
+/// Mapping between proposers and the blocks they might have proposed
+#[derive(Debug, Default)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProposerBlockCounts(pub RetrievedIntegerValue<Identifier, u64>);
+
+impl FromIterator<(ProTxHash, Option<ProposerBlockCountByRange>)> for ProposerBlockCounts {
+    fn from_iter<I: IntoIterator<Item = (ProTxHash, Option<ProposerBlockCountByRange>)>>(
+        iter: I,
+    ) -> Self {
+        let map = iter
+            .into_iter()
+            .map(|(pro_tx_hash, proposer_block_count_by_range)| {
+                let block_count = proposer_block_count_by_range
+                    .map_or(0, |proposer_block_count| proposer_block_count.0);
+                let identifier = Identifier::from(pro_tx_hash.to_byte_array()); // Adjust this conversion logic as needed
+                (identifier, block_count)
+            })
+            .collect::<BTreeMap<Identifier, u64>>();
+
+        ProposerBlockCounts(map)
+    }
+}
+
+impl FromIterator<(ProTxHash, Option<ProposerBlockCountById>)> for ProposerBlockCounts {
+    fn from_iter<I: IntoIterator<Item = (ProTxHash, Option<ProposerBlockCountById>)>>(
+        iter: I,
+    ) -> Self {
+        let map = iter
+            .into_iter()
+            .map(|(pro_tx_hash, proposer_block_count_by_range)| {
+                let block_count = proposer_block_count_by_range
+                    .map_or(0, |proposer_block_count| proposer_block_count.0);
+                let identifier = Identifier::from(pro_tx_hash.to_byte_array()); // Adjust this conversion logic as needed
+                (identifier, block_count)
+            })
+            .collect::<BTreeMap<Identifier, u64>>();
+
+        ProposerBlockCounts(map)
+    }
+}
+
+/// A block count struct
+#[derive(Debug)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProposerBlockCountByRange(pub u64);
+
+/// A block count struct
+#[derive(Debug)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProposerBlockCountById(pub u64);
