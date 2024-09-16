@@ -47,7 +47,7 @@ it meets all network requirements.`,
           severity: SEVERITY.HIGH,
         },
         REMOVED: {
-          description: 'The masternode has been removed from the network masternode list.',
+          description: 'The masternode has been removed from the network\'s masternode list.',
           solution: chalk`Re-register the masternode with a new ProRegTx transaction.`,
           severity: SEVERITY.HIGH,
         },
@@ -59,7 +59,7 @@ using {bold.cyanBright dashmate config set core.masternode.operatorKey <operator
         },
         PROTX_IP_CHANGED: {
           description: 'The IP address registered in the ProTx has changed.',
-          solution: chalk`Update your masternode's configuration with the new IP address.`,
+          solution: chalk`Update your masternode\'s configuration with the new IP address.`,
           severity: SEVERITY.HIGH,
         },
         ERROR: {
