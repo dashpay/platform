@@ -113,9 +113,9 @@ for required network services and avoid Proof-of-Service bans`,
 
       if (availableDiskSpace < MINIMUM_DISK_SPACE) {
         const problem = new Problem(
-          `${availableDiskSpace.toFixed(2)}GB available disk space detected. At least ${MINIMUM_DISK_SPACE}GB is required`,
-          `Consider to increase disk space to make sure the node can provide required services
-to the network in time and will not get PoSe banned`,
+          `${availableDiskSpace.toFixed(2)}GB of available disk space detected. At least ${MINIMUM_DISK_SPACE}GB is required`,
+          `Consider increasing disk space to make sure the node can provide timely responses
+for required network services and avoid Proof-of-Service bans`,
           MINIMUM_DISK_SPACE - availableDiskSpace < 5 ? SEVERITY.HIGH : SEVERITY.MEDIUM,
         );
 
