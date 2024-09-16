@@ -50,7 +50,7 @@ to the network in time and will not get PoSe banned`,
       }
     } else if (process.env.DEBUG) {
       // eslint-disable-next-line no-console
-      console.warn('Can\'t get CPU cores information');
+      console.warn('Can\'t get CPU core information');
     }
 
     // Memory
