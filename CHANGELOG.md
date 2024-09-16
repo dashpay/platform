@@ -1,3 +1,10 @@
+## [1.3.0-dev.4](https://github.com/dashpay/platform/compare/v1.3.0-dev.3...v1.3.0-dev.4) (2024-09-16)
+
+
+### Bug Fixes
+
+* require75p of active not total hpmns ([#2129](https://github.com/dashpay/platform/issues/2129))
+
 ## [1.3.0-dev.3](https://github.com/dashpay/platform/compare/v1.3.0-dev.2...v1.3.0-dev.3) (2024-09-16)
 
 
