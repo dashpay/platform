@@ -20,6 +20,7 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 
 use crate::config::PlatformConfig;
+use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::signature_verification_quorum_set::{
     SignatureVerificationQuorumSet, SignatureVerificationQuorumSetForSaving,
 };
@@ -453,6 +454,9 @@ pub trait PlatformStateV0Methods {
     fn hpmn_masternode_list_changes(&self, previous: &Self) -> MasternodeListChanges
     where
         Self: Sized;
+
+    /// The size of the hpmn list that are currently not banned
+    fn hpmn_active_list_len(&self) -> usize;
 }
 
 impl PlatformStateV0PrivateMethods for PlatformStateV0 {
@@ -563,6 +567,14 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     /// HPMN list len
     fn hpmn_list_len(&self) -> usize {
         self.hpmn_masternode_list.len()
+    }
+
+    /// HPMN active list len
+    fn hpmn_active_list_len(&self) -> usize {
+        self.hpmn_masternode_list
+            .values()
+            .filter(|masternode| masternode.state.pose_ban_height.is_none())
+            .count()
     }
 
     /// Get the current quorum

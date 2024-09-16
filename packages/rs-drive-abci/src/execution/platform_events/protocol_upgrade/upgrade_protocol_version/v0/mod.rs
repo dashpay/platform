@@ -7,6 +7,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use chrono::{TimeZone, Utc};
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::Network::Testnet;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
@@ -57,10 +58,16 @@ impl<C> Platform<C> {
             // Determine a new protocol version for the next epoch if enough proposers voted
             // otherwise keep the current one
 
-            let hpmn_list_len = last_committed_platform_state.hpmn_list_len() as u32;
+            let hpmn_active_list_len =
+                if self.config.network == Testnet && epoch_info.current_epoch_index() <= 1430 {
+                    // We had a bug on testnet that would use the entire hpmn list len, including banned nodes
+                    last_committed_platform_state.hpmn_list_len() as u32
+                } else {
+                    last_committed_platform_state.hpmn_active_list_len() as u32
+                };
 
             let next_epoch_protocol_version =
-                self.check_for_desired_protocol_upgrade(hpmn_list_len, platform_version)?;
+                self.check_for_desired_protocol_upgrade(hpmn_active_list_len, platform_version)?;
 
             if let Some(protocol_version) = next_epoch_protocol_version {
                 tracing::trace!(
