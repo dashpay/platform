@@ -59,7 +59,7 @@ The command collects diagnostic information and creates an obfuscated archive fo
             });
 
             if (!agreement) {
-              throw new Error('An archive creation is decline');
+              throw new Error('Archive creation was declined');
             }
           },
         },
