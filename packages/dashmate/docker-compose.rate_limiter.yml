@@ -1,5 +1,12 @@
 ---
 
+x-default-logging: &default-logging
+  driver: local
+  options:
+    max-size: 500m
+    max-file: 5
+    compress: true
+
 services:
   gateway:
     depends_on:
@@ -9,10 +16,11 @@ services:
       - gateway_rate_limiter
 
   gateway_rate_limiter:
+    image: ${PLATFORM_GATEWAY_RATE_LIMITER_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "Gateway rate limiter"
     restart: unless-stopped
-    image: ${PLATFORM_GATEWAY_RATE_LIMITER_DOCKER_IMAGE:?err}
+    logging: *default-logging
     command: /bin/ratelimit
     depends_on:
       - gateway_rate_limiter_redis
@@ -45,6 +53,7 @@ services:
     labels:
       org.dashmate.service.title: "Gateway rate limiter storage"
     restart: unless-stopped
+    logging: *default-logging
     image: redis:alpine
     expose:
       - 6379
