@@ -272,7 +272,6 @@ mod tests {
             let block_execution_context = BlockExecutionContextV0 {
                 block_state_info: block_info.clone().into(),
                 epoch_info,
-                hpmn_count: 0,
                 unsigned_withdrawal_transactions: Default::default(),
                 block_platform_state,
                 proposer_results: None,
