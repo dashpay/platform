@@ -161,7 +161,7 @@
         "description": "Wallet related commands"
       },
       "doctor": {
-        "description": "Dashmate node diagnostic and report"
+        "description": "Node diagnostics and reporting"
       }
     },
     "topicSeparator": " "
