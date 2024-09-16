@@ -68,7 +68,7 @@ The command collects diagnostic information and creates an obfuscated archive fo
           task: async () => collectSamplesTask(config),
         },
         {
-          title: 'Archive samples',
+          title: 'Creating archive',
           task: async (ctx, task) => {
             const archivePath = process.cwd();
 
