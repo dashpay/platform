@@ -1,3 +1,31 @@
+## [1.3.0-dev.2](https://github.com/dashpay/platform/compare/v1.3.0-dev.1...v1.3.0-dev.2) (2024-09-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** contests on testnet should take less time (#2115)
+* **platform:** contested username distribution (#2118)
+
+### Features
+
+* **platform:** contests on testnet should take less time ([#2115](https://github.com/dashpay/platform/issues/2115))
+
+
+### Bug Fixes
+
+* body-parser vulnerability ([#2119](https://github.com/dashpay/platform/issues/2119))
+* **platform:** contested username distribution ([#2118](https://github.com/dashpay/platform/issues/2118))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update platform images to `1-dev` ([#2120](https://github.com/dashpay/platform/issues/2120))
+
+
+### Styles
+
+* **dapi:** better api for identities balances ([#2122](https://github.com/dashpay/platform/issues/2122))
+
 ## [1.3.0-dev.1](https://github.com/dashpay/platform/compare/v1.2.0...v1.3.0-dev.1) (2024-09-12)
 
 
