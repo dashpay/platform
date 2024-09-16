@@ -411,7 +411,7 @@ static_resources:
                       address: gateway_rate_limiter
                       port_value: 8081
     {{?}}
-    {{? it.platform.gateway.metrics.enabled && it.platform.gateway.admin.enabled }}
+    {{? it.platform.gateway.metrics.enabled || it.platform.gateway.admin.enabled }}
     - name: admin
       connect_timeout: 0.25s
       type: STATIC
