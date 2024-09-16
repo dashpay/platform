@@ -362,10 +362,7 @@ message GetEvonodesProposedEpochBlocksByRangeRequest {
 
 message GetIdentitiesBalancesRequest {
   message GetIdentitiesBalancesRequestV0 {
-    message GetIdentitiesBalancesByKnownIdentityIds {
-      repeated bytes identities_ids = 1;
-    }
-    GetIdentitiesBalancesByKnownIdentityIds identities_ids = 1;
+    repeated bytes ids = 1;
     bool prove = 2;
   }
 
