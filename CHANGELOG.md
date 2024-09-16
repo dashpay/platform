@@ -1,3 +1,10 @@
+## [1.3.0-dev.3](https://github.com/dashpay/platform/compare/v1.3.0-dev.2...v1.3.0-dev.3) (2024-09-16)
+
+
+### Bug Fixes
+
+* **drive-abci:** require 75 percent of active, not total hpmns ([#2127](https://github.com/dashpay/platform/issues/2127))
+
 ## [1.3.0-dev.2](https://github.com/dashpay/platform/compare/v1.3.0-dev.1...v1.3.0-dev.2) (2024-09-16)
 
 
