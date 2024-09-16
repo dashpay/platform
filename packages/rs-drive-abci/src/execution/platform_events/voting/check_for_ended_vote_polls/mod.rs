@@ -1,6 +1,5 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;

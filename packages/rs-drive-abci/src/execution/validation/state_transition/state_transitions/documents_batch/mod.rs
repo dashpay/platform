@@ -304,6 +304,7 @@ mod tests {
         fn test_document_creation() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -389,6 +390,7 @@ mod tests {
         fn test_document_creation_should_fail_if_reusing_entropy() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -539,6 +541,7 @@ mod tests {
         fn test_document_creation_with_very_big_field() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -653,6 +656,7 @@ mod tests {
         fn test_document_creation_on_contested_unique_index() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -1111,6 +1115,7 @@ mod tests {
         fn test_document_creation_on_contested_unique_index_should_fail_if_reusing_entropy() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -1687,6 +1692,7 @@ mod tests {
         fn test_that_a_contested_document_can_not_be_added_to_after_a_week() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -1715,7 +1721,13 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 500_000_000, 900, 42, 0, false); //less than a week
+            let max_join_time = platform_version
+                .dpp
+                .validation
+                .voting
+                .allow_other_contenders_time_testing_ms;
+
+            fast_forward_to_block(&platform, max_join_time / 2, 900, 42, 0, false);
 
             let platform_state = platform.state.load();
 
@@ -1728,18 +1740,37 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 1_000_000_000, 900, 42, 0, false); //more than a week, less than 2 weeks
+            let time_now = platform_version
+                .dpp
+                .validation
+                .voting
+                .allow_other_contenders_time_testing_ms
+                + 100;
+
+            fast_forward_to_block(&platform, time_now, 900, 42, 0, false); //more than a week, less than 2 weeks
 
             let platform_state = platform.state.load();
 
             // We expect this to fail
+
+            let time_started = 0;
+
+            let extra_time_used = 3000; // add_contender_to_dpns_name_contest uses this extra time
+
+            let expected_error_message = format!(
+                "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is not joinable V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [], vote_poll_status: Started(BlockInfo {{ time_ms: {}, height: 0, core_height: 0, epoch: 0 }}), locked_count: 0 }}), it started {} and it is now {}, and you can only join for {}",
+                time_started + extra_time_used,
+                time_started + extra_time_used,
+                time_now + extra_time_used,
+                max_join_time
+            );
 
             let _contender_4 = add_contender_to_dpns_name_contest(
                 &mut platform,
                 &platform_state,
                 9,
                 "quantum",
-                Some("Document Contest for vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] } is not joinable V0(ContestedDocumentVotePollStoredInfoV0 { finalized_events: [], vote_poll_status: Started(BlockInfo { time_ms: 3000, height: 0, core_height: 0, epoch: 0 }), locked_count: 0 }), it started 3000 and it is now 1000003000, and you can only join for 604800000"), // this should fail, as we are over a week
+                Some(expected_error_message.as_str()), // this should fail, as we are over a week
                 platform_version,
             );
         }
@@ -1748,6 +1779,7 @@ mod tests {
         fn test_that_a_contest_can_not_be_joined_twice_by_the_same_identity() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -1847,6 +1879,7 @@ mod tests {
         fn test_that_a_contested_document_can_not_be_added_if_we_are_locked() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -1875,7 +1908,19 @@ mod tests {
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 200_000_000, 900, 42, 0, false); //less than a week
+            fast_forward_to_block(
+                &platform,
+                platform_version
+                    .dpp
+                    .validation
+                    .voting
+                    .allow_other_contenders_time_testing_ms
+                    / 2,
+                900,
+                42,
+                0,
+                false,
+            ); // a time when others can join
 
             let platform_state = platform.state.load();
 
@@ -1884,11 +1929,17 @@ mod tests {
                 &platform_state,
                 4,
                 "quantum",
-                None, // this should succeed, as we are under a week
+                None, // this should succeed, as we are under the `platform_version.dpp.validation.voting.allow_other_contenders_time_testing_ms`
                 platform_version,
             );
 
-            fast_forward_to_block(&platform, 2_000_000_000, 900, 42, 0, false); //more than two weeks
+            let time_after_distribution_limit = platform_version
+                .dpp
+                .voting_versions
+                .default_vote_poll_time_duration_test_network_ms
+                + 10_000; // add 10s (3 seconds is used by create_dpns_identity_name_contest)
+
+            fast_forward_to_block(&platform, time_after_distribution_limit, 900, 42, 0, false); // after distribution
 
             let platform_state = platform.state.load();
 
@@ -1899,7 +1950,7 @@ mod tests {
                     &platform_state,
                     &platform_state,
                     &BlockInfo {
-                        time_ms: 2_000_000_000,
+                        time_ms: time_after_distribution_limit,
                         height: 900,
                         core_height: 42,
                         epoch: Default::default(),
@@ -1920,12 +1971,17 @@ mod tests {
 
             // We expect this to fail
 
+            let expected_error_message = format!(
+                "Document Contest for vote_poll ContestedDocumentResourceVotePoll {{ contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }} is currently already locked V0(ContestedDocumentVotePollStoredInfoV0 {{ finalized_events: [ContestedDocumentVotePollStoredInfoVoteEventV0 {{ resource_vote_choices: [FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW), voters: [2oGomAQc47V9h3mkpyHUPbF74gT2AmoYKg1oSb94Rbwm:1, 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R:1, Cdf8V4KGHHd395x5xPJPPrzTKwmp5MqbuszSE2iMzzeP:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(FiLk5pGtspYtF65PKsQq3YFr1DEiXPHTZeKjusT6DuqN), voters: [] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: TowardsIdentity(Fv8S6kTbNrRqKC7PR7XcRUoPR59bxNhhggg5mRaNN6ow), voters: [4MK8GWEWX1PturUqjZJefdE4WGrUqz1UQZnbK17ENkeA:1, 5gRudU7b4n8LYkNvhZomv6FtMrP7gvaTvRrHKfaTS22K:1, AfzQBrdwzDuTVdXrMWqQyVvXRWqPMDVjA76hViuGLh6W:1, E75wdFZB22P1uW1wJBJGPgXZuZKLotK7YmbH5wUk5msH:1, G3ZfS2v39x6FuLGnnJ1RNQyy4zn4Wb64KiGAjqj39wUu:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Abstain, voters: [5Ur8tDxJnatfUd9gcVFDde7ptHydujZzJLNTxa6aMYYy:1, 93Gsg14oT9K4FLYmC7N26uS4g5b7JcM1GwGEDeJCCBPJ:1, 96eX4PTjbXRuGHuMzwXdptWFtHcboXbtevk51Jd73pP7:1, AE9xm2mbemDeMxPUzyt35Agq1axRxggVfV4DRLAZp7Qt:1, FbLyu5d7JxEsvSsujj7Wopg57Wrvz9HH3UULCusKpBnF:1, GsubMWb3LH1skUJrcxTmZ7wus1habJcbpb8su8yBVqFY:1, H9UrL7aWaxDmXhqeGMJy7LrGdT2wWb45mc7kQYsoqwuf:1, Hv88mzPZVKq2fnjoUqK56vjzkcmqRHpWE1ME4z1MXDrw:1] }}, FinalizedResourceVoteChoicesWithVoterInfo {{ resource_vote_choice: Lock, voters: [F1oA8iAoyJ8dgCAi2GSPqcNhp9xEuAqhP47yXBDw5QR:1, 2YSjsJUp74MJpm12rdn8wyPR5MY3c322pV8E8siw989u:1, 3fQrmN4PWhthUFnCFTaJqbT2PPGf7MytAyik4eY1DP8V:1, 7r7gnAiZunVLjtSd5ky4yvPpnWTFYbJuQAapg8kDCeNK:1, 86TUE89xNkBDcmshXRD198xjAvMmKecvHbwo6i83AmqA:1, 97iYr4cirPdG176kqa5nvJWT9tsnqxHmENfRnZUgM6SC:1, 99nKfYZL4spsTe9p9pPNhc1JWv9yq4CbPPMPm87a5sgn:1, BYAqFxCVwMKrw5YAQMCFQGiAF2v3YhKRm2EdGfgkYN9G:1, CGKeK3AfdZUxXF3qH9zxp5MR7Z4WvDVqMrU5wjMKqT5C:1, HRPPEX4mdoZAMkg6NLJUgDzN4pSTpiDXEAGcR5JBdiXX:1] }}], start_block: BlockInfo {{ time_ms: 3000, height: 0, core_height: 0, epoch: 0 }}, finalization_block: BlockInfo {{ time_ms: {}, height: 900, core_height: 42, epoch: 0 }}, winner: Locked }}], vote_poll_status: Locked, locked_count: 1 }}), unlocking is possible by paying 400000000000 credits",
+                time_after_distribution_limit
+            );
+
             let _contender_4 = add_contender_to_dpns_name_contest(
                 &mut platform,
                 &platform_state,
                 9,
                 "quantum",
-                Some("Document Contest for vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] } is currently already locked V0(ContestedDocumentVotePollStoredInfoV0 { finalized_events: [ContestedDocumentVotePollStoredInfoVoteEventV0 { resource_vote_choices: [FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW), voters: [2oGomAQc47V9h3mkpyHUPbF74gT2AmoYKg1oSb94Rbwm:1, 4iroeiNBeBYZetCt21kW7FGyczE8WqoqzZ48YAHwyV7R:1, Cdf8V4KGHHd395x5xPJPPrzTKwmp5MqbuszSE2iMzzeP:1] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(FiLk5pGtspYtF65PKsQq3YFr1DEiXPHTZeKjusT6DuqN), voters: [] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: TowardsIdentity(Fv8S6kTbNrRqKC7PR7XcRUoPR59bxNhhggg5mRaNN6ow), voters: [4MK8GWEWX1PturUqjZJefdE4WGrUqz1UQZnbK17ENkeA:1, 5gRudU7b4n8LYkNvhZomv6FtMrP7gvaTvRrHKfaTS22K:1, AfzQBrdwzDuTVdXrMWqQyVvXRWqPMDVjA76hViuGLh6W:1, E75wdFZB22P1uW1wJBJGPgXZuZKLotK7YmbH5wUk5msH:1, G3ZfS2v39x6FuLGnnJ1RNQyy4zn4Wb64KiGAjqj39wUu:1] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: Abstain, voters: [5Ur8tDxJnatfUd9gcVFDde7ptHydujZzJLNTxa6aMYYy:1, 93Gsg14oT9K4FLYmC7N26uS4g5b7JcM1GwGEDeJCCBPJ:1, 96eX4PTjbXRuGHuMzwXdptWFtHcboXbtevk51Jd73pP7:1, AE9xm2mbemDeMxPUzyt35Agq1axRxggVfV4DRLAZp7Qt:1, FbLyu5d7JxEsvSsujj7Wopg57Wrvz9HH3UULCusKpBnF:1, GsubMWb3LH1skUJrcxTmZ7wus1habJcbpb8su8yBVqFY:1, H9UrL7aWaxDmXhqeGMJy7LrGdT2wWb45mc7kQYsoqwuf:1, Hv88mzPZVKq2fnjoUqK56vjzkcmqRHpWE1ME4z1MXDrw:1] }, FinalizedResourceVoteChoicesWithVoterInfo { resource_vote_choice: Lock, voters: [F1oA8iAoyJ8dgCAi2GSPqcNhp9xEuAqhP47yXBDw5QR:1, 2YSjsJUp74MJpm12rdn8wyPR5MY3c322pV8E8siw989u:1, 3fQrmN4PWhthUFnCFTaJqbT2PPGf7MytAyik4eY1DP8V:1, 7r7gnAiZunVLjtSd5ky4yvPpnWTFYbJuQAapg8kDCeNK:1, 86TUE89xNkBDcmshXRD198xjAvMmKecvHbwo6i83AmqA:1, 97iYr4cirPdG176kqa5nvJWT9tsnqxHmENfRnZUgM6SC:1, 99nKfYZL4spsTe9p9pPNhc1JWv9yq4CbPPMPm87a5sgn:1, BYAqFxCVwMKrw5YAQMCFQGiAF2v3YhKRm2EdGfgkYN9G:1, CGKeK3AfdZUxXF3qH9zxp5MR7Z4WvDVqMrU5wjMKqT5C:1, HRPPEX4mdoZAMkg6NLJUgDzN4pSTpiDXEAGcR5JBdiXX:1] }], start_block: BlockInfo { time_ms: 3000, height: 0, core_height: 0, epoch: 0 }, finalization_block: BlockInfo { time_ms: 2000000000, height: 900, core_height: 42, epoch: 0 }, winner: Locked }], vote_poll_status: Locked, locked_count: 1 }), unlocking is possible by paying 400000000000 credits"), // this should fail, as it is locked
+                Some(expected_error_message.as_str()), // this should fail, as it is locked
                 platform_version,
             );
         }
@@ -1934,6 +1990,7 @@ mod tests {
         fn test_document_creation_on_restricted_document_type_that_only_allows_contract_owner_to_create(
         ) {
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
@@ -2123,6 +2180,7 @@ mod tests {
         fn test_document_replace_on_document_type_that_is_mutable() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -2281,6 +2339,7 @@ mod tests {
         ) {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -2615,6 +2674,7 @@ mod tests {
         fn test_document_replace_on_document_type_that_is_not_mutable() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -2957,6 +3017,7 @@ mod tests {
         fn test_document_replace_that_does_not_yet_exist() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -3048,6 +3109,7 @@ mod tests {
         fn test_double_document_replace() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -3265,6 +3327,7 @@ mod tests {
         fn test_double_document_replace_different_height_same_epoch() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -3527,6 +3590,7 @@ mod tests {
         fn test_double_document_replace_no_change_different_height_same_epoch() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -3785,6 +3849,7 @@ mod tests {
         fn test_double_document_replace_different_height_different_epoch() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -4051,6 +4116,7 @@ mod tests {
         fn test_document_delete_on_document_type_that_is_mutable_and_can_be_deleted() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -4554,6 +4620,7 @@ mod tests {
         fn test_document_delete_on_document_type_that_is_not_mutable_and_can_not_be_deleted() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -4701,6 +4768,7 @@ mod tests {
         fn test_document_delete_that_does_not_yet_exist() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -7741,6 +7809,7 @@ mod tests {
         fn test_dpns_contract_references_with_no_contested_unique_index() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -8189,6 +8258,7 @@ mod tests {
         fn test_dpns_contract_references_with_no_contested_unique_index_null_searchable_true() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 

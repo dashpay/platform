@@ -737,7 +737,7 @@ impl PlatformConfig {
                 quorum_rotation: true,
             },
             block_spacing_ms: 5000,
-            drive: Default::default(),
+            drive: DriveConfig::default_testnet(),
             abci: Default::default(),
             core: Default::default(),
             execution: Default::default(),

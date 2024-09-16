@@ -1,6 +1,5 @@
 use crate::drive::votes::paths::VotePollPaths;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
-use crate::drive::votes::ResourceVoteChoiceToKeyTrait;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;

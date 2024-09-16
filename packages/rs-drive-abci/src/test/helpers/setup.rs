@@ -56,6 +56,12 @@ impl TestPlatformBuilder {
         self
     }
 
+    /// Add initial protocol version as latest
+    pub fn with_latest_protocol_version(mut self) -> Self {
+        self.initial_protocol_version = Some(PlatformVersion::latest().protocol_version);
+        self
+    }
+
     /// Create a new temp platform with a mock core rpc
     pub fn build_with_mock_rpc(self) -> TempPlatform<MockCoreRPCLike> {
         let use_initial_protocol_version =
