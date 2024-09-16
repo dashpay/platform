@@ -62,8 +62,8 @@ to the network in time and will not get PoSe banned`,
       if (totalMemoryGb < MINIMUM_RAM) {
         const problem = new Problem(
           `${totalMemoryGb.toFixed(2)}GB RAM detected. At least ${MINIMUM_RAM}GB is required`,
-          `Consider to upgrade RAM to make sure the node can provide required services
-to the network in time and will not get PoSe banned`,
+          `Consider upgrading RAM to make sure the node can provide timely responses
+for required network services and avoid Proof-of-Service bans`,
           SEVERITY.MEDIUM,
         );
 
