@@ -324,7 +324,7 @@ FLAGS
 DESCRIPTION
   Dashmate node diagnostic report
 
-  The command collect diagnostic information and create an obfuscated archive for further investigation
+  The command collects diagnostic information and creates an obfuscated archive for further investigation
 ```
 
 ### Reset node data
