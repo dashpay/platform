@@ -8,7 +8,7 @@ import Samples from '../../doctor/Samples.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 
 export default class DoctorCommand extends ConfigBaseCommand {
-  static description = 'Dashmate node diagnostic. Bring your node to a doctor';
+  static description = 'Dashmate node diagnostics. Bring your node to the doctor';
 
   static flags = {
     ...ConfigBaseCommand.flags,
