@@ -98,8 +98,8 @@ for required network services and avoid Proof-of-Service bans`,
       if (swapTotalGb < 2) {
         const problem = new Problem(
           `Swap space is ${swapTotalGb.toFixed(2)}GB. 2GB is recommended`,
-          `Consider to enable SWAP to make sure the node can provide required services
-to the network in time and will not get PoSe banned`,
+          `Consider enabling SWAP to make sure the node can provide timely responses
+for required network services and avoid Proof-of-Service bans`,
           SEVERITY.LOW,
         );
 
