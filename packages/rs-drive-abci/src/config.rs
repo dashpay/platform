@@ -7,7 +7,7 @@ use dpp::dashcore::Network;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use drive::config::DriveConfig;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -129,15 +129,11 @@ pub struct ExecutionConfig {
 /// ``
 ///
 /// [`verify_sum_trees`]: PlatformConfig::verify_sum_trees
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 // NOTE: in renames, we use lower_snake_case, because uppercase does not work; see
 // https://github.com/softprops/envy/issues/61 and https://github.com/softprops/envy/pull/69
 pub struct PlatformConfig {
     /// The network type
-    #[serde(
-        default = "PlatformConfig::default_network",
-        deserialize_with = "from_str_to_network_with_aliases"
-    )]
     pub network: Network,
     /// Drive configuration
     #[serde(flatten)]
@@ -185,7 +181,6 @@ pub struct PlatformConfig {
     pub block_spacing_ms: u64,
 
     /// Initial protocol version
-    #[serde(default = "PlatformConfig::default_initial_protocol_version")]
     pub initial_protocol_version: ProtocolVersion,
 
     /// Path to data storage
@@ -195,7 +190,6 @@ pub struct PlatformConfig {
     /// Used mainly for debuggig.
     ///
     /// If not set, rejected and invalid items will not be stored.
-    #[serde(default)]
     pub rejections_path: Option<PathBuf>,
 
     #[cfg(feature = "testing-config")]
@@ -208,12 +202,90 @@ pub struct PlatformConfig {
 
     // TODO: Use from_str_to_socket_address
     /// Tokio console address to connect to
-    #[serde(default = "PlatformConfig::default_tokio_console_address")]
     pub tokio_console_address: String,
 
     /// Number of seconds to store task information if there is no clients connected
+    pub tokio_console_retention_secs: u64,
+}
+
+// Define an intermediate struct that mirrors PlatformConfig
+#[derive(Deserialize)]
+struct PlatformConfigIntermediate {
+    /// The network type
+    #[serde(
+        default = "PlatformConfig::default_network",
+        deserialize_with = "from_str_to_network_with_aliases"
+    )]
+    pub network: Network,
+    /// Drive configuration
+    #[serde(flatten)]
+    pub drive: DriveConfig,
+    // Include all other fields
+    #[serde(flatten)]
+    pub core: CoreConfig,
+    #[serde(flatten)]
+    pub abci: AbciConfig,
+    pub prometheus_bind_address: Option<String>,
+    pub grpc_bind_address: String,
+    #[serde(flatten)]
+    pub execution: ExecutionConfig,
+    #[serde(flatten)]
+    pub validator_set: ValidatorSetConfig,
+    #[serde(flatten)]
+    pub chain_lock: ChainLockConfig,
+    #[serde(flatten)]
+    pub instant_lock: InstantLockConfig,
+    pub block_spacing_ms: u64,
+    #[serde(default = "PlatformConfig::default_initial_protocol_version")]
+    pub initial_protocol_version: ProtocolVersion,
+    pub db_path: PathBuf,
+    #[serde(default)]
+    pub rejections_path: Option<PathBuf>,
+    #[cfg(feature = "testing-config")]
+    #[serde(skip)]
+    pub testing_configs: PlatformTestConfig,
+    pub tokio_console_enabled: bool,
+    #[serde(default = "PlatformConfig::default_tokio_console_address")]
+    pub tokio_console_address: String,
     #[serde(default = "PlatformConfig::default_tokio_console_retention_secs")]
     pub tokio_console_retention_secs: u64,
+}
+
+impl<'de> Deserialize<'de> for PlatformConfig {
+    fn deserialize<D>(deserializer: D) -> Result<PlatformConfig, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // First, deserialize into an intermediate struct
+        let mut config = PlatformConfigIntermediate::deserialize(deserializer)?;
+
+        // Set drive.network = network
+        config.drive.network = config.network;
+
+        // Convert the intermediate struct into your actual PlatformConfig
+        Ok(PlatformConfig {
+            network: config.network,
+            drive: config.drive,
+            // Copy other fields
+            core: config.core,
+            abci: config.abci,
+            prometheus_bind_address: config.prometheus_bind_address,
+            grpc_bind_address: config.grpc_bind_address,
+            execution: config.execution,
+            validator_set: config.validator_set,
+            chain_lock: config.chain_lock,
+            instant_lock: config.instant_lock,
+            block_spacing_ms: config.block_spacing_ms,
+            initial_protocol_version: config.initial_protocol_version,
+            db_path: config.db_path,
+            rejections_path: config.rejections_path,
+            #[cfg(feature = "testing-config")]
+            testing_configs: config.testing_configs,
+            tokio_console_enabled: config.tokio_console_enabled,
+            tokio_console_address: config.tokio_console_address,
+            tokio_console_retention_secs: config.tokio_console_retention_secs,
+        })
+    }
 }
 
 fn from_str_to_network_with_aliases<'de, D>(deserializer: D) -> Result<Network, D::Error>
@@ -846,6 +918,7 @@ mod tests {
     use super::FromEnv;
     use crate::logging::LogDestination;
     use dashcore_rpc::dashcore_rpc_json::QuorumType;
+    use dpp::dashcore::Network;
     use std::env;
 
     #[test]
@@ -876,5 +949,21 @@ mod tests {
         for id in vectors {
             matches!(config.abci.log[id.0].destination, LogDestination::Bytes);
         }
+    }
+
+    #[test]
+    fn test_config_from_testnet_propogates_network() {
+        // ABCI log configs are parsed manually, so they deserve separate handling
+        // Note that STDOUT is also defined in .env.example, but env var should overwrite it.
+
+        let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.testnet");
+
+        dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
+
+        let config = super::PlatformConfig::from_env().expect("expected config from env");
+        assert!(config.execution.verify_sum_trees);
+        assert_eq!(config.validator_set.quorum_type, QuorumType::Llmq25_67);
+        assert_eq!(config.network, config.drive.network);
+        assert_eq!(config.network, Network::Testnet);
     }
 }
