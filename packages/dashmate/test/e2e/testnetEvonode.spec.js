@@ -12,7 +12,7 @@ import { DockerStatusEnum } from '../../src/status/enums/dockerStatus.js';
 import { ServiceStatusEnum } from '../../src/status/enums/serviceStatus.js';
 import waitForDashmateHelperAPI from '../../src/helper/waitForDashmateHelperAPI.js';
 
-describe.only('Testnet Evonode', function main() {
+describe('Testnet Evonode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 
@@ -32,8 +32,6 @@ describe.only('Testnet Evonode', function main() {
 
     homeDir = container.resolve('homeDir');
     homeDir.change(HomeDir.createTemp());
-
-    console.log(homeDir.getPath());
 
     // Create config file
     configFileRepository = container.resolve('configFileRepository');
@@ -163,7 +161,7 @@ describe.only('Testnet Evonode', function main() {
     });
   });
 
-  describe.skip('dashmate helper', () => {
+  describe('dashmate helper', () => {
     it('should be able to request HTTP to helper api', async () => {
       await assertServiceRunning(config, 'dashmate_helper', true);
 
@@ -201,8 +199,8 @@ describe.only('Testnet Evonode', function main() {
     });
   });
 
-  describe.skip('stop', () => {
-    it.skip('should stop only platform', async () => {
+  describe('stop', () => {
+    it('should stop only platform', async () => {
       const stopNodeTask = container.resolve('stopNodeTask');
       const startNodeTask = container.resolve('startNodeTask');
 
@@ -242,7 +240,7 @@ describe.only('Testnet Evonode', function main() {
     });
   });
 
-  describe.skip('reset', () => {
+  describe('reset', () => {
     it('should reset fullnode', async () => {
       const resetNodeTask = container.resolve('resetNodeTask');
       const resetTask = resetNodeTask(config);
