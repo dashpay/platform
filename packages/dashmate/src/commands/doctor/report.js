@@ -48,11 +48,11 @@ The command collects diagnostic information and creates an obfuscated archive fo
   - The node configuration
   - Service logs, metrics and status
 
-  Collected data will not contain any private information which is already not available publicly.
+  Collected data will not contain any information which is not already publicly known.
   All sensitive data like private keys or passwords is obfuscated.
 
-  The archive will compressed with TAR/GZIP and placed to {bold.cyanBright ${process.cwd()}}
-  You can use it to analyze your node condition yourself or send it to the Dash Core Group ({underline.cyanBright support@dash.org}).\n`,
+  The archive will be compressed with TAR/GZIP and placed in {bold.cyanBright ${process.cwd()}}
+  You can use it to analyze the node's condition yourself or send it to the Dash Core Group support team ({underline.cyanBright support@dash.org}) for help.\n`,
               message: 'Create an archive?',
               enabled: 'Yes',
               disabled: 'No',
