@@ -128,7 +128,7 @@ describe('verifySystemRequirementsFactory', () => {
 
       expect(problems).to.have.lengthOf(1);
       expect(problems[0]).to.be.an.instanceOf(Problem);
-      expect(problems[0].getDescription()).to.include('50.00GB available disk space detected');
+      expect(problems[0].getDescription()).to.include('50.00GB of available disk space detected');
     });
   });
 
