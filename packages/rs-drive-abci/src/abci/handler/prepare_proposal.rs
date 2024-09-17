@@ -7,8 +7,6 @@ use crate::execution::types::block_execution_context::v0::{
 };
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
-use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
-use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
@@ -18,7 +16,7 @@ use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
-use tenderdash_abci::proto::types::{ConsensusParams, CoreChainLock};
+use tenderdash_abci::proto::types::CoreChainLock;
 
 pub fn prepare_proposal<'a, A, C>(
     app: &A,

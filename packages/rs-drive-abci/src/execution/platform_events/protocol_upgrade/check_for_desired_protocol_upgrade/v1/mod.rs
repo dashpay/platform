@@ -1,7 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use dpp::dashcore::Network;
 
 use dpp::version::PlatformVersion;
 use drive::dpp::util::deserializer::ProtocolVersion;

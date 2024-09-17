@@ -9,7 +9,6 @@ use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Setters,
 };
 use crate::platform_types::block_execution_outcome;
-use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
