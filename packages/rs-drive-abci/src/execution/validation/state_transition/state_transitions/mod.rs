@@ -470,7 +470,6 @@ pub(in crate::execution) mod tests {
                 app_hash: None,
             }),
             epoch_info: EpochInfo::V0(EpochInfoV0::default()),
-            hpmn_count: 0,
             unsigned_withdrawal_transactions: Default::default(),
             block_platform_state: platform_state.clone(),
             proposer_results: None,

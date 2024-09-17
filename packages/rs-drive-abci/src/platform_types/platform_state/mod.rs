@@ -283,6 +283,12 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn hpmn_active_list_len(&self) -> usize {
+        match self {
+            PlatformState::V0(v0) => v0.hpmn_active_list_len(),
+        }
+    }
+
     fn current_validator_set(&self) -> Result<&ValidatorSet, Error> {
         match self {
             PlatformState::V0(v0) => v0.current_validator_set(),
