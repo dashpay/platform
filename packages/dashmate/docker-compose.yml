@@ -1,11 +1,19 @@
 ---
 
+x-default-logging: &default-logging
+  driver: local
+  options:
+    max-size: "500m"
+    max-file: "5"
+    compress: "true"
+
 services:
   dashmate_helper:
     image: ${DASHMATE_HELPER_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "Dashmate Helper"
     restart: unless-stopped
+    logging: *default-logging
     environment:
       - LOCAL_UID=${LOCAL_UID:?err}
       - LOCAL_GID=${LOCAL_GID:?err}
@@ -23,6 +31,7 @@ services:
     labels:
       org.dashmate.service.title: "Core"
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - ${CORE_P2P_HOST:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err}
       - ${CORE_RPC_HOST:?err}:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err}
@@ -46,6 +55,7 @@ services:
     labels:
       org.dashmate.service.title: "Drive ABCI"
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - drive_abci_data:/var/lib/dash/rs-drive-abci/db
     environment:
@@ -102,6 +112,7 @@ services:
     labels:
       org.dashmate.service.title: "Drive Tenderdash"
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - drive_abci
     ports:
@@ -122,6 +133,7 @@ services:
     labels:
       org.dashmate.service.title: "DAPI API"
     restart: unless-stopped
+    logging: *default-logging
     deploy:
       mode: replicated
       replicas: ${PLATFORM_DAPI_API_DOCKER_DEPLOY_REPLICAS:-1}
@@ -156,6 +168,7 @@ services:
     labels:
       org.dashmate.service.title: "DAPI Transactions Filter Stream"
     restart: unless-stopped
+    logging: *default-logging
     deploy:
       mode: replicated
       replicas: ${PLATFORM_DAPI_API_DOCKER_DEPLOY_REPLICAS:-1}
@@ -184,6 +197,7 @@ services:
     labels:
       org.dashmate.service.title: "Gateway"
     restart: unless-stopped
+    logging: *default-logging
     ports:
       # HTTP entry point to the platform.
       # Supports HTTP1 and HTTP2

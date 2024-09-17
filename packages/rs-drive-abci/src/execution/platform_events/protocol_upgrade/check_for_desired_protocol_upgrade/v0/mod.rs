@@ -42,12 +42,13 @@ impl<C> Platform<C> {
             ));
         }
 
-        tracing::trace!(
+        tracing::debug!(
             total_hpmns,
             required_upgraded_hpmns,
             all_votes = ?protocol_versions_counter.global_cache,
             ?versions_passing_threshold,
-            "Protocol version voting is finished. {} versions passing the threshold: {:?}",
+            "Protocol version voting is finished. we require {} upgraded, {} versions passing the threshold: {:?}",
+            required_upgraded_hpmns,
             versions_passing_threshold.len(),
             versions_passing_threshold
         );

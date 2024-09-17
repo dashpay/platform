@@ -39,24 +39,45 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         // let's start by getting the vote polls that have finished
-        let (distribute_after_time, clean_up_testnet_corrupted_reference_issue) =
-            if self.config.network == Testnet
-                && last_committed_platform_state.current_protocol_version_in_consensus() == 1
-                && block_platform_state.current_protocol_version_in_consensus() == 2
-            {
-                // We need to clean up testnet
-                (TimestampMillis::MAX >> 1, true)
-            } else {
-                (block_info.time_ms, false)
-            };
-        let vote_polls_by_timestamp =
-            VotePollsByEndDateDriveQuery::execute_no_proof_for_specialized_end_time_query(
-                distribute_after_time,
+        let (
+            distribute_after_time,
+            clean_up_testnet_corrupted_reference_issue,
+            maximum_vote_polls_to_process,
+        ) = if self.config.network == Testnet
+            && last_committed_platform_state.current_protocol_version_in_consensus() == 1
+            && block_platform_state.current_protocol_version_in_consensus() == 2
+        {
+            // We need to clean up testnet
+            (
+                TimestampMillis::MAX >> 1,
+                true,
                 platform_version
                     .drive_abci
                     .validation_and_processing
                     .event_constants
                     .maximum_vote_polls_to_process,
+            )
+        } else if self.config.network == Testnet
+            && block_platform_state.last_committed_block_epoch().index == 1434
+            && block_info.epoch.index == 1435
+        {
+            // We need to clean up testnet, this time we are going to do this clean up at a specific epoch change version
+            (TimestampMillis::MAX >> 1, true, 100)
+        } else {
+            (
+                block_info.time_ms,
+                false,
+                platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .event_constants
+                    .maximum_vote_polls_to_process,
+            )
+        };
+        let vote_polls_by_timestamp =
+            VotePollsByEndDateDriveQuery::execute_no_proof_for_specialized_end_time_query(
+                distribute_after_time,
+                maximum_vote_polls_to_process,
                 &self.drive,
                 transaction,
                 &mut vec![],
