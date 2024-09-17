@@ -30,11 +30,6 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
         rpc: {
           port: 19998,
         },
-        log: {
-          file: {
-            path: homeDir.joinPath('logs', 'testnet', 'core.log'),
-          },
-        },
         spork: {
           address: 'yjPtiKh2uwk3bDutTEA2q9mCtXyiZRWn55',
         },
