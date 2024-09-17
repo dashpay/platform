@@ -28,7 +28,7 @@ function getEpochsInfoFactory(grpcTransport) {
     const getEpochInfosRequest = new GetEpochsInfoRequest();
     getEpochInfosRequest.setV0(
       new GetEpochsInfoRequestV0()
-        .setStartEpoch(startEpoch ? new UInt32Value([startEpoch]) : undefined)
+        .setStartEpoch(typeof startEpoch === 'number' ? new UInt32Value([startEpoch]) : undefined)
         .setCount(count)
         .setAscending(!!options.ascending)
         .setProve(!!options.prove),
