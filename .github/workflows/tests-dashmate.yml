@@ -115,6 +115,9 @@ jobs:
           DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD: true
         if: steps.local-network-data.outputs.cache-hit != 'true'
 
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+
       - name: Show Docker logs
         if: ${{ failure() }}
         uses: jwalton/gh-docker-logs@v2
