@@ -223,6 +223,7 @@ pub struct DriveAbciEngineMethodVersions {
     pub check_tx: FeatureVersion,
     pub run_block_proposal: FeatureVersion,
     pub finalize_block_proposal: FeatureVersion,
+    pub consensus_params_update: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

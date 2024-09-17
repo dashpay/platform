@@ -14,6 +14,7 @@ use crate::version::v1::PLATFORM_V1;
 #[cfg(feature = "mock-versions")]
 use std::sync::OnceLock;
 
+use crate::version::consensus_versions::ConsensusVersions;
 use crate::version::limits::SystemLimits;
 use crate::version::v2::PLATFORM_V2;
 use crate::version::ProtocolVersion;
@@ -32,6 +33,7 @@ pub struct PlatformVersion {
     pub dpp: DPPVersion,
     pub drive: DriveVersion,
     pub drive_abci: DriveAbciVersion,
+    pub consensus: ConsensusVersions,
     pub fee_version: FeeVersion,
     pub platform_architecture: PlatformArchitectureVersion,
     pub system_data_contracts: SystemDataContractVersions,

@@ -1156,7 +1156,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_json",
- "tenderdash-proto",
+ "tenderdash-proto 1.1.0 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.1.0)",
  "tonic 0.11.0",
  "tonic-build 0.9.2",
 ]
@@ -1580,7 +1580,7 @@ dependencies = [
  "simple-signer",
  "strategy-tests",
  "tempfile",
- "tenderdash-abci",
+ "tenderdash-abci 1.1.0 (git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/consensus-params-version)",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -1604,7 +1604,7 @@ dependencies = [
  "platform-serialization-derive",
  "serde",
  "serde_json",
- "tenderdash-abci",
+ "tenderdash-abci 1.1.0 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.1.0)",
  "thiserror",
  "tracing",
 ]
@@ -4971,13 +4971,30 @@ version = "1.1.0"
 source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.1.0#03b741f3f24281ec6990c6c343079076c549b0f8"
 dependencies = [
  "bytes",
+ "hex",
+ "lhash",
+ "prost 0.12.6",
+ "semver",
+ "serde_json",
+ "tenderdash-proto 1.1.0 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.1.0)",
+ "thiserror",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "tenderdash-abci"
+version = "1.1.0"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/consensus-params-version#22e16d6f0c5bc43738e857b67a618ee1cb7d461b"
+dependencies = [
+ "bytes",
  "futures",
  "hex",
  "lhash",
  "prost 0.12.6",
  "semver",
  "serde_json",
- "tenderdash-proto",
+ "tenderdash-proto 1.1.0 (git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/consensus-params-version)",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -5001,7 +5018,26 @@ dependencies = [
  "prost 0.12.6",
  "serde",
  "subtle-encoding",
- "tenderdash-proto-compiler",
+ "tenderdash-proto-compiler 1.1.0 (git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.1.0)",
+ "time",
+ "tonic 0.11.0",
+]
+
+[[package]]
+name = "tenderdash-proto"
+version = "1.1.0"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/consensus-params-version#22e16d6f0c5bc43738e857b67a618ee1cb7d461b"
+dependencies = [
+ "bytes",
+ "chrono",
+ "derive_more",
+ "flex-error",
+ "num-derive",
+ "num-traits",
+ "prost 0.12.6",
+ "serde",
+ "subtle-encoding",
+ "tenderdash-proto-compiler 1.1.0 (git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/consensus-params-version)",
  "time",
  "tonic 0.11.0",
 ]
@@ -5010,6 +5046,21 @@ dependencies = [
 name = "tenderdash-proto-compiler"
 version = "1.1.0"
 source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.1.0#03b741f3f24281ec6990c6c343079076c549b0f8"
+dependencies = [
+ "fs_extra",
+ "prost-build 0.12.6",
+ "regex",
+ "tempfile",
+ "tonic-build 0.11.0",
+ "ureq",
+ "walkdir",
+ "zip 2.2.0",
+]
+
+[[package]]
+name = "tenderdash-proto-compiler"
+version = "1.1.0"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/consensus-params-version#22e16d6f0c5bc43738e857b67a618ee1cb7d461b"
 dependencies = [
  "fs_extra",
  "prost-build 0.12.6",

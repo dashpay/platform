@@ -1,6 +1,7 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
+use crate::execution::engine::consensus_params_update::consensus_params_update;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
 };
@@ -8,6 +9,8 @@ use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Setters,
 };
 use crate::platform_types::block_execution_outcome;
+use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::TryIntoPlatformVersioned;
@@ -177,6 +180,8 @@ where
 
     let platform_state = app.platform().state.load();
 
+    let starting_platform_version = platform_state.current_platform_version()?;
+
     // Running the proposal executes all the state transitions for the block
     let run_result = app.platform().run_block_proposal(
         (&request).try_into()?,
@@ -274,8 +279,10 @@ where
         tx_results,
         status: proto::response_process_proposal::ProposalStatus::Accept.into(),
         validator_set_update,
-        // TODO: Implement consensus param updates
-        consensus_param_updates: None,
+        consensus_param_updates: consensus_params_update(
+            starting_platform_version,
+            platform_version,
+        )?,
         events: Vec::new(),
     };
 
