@@ -68,13 +68,6 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
 
     const { uid, gid } = os.userInfo();
 
-    // Determine logs directory to mount into tenderdash container
-    let tenderdashLogDirectoryPath = homeDir.joinPath('logs', config.get('network'));
-    const tenderdashLogFilePath = config.get('platform.drive.tenderdash.log.path');
-    if (tenderdashLogFilePath !== null) {
-      tenderdashLogDirectoryPath = path.dirname(tenderdashLogFilePath);
-    }
-
     let driveAbciMetricsUrl = '';
     if (config.get('platform.drive.abci.metrics.enabled')) {
       driveAbciMetricsUrl = 'http://0.0.0.0:29090';
@@ -92,7 +85,6 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       DOCKER_BUILDKIT: 1,
       COMPOSE_DOCKER_CLI_BUILD: 1,
       DASHMATE_HELPER_DOCKER_IMAGE,
-      PLATFORM_DRIVE_TENDERDASH_LOG_DIRECTORY_PATH: tenderdashLogDirectoryPath,
       PLATFORM_GATEWAY_RATE_LIMITER_METRICS_DISABLED: !config.get('platform.gateway.rateLimiter.metrics.enabled'),
       PLATFORM_DRIVE_ABCI_METRICS_URL: driveAbciMetricsUrl,
       ...convertObjectToEnvs(config.getOptions()),

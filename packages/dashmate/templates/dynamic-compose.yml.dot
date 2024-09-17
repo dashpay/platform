@@ -22,6 +22,12 @@ services:
       {{~}}
   {{?}}
 
+  {{? it.platform.drive.tenderdash.log.path !== null }}
+  drive_tenderdash:
+    volumes:
+      - {{=it.platform.drive.tenderdash.log.path}}:/var/log/tenderdash/tenderdash.log
+  {{?}}
+
   {{ gatewayLogs = it.platform.gateway.log.accessLogs.filter((l) => l.type === 'file'); }}
   {{? gatewayLogs.length > 0 }}
   gateway:
