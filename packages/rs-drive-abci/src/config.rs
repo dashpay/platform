@@ -134,10 +134,6 @@ pub struct ExecutionConfig {
 // https://github.com/softprops/envy/issues/61 and https://github.com/softprops/envy/pull/69
 pub struct PlatformConfig {
     /// The network type
-    #[serde(
-        default = "PlatformConfig::default_network",
-        deserialize_with = "from_str_to_network_with_aliases"
-    )]
     pub network: Network,
     /// Drive configuration
     #[serde(flatten)]
@@ -185,7 +181,6 @@ pub struct PlatformConfig {
     pub block_spacing_ms: u64,
 
     /// Initial protocol version
-    #[serde(default = "PlatformConfig::default_initial_protocol_version")]
     pub initial_protocol_version: ProtocolVersion,
 
     /// Path to data storage
@@ -195,7 +190,6 @@ pub struct PlatformConfig {
     /// Used mainly for debuggig.
     ///
     /// If not set, rejected and invalid items will not be stored.
-    #[serde(default)]
     pub rejections_path: Option<PathBuf>,
 
     #[cfg(feature = "testing-config")]
@@ -208,11 +202,9 @@ pub struct PlatformConfig {
 
     // TODO: Use from_str_to_socket_address
     /// Tokio console address to connect to
-    #[serde(default = "PlatformConfig::default_tokio_console_address")]
     pub tokio_console_address: String,
 
     /// Number of seconds to store task information if there is no clients connected
-    #[serde(default = "PlatformConfig::default_tokio_console_retention_secs")]
     pub tokio_console_retention_secs: u64,
 }
 
