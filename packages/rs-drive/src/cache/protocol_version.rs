@@ -5,7 +5,6 @@ use dpp::util::deserializer::ProtocolVersion;
 use grovedb::TransactionArg;
 use nohash_hasher::IntMap;
 use platform_version::version::drive_versions::DriveVersion;
-use platform_version::version::{PlatformVersion, VersionUpgradeType};
 
 /// ProtocolVersion cache that handles both global and block data
 #[derive(Default)]

@@ -40,7 +40,7 @@ impl<C> Platform<C> {
             .check_for_desired_protocol_upgrade
         {
             0 => self.check_for_desired_protocol_upgrade_v0(active_hpmns, platform_version),
-            0 => self.check_for_desired_protocol_upgrade_v1(active_hpmns, platform_version),
+            1 => self.check_for_desired_protocol_upgrade_v1(active_hpmns, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "check_for_desired_protocol_upgrade".to_string(),
                 known_versions: vec![0, 1],

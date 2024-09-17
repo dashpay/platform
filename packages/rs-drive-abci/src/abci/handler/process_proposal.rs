@@ -217,6 +217,8 @@ where
         block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
 
+    let epoch_info = *block_execution_context.epoch_info();
+
     app.block_execution_context()
         .write()
         .unwrap()
@@ -280,8 +282,10 @@ where
         status: proto::response_process_proposal::ProposalStatus::Accept.into(),
         validator_set_update,
         consensus_param_updates: consensus_params_update(
+            app.platform().config.network,
             starting_platform_version,
             platform_version,
+            &epoch_info,
         )?,
         events: Vec::new(),
     };
