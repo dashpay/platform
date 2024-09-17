@@ -1,18 +1,17 @@
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use dpp::block::epoch::EpochIndex;
 use dpp::consensus::basic::document::ContestedDocumentsTemporarilyNotAllowedError;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::validation::ConsensusValidationResult;
-
-pub const TARGET_EPOCH_INDEX: EpochIndex = 3;
+use dpp::version::PlatformVersion;
 
 #[inline(always)]
 pub fn validate_is_allowed_v0<C>(
     state_transition: &DocumentsBatchTransition,
     platform: &PlatformRef<C>,
+    platform_version: &PlatformVersion,
 ) -> ConsensusValidationResult<()> {
     #[cfg(feature = "testing-config")]
     if platform
@@ -23,9 +22,18 @@ pub fn validate_is_allowed_v0<C>(
         return ConsensusValidationResult::new();
     }
 
+    let Some(contests_disabled_till_epoch_index) = platform_version
+        .drive_abci
+        .validation_and_processing
+        .state_transitions
+        .contests_disabled_till_epoch_index
+    else {
+        return ConsensusValidationResult::new();
+    };
+
     let block_info = platform.state.last_block_info();
 
-    if block_info.epoch.index >= TARGET_EPOCH_INDEX {
+    if block_info.epoch.index >= contests_disabled_till_epoch_index {
         return ConsensusValidationResult::new();
     }
 
@@ -40,7 +48,7 @@ pub fn validate_is_allowed_v0<C>(
         return ConsensusValidationResult::new_with_errors(vec![
             ContestedDocumentsTemporarilyNotAllowedError::new(
                 block_info.epoch.index,
-                TARGET_EPOCH_INDEX,
+                contests_disabled_till_epoch_index,
             )
             .into(),
         ]);

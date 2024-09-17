@@ -79,12 +79,14 @@ use crate::version::drive_versions::{
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::limits::SystemLimits;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
+use crate::version::VersionUpgradeType::NormalVersionUpgrade;
 use crate::version::{PlatformArchitectureVersion, ProtocolVersion};
 use grovedb_version::version::v1::GROVE_V1;
 
 pub const PROTOCOL_VERSION_2: ProtocolVersion = 2;
 
 pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
+    version_upgrade_type: NormalVersionUpgrade,
     protocol_version: 2,
     proofs: FeatureVersionBounds {
         min_version: 0,
@@ -720,6 +722,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                     validate_simple_pre_check_balance: 0,
                 },
                 max_asset_lock_usage_attempts: 16,
+                contests_disabled_till_epoch_index: Some(3),
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
                     advanced_structure: Some(0),

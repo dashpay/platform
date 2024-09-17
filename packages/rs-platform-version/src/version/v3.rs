@@ -79,6 +79,7 @@ use crate::version::drive_versions::{
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::limits::SystemLimits;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
+use crate::version::VersionUpgradeType::EmergencyVersionUpgrade;
 use crate::version::{PlatformArchitectureVersion, ProtocolVersion};
 use grovedb_version::version::v1::GROVE_V1;
 
@@ -86,8 +87,12 @@ pub const PROTOCOL_VERSION_3: ProtocolVersion = 3;
 
 /// This version introduces tenderdash_consensus_version as 1.
 /// We did this because of the issues in distribution for Evonodes.
+/// We are setting the requirement to 51% voting for this upgrade for it to take effect.
+/// If we get between 51 and 67% we will have a chain stall
+/// However the chain will come back up as soon as enough have upgraded.
 
 pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
+    version_upgrade_type: EmergencyVersionUpgrade,
     protocol_version: 3,
     proofs: FeatureVersionBounds {
         min_version: 0,
@@ -636,7 +641,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                 },
             },
             protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
-                check_for_desired_protocol_upgrade: 0,
+                check_for_desired_protocol_upgrade: 1,
                 upgrade_protocol_version_on_epoch_change: 0,
                 protocol_version_upgrade_percentage_needed: 75,
             },
@@ -723,6 +728,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                     validate_simple_pre_check_balance: 0,
                 },
                 max_asset_lock_usage_attempts: 16,
+                contests_disabled_till_epoch_index: Some(4),
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
                     advanced_structure: Some(0),

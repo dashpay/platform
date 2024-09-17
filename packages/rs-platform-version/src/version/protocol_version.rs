@@ -17,6 +17,7 @@ use std::sync::OnceLock;
 use crate::version::consensus_versions::ConsensusVersions;
 use crate::version::limits::SystemLimits;
 use crate::version::v2::PLATFORM_V2;
+use crate::version::v3::PLATFORM_V3;
 use crate::version::ProtocolVersion;
 pub use versioned_feature_core::*;
 
@@ -26,8 +27,21 @@ pub struct PlatformArchitectureVersion {
     pub document_factory_structure_version: FeatureVersion,
 }
 
+
+/// The version upgrade type
+/// A normal version upgrade gets voted on and has a 1 week lock in period
+/// An emergency version upgrade gets voted on and has no lock in period.
+/// Emergency versions can not change fees.
+#[derive(Clone, Debug, Default)]
+pub enum VersionUpgradeType {
+    #[default]
+    NormalVersionUpgrade,
+    EmergencyVersionUpgrade,
+}
+
 #[derive(Clone, Debug)]
 pub struct PlatformVersion {
+    pub version_upgrade_type: VersionUpgradeType,
     pub protocol_version: ProtocolVersion,
     pub proofs: FeatureVersionBounds,
     pub dpp: DPPVersion,
@@ -40,7 +54,7 @@ pub struct PlatformVersion {
     pub system_limits: SystemLimits,
 }
 
-pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[PLATFORM_V1, PLATFORM_V2];
+pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[PLATFORM_V1, PLATFORM_V2, PLATFORM_V3];
 
 #[cfg(feature = "mock-versions")]
 // We use OnceLock to be able to modify the version mocks
@@ -48,7 +62,10 @@ pub static PLATFORM_TEST_VERSIONS: OnceLock<Vec<PlatformVersion>> = OnceLock::ne
 #[cfg(feature = "mock-versions")]
 const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, TEST_PLATFORM_V3];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V2;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V3;
+
+/// For V3 release we want to do an emergency version upgrade
+pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
 
 impl PlatformVersion {
     pub fn get<'a>(version: ProtocolVersion) -> Result<&'a Self, PlatformVersionError> {
@@ -76,6 +93,26 @@ impl PlatformVersion {
             Err(PlatformVersionError::UnknownVersionError(format!(
                 "no platform version {version}"
             )))
+        }
+    }
+
+    pub fn get_optional<'a>(version: ProtocolVersion) -> Option<&'a Self> {
+        if version > 0 {
+            #[cfg(feature = "mock-versions")]
+            {
+                if version >> TEST_PROTOCOL_VERSION_SHIFT_BYTES > 0 {
+                    let test_version = version - (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES);
+
+                    // Init default set of test versions
+                    let versions = PLATFORM_TEST_VERSIONS
+                        .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+
+                    return versions.get(test_version as usize - 2);
+                }
+            }
+            PLATFORM_VERSIONS.get(version as usize - 1)
+        } else {
+            None
         }
     }
 

@@ -39,7 +39,7 @@ impl StateTransitionIsAllowedValidationV0 for DocumentsBatchTransition {
             .documents_batch_state_transition
             .is_allowed
         {
-            0 => Ok(v0::validate_is_allowed_v0(self, platform)),
+            0 => Ok(v0::validate_is_allowed_v0(self, platform, platform_version)),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "StateTransition::validate_is_allowed".to_string(),
                 known_versions: vec![0],

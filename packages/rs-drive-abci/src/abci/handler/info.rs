@@ -3,7 +3,7 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dpp::version::PlatformVersion;
+use dpp::version::DESIRED_PLATFORM_VERSION;
 use tenderdash_abci::proto::abci as proto;
 
 pub fn info<A, C>(app: &A, request: proto::RequestInfo) -> Result<proto::ResponseInfo, Error>
@@ -26,18 +26,18 @@ where
         .map(|app_hash| app_hash.to_vec())
         .unwrap_or_default();
 
-    let latest_supported_protocol_version = PlatformVersion::latest().protocol_version;
+    let desired_protocol_version = DESIRED_PLATFORM_VERSION.protocol_version;
 
     let response = proto::ResponseInfo {
         data: "".to_string(),
-        app_version: latest_supported_protocol_version as u64,
+        app_version: desired_protocol_version as u64,
         last_block_height: platform_state.last_committed_block_height() as i64,
         version: env!("CARGO_PKG_VERSION").to_string(),
         last_block_app_hash: state_app_hash.clone(),
     };
 
     tracing::debug!(
-        latest_supported_protocol_version,
+        desired_protocol_version,
         software_version = env!("CARGO_PKG_VERSION"),
         block_version = request.block_version,
         p2p_version = request.p2p_version,
