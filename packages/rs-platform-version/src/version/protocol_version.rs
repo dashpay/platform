@@ -27,21 +27,8 @@ pub struct PlatformArchitectureVersion {
     pub document_factory_structure_version: FeatureVersion,
 }
 
-
-/// The version upgrade type
-/// A normal version upgrade gets voted on and has a 1 week lock in period
-/// An emergency version upgrade gets voted on and has no lock in period.
-/// Emergency versions can not change fees.
-#[derive(Clone, Debug, Default)]
-pub enum VersionUpgradeType {
-    #[default]
-    NormalVersionUpgrade,
-    EmergencyVersionUpgrade,
-}
-
 #[derive(Clone, Debug)]
 pub struct PlatformVersion {
-    pub version_upgrade_type: VersionUpgradeType,
     pub protocol_version: ProtocolVersion,
     pub proofs: FeatureVersionBounds,
     pub dpp: DPPVersion,

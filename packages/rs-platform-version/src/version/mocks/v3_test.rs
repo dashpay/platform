@@ -81,13 +81,11 @@ use crate::version::limits::SystemLimits;
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::PlatformArchitectureVersion;
-use crate::version::VersionUpgradeType::NormalVersionUpgrade;
 use grovedb_version::version::v1::GROVE_V1;
 
 pub const TEST_PROTOCOL_VERSION_3: u32 = (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 3;
 
 pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
-    version_upgrade_type: NormalVersionUpgrade,
     protocol_version: TEST_PROTOCOL_VERSION_3,
     proofs: FeatureVersionBounds {
         min_version: 0,

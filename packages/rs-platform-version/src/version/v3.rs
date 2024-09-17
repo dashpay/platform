@@ -79,7 +79,6 @@ use crate::version::drive_versions::{
 use crate::version::fee::v1::FEE_VERSION1;
 use crate::version::limits::SystemLimits;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
-use crate::version::VersionUpgradeType::EmergencyVersionUpgrade;
 use crate::version::{PlatformArchitectureVersion, ProtocolVersion};
 use grovedb_version::version::v1::GROVE_V1;
 
@@ -92,7 +91,6 @@ pub const PROTOCOL_VERSION_3: ProtocolVersion = 3;
 /// However the chain will come back up as soon as enough have upgraded.
 
 pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
-    version_upgrade_type: EmergencyVersionUpgrade,
     protocol_version: 3,
     proofs: FeatureVersionBounds {
         min_version: 0,
