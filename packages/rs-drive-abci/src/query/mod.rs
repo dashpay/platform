@@ -6,6 +6,7 @@ mod proofs;
 mod response_metadata;
 mod service;
 mod system;
+mod validator_queries;
 mod voting;
 
 use crate::error::query::QueryError;
@@ -34,32 +35,47 @@ pub(crate) mod tests {
     use dpp::prelude::{CoreBlockHeight, TimestampMillis};
     use drive::util::batch::DataContractOperationType;
     use drive::util::batch::DriveOperation::DataContractOperation;
-    use platform_version::version::PlatformVersion;
+    use platform_version::version::{PlatformVersion, ProtocolVersion};
     use std::borrow::Cow;
     use std::sync::Arc;
 
     pub fn setup_platform<'a>(
         with_genesis_state: Option<(TimestampMillis, CoreBlockHeight)>,
         network: Network,
+        initial_protocol_version: Option<ProtocolVersion>,
     ) -> (
         TempPlatform<MockCoreRPCLike>,
         Arc<PlatformState>,
         &'a PlatformVersion,
     ) {
         let platform = if let Some((timestamp, activation_core_block_height)) = with_genesis_state {
-            TestPlatformBuilder::new()
-                .with_config(PlatformConfig::default_for_network(network))
+            let mut platform_builder = TestPlatformBuilder::new()
+                .with_config(PlatformConfig::default_for_network(network));
+
+            if let Some(initial_protocol_version) = initial_protocol_version {
+                platform_builder =
+                    platform_builder.with_initial_protocol_version(initial_protocol_version);
+            }
+
+            platform_builder
                 .build_with_mock_rpc()
                 .set_genesis_state_with_activation_info(timestamp, activation_core_block_height)
         } else {
-            TestPlatformBuilder::new()
-                .with_config(PlatformConfig::default_for_network(network))
+            let mut platform_builder = TestPlatformBuilder::new()
+                .with_config(PlatformConfig::default_for_network(network));
+
+            if let Some(initial_protocol_version) = initial_protocol_version {
+                platform_builder =
+                    platform_builder.with_initial_protocol_version(initial_protocol_version);
+            }
+
+            platform_builder
                 .build_with_mock_rpc()
                 .set_initial_state_structure()
         };
 
         // We can't return a reference to Arc (`load` method) so we clone Arc (`load_full`).
-        // This is a bit slower but we don't care since we are in test environment
+        // This is a bit slower, but we don't care since we are in test environment
         let platform_state = platform.platform.state.load_full();
 
         let platform_version = platform_state.current_platform_version().unwrap();

@@ -318,6 +318,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentitiesBalances}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getIdentitiesBalancesCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} [response] GetIdentitiesBalancesResponse
+                         */
+
+                        /**
+                         * Calls getIdentitiesBalances.
+                         * @function getIdentitiesBalances
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest} request GetIdentitiesBalancesRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getIdentitiesBalancesCallback} callback Node-style callback called with the error, if any, and GetIdentitiesBalancesResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getIdentitiesBalances = function getIdentitiesBalances(request, callback) {
+                            return this.rpcCall(getIdentitiesBalances, $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest, $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse, request, callback);
+                        }, "name", { value: "getIdentitiesBalances" });
+
+                        /**
+                         * Calls getIdentitiesBalances.
+                         * @function getIdentitiesBalances
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest} request GetIdentitiesBalancesRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentityBalanceAndRevision}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getIdentityBalanceAndRevisionCallback
@@ -347,6 +380,72 @@ $root.org = (function() {
                          * @instance
                          * @param {org.dash.platform.dapi.v0.IGetIdentityBalanceAndRevisionRequest} request GetIdentityBalanceAndRevisionRequest message or plain object
                          * @returns {Promise<org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getEvonodesProposedEpochBlocksByIds}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getEvonodesProposedEpochBlocksByIdsCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} [response] GetEvonodesProposedEpochBlocksResponse
+                         */
+
+                        /**
+                         * Calls getEvonodesProposedEpochBlocksByIds.
+                         * @function getEvonodesProposedEpochBlocksByIds
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByIdsRequest} request GetEvonodesProposedEpochBlocksByIdsRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getEvonodesProposedEpochBlocksByIdsCallback} callback Node-style callback called with the error, if any, and GetEvonodesProposedEpochBlocksResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getEvonodesProposedEpochBlocksByIds = function getEvonodesProposedEpochBlocksByIds(request, callback) {
+                            return this.rpcCall(getEvonodesProposedEpochBlocksByIds, $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest, $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse, request, callback);
+                        }, "name", { value: "getEvonodesProposedEpochBlocksByIds" });
+
+                        /**
+                         * Calls getEvonodesProposedEpochBlocksByIds.
+                         * @function getEvonodesProposedEpochBlocksByIds
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByIdsRequest} request GetEvonodesProposedEpochBlocksByIdsRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getEvonodesProposedEpochBlocksByRange}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getEvonodesProposedEpochBlocksByRangeCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} [response] GetEvonodesProposedEpochBlocksResponse
+                         */
+
+                        /**
+                         * Calls getEvonodesProposedEpochBlocksByRange.
+                         * @function getEvonodesProposedEpochBlocksByRange
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByRangeRequest} request GetEvonodesProposedEpochBlocksByRangeRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getEvonodesProposedEpochBlocksByRangeCallback} callback Node-style callback called with the error, if any, and GetEvonodesProposedEpochBlocksResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getEvonodesProposedEpochBlocksByRange = function getEvonodesProposedEpochBlocksByRange(request, callback) {
+                            return this.rpcCall(getEvonodesProposedEpochBlocksByRange, $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest, $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse, request, callback);
+                        }, "name", { value: "getEvonodesProposedEpochBlocksByRange" });
+
+                        /**
+                         * Calls getEvonodesProposedEpochBlocksByRange.
+                         * @function getEvonodesProposedEpochBlocksByRange
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByRangeRequest} request GetEvonodesProposedEpochBlocksByRangeRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse>} Promise
                          * @variation 2
                          */
 
@@ -11233,6 +11332,3469 @@ $root.org = (function() {
                         })();
 
                         return GetIdentitiesContractKeysResponse;
+                    })();
+
+                    v0.GetEvonodesProposedEpochBlocksByIdsRequest = (function() {
+
+                        /**
+                         * Properties of a GetEvonodesProposedEpochBlocksByIdsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetEvonodesProposedEpochBlocksByIdsRequest
+                         * @property {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.IGetEvonodesProposedEpochBlocksByIdsRequestV0|null} [v0] GetEvonodesProposedEpochBlocksByIdsRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetEvonodesProposedEpochBlocksByIdsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetEvonodesProposedEpochBlocksByIdsRequest.
+                         * @implements IGetEvonodesProposedEpochBlocksByIdsRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByIdsRequest=} [properties] Properties to set
+                         */
+                        function GetEvonodesProposedEpochBlocksByIdsRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetEvonodesProposedEpochBlocksByIdsRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.IGetEvonodesProposedEpochBlocksByIdsRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @instance
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetEvonodesProposedEpochBlocksByIdsRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetEvonodesProposedEpochBlocksByIdsRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetEvonodesProposedEpochBlocksByIdsRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByIdsRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest} GetEvonodesProposedEpochBlocksByIdsRequest instance
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.create = function create(properties) {
+                            return new GetEvonodesProposedEpochBlocksByIdsRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetEvonodesProposedEpochBlocksByIdsRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByIdsRequest} message GetEvonodesProposedEpochBlocksByIdsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetEvonodesProposedEpochBlocksByIdsRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByIdsRequest} message GetEvonodesProposedEpochBlocksByIdsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetEvonodesProposedEpochBlocksByIdsRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest} GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetEvonodesProposedEpochBlocksByIdsRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest} GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetEvonodesProposedEpochBlocksByIdsRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetEvonodesProposedEpochBlocksByIdsRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest} GetEvonodesProposedEpochBlocksByIdsRequest
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetEvonodesProposedEpochBlocksByIdsRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest} message GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetEvonodesProposedEpochBlocksByIdsRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetEvonodesProposedEpochBlocksByIdsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                             * @interface IGetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @property {number|null} [epoch] GetEvonodesProposedEpochBlocksByIdsRequestV0 epoch
+                             * @property {Array.<Uint8Array>|null} [ids] GetEvonodesProposedEpochBlocksByIdsRequestV0 ids
+                             * @property {boolean|null} [prove] GetEvonodesProposedEpochBlocksByIdsRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetEvonodesProposedEpochBlocksByIdsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                             * @classdesc Represents a GetEvonodesProposedEpochBlocksByIdsRequestV0.
+                             * @implements IGetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.IGetEvonodesProposedEpochBlocksByIdsRequestV0=} [properties] Properties to set
+                             */
+                            function GetEvonodesProposedEpochBlocksByIdsRequestV0(properties) {
+                                this.ids = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByIdsRequestV0 epoch.
+                             * @member {number} epoch
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.prototype.epoch = 0;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByIdsRequestV0 ids.
+                             * @member {Array.<Uint8Array>} ids
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.prototype.ids = $util.emptyArray;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByIdsRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetEvonodesProposedEpochBlocksByIdsRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.IGetEvonodesProposedEpochBlocksByIdsRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0} GetEvonodesProposedEpochBlocksByIdsRequestV0 instance
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.create = function create(properties) {
+                                return new GetEvonodesProposedEpochBlocksByIdsRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetEvonodesProposedEpochBlocksByIdsRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.IGetEvonodesProposedEpochBlocksByIdsRequestV0} message GetEvonodesProposedEpochBlocksByIdsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.epoch != null && Object.hasOwnProperty.call(message, "epoch"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.epoch);
+                                if (message.ids != null && message.ids.length)
+                                    for (var i = 0; i < message.ids.length; ++i)
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.ids[i]);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetEvonodesProposedEpochBlocksByIdsRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.IGetEvonodesProposedEpochBlocksByIdsRequestV0} message GetEvonodesProposedEpochBlocksByIdsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetEvonodesProposedEpochBlocksByIdsRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0} GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.epoch = reader.uint32();
+                                        break;
+                                    case 2:
+                                        if (!(message.ids && message.ids.length))
+                                            message.ids = [];
+                                        message.ids.push(reader.bytes());
+                                        break;
+                                    case 3:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetEvonodesProposedEpochBlocksByIdsRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0} GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetEvonodesProposedEpochBlocksByIdsRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                    if (!$util.isInteger(message.epoch))
+                                        return "epoch: integer expected";
+                                if (message.ids != null && message.hasOwnProperty("ids")) {
+                                    if (!Array.isArray(message.ids))
+                                        return "ids: array expected";
+                                    for (var i = 0; i < message.ids.length; ++i)
+                                        if (!(message.ids[i] && typeof message.ids[i].length === "number" || $util.isString(message.ids[i])))
+                                            return "ids: buffer[] expected";
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetEvonodesProposedEpochBlocksByIdsRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0} GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0();
+                                if (object.epoch != null)
+                                    message.epoch = object.epoch >>> 0;
+                                if (object.ids) {
+                                    if (!Array.isArray(object.ids))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.ids: array expected");
+                                    message.ids = [];
+                                    for (var i = 0; i < object.ids.length; ++i)
+                                        if (typeof object.ids[i] === "string")
+                                            $util.base64.decode(object.ids[i], message.ids[i] = $util.newBuffer($util.base64.length(object.ids[i])), 0);
+                                        else if (object.ids[i].length >= 0)
+                                            message.ids[i] = object.ids[i];
+                                }
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetEvonodesProposedEpochBlocksByIdsRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0} message GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.ids = [];
+                                if (options.defaults) {
+                                    object.epoch = 0;
+                                    object.prove = false;
+                                }
+                                if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                    object.epoch = message.epoch;
+                                if (message.ids && message.ids.length) {
+                                    object.ids = [];
+                                    for (var j = 0; j < message.ids.length; ++j)
+                                        object.ids[j] = options.bytes === String ? $util.base64.encode(message.ids[j], 0, message.ids[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.ids[j]) : message.ids[j];
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetEvonodesProposedEpochBlocksByIdsRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetEvonodesProposedEpochBlocksByIdsRequestV0;
+                        })();
+
+                        return GetEvonodesProposedEpochBlocksByIdsRequest;
+                    })();
+
+                    v0.GetEvonodesProposedEpochBlocksResponse = (function() {
+
+                        /**
+                         * Properties of a GetEvonodesProposedEpochBlocksResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetEvonodesProposedEpochBlocksResponse
+                         * @property {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.IGetEvonodesProposedEpochBlocksResponseV0|null} [v0] GetEvonodesProposedEpochBlocksResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetEvonodesProposedEpochBlocksResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetEvonodesProposedEpochBlocksResponse.
+                         * @implements IGetEvonodesProposedEpochBlocksResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksResponse=} [properties] Properties to set
+                         */
+                        function GetEvonodesProposedEpochBlocksResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetEvonodesProposedEpochBlocksResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.IGetEvonodesProposedEpochBlocksResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @instance
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetEvonodesProposedEpochBlocksResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetEvonodesProposedEpochBlocksResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetEvonodesProposedEpochBlocksResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} GetEvonodesProposedEpochBlocksResponse instance
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.create = function create(properties) {
+                            return new GetEvonodesProposedEpochBlocksResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetEvonodesProposedEpochBlocksResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksResponse} message GetEvonodesProposedEpochBlocksResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetEvonodesProposedEpochBlocksResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksResponse} message GetEvonodesProposedEpochBlocksResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetEvonodesProposedEpochBlocksResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} GetEvonodesProposedEpochBlocksResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetEvonodesProposedEpochBlocksResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} GetEvonodesProposedEpochBlocksResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetEvonodesProposedEpochBlocksResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetEvonodesProposedEpochBlocksResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} GetEvonodesProposedEpochBlocksResponse
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetEvonodesProposedEpochBlocksResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} message GetEvonodesProposedEpochBlocksResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetEvonodesProposedEpochBlocksResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetEvonodesProposedEpochBlocksResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                             * @interface IGetEvonodesProposedEpochBlocksResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodesProposedBlocks|null} [evonodesProposedBlockCountsInfo] GetEvonodesProposedEpochBlocksResponseV0 evonodesProposedBlockCountsInfo
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetEvonodesProposedEpochBlocksResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetEvonodesProposedEpochBlocksResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetEvonodesProposedEpochBlocksResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                             * @classdesc Represents a GetEvonodesProposedEpochBlocksResponseV0.
+                             * @implements IGetEvonodesProposedEpochBlocksResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.IGetEvonodesProposedEpochBlocksResponseV0=} [properties] Properties to set
+                             */
+                            function GetEvonodesProposedEpochBlocksResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksResponseV0 evonodesProposedBlockCountsInfo.
+                             * @member {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodesProposedBlocks|null|undefined} evonodesProposedBlockCountsInfo
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.prototype.evonodesProposedBlockCountsInfo = null;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksResponseV0 result.
+                             * @member {"evonodesProposedBlockCountsInfo"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetEvonodesProposedEpochBlocksResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["evonodesProposedBlockCountsInfo", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetEvonodesProposedEpochBlocksResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.IGetEvonodesProposedEpochBlocksResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0} GetEvonodesProposedEpochBlocksResponseV0 instance
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.create = function create(properties) {
+                                return new GetEvonodesProposedEpochBlocksResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetEvonodesProposedEpochBlocksResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.IGetEvonodesProposedEpochBlocksResponseV0} message GetEvonodesProposedEpochBlocksResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.evonodesProposedBlockCountsInfo != null && Object.hasOwnProperty.call(message, "evonodesProposedBlockCountsInfo"))
+                                    $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.encode(message.evonodesProposedBlockCountsInfo, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetEvonodesProposedEpochBlocksResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.IGetEvonodesProposedEpochBlocksResponseV0} message GetEvonodesProposedEpochBlocksResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetEvonodesProposedEpochBlocksResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0} GetEvonodesProposedEpochBlocksResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.evonodesProposedBlockCountsInfo = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetEvonodesProposedEpochBlocksResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0} GetEvonodesProposedEpochBlocksResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetEvonodesProposedEpochBlocksResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.evonodesProposedBlockCountsInfo != null && message.hasOwnProperty("evonodesProposedBlockCountsInfo")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.verify(message.evonodesProposedBlockCountsInfo);
+                                        if (error)
+                                            return "evonodesProposedBlockCountsInfo." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetEvonodesProposedEpochBlocksResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0} GetEvonodesProposedEpochBlocksResponseV0
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0();
+                                if (object.evonodesProposedBlockCountsInfo != null) {
+                                    if (typeof object.evonodesProposedBlockCountsInfo !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.evonodesProposedBlockCountsInfo: object expected");
+                                    message.evonodesProposedBlockCountsInfo = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.fromObject(object.evonodesProposedBlockCountsInfo);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetEvonodesProposedEpochBlocksResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0} message GetEvonodesProposedEpochBlocksResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.evonodesProposedBlockCountsInfo != null && message.hasOwnProperty("evonodesProposedBlockCountsInfo")) {
+                                    object.evonodesProposedBlockCountsInfo = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.toObject(message.evonodesProposedBlockCountsInfo, options);
+                                    if (options.oneofs)
+                                        object.result = "evonodesProposedBlockCountsInfo";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetEvonodesProposedEpochBlocksResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks = (function() {
+
+                                /**
+                                 * Properties of an EvonodeProposedBlocks.
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                                 * @interface IEvonodeProposedBlocks
+                                 * @property {Uint8Array|null} [proTxHash] EvonodeProposedBlocks proTxHash
+                                 * @property {number|Long|null} [count] EvonodeProposedBlocks count
+                                 */
+
+                                /**
+                                 * Constructs a new EvonodeProposedBlocks.
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                                 * @classdesc Represents an EvonodeProposedBlocks.
+                                 * @implements IEvonodeProposedBlocks
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodeProposedBlocks=} [properties] Properties to set
+                                 */
+                                function EvonodeProposedBlocks(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * EvonodeProposedBlocks proTxHash.
+                                 * @member {Uint8Array} proTxHash
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @instance
+                                 */
+                                EvonodeProposedBlocks.prototype.proTxHash = $util.newBuffer([]);
+
+                                /**
+                                 * EvonodeProposedBlocks count.
+                                 * @member {number|Long} count
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @instance
+                                 */
+                                EvonodeProposedBlocks.prototype.count = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Creates a new EvonodeProposedBlocks instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodeProposedBlocks=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks} EvonodeProposedBlocks instance
+                                 */
+                                EvonodeProposedBlocks.create = function create(properties) {
+                                    return new EvonodeProposedBlocks(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified EvonodeProposedBlocks message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodeProposedBlocks} message EvonodeProposedBlocks message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                EvonodeProposedBlocks.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.proTxHash != null && Object.hasOwnProperty.call(message, "proTxHash"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.proTxHash);
+                                    if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.count);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified EvonodeProposedBlocks message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodeProposedBlocks} message EvonodeProposedBlocks message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                EvonodeProposedBlocks.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an EvonodeProposedBlocks message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks} EvonodeProposedBlocks
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                EvonodeProposedBlocks.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.proTxHash = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.count = reader.uint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an EvonodeProposedBlocks message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks} EvonodeProposedBlocks
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                EvonodeProposedBlocks.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an EvonodeProposedBlocks message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                EvonodeProposedBlocks.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                        if (!(message.proTxHash && typeof message.proTxHash.length === "number" || $util.isString(message.proTxHash)))
+                                            return "proTxHash: buffer expected";
+                                    if (message.count != null && message.hasOwnProperty("count"))
+                                        if (!$util.isInteger(message.count) && !(message.count && $util.isInteger(message.count.low) && $util.isInteger(message.count.high)))
+                                            return "count: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an EvonodeProposedBlocks message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks} EvonodeProposedBlocks
+                                 */
+                                EvonodeProposedBlocks.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks();
+                                    if (object.proTxHash != null)
+                                        if (typeof object.proTxHash === "string")
+                                            $util.base64.decode(object.proTxHash, message.proTxHash = $util.newBuffer($util.base64.length(object.proTxHash)), 0);
+                                        else if (object.proTxHash.length >= 0)
+                                            message.proTxHash = object.proTxHash;
+                                    if (object.count != null)
+                                        if ($util.Long)
+                                            (message.count = $util.Long.fromValue(object.count)).unsigned = true;
+                                        else if (typeof object.count === "string")
+                                            message.count = parseInt(object.count, 10);
+                                        else if (typeof object.count === "number")
+                                            message.count = object.count;
+                                        else if (typeof object.count === "object")
+                                            message.count = new $util.LongBits(object.count.low >>> 0, object.count.high >>> 0).toNumber(true);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an EvonodeProposedBlocks message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks} message EvonodeProposedBlocks
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                EvonodeProposedBlocks.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.proTxHash = "";
+                                        else {
+                                            object.proTxHash = [];
+                                            if (options.bytes !== Array)
+                                                object.proTxHash = $util.newBuffer(object.proTxHash);
+                                        }
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.count = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.count = options.longs === String ? "0" : 0;
+                                    }
+                                    if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                        object.proTxHash = options.bytes === String ? $util.base64.encode(message.proTxHash, 0, message.proTxHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.proTxHash) : message.proTxHash;
+                                    if (message.count != null && message.hasOwnProperty("count"))
+                                        if (typeof message.count === "number")
+                                            object.count = options.longs === String ? String(message.count) : message.count;
+                                        else
+                                            object.count = options.longs === String ? $util.Long.prototype.toString.call(message.count) : options.longs === Number ? new $util.LongBits(message.count.low >>> 0, message.count.high >>> 0).toNumber(true) : message.count;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this EvonodeProposedBlocks to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                EvonodeProposedBlocks.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return EvonodeProposedBlocks;
+                            })();
+
+                            GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks = (function() {
+
+                                /**
+                                 * Properties of an EvonodesProposedBlocks.
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                                 * @interface IEvonodesProposedBlocks
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodeProposedBlocks>|null} [evonodesProposedBlockCounts] EvonodesProposedBlocks evonodesProposedBlockCounts
+                                 */
+
+                                /**
+                                 * Constructs a new EvonodesProposedBlocks.
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                                 * @classdesc Represents an EvonodesProposedBlocks.
+                                 * @implements IEvonodesProposedBlocks
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodesProposedBlocks=} [properties] Properties to set
+                                 */
+                                function EvonodesProposedBlocks(properties) {
+                                    this.evonodesProposedBlockCounts = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * EvonodesProposedBlocks evonodesProposedBlockCounts.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodeProposedBlocks>} evonodesProposedBlockCounts
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @instance
+                                 */
+                                EvonodesProposedBlocks.prototype.evonodesProposedBlockCounts = $util.emptyArray;
+
+                                /**
+                                 * Creates a new EvonodesProposedBlocks instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodesProposedBlocks=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks} EvonodesProposedBlocks instance
+                                 */
+                                EvonodesProposedBlocks.create = function create(properties) {
+                                    return new EvonodesProposedBlocks(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified EvonodesProposedBlocks message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodesProposedBlocks} message EvonodesProposedBlocks message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                EvonodesProposedBlocks.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.evonodesProposedBlockCounts != null && message.evonodesProposedBlockCounts.length)
+                                        for (var i = 0; i < message.evonodesProposedBlockCounts.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.encode(message.evonodesProposedBlockCounts[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified EvonodesProposedBlocks message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodesProposedBlocks} message EvonodesProposedBlocks message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                EvonodesProposedBlocks.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an EvonodesProposedBlocks message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks} EvonodesProposedBlocks
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                EvonodesProposedBlocks.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.evonodesProposedBlockCounts && message.evonodesProposedBlockCounts.length))
+                                                message.evonodesProposedBlockCounts = [];
+                                            message.evonodesProposedBlockCounts.push($root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an EvonodesProposedBlocks message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks} EvonodesProposedBlocks
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                EvonodesProposedBlocks.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an EvonodesProposedBlocks message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                EvonodesProposedBlocks.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.evonodesProposedBlockCounts != null && message.hasOwnProperty("evonodesProposedBlockCounts")) {
+                                        if (!Array.isArray(message.evonodesProposedBlockCounts))
+                                            return "evonodesProposedBlockCounts: array expected";
+                                        for (var i = 0; i < message.evonodesProposedBlockCounts.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.verify(message.evonodesProposedBlockCounts[i]);
+                                            if (error)
+                                                return "evonodesProposedBlockCounts." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an EvonodesProposedBlocks message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks} EvonodesProposedBlocks
+                                 */
+                                EvonodesProposedBlocks.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks();
+                                    if (object.evonodesProposedBlockCounts) {
+                                        if (!Array.isArray(object.evonodesProposedBlockCounts))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.evonodesProposedBlockCounts: array expected");
+                                        message.evonodesProposedBlockCounts = [];
+                                        for (var i = 0; i < object.evonodesProposedBlockCounts.length; ++i) {
+                                            if (typeof object.evonodesProposedBlockCounts[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.evonodesProposedBlockCounts: object expected");
+                                            message.evonodesProposedBlockCounts[i] = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.fromObject(object.evonodesProposedBlockCounts[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an EvonodesProposedBlocks message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks} message EvonodesProposedBlocks
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                EvonodesProposedBlocks.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.evonodesProposedBlockCounts = [];
+                                    if (message.evonodesProposedBlockCounts && message.evonodesProposedBlockCounts.length) {
+                                        object.evonodesProposedBlockCounts = [];
+                                        for (var j = 0; j < message.evonodesProposedBlockCounts.length; ++j)
+                                            object.evonodesProposedBlockCounts[j] = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.toObject(message.evonodesProposedBlockCounts[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this EvonodesProposedBlocks to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                EvonodesProposedBlocks.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return EvonodesProposedBlocks;
+                            })();
+
+                            return GetEvonodesProposedEpochBlocksResponseV0;
+                        })();
+
+                        return GetEvonodesProposedEpochBlocksResponse;
+                    })();
+
+                    v0.GetEvonodesProposedEpochBlocksByRangeRequest = (function() {
+
+                        /**
+                         * Properties of a GetEvonodesProposedEpochBlocksByRangeRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetEvonodesProposedEpochBlocksByRangeRequest
+                         * @property {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.IGetEvonodesProposedEpochBlocksByRangeRequestV0|null} [v0] GetEvonodesProposedEpochBlocksByRangeRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetEvonodesProposedEpochBlocksByRangeRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetEvonodesProposedEpochBlocksByRangeRequest.
+                         * @implements IGetEvonodesProposedEpochBlocksByRangeRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByRangeRequest=} [properties] Properties to set
+                         */
+                        function GetEvonodesProposedEpochBlocksByRangeRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetEvonodesProposedEpochBlocksByRangeRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.IGetEvonodesProposedEpochBlocksByRangeRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @instance
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetEvonodesProposedEpochBlocksByRangeRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetEvonodesProposedEpochBlocksByRangeRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetEvonodesProposedEpochBlocksByRangeRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByRangeRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest} GetEvonodesProposedEpochBlocksByRangeRequest instance
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.create = function create(properties) {
+                            return new GetEvonodesProposedEpochBlocksByRangeRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetEvonodesProposedEpochBlocksByRangeRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByRangeRequest} message GetEvonodesProposedEpochBlocksByRangeRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetEvonodesProposedEpochBlocksByRangeRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByRangeRequest} message GetEvonodesProposedEpochBlocksByRangeRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetEvonodesProposedEpochBlocksByRangeRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest} GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetEvonodesProposedEpochBlocksByRangeRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest} GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetEvonodesProposedEpochBlocksByRangeRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetEvonodesProposedEpochBlocksByRangeRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest} GetEvonodesProposedEpochBlocksByRangeRequest
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetEvonodesProposedEpochBlocksByRangeRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest} message GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetEvonodesProposedEpochBlocksByRangeRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetEvonodesProposedEpochBlocksByRangeRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                             * @interface IGetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @property {number|null} [epoch] GetEvonodesProposedEpochBlocksByRangeRequestV0 epoch
+                             * @property {number|null} [limit] GetEvonodesProposedEpochBlocksByRangeRequestV0 limit
+                             * @property {Uint8Array|null} [startAfter] GetEvonodesProposedEpochBlocksByRangeRequestV0 startAfter
+                             * @property {Uint8Array|null} [startAt] GetEvonodesProposedEpochBlocksByRangeRequestV0 startAt
+                             * @property {boolean|null} [prove] GetEvonodesProposedEpochBlocksByRangeRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetEvonodesProposedEpochBlocksByRangeRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                             * @classdesc Represents a GetEvonodesProposedEpochBlocksByRangeRequestV0.
+                             * @implements IGetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.IGetEvonodesProposedEpochBlocksByRangeRequestV0=} [properties] Properties to set
+                             */
+                            function GetEvonodesProposedEpochBlocksByRangeRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByRangeRequestV0 epoch.
+                             * @member {number} epoch
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype.epoch = 0;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByRangeRequestV0 limit.
+                             * @member {number} limit
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype.limit = 0;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByRangeRequestV0 startAfter.
+                             * @member {Uint8Array} startAfter
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype.startAfter = $util.newBuffer([]);
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByRangeRequestV0 startAt.
+                             * @member {Uint8Array} startAt
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype.startAt = $util.newBuffer([]);
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByRangeRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype.prove = false;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByRangeRequestV0 start.
+                             * @member {"startAfter"|"startAt"|undefined} start
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype, "start", {
+                                get: $util.oneOfGetter($oneOfFields = ["startAfter", "startAt"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetEvonodesProposedEpochBlocksByRangeRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.IGetEvonodesProposedEpochBlocksByRangeRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0} GetEvonodesProposedEpochBlocksByRangeRequestV0 instance
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.create = function create(properties) {
+                                return new GetEvonodesProposedEpochBlocksByRangeRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetEvonodesProposedEpochBlocksByRangeRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.IGetEvonodesProposedEpochBlocksByRangeRequestV0} message GetEvonodesProposedEpochBlocksByRangeRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.epoch != null && Object.hasOwnProperty.call(message, "epoch"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.epoch);
+                                if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.limit);
+                                if (message.startAfter != null && Object.hasOwnProperty.call(message, "startAfter"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.startAfter);
+                                if (message.startAt != null && Object.hasOwnProperty.call(message, "startAt"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.startAt);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 5, wireType 0 =*/40).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetEvonodesProposedEpochBlocksByRangeRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.IGetEvonodesProposedEpochBlocksByRangeRequestV0} message GetEvonodesProposedEpochBlocksByRangeRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetEvonodesProposedEpochBlocksByRangeRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0} GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.epoch = reader.uint32();
+                                        break;
+                                    case 2:
+                                        message.limit = reader.uint32();
+                                        break;
+                                    case 3:
+                                        message.startAfter = reader.bytes();
+                                        break;
+                                    case 4:
+                                        message.startAt = reader.bytes();
+                                        break;
+                                    case 5:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetEvonodesProposedEpochBlocksByRangeRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0} GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetEvonodesProposedEpochBlocksByRangeRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                    if (!$util.isInteger(message.epoch))
+                                        return "epoch: integer expected";
+                                if (message.limit != null && message.hasOwnProperty("limit"))
+                                    if (!$util.isInteger(message.limit))
+                                        return "limit: integer expected";
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter")) {
+                                    properties.start = 1;
+                                    if (!(message.startAfter && typeof message.startAfter.length === "number" || $util.isString(message.startAfter)))
+                                        return "startAfter: buffer expected";
+                                }
+                                if (message.startAt != null && message.hasOwnProperty("startAt")) {
+                                    if (properties.start === 1)
+                                        return "start: multiple values";
+                                    properties.start = 1;
+                                    if (!(message.startAt && typeof message.startAt.length === "number" || $util.isString(message.startAt)))
+                                        return "startAt: buffer expected";
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetEvonodesProposedEpochBlocksByRangeRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0} GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0();
+                                if (object.epoch != null)
+                                    message.epoch = object.epoch >>> 0;
+                                if (object.limit != null)
+                                    message.limit = object.limit >>> 0;
+                                if (object.startAfter != null)
+                                    if (typeof object.startAfter === "string")
+                                        $util.base64.decode(object.startAfter, message.startAfter = $util.newBuffer($util.base64.length(object.startAfter)), 0);
+                                    else if (object.startAfter.length >= 0)
+                                        message.startAfter = object.startAfter;
+                                if (object.startAt != null)
+                                    if (typeof object.startAt === "string")
+                                        $util.base64.decode(object.startAt, message.startAt = $util.newBuffer($util.base64.length(object.startAt)), 0);
+                                    else if (object.startAt.length >= 0)
+                                        message.startAt = object.startAt;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetEvonodesProposedEpochBlocksByRangeRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0} message GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.epoch = 0;
+                                    object.limit = 0;
+                                    object.prove = false;
+                                }
+                                if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                    object.epoch = message.epoch;
+                                if (message.limit != null && message.hasOwnProperty("limit"))
+                                    object.limit = message.limit;
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter")) {
+                                    object.startAfter = options.bytes === String ? $util.base64.encode(message.startAfter, 0, message.startAfter.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAfter) : message.startAfter;
+                                    if (options.oneofs)
+                                        object.start = "startAfter";
+                                }
+                                if (message.startAt != null && message.hasOwnProperty("startAt")) {
+                                    object.startAt = options.bytes === String ? $util.base64.encode(message.startAt, 0, message.startAt.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAt) : message.startAt;
+                                    if (options.oneofs)
+                                        object.start = "startAt";
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetEvonodesProposedEpochBlocksByRangeRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetEvonodesProposedEpochBlocksByRangeRequestV0;
+                        })();
+
+                        return GetEvonodesProposedEpochBlocksByRangeRequest;
+                    })();
+
+                    v0.GetIdentitiesBalancesRequest = (function() {
+
+                        /**
+                         * Properties of a GetIdentitiesBalancesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentitiesBalancesRequest
+                         * @property {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0|null} [v0] GetIdentitiesBalancesRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetIdentitiesBalancesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentitiesBalancesRequest.
+                         * @implements IGetIdentitiesBalancesRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest=} [properties] Properties to set
+                         */
+                        function GetIdentitiesBalancesRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentitiesBalancesRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @instance
+                         */
+                        GetIdentitiesBalancesRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentitiesBalancesRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentitiesBalancesRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetIdentitiesBalancesRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} GetIdentitiesBalancesRequest instance
+                         */
+                        GetIdentitiesBalancesRequest.create = function create(properties) {
+                            return new GetIdentitiesBalancesRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesBalancesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest} message GetIdentitiesBalancesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesBalancesRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesBalancesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest} message GetIdentitiesBalancesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesBalancesRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesBalancesRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} GetIdentitiesBalancesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesBalancesRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesBalancesRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} GetIdentitiesBalancesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesBalancesRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentitiesBalancesRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentitiesBalancesRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentitiesBalancesRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} GetIdentitiesBalancesRequest
+                         */
+                        GetIdentitiesBalancesRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentitiesBalancesRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} message GetIdentitiesBalancesRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentitiesBalancesRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentitiesBalancesRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentitiesBalancesRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetIdentitiesBalancesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                             * @interface IGetIdentitiesBalancesRequestV0
+                             * @property {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds|null} [identitiesIds] GetIdentitiesBalancesRequestV0 identitiesIds
+                             * @property {boolean|null} [prove] GetIdentitiesBalancesRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetIdentitiesBalancesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                             * @classdesc Represents a GetIdentitiesBalancesRequestV0.
+                             * @implements IGetIdentitiesBalancesRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0=} [properties] Properties to set
+                             */
+                            function GetIdentitiesBalancesRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentitiesBalancesRequestV0 identitiesIds.
+                             * @member {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds|null|undefined} identitiesIds
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesRequestV0.prototype.identitiesIds = null;
+
+                            /**
+                             * GetIdentitiesBalancesRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetIdentitiesBalancesRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} GetIdentitiesBalancesRequestV0 instance
+                             */
+                            GetIdentitiesBalancesRequestV0.create = function create(properties) {
+                                return new GetIdentitiesBalancesRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentitiesBalancesRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0} message GetIdentitiesBalancesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentitiesBalancesRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identitiesIds != null && Object.hasOwnProperty.call(message, "identitiesIds"))
+                                    $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.encode(message.identitiesIds, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentitiesBalancesRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0} message GetIdentitiesBalancesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentitiesBalancesRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentitiesBalancesRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} GetIdentitiesBalancesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentitiesBalancesRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.identitiesIds = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentitiesBalancesRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} GetIdentitiesBalancesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentitiesBalancesRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentitiesBalancesRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentitiesBalancesRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.identitiesIds != null && message.hasOwnProperty("identitiesIds")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.verify(message.identitiesIds);
+                                    if (error)
+                                        return "identitiesIds." + error;
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentitiesBalancesRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} GetIdentitiesBalancesRequestV0
+                             */
+                            GetIdentitiesBalancesRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0();
+                                if (object.identitiesIds != null) {
+                                    if (typeof object.identitiesIds !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.identitiesIds: object expected");
+                                    message.identitiesIds = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.fromObject(object.identitiesIds);
+                                }
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentitiesBalancesRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} message GetIdentitiesBalancesRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentitiesBalancesRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.identitiesIds = null;
+                                    object.prove = false;
+                                }
+                                if (message.identitiesIds != null && message.hasOwnProperty("identitiesIds"))
+                                    object.identitiesIds = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.toObject(message.identitiesIds, options);
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentitiesBalancesRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentitiesBalancesRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds = (function() {
+
+                                /**
+                                 * Properties of a GetIdentitiesBalancesByKnownIdentityIds.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                                 * @interface IGetIdentitiesBalancesByKnownIdentityIds
+                                 * @property {Array.<Uint8Array>|null} [identitiesIds] GetIdentitiesBalancesByKnownIdentityIds identitiesIds
+                                 */
+
+                                /**
+                                 * Constructs a new GetIdentitiesBalancesByKnownIdentityIds.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                                 * @classdesc Represents a GetIdentitiesBalancesByKnownIdentityIds.
+                                 * @implements IGetIdentitiesBalancesByKnownIdentityIds
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds=} [properties] Properties to set
+                                 */
+                                function GetIdentitiesBalancesByKnownIdentityIds(properties) {
+                                    this.identitiesIds = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * GetIdentitiesBalancesByKnownIdentityIds identitiesIds.
+                                 * @member {Array.<Uint8Array>} identitiesIds
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @instance
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.prototype.identitiesIds = $util.emptyArray;
+
+                                /**
+                                 * Creates a new GetIdentitiesBalancesByKnownIdentityIds instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} GetIdentitiesBalancesByKnownIdentityIds instance
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.create = function create(properties) {
+                                    return new GetIdentitiesBalancesByKnownIdentityIds(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified GetIdentitiesBalancesByKnownIdentityIds message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds} message GetIdentitiesBalancesByKnownIdentityIds message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.identitiesIds != null && message.identitiesIds.length)
+                                        for (var i = 0; i < message.identitiesIds.length; ++i)
+                                            writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identitiesIds[i]);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified GetIdentitiesBalancesByKnownIdentityIds message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds} message GetIdentitiesBalancesByKnownIdentityIds message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a GetIdentitiesBalancesByKnownIdentityIds message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} GetIdentitiesBalancesByKnownIdentityIds
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.identitiesIds && message.identitiesIds.length))
+                                                message.identitiesIds = [];
+                                            message.identitiesIds.push(reader.bytes());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a GetIdentitiesBalancesByKnownIdentityIds message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} GetIdentitiesBalancesByKnownIdentityIds
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a GetIdentitiesBalancesByKnownIdentityIds message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.identitiesIds != null && message.hasOwnProperty("identitiesIds")) {
+                                        if (!Array.isArray(message.identitiesIds))
+                                            return "identitiesIds: array expected";
+                                        for (var i = 0; i < message.identitiesIds.length; ++i)
+                                            if (!(message.identitiesIds[i] && typeof message.identitiesIds[i].length === "number" || $util.isString(message.identitiesIds[i])))
+                                                return "identitiesIds: buffer[] expected";
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a GetIdentitiesBalancesByKnownIdentityIds message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} GetIdentitiesBalancesByKnownIdentityIds
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds();
+                                    if (object.identitiesIds) {
+                                        if (!Array.isArray(object.identitiesIds))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.identitiesIds: array expected");
+                                        message.identitiesIds = [];
+                                        for (var i = 0; i < object.identitiesIds.length; ++i)
+                                            if (typeof object.identitiesIds[i] === "string")
+                                                $util.base64.decode(object.identitiesIds[i], message.identitiesIds[i] = $util.newBuffer($util.base64.length(object.identitiesIds[i])), 0);
+                                            else if (object.identitiesIds[i].length >= 0)
+                                                message.identitiesIds[i] = object.identitiesIds[i];
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a GetIdentitiesBalancesByKnownIdentityIds message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} message GetIdentitiesBalancesByKnownIdentityIds
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.identitiesIds = [];
+                                    if (message.identitiesIds && message.identitiesIds.length) {
+                                        object.identitiesIds = [];
+                                        for (var j = 0; j < message.identitiesIds.length; ++j)
+                                            object.identitiesIds[j] = options.bytes === String ? $util.base64.encode(message.identitiesIds[j], 0, message.identitiesIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.identitiesIds[j]) : message.identitiesIds[j];
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this GetIdentitiesBalancesByKnownIdentityIds to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                GetIdentitiesBalancesByKnownIdentityIds.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return GetIdentitiesBalancesByKnownIdentityIds;
+                            })();
+
+                            return GetIdentitiesBalancesRequestV0;
+                        })();
+
+                        return GetIdentitiesBalancesRequest;
+                    })();
+
+                    v0.GetIdentitiesBalancesResponse = (function() {
+
+                        /**
+                         * Properties of a GetIdentitiesBalancesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentitiesBalancesResponse
+                         * @property {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0|null} [v0] GetIdentitiesBalancesResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetIdentitiesBalancesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentitiesBalancesResponse.
+                         * @implements IGetIdentitiesBalancesResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesResponse=} [properties] Properties to set
+                         */
+                        function GetIdentitiesBalancesResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentitiesBalancesResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @instance
+                         */
+                        GetIdentitiesBalancesResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentitiesBalancesResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentitiesBalancesResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetIdentitiesBalancesResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} GetIdentitiesBalancesResponse instance
+                         */
+                        GetIdentitiesBalancesResponse.create = function create(properties) {
+                            return new GetIdentitiesBalancesResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesBalancesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesResponse} message GetIdentitiesBalancesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesBalancesResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesBalancesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesResponse} message GetIdentitiesBalancesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesBalancesResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesBalancesResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} GetIdentitiesBalancesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesBalancesResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesBalancesResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} GetIdentitiesBalancesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesBalancesResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentitiesBalancesResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentitiesBalancesResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentitiesBalancesResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} GetIdentitiesBalancesResponse
+                         */
+                        GetIdentitiesBalancesResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentitiesBalancesResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} message GetIdentitiesBalancesResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentitiesBalancesResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentitiesBalancesResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentitiesBalancesResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetIdentitiesBalancesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                             * @interface IGetIdentitiesBalancesResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances|null} [identitiesBalances] GetIdentitiesBalancesResponseV0 identitiesBalances
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentitiesBalancesResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentitiesBalancesResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetIdentitiesBalancesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                             * @classdesc Represents a GetIdentitiesBalancesResponseV0.
+                             * @implements IGetIdentitiesBalancesResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0=} [properties] Properties to set
+                             */
+                            function GetIdentitiesBalancesResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentitiesBalancesResponseV0 identitiesBalances.
+                             * @member {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances|null|undefined} identitiesBalances
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesResponseV0.prototype.identitiesBalances = null;
+
+                            /**
+                             * GetIdentitiesBalancesResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetIdentitiesBalancesResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetIdentitiesBalancesResponseV0 result.
+                             * @member {"identitiesBalances"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetIdentitiesBalancesResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["identitiesBalances", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetIdentitiesBalancesResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} GetIdentitiesBalancesResponseV0 instance
+                             */
+                            GetIdentitiesBalancesResponseV0.create = function create(properties) {
+                                return new GetIdentitiesBalancesResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentitiesBalancesResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0} message GetIdentitiesBalancesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentitiesBalancesResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identitiesBalances != null && Object.hasOwnProperty.call(message, "identitiesBalances"))
+                                    $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.encode(message.identitiesBalances, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentitiesBalancesResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0} message GetIdentitiesBalancesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentitiesBalancesResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentitiesBalancesResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} GetIdentitiesBalancesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentitiesBalancesResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.identitiesBalances = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentitiesBalancesResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} GetIdentitiesBalancesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentitiesBalancesResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentitiesBalancesResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentitiesBalancesResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.identitiesBalances != null && message.hasOwnProperty("identitiesBalances")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.verify(message.identitiesBalances);
+                                        if (error)
+                                            return "identitiesBalances." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentitiesBalancesResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} GetIdentitiesBalancesResponseV0
+                             */
+                            GetIdentitiesBalancesResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0();
+                                if (object.identitiesBalances != null) {
+                                    if (typeof object.identitiesBalances !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.identitiesBalances: object expected");
+                                    message.identitiesBalances = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.fromObject(object.identitiesBalances);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentitiesBalancesResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} message GetIdentitiesBalancesResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentitiesBalancesResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.identitiesBalances != null && message.hasOwnProperty("identitiesBalances")) {
+                                    object.identitiesBalances = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.toObject(message.identitiesBalances, options);
+                                    if (options.oneofs)
+                                        object.result = "identitiesBalances";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentitiesBalancesResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentitiesBalancesResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetIdentitiesBalancesResponseV0.IdentityBalance = (function() {
+
+                                /**
+                                 * Properties of an IdentityBalance.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                                 * @interface IIdentityBalance
+                                 * @property {Uint8Array|null} [identityId] IdentityBalance identityId
+                                 * @property {number|Long|null} [balance] IdentityBalance balance
+                                 */
+
+                                /**
+                                 * Constructs a new IdentityBalance.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                                 * @classdesc Represents an IdentityBalance.
+                                 * @implements IIdentityBalance
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance=} [properties] Properties to set
+                                 */
+                                function IdentityBalance(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * IdentityBalance identityId.
+                                 * @member {Uint8Array} identityId
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @instance
+                                 */
+                                IdentityBalance.prototype.identityId = $util.newBuffer([]);
+
+                                /**
+                                 * IdentityBalance balance.
+                                 * @member {number|Long} balance
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @instance
+                                 */
+                                IdentityBalance.prototype.balance = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Creates a new IdentityBalance instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} IdentityBalance instance
+                                 */
+                                IdentityBalance.create = function create(properties) {
+                                    return new IdentityBalance(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityBalance message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance} message IdentityBalance message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityBalance.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.identityId != null && Object.hasOwnProperty.call(message, "identityId"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identityId);
+                                    if (message.balance != null && Object.hasOwnProperty.call(message, "balance"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.balance);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityBalance message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance} message IdentityBalance message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityBalance.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an IdentityBalance message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} IdentityBalance
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityBalance.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.identityId = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.balance = reader.uint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an IdentityBalance message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} IdentityBalance
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityBalance.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an IdentityBalance message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                IdentityBalance.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                        if (!(message.identityId && typeof message.identityId.length === "number" || $util.isString(message.identityId)))
+                                            return "identityId: buffer expected";
+                                    if (message.balance != null && message.hasOwnProperty("balance"))
+                                        if (!$util.isInteger(message.balance) && !(message.balance && $util.isInteger(message.balance.low) && $util.isInteger(message.balance.high)))
+                                            return "balance: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an IdentityBalance message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} IdentityBalance
+                                 */
+                                IdentityBalance.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance();
+                                    if (object.identityId != null)
+                                        if (typeof object.identityId === "string")
+                                            $util.base64.decode(object.identityId, message.identityId = $util.newBuffer($util.base64.length(object.identityId)), 0);
+                                        else if (object.identityId.length >= 0)
+                                            message.identityId = object.identityId;
+                                    if (object.balance != null)
+                                        if ($util.Long)
+                                            (message.balance = $util.Long.fromValue(object.balance)).unsigned = true;
+                                        else if (typeof object.balance === "string")
+                                            message.balance = parseInt(object.balance, 10);
+                                        else if (typeof object.balance === "number")
+                                            message.balance = object.balance;
+                                        else if (typeof object.balance === "object")
+                                            message.balance = new $util.LongBits(object.balance.low >>> 0, object.balance.high >>> 0).toNumber(true);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an IdentityBalance message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} message IdentityBalance
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                IdentityBalance.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.identityId = "";
+                                        else {
+                                            object.identityId = [];
+                                            if (options.bytes !== Array)
+                                                object.identityId = $util.newBuffer(object.identityId);
+                                        }
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.balance = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.balance = options.longs === String ? "0" : 0;
+                                    }
+                                    if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                        object.identityId = options.bytes === String ? $util.base64.encode(message.identityId, 0, message.identityId.length) : options.bytes === Array ? Array.prototype.slice.call(message.identityId) : message.identityId;
+                                    if (message.balance != null && message.hasOwnProperty("balance"))
+                                        if (typeof message.balance === "number")
+                                            object.balance = options.longs === String ? String(message.balance) : message.balance;
+                                        else
+                                            object.balance = options.longs === String ? $util.Long.prototype.toString.call(message.balance) : options.longs === Number ? new $util.LongBits(message.balance.low >>> 0, message.balance.high >>> 0).toNumber(true) : message.balance;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this IdentityBalance to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                IdentityBalance.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return IdentityBalance;
+                            })();
+
+                            GetIdentitiesBalancesResponseV0.IdentitiesBalances = (function() {
+
+                                /**
+                                 * Properties of an IdentitiesBalances.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                                 * @interface IIdentitiesBalances
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance>|null} [entries] IdentitiesBalances entries
+                                 */
+
+                                /**
+                                 * Constructs a new IdentitiesBalances.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                                 * @classdesc Represents an IdentitiesBalances.
+                                 * @implements IIdentitiesBalances
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances=} [properties] Properties to set
+                                 */
+                                function IdentitiesBalances(properties) {
+                                    this.entries = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * IdentitiesBalances entries.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance>} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @instance
+                                 */
+                                IdentitiesBalances.prototype.entries = $util.emptyArray;
+
+                                /**
+                                 * Creates a new IdentitiesBalances instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} IdentitiesBalances instance
+                                 */
+                                IdentitiesBalances.create = function create(properties) {
+                                    return new IdentitiesBalances(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified IdentitiesBalances message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances} message IdentitiesBalances message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentitiesBalances.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.entries != null && message.entries.length)
+                                        for (var i = 0; i < message.entries.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified IdentitiesBalances message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances} message IdentitiesBalances message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentitiesBalances.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an IdentitiesBalances message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} IdentitiesBalances
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentitiesBalances.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.entries && message.entries.length))
+                                                message.entries = [];
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an IdentitiesBalances message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} IdentitiesBalances
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentitiesBalances.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an IdentitiesBalances message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                IdentitiesBalances.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        if (!Array.isArray(message.entries))
+                                            return "entries: array expected";
+                                        for (var i = 0; i < message.entries.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.verify(message.entries[i]);
+                                            if (error)
+                                                return "entries." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an IdentitiesBalances message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} IdentitiesBalances
+                                 */
+                                IdentitiesBalances.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances();
+                                    if (object.entries) {
+                                        if (!Array.isArray(object.entries))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.entries: array expected");
+                                        message.entries = [];
+                                        for (var i = 0; i < object.entries.length; ++i) {
+                                            if (typeof object.entries[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.entries: object expected");
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.fromObject(object.entries[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an IdentitiesBalances message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} message IdentitiesBalances
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                IdentitiesBalances.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.entries = [];
+                                    if (message.entries && message.entries.length) {
+                                        object.entries = [];
+                                        for (var j = 0; j < message.entries.length; ++j)
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.toObject(message.entries[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this IdentitiesBalances to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                IdentitiesBalances.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return IdentitiesBalances;
+                            })();
+
+                            return GetIdentitiesBalancesResponseV0;
+                        })();
+
+                        return GetIdentitiesBalancesResponse;
                     })();
 
                     v0.GetProofsRequest = (function() {

@@ -42,8 +42,6 @@ pub struct BlockExecutionContextV0 {
     pub block_state_info: BlockStateInfo,
     /// Epoch info
     pub epoch_info: EpochInfo,
-    /// Total hpmn count
-    pub hpmn_count: u32,
     /// Unsigned withdrawal transactions to be available for extend and verify votes handlers
     pub unsigned_withdrawal_transactions: UnsignedWithdrawalTxs,
     /// Block state
@@ -58,9 +56,6 @@ pub trait BlockExecutionContextV0Getters {
 
     /// Returns a reference of the epoch_info field.
     fn epoch_info(&self) -> &EpochInfo;
-
-    /// Returns the hpmn_count field.
-    fn hpmn_count(&self) -> u32;
 
     /// Returns a reference of the withdrawal_transactions field.
     fn unsigned_withdrawal_transactions(&self) -> &UnsignedWithdrawalTxs;
@@ -79,9 +74,6 @@ pub trait BlockExecutionContextV0Setters {
 
     /// Sets the epoch_info field.
     fn set_epoch_info(&mut self, info: EpochInfo);
-
-    /// Sets the hpmn_count field.
-    fn set_hpmn_count(&mut self, count: u32);
 
     /// Sets the withdrawal_transactions field.
     fn set_unsigned_withdrawal_transactions(&mut self, transactions: UnsignedWithdrawalTxs);
@@ -137,11 +129,6 @@ impl BlockExecutionContextV0Getters for BlockExecutionContextV0 {
         &self.epoch_info
     }
 
-    /// Returns the hpmn_count field.
-    fn hpmn_count(&self) -> u32 {
-        self.hpmn_count
-    }
-
     /// Returns a reference to the unsigned withdrawal transactions
     fn unsigned_withdrawal_transactions(&self) -> &UnsignedWithdrawalTxs {
         &self.unsigned_withdrawal_transactions
@@ -166,10 +153,6 @@ impl BlockExecutionContextV0Setters for BlockExecutionContextV0 {
     /// Sets the epoch_info field.
     fn set_epoch_info(&mut self, info: EpochInfo) {
         self.epoch_info = info;
-    }
-    /// Sets the hpmn_count field.
-    fn set_hpmn_count(&mut self, count: u32) {
-        self.hpmn_count = count;
     }
     /// Sets the withdrawal_transactions field.
     fn set_unsigned_withdrawal_transactions(&mut self, transactions: UnsignedWithdrawalTxs) {

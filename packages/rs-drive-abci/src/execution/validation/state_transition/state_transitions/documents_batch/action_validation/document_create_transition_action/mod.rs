@@ -8,10 +8,12 @@ use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_create_transition_action::state_v0::DocumentCreateTransitionActionStateValidationV0;
+use crate::execution::validation::state_transition::documents_batch::action_validation::document_create_transition_action::state_v1::DocumentCreateTransitionActionStateValidationV1;
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_create_transition_action::structure_v0::DocumentCreateTransitionActionStructureValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
 
 mod state_v0;
+mod state_v1;
 mod structure_v0;
 
 pub trait DocumentCreateTransitionActionValidation {
@@ -78,9 +80,19 @@ impl DocumentCreateTransitionActionValidation for DocumentCreateTransitionAction
                 transaction,
                 platform_version,
             ),
+            // V1 introduces a validation that a contested document does not yet exist (and the
+            //  cost for this operation)
+            1 => self.validate_state_v1(
+                platform,
+                owner_id,
+                block_info,
+                execution_context,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentCreateTransitionAction::validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -80,7 +80,6 @@ pub(in crate::execution) mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContract;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use dpp::data_contract::document_type::DocumentTypeRef;
     use dpp::data_contract::document_type::random_document::{CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType};
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -89,8 +88,7 @@ pub(in crate::execution) mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
-    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use dpp::platform_value::{BinaryData, Bytes32, Value};
+    use dpp::platform_value::{Bytes32, Value};
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -194,6 +192,49 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected to add a new identity");
+
+        (identity, signer, critical_public_key)
+    }
+
+    pub(in crate::execution) fn setup_identity_without_adding_it(
+        seed: u64,
+        credits: Credits,
+    ) -> (Identity, SimpleSigner, IdentityPublicKey) {
+        let platform_version = PlatformVersion::latest();
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                0,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
+        let (critical_public_key, private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
+                1,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(critical_public_key.clone(), private_key.clone());
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([
+                (0, master_key.clone()),
+                (1, critical_public_key.clone()),
+            ]),
+            balance: credits,
+            revision: 0,
+        }
+        .into();
 
         (identity, signer, critical_public_key)
     }
@@ -429,7 +470,6 @@ pub(in crate::execution) mod tests {
                 app_hash: None,
             }),
             epoch_info: EpochInfo::V0(EpochInfoV0::default()),
-            hpmn_count: 0,
             unsigned_withdrawal_transactions: Default::default(),
             block_platform_state: platform_state.clone(),
             proposer_results: None,
@@ -622,6 +662,8 @@ pub(in crate::execution) mod tests {
                 platform_state,
                 rng,
                 name,
+                None,
+                false,
                 platform_version,
             );
 
@@ -676,6 +718,45 @@ pub(in crate::execution) mod tests {
             platform_state,
             rng,
             name,
+            None,
+            false,
+            platform_version,
+        );
+        (identity_1_info.0, identity_2_info.0, dpns_contract)
+    }
+
+    /// This can be useful if we already created the identities and we reuse the seed
+    pub(in crate::execution) fn create_dpns_identity_name_contest_skip_creating_identities(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        seed: u64,
+        name: &str,
+        nonce_offset: Option<IdentityNonce>,
+        platform_version: &PlatformVersion,
+    ) -> (Identity, Identity, Arc<DataContract>) {
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let identity_1_info = setup_identity_without_adding_it(rng.gen(), dash_to_credits!(0.5));
+
+        let identity_2_info = setup_identity_without_adding_it(rng.gen(), dash_to_credits!(0.5));
+
+        // Flip them if needed so identity 1 id is always smaller than identity 2 id
+        let (identity_1_info, identity_2_info) = if identity_1_info.0.id() < identity_2_info.0.id()
+        {
+            (identity_1_info, identity_2_info)
+        } else {
+            (identity_2_info, identity_1_info)
+        };
+
+        let (_, _, dpns_contract) = create_dpns_name_contest_on_identities(
+            platform,
+            &identity_1_info,
+            &identity_2_info,
+            platform_state,
+            rng,
+            name,
+            nonce_offset,
+            true, //we should also skip preorder
             platform_version,
         );
         (identity_1_info.0, identity_2_info.0, dpns_contract)
@@ -737,6 +818,8 @@ pub(in crate::execution) mod tests {
         platform_state: &PlatformState,
         mut rng: StdRng,
         name: &str,
+        nonce_offset: Option<IdentityNonce>,
+        skip_preorder: bool,
         platform_version: &PlatformVersion,
     ) -> (
         ((Document, Bytes32), (Document, Bytes32)),
@@ -860,7 +943,7 @@ pub(in crate::execution) mod tests {
                 preorder,
                 entropy.0,
                 key_1,
-                2,
+                2 + nonce_offset.unwrap_or_default(),
                 0,
                 signer_1,
                 platform_version,
@@ -881,7 +964,7 @@ pub(in crate::execution) mod tests {
                 preorder,
                 entropy.0,
                 key_2,
-                2,
+                2 + nonce_offset.unwrap_or_default(),
                 0,
                 signer_2,
                 platform_version,
@@ -902,7 +985,7 @@ pub(in crate::execution) mod tests {
                 domain,
                 entropy.0,
                 key_1,
-                3,
+                3 + nonce_offset.unwrap_or_default(),
                 0,
                 signer_1,
                 platform_version,
@@ -922,7 +1005,7 @@ pub(in crate::execution) mod tests {
                 domain,
                 entropy.0,
                 key_2,
-                3,
+                3 + nonce_offset.unwrap_or_default(),
                 0,
                 signer_2,
                 platform_version,
@@ -936,37 +1019,51 @@ pub(in crate::execution) mod tests {
             .serialize_to_bytes()
             .expect("expected documents batch serialized state transition");
 
-        let transaction = platform.drive.grove.start_transaction();
+        if !skip_preorder {
+            let transaction = platform.drive.grove.start_transaction();
 
-        let processing_result = platform
-            .platform
-            .process_raw_state_transitions(
-                &vec![
-                    documents_batch_create_serialized_preorder_transition_1.clone(),
-                    documents_batch_create_serialized_preorder_transition_2.clone(),
-                ],
-                platform_state,
-                &BlockInfo::default_with_time(
-                    platform_state
-                        .last_committed_block_time_ms()
-                        .unwrap_or_default()
-                        + 3000,
-                ),
-                &transaction,
-                platform_version,
-                false,
-                None,
-            )
-            .expect("expected to process state transition");
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![
+                        documents_batch_create_serialized_preorder_transition_1.clone(),
+                        documents_batch_create_serialized_preorder_transition_2.clone(),
+                    ],
+                    platform_state,
+                    &BlockInfo::default_with_time(
+                        platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    ),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
 
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("expected to commit transaction");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.valid_count(), 2);
+            let successful_count = processing_result
+                .execution_results()
+                .iter()
+                .filter(|result| {
+                    assert_matches!(
+                        result,
+                        StateTransitionExecutionResult::SuccessfulExecution(_, _)
+                    );
+                    true
+                })
+                .count();
+
+            assert_eq!(successful_count, 2);
+        }
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -998,7 +1095,19 @@ pub(in crate::execution) mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.valid_count(), 2);
+        let successful_count = processing_result
+            .execution_results()
+            .iter()
+            .filter(|result| {
+                assert_matches!(
+                    result,
+                    StateTransitionExecutionResult::SuccessfulExecution(_, _)
+                );
+                true
+            })
+            .count();
+
+        assert_eq!(successful_count, 2);
         (
             ((preorder_document_1, entropy), (document_1, entropy)),
             ((preorder_document_2, entropy), (document_2, entropy)),
@@ -1765,6 +1874,7 @@ pub(in crate::execution) mod tests {
         name: &str,
         count: u64,
         start_seed: u64,
+        nonce_offset: Option<IdentityNonce>,
         platform_version: &PlatformVersion,
     ) -> Vec<(Identifier, Identity, SimpleSigner, IdentityPublicKey)> {
         let mut masternode_infos = vec![];
@@ -1783,7 +1893,7 @@ pub(in crate::execution) mod tests {
                 &signer,
                 pro_tx_hash_bytes,
                 &voting_key,
-                1,
+                1 + nonce_offset.unwrap_or_default(),
                 None,
                 platform_version,
             );
@@ -1799,6 +1909,7 @@ pub(in crate::execution) mod tests {
         resource_vote_choices: Vec<(ResourceVoteChoice, u64)>,
         name: &str,
         start_seed: u64,
+        nonce_offset: Option<IdentityNonce>,
         platform_version: &PlatformVersion,
     ) -> BTreeMap<ResourceVoteChoice, Vec<(Identifier, Identity, SimpleSigner, IdentityPublicKey)>>
     {
@@ -1812,6 +1923,7 @@ pub(in crate::execution) mod tests {
                 name,
                 count,
                 count_aggregate,
+                nonce_offset,
                 platform_version,
             );
             masternodes_by_vote_choice.insert(resource_vote_choice, masternode_infos);
@@ -1851,7 +1963,7 @@ pub(in crate::execution) mod tests {
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
 
-        let quantum_encoded =
+        let name_encoded =
             bincode::encode_to_vec(Value::Text(convert_to_homograph_safe_chars(name)), config)
                 .expect("expected to encode the word quantum");
 
@@ -1865,7 +1977,7 @@ pub(in crate::execution) mod tests {
                             contract_id: dpns_contract.id().to_vec(),
                             document_type_name: domain.name().clone(),
                             index_name: index_name.clone(),
-                            index_values: vec![dash_encoded.clone(), quantum_encoded.clone()],
+                            index_values: vec![dash_encoded.clone(), name_encoded.clone()],
                             result_type: result_type as i32,
                             allow_include_locked_and_abstaining_vote_tally,
                             start_at_identifier_info,

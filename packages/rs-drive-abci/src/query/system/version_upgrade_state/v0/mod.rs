@@ -72,13 +72,14 @@ mod tests {
     use drive::util::grove_operations::BatchInsertApplyType;
     use drive::util::object_size_info::PathKeyElementInfo;
     use integer_encoding::VarInt;
+    use platform_version::version::INITIAL_PROTOCOL_VERSION;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
     use std::ops::RangeFull;
 
     #[test]
     fn test_query_empty_upgrade_state() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetProtocolVersionUpgradeStateRequestV0 { prove: false };
 
@@ -97,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_query_upgrade_state() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let mut rand = StdRng::seed_from_u64(10);
 
@@ -189,7 +190,7 @@ mod tests {
     #[test]
     fn test_prove_empty_upgrade_state() {
         let platform_version = PlatformVersion::latest();
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetProtocolVersionUpgradeStateRequestV0 { prove: true };
 
@@ -225,8 +226,9 @@ mod tests {
 
     #[test]
     fn test_prove_upgrade_state() {
-        let platform_version = PlatformVersion::latest();
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let platform_version = PlatformVersion::first();
+        let (platform, state, version) =
+            setup_platform(None, Network::Testnet, Some(INITIAL_PROTOCOL_VERSION));
 
         let mut rand = StdRng::seed_from_u64(10);
 

@@ -1,5 +1,6 @@
 pub mod document_already_present_error;
 pub mod document_contest_currently_locked_error;
+pub mod document_contest_document_with_same_id_already_present_error;
 pub mod document_contest_identity_already_contestant;
 pub mod document_contest_not_joinable_error;
 pub mod document_incorrect_purchase_price_error;

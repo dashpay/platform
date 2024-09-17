@@ -64,7 +64,7 @@ impl Drive {
     /// * `Result<QueryDocumentsOutcome, Error>` - Returns `QueryDocumentsOutcome` on success with the list of documents,
     ///    number of skipped items, and cost. If the operation fails, it returns an `Error`.
     #[inline(always)]
-    pub(super) fn query_contested_documents_v0(
+    pub(super) fn query_contested_documents_vote_state_v0(
         &self,
         query: ContestedDocumentVotePollDriveQuery,
         epoch: Option<&Epoch>,
