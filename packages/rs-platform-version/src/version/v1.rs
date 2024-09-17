@@ -720,7 +720,6 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     validate_simple_pre_check_balance: 0,
                 },
                 max_asset_lock_usage_attempts: 16,
-                contests_disabled_till_epoch_index: Some(3),
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
                     advanced_structure: Some(0),
