@@ -123,21 +123,6 @@ pub struct DriveConfig {
     pub network: Network,
 }
 
-#[cfg(feature = "serde")]
-fn from_str_to_network_with_aliases<'de, D>(deserializer: D) -> Result<Network, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let network_name = String::deserialize(deserializer)?;
-
-    match network_name.as_str() {
-        "mainnet" => Ok(Network::Dash),
-        "local" => Ok(Network::Regtest),
-        _ => Network::from_str(network_name.as_str())
-            .map_err(|e| serde::de::Error::custom(format!("can't parse network name: {e}"))),
-    }
-}
-
 // TODO: some weird envy behavior requries this to exist
 #[cfg(all(feature = "serde", feature = "grovedbg"))]
 fn from_str_to_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>

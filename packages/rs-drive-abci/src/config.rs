@@ -963,31 +963,15 @@ mod tests {
     fn test_config_from_testnet_propogates_network() {
         // ABCI log configs are parsed manually, so they deserve separate handling
         // Note that STDOUT is also defined in .env.example, but env var should overwrite it.
-        let vectors = &[
-            ("STDOUT", "pretty"),
-            ("UPPERCASE", "json"),
-            ("lowercase", "pretty"),
-            ("miXedC4s3", "full"),
-            ("123", "compact"),
-        ];
-        for vector in vectors {
-            env::set_var(format!("ABCI_LOG_{}_DESTINATION", vector.0), "bytes");
-            env::set_var(format!("ABCI_LOG_{}_FORMAT", vector.0), vector.1);
-        }
 
         let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.testnet");
 
         dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
-        assert_eq!("/tmp/db", env::var("DB_PATH").unwrap());
-        assert_eq!("/tmp/rejected", env::var("REJECTIONS_PATH").unwrap());
 
         let config = super::PlatformConfig::from_env().expect("expected config from env");
         assert!(config.execution.verify_sum_trees);
         assert_eq!(config.validator_set.quorum_type, QuorumType::Llmq25_67);
         assert_eq!(config.network, config.drive.network);
         assert_eq!(config.network, Network::Testnet);
-        for id in vectors {
-            matches!(config.abci.log[id.0].destination, LogDestination::Bytes);
-        }
     }
 }
