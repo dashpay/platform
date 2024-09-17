@@ -84,9 +84,9 @@ export default class DoctorCommand extends ConfigBaseCommand {
       console.log(chalk`\n  The doctor didn't find any problems with your node.
 
   If issues still persist, please use {bold.cyanBright dashmate doctor report} to create an archive
-  of already collected data for further investigation.
+  of the already collected data for further investigation.
 
-  You can use it to analyze your node condition yourself or send it to the Dash Core Group ({underline.cyanBright support@dash.org}).`);
+  You can use it to analyze the node's condition yourself or send it to the Dash Core Group support team ({underline.cyanBright support@dash.org}) for help.`);
 
       return;
     }
