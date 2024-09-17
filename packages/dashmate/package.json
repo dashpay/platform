@@ -159,6 +159,9 @@
       },
       "wallet": {
         "description": "Wallet related commands"
+      },
+      "doctor": {
+        "description": "Node diagnostics and reporting"
       }
     },
     "topicSeparator": " "
