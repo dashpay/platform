@@ -118,10 +118,7 @@ pub struct DriveConfig {
     /// The network type
     #[cfg_attr(
         feature = "serde",
-        serde(
-            default = "DriveConfig::default_network",
-            deserialize_with = "from_str_to_network_with_aliases"
-        )
+        serde(skip_deserializing, default = "DriveConfig::default_network")
     )]
     pub network: Network,
 }
