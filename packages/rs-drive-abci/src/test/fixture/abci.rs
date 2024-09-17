@@ -2,12 +2,15 @@
 //!
 
 use crate::config::PlatformConfig;
+use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::abci::RequestInitChain;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{ConsensusParams, VersionParams};
 
 /// Creates static init chain request fixture
 pub fn static_init_chain_request(config: &PlatformConfig) -> RequestInitChain {
+    let platform_version = PlatformVersion::get(config.initial_protocol_version)
+        .expect("expected to get platform version");
     RequestInitChain {
         time: Some(Timestamp {
             seconds: 0,
@@ -17,6 +20,7 @@ pub fn static_init_chain_request(config: &PlatformConfig) -> RequestInitChain {
         consensus_params: Some(ConsensusParams {
             version: Some(VersionParams {
                 app_version: config.initial_protocol_version as u64,
+                consensus_version: platform_version.consensus.tenderdash_consensus_version as i32,
             }),
             ..Default::default()
         }),

@@ -1,3 +1,4 @@
+use crate::version::consensus_versions::ConsensusVersions;
 use crate::version::contracts::SystemDataContractVersions;
 use crate::version::dpp_versions::{
     AssetLockVersions, ContractVersions, CostVersions, DPPMethodVersions, DPPValidationVersions,
@@ -605,6 +606,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                 check_tx: 0,
                 run_block_proposal: 0,
                 finalize_block_proposal: 0,
+                consensus_params_update: 0,
             },
             initialization: DriveAbciInitializationMethodVersions {
                 initial_core_height_and_time: 0,
@@ -1272,5 +1274,8 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_field_value_size: 5120,       //5 KiB
         max_state_transition_size: 20480, //20 KiB
         max_transitions_in_documents_batch: 1,
+    },
+    consensus: ConsensusVersions {
+        tenderdash_consensus_version: 0,
     },
 };
