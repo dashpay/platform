@@ -41,7 +41,8 @@ export default function verifySystemRequirementsFactory() {
       if (cpuCores < MINIMUM_CPU_CORES) {
         const problem = new Problem(
           `${cpuCores} CPU cores detected. At least ${MINIMUM_CPU_CORES} are required`,
-          `Consider upgrading CPUs to make sure the node can provide timely responses for required network services and avoid Proof-of-Service bans`,
+          `Consider upgrading CPUs to make sure the node can provide timely responses
+for required network services and avoid Proof-of-Service bans`,
           SEVERITY.MEDIUM,
         );
 
