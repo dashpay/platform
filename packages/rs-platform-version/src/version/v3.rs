@@ -86,6 +86,10 @@ pub const PROTOCOL_VERSION_3: ProtocolVersion = 3;
 
 /// This version introduces tenderdash_consensus_version as 1.
 /// We did this because of the issues in distribution for Evonodes.
+/// We are setting the requirement to 51% voting for this upgrade for it to take effect.
+/// This was done directly in ABCI.
+/// If we get between 51 and 67% we will have a chain stall
+/// However the chain will come back up as soon as enough have upgraded.
 
 pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
     protocol_version: 3,
@@ -636,9 +640,9 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                 },
             },
             protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
-                check_for_desired_protocol_upgrade: 0,
+                check_for_desired_protocol_upgrade: 1,
                 upgrade_protocol_version_on_epoch_change: 0,
-                protocol_version_upgrade_percentage_needed: 75,
+                protocol_version_upgrade_percentage_needed: 67,
             },
             block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
                 add_process_epoch_change_operations: 0,

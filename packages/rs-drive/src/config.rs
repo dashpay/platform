@@ -5,7 +5,6 @@ use dpp::dashcore::Network;
 use dpp::fee::epoch::DEFAULT_EPOCHS_PER_ERA;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 
 /// Boolean if GroveDB batching consistency verification is enabled by default
 pub const DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED: bool = false;

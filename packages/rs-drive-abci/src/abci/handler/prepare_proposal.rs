@@ -2,10 +2,11 @@ use crate::abci::app::{BlockExecutionApplication, PlatformApplication, Transacti
 use crate::abci::AbciError;
 use crate::error::Error;
 use crate::execution::engine::consensus_params_update::consensus_params_update;
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Setters;
+use crate::execution::types::block_execution_context::v0::{
+    BlockExecutionContextV0Getters, BlockExecutionContextV0Setters,
+};
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
-use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
@@ -15,7 +16,7 @@ use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
-use tenderdash_abci::proto::types::{ConsensusParams, CoreChainLock};
+use tenderdash_abci::proto::types::CoreChainLock;
 
 pub fn prepare_proposal<'a, A, C>(
     app: &A,
@@ -133,6 +134,8 @@ where
         mut block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
 
+    let epoch_info = block_execution_context.epoch_info();
+
     // We need to let Tenderdash know about the transactions we should remove from execution
     let valid_tx_count = state_transitions_result.valid_count();
     let failed_tx_count = state_transitions_result.failed_count();
@@ -204,8 +207,10 @@ where
         }),
         validator_set_update,
         consensus_param_updates: consensus_params_update(
+            app.platform().config.network,
             starting_platform_version,
             platform_version,
+            epoch_info,
         )?,
         app_version: platform_version.protocol_version as u64,
     };
