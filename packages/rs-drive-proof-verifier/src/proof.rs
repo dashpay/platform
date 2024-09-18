@@ -1710,7 +1710,12 @@ impl FromProof<platform::GetStatusRequest> for EvonodeStatus {
         Self: Sized + 'a,
     {
         let response: Self::Response = response.into();
-        let version = response.version.unwrap();
+        let version = match response.version {
+            Some(version) => version,
+            None => {
+                return Err(ProtocolError::Generic("No version in the response".to_string()).into())
+            }
+        };
         let (pro_tx_hash, latest_block_height) = match version {
             platform::get_status_response::Version::V0(v0) => {
                 let pro_tx_hash = match v0.node {
@@ -1727,21 +1732,28 @@ impl FromProof<platform::GetStatusRequest> for EvonodeStatus {
                 (pro_tx_hash, chain)
             }
         };
-        tracing::info!("{:?}", pro_tx_hash);
-        if pro_tx_hash.is_some() {
-            let evonode_status = EvonodeStatus::V0(EvonodeStatusV0 {
-                pro_tx_hash: Identifier::from_bytes(&pro_tx_hash.unwrap())
-                    .unwrap()
-                    .to_string(platform_value::string_encoding::Encoding::Base58),
-                latest_block_height,
-            });
-            Ok((
-                Some(evonode_status),
-                ResponseMetadata::default(),
-                Proof::default(),
-            ))
-        } else {
-            Ok((None, ResponseMetadata::default(), Proof::default()))
+        match pro_tx_hash {
+            Some(hash) => match Identifier::from_bytes(&hash) {
+                Ok(identifier) => {
+                    let evonode_status = EvonodeStatus::V0(EvonodeStatusV0 {
+                        pro_tx_hash: identifier
+                            .to_string(platform_value::string_encoding::Encoding::Base58),
+                        latest_block_height,
+                    });
+
+                    Ok((
+                        Some(evonode_status),
+                        ResponseMetadata::default(),
+                        Proof::default(),
+                    ))
+                }
+                Err(e) => Err(ProtocolError::Generic(format!(
+                    "Failed to convert pro_tx_hash to Identifier: {}",
+                    e
+                ))
+                .into()),
+            },
+            None => Ok((None, ResponseMetadata::default(), Proof::default())),
         }
     }
 }
