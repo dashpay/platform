@@ -24,6 +24,7 @@ where
             &TimestampMillis,
             &BTreeMap<ResourceVoteChoice, Vec<Identifier>>,
         )>,
+        clean_up_testnet_corrupted_reference_issue: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -35,6 +36,7 @@ where
         {
             0 => self.clean_up_after_contested_resources_vote_polls_end_v0(
                 vote_polls,
+                clean_up_testnet_corrupted_reference_issue,
                 transaction,
                 platform_version,
             ),

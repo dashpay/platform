@@ -75,13 +75,13 @@ pub struct Drive {
 // is at the top of the tree in order to reduce proof size
 // the most import tree is theDataContract Documents tree
 
-//                                                      DataContract_Documents 64
-//                                 /                                                                         \
-//                       Identities 32                                                                        Balances 96
-//             /                            \                                              /                                               \
-//   Token_Balances 16                    Pools 48                    WithdrawalTransactions 80                                        Votes  112
-//       /      \                           /                                      /                                                    /                          \
-//     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40          SpentAssetLockTransactions 72                             Misc 104                          Versions 120
+//                                                                                DataContract_Documents 64
+//                                 /                                                                                                       \
+//                       Identities 32                                                                                                 Balances 96
+//             /                            \                                                                   /                                                       \
+//   Token_Balances 16                    Pools 48                                                 WithdrawalTransactions 80                                                Votes  112
+//       /      \                           /                     \                                            /                                               /                          \
+//     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  Masternode Lists 56 (reserved)           SpentAssetLockTransactions 72                             Misc 104                          Versions 120
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -101,6 +101,9 @@ pub enum RootTree {
     /// PreFundedSpecializedBalances are balances that can fund specific state transitions that match
     /// predefined criteria
     PreFundedSpecializedBalances = 40,
+    // todo: reserved
+    // MasternodeLists contain the current masternode list as well as the evonode masternode list
+    // MasternodeLists = 56,
     /// Spent Asset Lock Transactions
     SpentAssetLockTransactions = 72,
     /// Misc
@@ -129,6 +132,7 @@ impl fmt::Display for RootTree {
             }
             RootTree::Pools => "Pools",
             RootTree::PreFundedSpecializedBalances => "PreFundedSpecializedBalances",
+            // RootTree::MasternodeLists => "MasternodeLists",
             RootTree::SpentAssetLockTransactions => "SpentAssetLockTransactions",
             RootTree::Misc => "Misc",
             RootTree::WithdrawalTransactions => "WithdrawalTransactions",
@@ -170,6 +174,7 @@ impl TryFrom<u8> for RootTree {
             24 => Ok(RootTree::UniquePublicKeyHashesToIdentities),
             8 => Ok(RootTree::NonUniquePublicKeyKeyHashesToIdentities),
             48 => Ok(RootTree::Pools),
+            // 56 => Ok(RootTree::MasternodeLists), //todo (reserved)
             40 => Ok(RootTree::PreFundedSpecializedBalances),
             72 => Ok(RootTree::SpentAssetLockTransactions),
             104 => Ok(RootTree::Misc),
@@ -195,6 +200,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::SpentAssetLockTransactions => &[72],
             RootTree::Pools => &[48],
             RootTree::PreFundedSpecializedBalances => &[40],
+            // RootTree::MasternodeLists => &[56],
             RootTree::Misc => &[104],
             RootTree::WithdrawalTransactions => &[80],
             RootTree::Balances => &[96],

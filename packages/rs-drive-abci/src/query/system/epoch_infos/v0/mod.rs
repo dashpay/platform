@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_query_empty_epoch_infos() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetEpochsInfoRequestV0 {
             start_epoch: None, // 0
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn test_query_empty_epoch_infos_descending() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetEpochsInfoRequestV0 {
             start_epoch: None, // 0

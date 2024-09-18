@@ -1,3 +1,77 @@
+## [1.3.0-dev.5](https://github.com/dashpay/platform/compare/v1.3.0-dev.4...v1.3.0-dev.5) (2024-09-16)
+
+
+### Bug Fixes
+
+* **drive-abci:** cleanup of later contests on testnet only ([#2134](https://github.com/dashpay/platform/issues/2134))
+
+## [1.3.0-dev.4](https://github.com/dashpay/platform/compare/v1.3.0-dev.3...v1.3.0-dev.4) (2024-09-16)
+
+
+### Bug Fixes
+
+* require75p of active not total hpmns ([#2129](https://github.com/dashpay/platform/issues/2129))
+
+## [1.3.0-dev.3](https://github.com/dashpay/platform/compare/v1.3.0-dev.2...v1.3.0-dev.3) (2024-09-16)
+
+
+### Bug Fixes
+
+* **drive-abci:** require 75 percent of active, not total hpmns ([#2127](https://github.com/dashpay/platform/issues/2127))
+
+## [1.3.0-dev.2](https://github.com/dashpay/platform/compare/v1.3.0-dev.1...v1.3.0-dev.2) (2024-09-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** contests on testnet should take less time (#2115)
+* **platform:** contested username distribution (#2118)
+
+### Features
+
+* **platform:** contests on testnet should take less time ([#2115](https://github.com/dashpay/platform/issues/2115))
+
+
+### Bug Fixes
+
+* body-parser vulnerability ([#2119](https://github.com/dashpay/platform/issues/2119))
+* **platform:** contested username distribution ([#2118](https://github.com/dashpay/platform/issues/2118))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update platform images to `1-dev` ([#2120](https://github.com/dashpay/platform/issues/2120))
+
+
+### Styles
+
+* **dapi:** better api for identities balances ([#2122](https://github.com/dashpay/platform/issues/2122))
+
+## [1.3.0-dev.1](https://github.com/dashpay/platform/compare/v1.2.0...v1.3.0-dev.1) (2024-09-12)
+
+
+### Features
+
+* query block count per Evonode proposed in any given epoch ([#2114](https://github.com/dashpay/platform/issues/2114))
+* query many identity balances at a time ([#2112](https://github.com/dashpay/platform/issues/2112))
+
+
+### Bug Fixes
+
+* **sdk:** use proofs when waiting for asset lock ([#2067](https://github.com/dashpay/platform/issues/2067))
+
+
+### Build System
+
+* cache Rust dependencies build as a docker layer ([#1900](https://github.com/dashpay/platform/issues/1900))
+* **drive-abci:** debug docker image with grovedb visualizer and tokio console ([#2012](https://github.com/dashpay/platform/issues/2012))
+
+
+### Miscellaneous Chores
+
+* add change base branch script ([#2082](https://github.com/dashpay/platform/issues/2082))
+* creation of protocol V2 ([#2104](https://github.com/dashpay/platform/issues/2104))
+
 ## [1.2.0](https://github.com/dashpay/platform/compare/v1.1.1...v1.2.0) (2024-08-30)
 
 

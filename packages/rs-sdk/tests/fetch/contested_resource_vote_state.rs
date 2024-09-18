@@ -277,8 +277,8 @@ type MutFn = fn(&mut ContestedDocumentVotePollDriveQuery);
 
 #[test_case(|q| q.limit = Some(0), Err("limit 0 out of bounds of [1, 100]"); "limit 0")]
 #[test_case(|q| q.limit = Some(std::u16::MAX), Err("limit 65535 out of bounds of [1, 100]"); "limit std::u16::MAX")]
-#[test_case(|q| q.start_at = Some(([0x11; 32], true)), Ok("Contenders { contenders: {Identifier("); "start_at does not exist should return next contenders")]
-#[test_case(|q| q.start_at = Some(([0xff; 32], true)), Ok("Contenders { contenders: {}, abstain_vote_tally: None, lock_vote_tally: None }"); "start_at 0xff;32 should return zero contenders")]
+#[test_case(|q| q.start_at = Some(([0x11; 32], true)), Ok("Contenders { winner: None, contenders: {Identifier("); "start_at does not exist should return next contenders")]
+#[test_case(|q| q.start_at = Some(([0xff; 32], true)), Ok("Contenders { winner: None, contenders: {}, abstain_vote_tally: None, lock_vote_tally: None }"); "start_at 0xff;32 should return zero contenders")]
 #[test_case(|q| q.vote_poll.document_type_name = "nx doctype".to_string(), Err(r#"code: InvalidArgument, message: "document type nx doctype not found"#); "non existing document type returns InvalidArgument")]
 #[test_case(|q| q.vote_poll.index_name = "nx index".to_string(), Err(r#"code: InvalidArgument, message: "index with name nx index is not the contested index"#); "non existing index returns InvalidArgument")]
 #[test_case(|q| q.vote_poll.index_name = "dashIdentityId".to_string(), Err(r#"code: InvalidArgument, message: "index with name dashIdentityId is not the contested index"#); "existing non-contested index returns InvalidArgument")]

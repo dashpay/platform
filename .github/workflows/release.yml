@@ -9,6 +9,10 @@ on:
       tag:
         description: "Version (i.e. v0.22.3-pre.2)"
         required: true
+      only_drive:
+        type: boolean
+        description: Only build Drive image
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -17,7 +21,7 @@ concurrency:
 jobs:
   release-npm:
     name: Release NPM packages
-    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
     timeout-minutes: 15
     if: github.event_name != 'workflow_dispatch'
     steps:
@@ -81,7 +85,7 @@ jobs:
         with:
           result-encoding: string
           script: |
-            const fullTag = context.payload.release.tag_name;
+            const fullTag = "${{ inputs.tag }}" || context.payload.release.tag_name;
             if (fullTag.includes('-')) {
               const [, fullSuffix] = fullTag.split('-');
               const [suffix] = fullSuffix.split('.');
@@ -96,9 +100,14 @@ jobs:
         with:
           result-encoding: string
           script: |
-            const tag = context.payload.release.tag_name;
+            const tag = "${{ inputs.tag }}" || context.payload.release.tag_name;
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
             return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
+
+      - name: Show NPM release tag
+        run: |
+          echo "NPM suffix: ${{ steps.suffix.outputs.result }}"
+          echo "NPM release tag: ${{ steps.tag.outputs.result }}"
 
       - name: Configure NPM auth token
         run: yarn config set npmAuthToken ${{ secrets.NPM_TOKEN }}
@@ -136,9 +145,23 @@ jobs:
       image_org: dashpay
       image_name: drive
       target: drive-abci
+      tag: ${{ inputs.tag || github.event.release.tag_name }}
+
+  release-drive-image-debug:
+    name: Release Drive debug image
+    secrets: inherit
+    uses: ./.github/workflows/release-docker-image.yml
+    with:
+      name: Drive
+      image_org: dashpay
+      image_name: drive
+      target: drive-abci
+      cargo_profile: dev
+      tag: ${{ inputs.tag || github.event.release.tag_name }}-debug
 
   release-dapi-image:
     name: Release DAPI image
+    if: ${{ !inputs.only_drive }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -146,9 +169,11 @@ jobs:
       image_org: dashpay
       image_name: dapi
       target: dapi
+      tag: ${{ inputs.tag || github.event.release.tag_name }}
 
   release-test-suite-image:
     name: Release Test Suite image
+    if: ${{ !inputs.only_drive }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -156,20 +181,24 @@ jobs:
       image_org: dashpay
       image_name: platform-test-suite
       target: test-suite
+      tag: ${{ inputs.tag || github.event.release.tag_name }}
 
   release-dashmate-helper-image:
     name: Release Dashmate Helper image
     secrets: inherit
+    if: ${{ !inputs.only_drive }}
     uses: ./.github/workflows/release-docker-image.yml
     with:
       name: Dashmate Helper
       image_org: dashpay
       image_name: dashmate-helper
       target: dashmate-helper
+      tag: ${{ inputs.tag || github.event.release.tag_name }}
 
   release-dashmate-packages:
     name: Release Dashmate packages
     runs-on: ${{ matrix.os }}
+    if: ${{ !inputs.only_drive }}
     needs: release-npm
     permissions:
       id-token: write # s3 cache
@@ -190,7 +219,7 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
         with:
-            fetch-depth: 0
+          fetch-depth: 0
 
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4

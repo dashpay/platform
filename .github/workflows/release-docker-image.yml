@@ -17,8 +17,16 @@ on:
         type: string
         description: Image target. i.e. drive-abci, dapi
         required: true
+      tag:
+        type: string
+        description: Image tag, i.e. v0.1.0; note it can be inherited from 'workflow_dispatch' event
+        default: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+      cargo_profile:
+        type: string
+        description: Cargo profile. i.e. release, dev
+        default: release
 env:
-  DIGEST_NAME: digests-${{ inputs.image_org }}-${{ inputs.image_name }}-${{ github.sha }}
+  DIGEST_NAME: digests-${{ inputs.image_org }}-${{ inputs.image_name }}-${{ inputs.tag }}-${{ inputs.cargo_profile }}-${{ github.sha }}
   DIGEST_DIR_PATH: /tmp/digests
 
 jobs:
@@ -29,9 +37,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+          - runner: ["self-hosted", "linux", "x64", "ubuntu-platform"]
             platform: linux/amd64
-          - runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+          - runner: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
             platform: linux/arm64
     steps:
       - name: Check out repo
@@ -52,10 +60,10 @@ jobs:
         with:
           image_name: ${{ inputs.image_name }}
           image_org: ${{ inputs.image_org }}
-          image_version: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.event.release.tag_name }}
+          image_version: ${{ inputs.tag }}
           target: ${{ inputs.target }}
           platform: ${{ matrix.platform }}
-          cargo_profile: release
+          cargo_profile: ${{ inputs.cargo_profile }}
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           region: ${{ secrets.AWS_REGION }}
@@ -92,29 +100,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Get image version
-        uses: actions/github-script@v6
-        id: version
-        with:
-          result-encoding: string
-          script: |
-            return (
-              context.eventName === 'workflow_dispatch'
-                ? '${{ github.event.inputs.tag }}'
-                : context.payload.release.tag_name
-            );
-
       - name: Set suffix
         uses: actions/github-script@v6
         id: suffix
         with:
           result-encoding: string
           script: |
-            const fullTag = '${{ steps.version.outputs.result }}';
+            const fullTag = '${{ inputs.tag }}';
             if (fullTag.includes('-')) {
-              const [, fullSuffix] = fullTag.split('-');
-              const [suffix] = fullSuffix.split('.');
-              return `-${suffix}`;
+              const suffixes = fullTag.split('-').slice(1);
+              const firstElements = suffixes.map(suffix => suffix.split('.')[0]);
+              return `-${firstElements.join('-')}`;
             } else {
               return '';
             }
@@ -125,10 +121,10 @@ jobs:
         with:
           images: ${{ inputs.image_org }}/${{ inputs.image_name }}
           tags: |
-            type=match,pattern=v(\d+),group=1,value=${{ steps.version.outputs.result }}
-            type=match,pattern=v(\d+.\d+),group=1,value=${{ steps.version.outputs.result }}
-            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{ steps.version.outputs.result }}
-            type=match,pattern=v(.*),group=1,value=${{ steps.version.outputs.result }},suffix=
+            type=match,pattern=v(.*),group=1,value=${{ inputs.tag }},priority=910,suffix=
+            type=match,pattern=v(\d+),group=1,value=${{ inputs.tag }}
+            type=match,pattern=v(\d+.\d+),group=1,value=${{ inputs.tag }}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{ inputs.tag }}
           flavor: |
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
@@ -138,7 +134,6 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Create manifest list and push
         working-directory: ${{ env.DIGEST_DIR_PATH }}
         run: |

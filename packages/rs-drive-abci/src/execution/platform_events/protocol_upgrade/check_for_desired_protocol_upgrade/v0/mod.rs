@@ -1,6 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use dpp::dashcore::Network;
 
 use dpp::version::PlatformVersion;
 use drive::dpp::util::deserializer::ProtocolVersion;
@@ -10,17 +11,26 @@ impl<C> Platform<C> {
     /// this should only be called on epoch change
     pub(super) fn check_for_desired_protocol_upgrade_v0(
         &self,
-        total_hpmns: u32,
+        active_hpmns: u32,
         platform_version: &PlatformVersion,
     ) -> Result<Option<ProtocolVersion>, Error> {
-        let upgrade_percentage_needed = platform_version
-            .drive_abci
-            .methods
-            .protocol_upgrade
-            .protocol_version_upgrade_percentage_needed;
+        let upgrade_percentage_needed = if (self.config.network == Network::Dash
+            && platform_version.protocol_version == 1)
+            || (self.config.network == Network::Testnet && platform_version.protocol_version == 2)
+        {
+            // This is a solution for the emergency update to version 3
+            // We clean this up immediately though as we transition to check_for_desired_protocol_upgrade_v1
+            51
+        } else {
+            platform_version
+                .drive_abci
+                .methods
+                .protocol_upgrade
+                .protocol_version_upgrade_percentage_needed
+        };
 
         let required_upgraded_hpmns = 1
-            + (total_hpmns as u64)
+            + (active_hpmns as u64)
                 .checked_mul(upgrade_percentage_needed)
                 .and_then(|product| product.checked_div(100))
                 .ok_or(Error::Execution(ExecutionError::Overflow(
@@ -42,12 +52,13 @@ impl<C> Platform<C> {
             ));
         }
 
-        tracing::trace!(
-            total_hpmns,
+        tracing::debug!(
+            active_hpmns,
             required_upgraded_hpmns,
             all_votes = ?protocol_versions_counter.global_cache,
             ?versions_passing_threshold,
-            "Protocol version voting is finished. {} versions passing the threshold: {:?}",
+            "Protocol version voting is finished. we require {} upgraded, {} versions passing the threshold: {:?}",
+            required_upgraded_hpmns,
             versions_passing_threshold.len(),
             versions_passing_threshold
         );
