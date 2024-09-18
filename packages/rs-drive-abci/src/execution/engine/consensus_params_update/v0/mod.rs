@@ -30,7 +30,7 @@ pub(super) fn consensus_params_update_v0(
             }
         }
         Network::Testnet => {
-            if epoch_info.is_first_block_of_epoch(1476) {
+            if epoch_info.is_first_block_of_epoch(1480) {
                 return Some(ConsensusParams {
                     block: None,
                     evidence: None,
