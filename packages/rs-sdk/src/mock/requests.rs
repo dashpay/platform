@@ -6,6 +6,7 @@ use dpp::{
     document::{serialization_traits::DocumentCborMethodsV0, Document},
     identifier::Identifier,
     identity::IdentityPublicKey,
+    node::status::EvonodeStatus,
     platform_serialization::{platform_encode_to_vec, platform_versioned_decode_from_slice},
     prelude::{DataContract, Identity},
     serialization::{
@@ -229,3 +230,4 @@ impl_mock_response!(VotePollsGroupedByTimestamp);
 impl_mock_response!(PrefundedSpecializedBalance);
 impl_mock_response!(TotalCreditsInPlatform);
 impl_mock_response!(ElementFetchRequestItem);
+impl_mock_response!(EvonodeStatus);

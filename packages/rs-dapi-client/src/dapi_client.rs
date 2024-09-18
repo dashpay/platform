@@ -112,6 +112,11 @@ impl DapiClient {
             dump_dir: None,
         }
     }
+
+    /// Return the [DapiClient] address list.
+    pub fn address_list(&self) -> Arc<RwLock<AddressList>> {
+        Arc::clone(&self.address_list)
+    }
 }
 
 #[async_trait]

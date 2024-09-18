@@ -85,7 +85,7 @@ pub enum AddressListError {
 
 /// A structure to manage DAPI addresses to select from
 /// for [DapiRequest](crate::DapiRequest) execution.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AddressList {
     addresses: HashSet<Address>,
     base_ban_period: Duration,
@@ -197,6 +197,11 @@ impl AddressList {
     /// Banned addresses are also counted.
     pub fn is_empty(&self) -> bool {
         self.addresses.is_empty()
+    }
+
+    /// Getter function that returns a clone of the Hashset of addresses
+    pub fn addresses(&self) -> HashSet<Address> {
+        self.addresses.clone()
     }
 }
 

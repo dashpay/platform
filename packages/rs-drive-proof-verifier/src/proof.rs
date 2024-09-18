@@ -33,13 +33,16 @@ use dpp::dashcore::{Network, ProTxHash};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dpp::identity::Purpose;
+use dpp::node::status::v0::EvonodeStatusV0;
+use dpp::node::status::EvonodeStatus;
 use dpp::platform_value::{self};
 use dpp::prelude::{DataContract, Identifier, Identity};
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
-use dpp::version::PlatformVersion;
+use dpp::version::{self, PlatformVersion};
 use dpp::voting::votes::Vote;
+use dpp::ProtocolError;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
@@ -1689,6 +1692,57 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
             mtd.clone(),
             proof.clone(),
         ))
+    }
+}
+
+impl FromProof<platform::GetStatusRequest> for EvonodeStatus {
+    type Request = platform::GetStatusRequest;
+    type Response = platform::GetStatusResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let response: Self::Response = response.into();
+        let version = response.version.unwrap();
+        let (pro_tx_hash, latest_block_height) = match version {
+            platform::get_status_response::Version::V0(v0) => {
+                let pro_tx_hash = match v0.node {
+                    Some(node) => node.pro_tx_hash,
+                    None => None,
+                };
+                let chain = match v0.chain {
+                    Some(chain) => chain.latest_block_height,
+                    None => {
+                        tracing::debug!("Missing chain message from response");
+                        0
+                    }
+                };
+                (pro_tx_hash, chain)
+            }
+        };
+        tracing::info!("{:?}", pro_tx_hash);
+        if pro_tx_hash.is_some() {
+            let evonode_status = EvonodeStatus::V0(EvonodeStatusV0 {
+                pro_tx_hash: Identifier::from_bytes(&pro_tx_hash.unwrap())
+                    .unwrap()
+                    .to_string(platform_value::string_encoding::Encoding::Base58),
+                latest_block_height,
+            });
+            Ok((
+                Some(evonode_status),
+                ResponseMetadata::default(),
+                Proof::default(),
+            ))
+        } else {
+            Ok((None, ResponseMetadata::default(), Proof::default()))
+        }
     }
 }
 

@@ -7,6 +7,7 @@ use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetC
 use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0;
 use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
+use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
@@ -17,10 +18,11 @@ use dapi_grpc::platform::v0::{
     GetProtocolVersionUpgradeVoteStatusRequest, GetTotalCreditsInPlatformRequest, KeyRequestType,
 };
 use dapi_grpc::platform::v0::{
-    GetContestedResourceIdentityVotesRequest, GetPrefundedSpecializedBalanceRequest,
-    GetVotePollsByEndDateRequest,
+    get_status_request, GetContestedResourceIdentityVotesRequest,
+    GetPrefundedSpecializedBalanceRequest, GetStatusRequest, GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
+use dpp::node::status::EvonodeStatus;
 use dpp::version::PlatformVersionError;
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
@@ -578,6 +580,18 @@ impl Query<GetTotalCreditsInPlatformRequest> for NoParamQuery {
             version: Some(get_total_credits_in_platform_request::Version::V0(
                 GetTotalCreditsInPlatformRequestV0 { prove },
             )),
+        };
+
+        Ok(request)
+    }
+}
+
+impl Query<GetStatusRequest> for () {
+    fn query(self, prove: bool) -> Result<GetStatusRequest, Error> {
+        // ignore proof
+
+        let request: GetStatusRequest = GetStatusRequest {
+            version: Some(get_status_request::Version::V0(GetStatusRequestV0 {})),
         };
 
         Ok(request)

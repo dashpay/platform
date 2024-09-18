@@ -507,6 +507,22 @@ impl Sdk {
     pub fn shutdown(&self) {
         self.cancel_token.cancel();
     }
+
+    /// Return the [DapiClient] address list
+    pub fn address_list(&self) -> Result<AddressList, String> {
+        match &self.inner {
+            SdkInstance::Dapi { dapi, version: _ } => {
+                let address_list_arc = dapi.address_list();
+                let address_list_lock = address_list_arc
+                    .read()
+                    .map_err(|e| format!("Failed to read address list: {e}"))?;
+                Ok(address_list_lock.clone())
+            }
+            SdkInstance::Mock { .. } => {
+                todo!();
+            }
+        }
+    }
 }
 
 #[async_trait::async_trait]
