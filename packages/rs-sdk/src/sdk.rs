@@ -781,9 +781,6 @@ impl SdkBuilder {
                 if  sdk.context_provider.is_none() {
                     #[cfg(feature = "mocks")]
                     if !self.core_ip.is_empty() {
-                        tracing::warn!("ContextProvider not set; mocking with Dash Core. \
-                        Please provide your own ContextProvider with SdkBuilder::with_context_provider().");
-
                         let mut context_provider = GrpcContextProvider::new(None,
                             &self.core_ip, self.core_port, &self.core_user, &self.core_password,
                             self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;

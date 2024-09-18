@@ -1,4 +1,3 @@
-use crate::identifier::Identifier;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 

@@ -1,6 +1,5 @@
 pub mod v0;
 
-use crate::identifier::Identifier;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
