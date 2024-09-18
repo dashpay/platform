@@ -1,3 +1,16 @@
+## [1.3.0-dev.6](https://github.com/dashpay/platform/compare/v1.3.0-dev.5...v1.3.0-dev.6) (2024-09-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** support Tenderdash upgrade (#2136)
+* **platform:** contested username time fix (#2137)
+* **platform:** emergency version upgrade to v1.3 Protocol Version 2 (#2138)
+* 
+### Bug Fixes
+
+* **platform:** contested username time fix ([#2137](https://github.com/dashpay/platform/issues/2137))
+
 ## [1.3.0-dev.5](https://github.com/dashpay/platform/compare/v1.3.0-dev.4...v1.3.0-dev.5) (2024-09-16)
 
 
