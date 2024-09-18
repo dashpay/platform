@@ -1,3 +1,15 @@
+## [1.3.0-dev.7](https://github.com/dashpay/platform/compare/v1.3.0-dev.6...v1.3.0-dev.7) (2024-09-18)
+
+
+### Bug Fixes
+
+* **dashmate:** invalid debug core log path ([#2143](https://github.com/dashpay/platform/issues/2143))
+
+
+### Miscellaneous Chores
+
+* change Upgrade 4 Epochs Later ([#2144](https://github.com/dashpay/platform/issues/2144))
+
 ## [1.3.0-dev.6](https://github.com/dashpay/platform/compare/v1.3.0-dev.5...v1.3.0-dev.6) (2024-09-18)
 
 
