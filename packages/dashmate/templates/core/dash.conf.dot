@@ -25,7 +25,7 @@ debugexclude={{= category}}
 {{? it.core.log.filePath === null }}
 nodebuglogfile=1
 {{??}}
-debuglogfile=/var/log/dash/debug.log }}
+debuglogfile=/var/log/dash/debug.log
 {{?}}
 
 # JSON RPC
