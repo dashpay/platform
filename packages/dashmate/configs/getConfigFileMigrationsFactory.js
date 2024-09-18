@@ -886,6 +886,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.3.0-dev.6': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:fix-wrong-proposer-at-round';
+          });
+        return configFile;
+      },
     };
   }
 
