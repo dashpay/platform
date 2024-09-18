@@ -11,6 +11,7 @@ use drive::grovedb::TransactionArg;
 
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
+use dpp::withdrawal::WithdrawalTransactionIndexAndBytes;
 use drive::config::DEFAULT_QUERY_LIMIT;
 
 use crate::{
@@ -45,46 +46,17 @@ where
             .drive
             .fetch_next_withdrawal_transaction_index(transaction, platform_version)?;
 
-        let untied_withdrawal_transactions = self
+        let withdrawal_transactions = self
             .build_untied_withdrawal_transactions_from_documents(
-                &documents,
+                &mut documents,
                 start_transaction_index,
+                block_info,
                 platform_version,
             )?;
-
-        for document in documents.iter_mut() {
-            let Some((transaction_index, _)) = untied_withdrawal_transactions.get(&document.id())
-            else {
-                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "transactions must contain a transaction",
-                )));
-            };
-
-            document.set_u64(
-                withdrawal::properties::TRANSACTION_INDEX,
-                *transaction_index,
-            );
-
-            document.set_u8(
-                withdrawal::properties::STATUS,
-                withdrawals_contract::WithdrawalStatus::POOLED as u8,
-            );
-
-            document.set_updated_at(Some(block_info.time_ms));
-
-            document.increment_revision().map_err(|_| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "Could not increment document revision",
-                ))
-            })?;
-        }
-
-        let withdrawal_transactions: Vec<WithdrawalTransactionIndexAndBytes> =
-            untied_withdrawal_transactions.into_values().collect();
-
+        
         let withdrawal_transactions_count = withdrawal_transactions.len();
 
-        let mut drive_operations = Vec::new();
+        let mut drive_operations = vec![];
 
         self.drive
             .add_enqueue_untied_withdrawal_transaction_operations(

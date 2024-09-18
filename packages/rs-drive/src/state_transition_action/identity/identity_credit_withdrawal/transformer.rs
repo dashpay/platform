@@ -10,11 +10,18 @@ impl IdentityCreditWithdrawalTransitionAction {
     ) -> Self {
         match identity_credit_withdrawal {
             IdentityCreditWithdrawalTransition::V0(v0) => {
-                IdentityCreditWithdrawalTransitionActionV0::from_identity_credit_withdrawal(
+                IdentityCreditWithdrawalTransitionActionV0::from_identity_credit_withdrawal_v0(
                     v0,
                     creation_time_ms,
                 )
                 .into()
+            }
+            IdentityCreditWithdrawalTransition::V1(v1) => {
+                IdentityCreditWithdrawalTransitionActionV0::from_identity_credit_withdrawal_v1(
+                    v1,
+                    creation_time_ms,
+                )
+                    .into()
             }
         }
     }

@@ -9,13 +9,11 @@ mod value_conversion;
 mod version;
 
 use bincode::{Decode, Encode};
-use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
 use platform_serialization_derive::PlatformSignable;
 use platform_value::BinaryData;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-use crate::balances::credits::CREDITS_PER_DUFF;
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::{
     identity::{core_script::CoreScript, KeyID},

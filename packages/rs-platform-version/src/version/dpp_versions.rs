@@ -265,6 +265,7 @@ pub struct DocumentMethodVersions {
     pub hash: FeatureVersion,
     pub get_raw_for_contract: FeatureVersion,
     pub get_raw_for_document_type: FeatureVersion,
+    pub try_into_asset_unlock_base_transaction_info: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

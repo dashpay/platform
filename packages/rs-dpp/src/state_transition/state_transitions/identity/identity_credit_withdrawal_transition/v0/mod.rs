@@ -3,19 +3,16 @@ mod identity_signed;
 mod json_conversion;
 mod state_transition_like;
 mod types;
-mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
 
 use bincode::{Decode, Encode};
-use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
 use platform_serialization_derive::PlatformSignable;
 use platform_value::BinaryData;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-use crate::balances::credits::CREDITS_PER_DUFF;
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use crate::{
     identity::{core_script::CoreScript, KeyID},
@@ -36,7 +33,6 @@ pub struct IdentityCreditWithdrawalTransitionV0 {
     pub amount: u64,
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,
-    /// If the send to output script is None, then we send the withdrawal to the address set by core
     pub output_script: CoreScript,
     pub nonce: IdentityNonce,
     pub user_fee_increase: UserFeeIncrease,

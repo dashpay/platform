@@ -1,5 +1,5 @@
 use crate::drive::identity::withdrawals::paths::WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY;
-use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
+use dpp::withdrawal::WithdrawalTransactionIndex;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;

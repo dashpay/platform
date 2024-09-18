@@ -749,7 +749,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                 },
                 identity_credit_withdrawal_state_transition:
                 DriveAbciStateTransitionValidationVersion {
-                    basic_structure: Some(1),
+                    basic_structure: Some(0),
                     advanced_structure: None,
                     identity_signatures: None,
                     advanced_minimum_balance_pre_check: Some(0),
@@ -1235,6 +1235,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                 hash: 0,
                 get_raw_for_contract: 0,
                 get_raw_for_document_type: 0,
+                try_into_asset_unlock_base_transaction_info: 0,
             },
         },
         identity_versions: IdentityVersions {

@@ -1236,6 +1236,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 hash: 0,
                 get_raw_for_contract: 0,
                 get_raw_for_document_type: 0,
+                try_into_asset_unlock_base_transaction_info: 0,
             },
         },
         identity_versions: IdentityVersions {

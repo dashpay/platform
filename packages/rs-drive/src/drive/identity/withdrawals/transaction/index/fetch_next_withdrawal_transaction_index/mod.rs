@@ -1,4 +1,4 @@
-use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
+use dpp::withdrawal::WithdrawalTransactionIndex;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;

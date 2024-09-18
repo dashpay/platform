@@ -1,4 +1,4 @@
-use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
+use dpp::withdrawal::WithdrawalTransactionIndex;
 use crate::drive::Drive;
 use crate::util::batch::drive_op_batch::WithdrawalOperationType;
 use crate::util::batch::DriveOperation;

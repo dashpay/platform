@@ -1,7 +1,4 @@
 use crate::drive::identity::withdrawals::paths::get_withdrawal_transactions_queue_path_vec;
-use crate::drive::identity::withdrawals::{
-    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
-};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -13,6 +10,7 @@ use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::convert::TryInto;
 use std::ops::RangeFull;
+use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 
 impl Drive {
     pub(super) fn dequeue_untied_withdrawal_transactions_v0(

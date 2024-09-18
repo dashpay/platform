@@ -4,9 +4,6 @@ use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path_vec, get_withdrawal_transactions_queue_path,
     get_withdrawal_transactions_queue_path_vec, WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
 };
-use crate::drive::identity::withdrawals::{
-    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
-};
 use crate::util::grove_operations::BatchDeleteApplyType;
 use crate::util::object_size_info::PathKeyElementInfo;
 use crate::{drive::Drive, error::Error, fees::op::LowLevelDriveOperation};
@@ -15,7 +12,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use grovedb::Element;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
-
+use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 use super::DriveLowLevelOperationConverter;
 
 /// Operations for Withdrawals

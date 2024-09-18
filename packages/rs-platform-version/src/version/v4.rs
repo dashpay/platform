@@ -82,13 +82,12 @@ use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{PlatformArchitectureVersion, ProtocolVersion};
 use grovedb_version::version::v1::GROVE_V1;
 
-pub const PROTOCOL_VERSION_3: ProtocolVersion = 3;
+pub const PROTOCOL_VERSION_4: ProtocolVersion = 4;
 
-/// This version introduces tenderdash_consensus_version as 1.
-/// We did this because of the issues in distribution for Evonodes.
+/// This version introduces withdrawals.
 
-pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
-    protocol_version: 3,
+pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
+    protocol_version: 4,
     proofs: FeatureVersionBounds {
         min_version: 0,
         max_version: 0,
@@ -752,7 +751,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                 },
                 identity_credit_withdrawal_state_transition:
                 DriveAbciStateTransitionValidationVersion {
-                    basic_structure: Some(0),
+                    basic_structure: Some(1),
                     advanced_structure: None,
                     identity_signatures: None,
                     advanced_minimum_balance_pre_check: Some(0),

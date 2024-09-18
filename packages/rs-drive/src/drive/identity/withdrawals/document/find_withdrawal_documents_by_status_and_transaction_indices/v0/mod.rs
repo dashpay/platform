@@ -1,5 +1,4 @@
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
-use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause};
@@ -12,6 +11,7 @@ use grovedb::TransactionArg;
 use indexmap::IndexMap;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
+use dpp::withdrawal::WithdrawalTransactionIndex;
 
 impl Drive {
     // TODO(withdrawals): Currently it queries only up to 100 documents.
@@ -97,7 +97,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::config::DEFAULT_QUERY_LIMIT;
-    use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
+    use dpp::withdrawal::WithdrawalTransactionIndex;
     use crate::util::test_helpers::setup::{
         setup_document, setup_drive_with_initial_state_structure, setup_system_data_contract,
     };

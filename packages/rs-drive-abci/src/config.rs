@@ -187,7 +187,7 @@ pub struct PlatformConfig {
     pub db_path: PathBuf,
 
     /// Path to store rejected / invalid items (like transactions).
-    /// Used mainly for debuggig.
+    /// Used mainly for debugging.
     ///
     /// If not set, rejected and invalid items will not be stored.
     pub rejections_path: Option<PathBuf>,

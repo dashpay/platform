@@ -6,9 +6,11 @@ use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::withdrawals::{
-    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
+    WithdrawalTransactionIndexAndBytes,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use dpp::block::block_info::BlockInfo;
+use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 
 mod v0;
 
@@ -16,26 +18,29 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Builds a list of Core transactions from withdrawal documents. This function is a version handler that
-    /// directs to specific version implementations of the `build_withdrawal_transactions_from_documents` function.
+    /// Builds a list of withdrawal transactions from the provided withdrawal documents.
+    /// Each withdrawal document is converted into a Core transaction, starting from the specified index.
+    /// The function encodes the transaction and updates the document with the transaction index, status,
+    /// updated time, and revision.
     ///
     /// # Arguments
     ///
-    /// * `documents` - A slice of `Document`.
-    /// * `drive_operation_types` - A mutable reference to `Vec<DriveOperation>`.
-    /// * `transaction` - A `TransactionArg` reference.
-    /// * `platform_version` - A `PlatformVersion` reference that dictates which version of
-    ///   the method to call.
+    /// * `documents` - A mutable reference to a vector of `Document` representing the withdrawal requests.
+    /// * `start_index` - The starting index for the transaction, of type `WithdrawalTransactionIndex`.
+    /// * `block_info` - A reference to the `BlockInfo`, which provides the current block's timestamp.
+    /// * `platform_version` - A reference to the `PlatformVersion` that specifies the version of the platform being used.
     ///
     /// # Returns
     ///
-    /// * `Result<HashMap<Identifier, WithdrawalTransactionIdAndBytes>, Error>` - Returns a HashMap containing withdrawal transactions if found, otherwise returns an `Error`.
+    /// * `Result<Vec<WithdrawalTransactionIndexAndBytes>, Error>` - On success, returns a vector of tuples containing the 
+    ///   transaction index and the encoded transaction bytes. On failure, returns an `Error`.
     pub(in crate::execution::platform_events::withdrawals) fn build_untied_withdrawal_transactions_from_documents(
         &self,
-        documents: &[Document],
+        documents: &mut Vec<Document>,
         start_index: WithdrawalTransactionIndex,
+        block_info: &BlockInfo,
         platform_version: &PlatformVersion,
-    ) -> Result<HashMap<Identifier, WithdrawalTransactionIndexAndBytes>, Error> {
+    ) -> Result<Vec<WithdrawalTransactionIndexAndBytes>, Error> {
         match platform_version
             .drive_abci
             .methods
@@ -43,7 +48,7 @@ where
             .build_untied_withdrawal_transactions_from_documents
         {
             0 => {
-                self.build_untied_withdrawal_transactions_from_documents_v0(documents, start_index)
+                self.build_untied_withdrawal_transactions_from_documents_v0(documents, start_index, block_info, platform_version)
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "build_untied_withdrawal_transactions_from_documents".to_string(),
