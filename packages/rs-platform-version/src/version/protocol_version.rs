@@ -51,6 +51,9 @@ const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, T
 
 pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V3;
 
+/// For V3 release we want to do an emergency version upgrade
+pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
+
 impl PlatformVersion {
     pub fn get<'a>(version: ProtocolVersion) -> Result<&'a Self, PlatformVersionError> {
         if version > 0 {
@@ -77,6 +80,26 @@ impl PlatformVersion {
             Err(PlatformVersionError::UnknownVersionError(format!(
                 "no platform version {version}"
             )))
+        }
+    }
+
+    pub fn get_optional<'a>(version: ProtocolVersion) -> Option<&'a Self> {
+        if version > 0 {
+            #[cfg(feature = "mock-versions")]
+            {
+                if version >> TEST_PROTOCOL_VERSION_SHIFT_BYTES > 0 {
+                    let test_version = version - (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES);
+
+                    // Init default set of test versions
+                    let versions = PLATFORM_TEST_VERSIONS
+                        .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+
+                    return versions.get(test_version as usize - 2);
+                }
+            }
+            PLATFORM_VERSIONS.get(version as usize - 1)
+        } else {
+            None
         }
     }
 

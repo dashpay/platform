@@ -1,7 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use dpp::dashcore::Network;
 
 use dpp::version::PlatformVersion;
 use drive::dpp::util::deserializer::ProtocolVersion;
@@ -9,32 +8,16 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 impl<C> Platform<C> {
     /// checks for a network upgrade and resets activation window
     /// this should only be called on epoch change
-    pub(super) fn check_for_desired_protocol_upgrade_v0(
+    pub(super) fn check_for_desired_protocol_upgrade_v1(
         &self,
         active_hpmns: u32,
         platform_version: &PlatformVersion,
     ) -> Result<Option<ProtocolVersion>, Error> {
-        let upgrade_percentage_needed = if (self.config.network == Network::Dash
-            && platform_version.protocol_version == 1)
-            || (self.config.network == Network::Testnet && platform_version.protocol_version == 2)
-        {
-            // This is a solution for the emergency update to version 3
-            // We clean this up immediately though as we transition to check_for_desired_protocol_upgrade_v1
-            u64::min(
-                51,
-                platform_version
-                    .drive_abci
-                    .methods
-                    .protocol_upgrade
-                    .protocol_version_upgrade_percentage_needed,
-            )
-        } else {
-            platform_version
-                .drive_abci
-                .methods
-                .protocol_upgrade
-                .protocol_version_upgrade_percentage_needed
-        };
+        let upgrade_percentage_needed = platform_version
+            .drive_abci
+            .methods
+            .protocol_upgrade
+            .protocol_version_upgrade_percentage_needed;
 
         let required_upgraded_hpmns = 1
             + (active_hpmns as u64)

@@ -9,7 +9,6 @@ use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Setters,
 };
 use crate::platform_types::block_execution_outcome;
-use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
@@ -217,6 +216,8 @@ where
         block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
 
+    let epoch_info = *block_execution_context.epoch_info();
+
     app.block_execution_context()
         .write()
         .unwrap()
@@ -280,8 +281,10 @@ where
         status: proto::response_process_proposal::ProposalStatus::Accept.into(),
         validator_set_update,
         consensus_param_updates: consensus_params_update(
+            app.platform().config.network,
             starting_platform_version,
             platform_version,
+            &epoch_info,
         )?,
         events: Vec::new(),
     };
