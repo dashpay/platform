@@ -114,8 +114,8 @@ impl DapiClient {
     }
 
     /// Return the [DapiClient] address list.
-    pub fn address_list(&self) -> Arc<RwLock<AddressList>> {
-        Arc::clone(&self.address_list)
+    pub fn address_list(&self) -> &Arc<RwLock<AddressList>> {
+        &self.address_list
     }
 }
 

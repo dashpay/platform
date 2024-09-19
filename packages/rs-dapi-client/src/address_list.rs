@@ -199,9 +199,9 @@ impl AddressList {
         self.addresses.is_empty()
     }
 
-    /// Getter function that returns a clone of the Hashset of addresses
-    pub fn addresses(&self) -> HashSet<Address> {
-        self.addresses.clone()
+    /// Getter function that returns a reference to the Hashset of addresses
+    pub fn addresses(&self) -> &HashSet<Address> {
+        &self.addresses
     }
 }
 
