@@ -59,8 +59,10 @@ export default function startCoreFactory(
       coreCommand.push('--disablewallet=1');
     }
 
-    const logFilePath = config.get('core.log.file.path');
-    ensureFileMountExists(logFilePath, 0o666);
+    const logFilePath = config.get('core.log.filePath');
+    if (logFilePath !== null) {
+      ensureFileMountExists(logFilePath, 0o666);
+    }
 
     const coreContainer = await dockerCompose.runService(
       config,

@@ -42,6 +42,11 @@ export default class DockerCompose {
   #isDockerSetupVerified = false;
 
   /**
+   * @type {Error}
+   */
+  #dockerVerifiicationError;
+
+  /**
    * @type {HomeDir}
    */
   #homeDir;
@@ -499,14 +504,24 @@ export default class DockerCompose {
    */
   async throwErrorIfNotInstalled() {
     if (this.#isDockerSetupVerified) {
-      return;
+      if (this.#dockerVerifiicationError) {
+        throw this.#dockerVerifiicationError;
+      } else {
+        return;
+      }
     }
 
-    this.#isDockerSetupVerified = true;
+    try {
+      await this.throwErrorIfDockerIsNotInstalled();
 
-    await this.throwErrorIfDockerIsNotInstalled();
+      await this.throwErrorIfDockerComposeIsNotInstalled();
+    } catch (e) {
+      this.#dockerVerifiicationError = e;
 
-    await this.throwErrorIfDockerComposeIsNotInstalled();
+      throw e;
+    } finally {
+      this.#isDockerSetupVerified = true;
+    }
   }
 
   /**

@@ -43,7 +43,7 @@ this repository may be used on the following networks:
 
 - [x] **Development networks** ([**devnets**](https://dashplatform.readme.io/docs/reference-glossary#devnet))
 - [x] [**Testnet**](https://dashplatform.readme.io/docs/reference-glossary#testnet)
-- [ ] [Mainnet](https://dashplatform.readme.io/docs/reference-glossary#mainnet)
+- [x] [Mainnet](https://dashplatform.readme.io/docs/reference-glossary#mainnet)
 
 ## FAQ
 

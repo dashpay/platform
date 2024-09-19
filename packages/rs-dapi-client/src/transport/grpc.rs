@@ -209,6 +209,14 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    platform_proto::GetIdentitiesBalancesRequest,
+    platform_proto::GetIdentitiesBalancesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identities_balances
+);
+
+impl_transport_request_grpc!(
     platform_proto::GetIdentityNonceRequest,
     platform_proto::GetIdentityNonceResponse,
     PlatformGrpcClient,
@@ -321,6 +329,24 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_vote_polls_by_end_date
+);
+
+// rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetEvonodesProposedEpochBlocksByIdsRequest,
+    platform_proto::GetEvonodesProposedEpochBlocksResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_evonodes_proposed_epoch_blocks_by_ids
+);
+
+// rpc GetEvonodesProposedEpochBlocksByRangeRequest(GetEvonodesProposedEpochBlocksByRangeRequest) returns (GetEvonodesProposedEpochBlocksResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetEvonodesProposedEpochBlocksByRangeRequest,
+    platform_proto::GetEvonodesProposedEpochBlocksResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_evonodes_proposed_epoch_blocks_by_range
 );
 
 // rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);

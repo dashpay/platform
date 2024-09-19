@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Platform setup helpers.
 //!
 //! This module defines helper functions related to setting up Platform.
@@ -45,12 +16,14 @@ use dpp::nft::TradeMode;
 use dpp::prelude::{CoreBlockHeight, DataContract, TimestampMillis};
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
+use dpp::version::ProtocolVersion;
 use drive::util::storage_flags::StorageFlags;
 use tempfile::TempDir;
 
 /// A test platform builder.
 pub struct TestPlatformBuilder {
     config: Option<PlatformConfig>,
+    initial_protocol_version: Option<ProtocolVersion>,
     tempdir: TempDir,
 }
 
@@ -74,10 +47,36 @@ impl TestPlatformBuilder {
         self
     }
 
+    /// Add initial protocol version
+    pub fn with_initial_protocol_version(
+        mut self,
+        initial_protocol_version: ProtocolVersion,
+    ) -> Self {
+        self.initial_protocol_version = Some(initial_protocol_version);
+        self
+    }
+
+    /// Add initial protocol version as latest
+    pub fn with_latest_protocol_version(mut self) -> Self {
+        self.initial_protocol_version = Some(PlatformVersion::latest().protocol_version);
+        self
+    }
+
     /// Create a new temp platform with a mock core rpc
     pub fn build_with_mock_rpc(self) -> TempPlatform<MockCoreRPCLike> {
-        let platform = Platform::<MockCoreRPCLike>::open(self.tempdir.path(), self.config)
-            .expect("should open Platform successfully");
+        let use_initial_protocol_version =
+            if let Some(initial_protocol_version) = self.initial_protocol_version {
+                // We should use the latest if nothing is set
+                Some(initial_protocol_version)
+            } else {
+                Some(PlatformVersion::latest().protocol_version)
+            };
+        let platform = Platform::<MockCoreRPCLike>::open(
+            self.tempdir.path(),
+            self.config,
+            use_initial_protocol_version,
+        )
+        .expect("should open Platform successfully");
 
         TempPlatform {
             platform,
@@ -103,6 +102,7 @@ impl Default for TestPlatformBuilder {
         Self {
             tempdir,
             config: None,
+            initial_protocol_version: None,
         }
     }
 }
@@ -192,8 +192,15 @@ impl TempPlatform<MockCoreRPCLike> {
 
     /// Sets Platform to genesis state.
     pub fn set_genesis_state(self) -> Self {
+        let platform_state = self.platform.state.load();
         self.platform
-            .create_genesis_state(1, Default::default(), None, PlatformVersion::latest())
+            .create_genesis_state(
+                1,
+                Default::default(),
+                None,
+                PlatformVersion::get(platform_state.current_protocol_version_in_consensus())
+                    .expect("expected to get platform version"),
+            )
             .expect("should create root tree successfully");
 
         self
@@ -205,12 +212,16 @@ impl TempPlatform<MockCoreRPCLike> {
         genesis_time: TimestampMillis,
         start_core_block_height: CoreBlockHeight,
     ) -> Self {
+        let platform_state = self.platform.state.load();
+        let platform_version =
+            PlatformVersion::get(platform_state.current_protocol_version_in_consensus())
+                .expect("expected to get platform version");
         self.platform
             .create_genesis_state(
                 start_core_block_height,
                 genesis_time,
                 None,
-                PlatformVersion::latest(),
+                platform_version,
             )
             .expect("should create root tree successfully");
 
@@ -219,7 +230,7 @@ impl TempPlatform<MockCoreRPCLike> {
 
     /// Rebuilds Platform from the tempdir as if it was destroyed and restarted
     pub fn open_with_tempdir(tempdir: TempDir, config: PlatformConfig) -> Self {
-        let platform = Platform::<MockCoreRPCLike>::open(tempdir.path(), Some(config))
+        let platform = Platform::<MockCoreRPCLike>::open(tempdir.path(), Some(config), None)
             .expect("should open Platform successfully");
 
         Self { platform, tempdir }

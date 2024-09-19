@@ -9,6 +9,9 @@ use crate::{
     Error, Sdk,
 };
 
+/// Epoch type used in the SDK.
+pub type Epoch = ExtendedEpochInfo;
+
 #[async_trait]
 impl FetchCurrent for ExtendedEpochInfo {
     async fn fetch_current(sdk: &Sdk) -> Result<Self, Error> {

@@ -1,7 +1,7 @@
 [package]
 name = "feature-flags-contract"
 description = "Feature flags data contract schema and tools"
-version = "1.2.0"
+version = "1.3.0-dev.5"
 edition = "2021"
 rust-version.workspace = true
 license = "MIT"

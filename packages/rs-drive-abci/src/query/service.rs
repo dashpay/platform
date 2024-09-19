@@ -18,18 +18,21 @@ use dapi_grpc::platform::v0::{
     GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
     GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
     GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
-    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
-    GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
-    GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
-    GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
-    GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
-    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
-    GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
-    GetStatusRequest, GetStatusResponse, GetTotalCreditsInPlatformRequest,
-    GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
+    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetIdentitiesContractKeysResponse, GetIdentityBalanceAndRevisionRequest,
+    GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
+    GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
+    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
+    GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
+    GetIdentityResponse, GetPathElementsRequest, GetPathElementsResponse,
+    GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
+    GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
+    GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse,
+    GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
@@ -546,6 +549,18 @@ impl PlatformService for QueryService {
         .await
     }
 
+    async fn get_identities_balances(
+        &self,
+        request: Request<GetIdentitiesBalancesRequest>,
+    ) -> Result<Response<GetIdentitiesBalancesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities_balances,
+            "get_identities_balances",
+        )
+        .await
+    }
+
     async fn get_status(
         &self,
         request: Request<GetStatusRequest>,
@@ -554,6 +569,30 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_partial_status,
             "query_partial_status",
+        )
+        .await
+    }
+
+    async fn get_evonodes_proposed_epoch_blocks_by_ids(
+        &self,
+        request: Request<GetEvonodesProposedEpochBlocksByIdsRequest>,
+    ) -> Result<Response<GetEvonodesProposedEpochBlocksResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_proposed_block_counts_by_evonode_ids,
+            "query_proposed_block_counts_by_evonode_ids",
+        )
+        .await
+    }
+
+    async fn get_evonodes_proposed_epoch_blocks_by_range(
+        &self,
+        request: Request<GetEvonodesProposedEpochBlocksByRangeRequest>,
+    ) -> Result<Response<GetEvonodesProposedEpochBlocksResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_proposed_block_counts_by_range,
+            "query_proposed_block_counts_by_range",
         )
         .await
     }

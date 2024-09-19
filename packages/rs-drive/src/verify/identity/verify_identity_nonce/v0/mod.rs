@@ -37,7 +37,7 @@ impl Drive {
     /// - The proof of authentication is not valid.
     /// - The identity ID does not correspond to a valid identity.
     ///
-    pub(crate) fn verify_identity_nonce_v0(
+    pub(super) fn verify_identity_nonce_v0(
         proof: &[u8],
         identity_id: [u8; 32],
         verify_subset_of_proof: bool,

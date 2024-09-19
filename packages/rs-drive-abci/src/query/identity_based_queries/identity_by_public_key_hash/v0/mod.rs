@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn test_invalid_public_key_hash() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetIdentityByPublicKeyHashRequestV0 {
             public_key_hash: vec![0; 8],
@@ -102,7 +102,7 @@ mod tests {
 
     #[test]
     fn test_identity_not_found() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let public_key_hash = vec![0; 20];
         let request = GetIdentityByPublicKeyHashRequestV0 {
@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn test_identity_absence_proof() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let public_key_hash = vec![0; 20];
         let request = GetIdentityByPublicKeyHashRequestV0 {

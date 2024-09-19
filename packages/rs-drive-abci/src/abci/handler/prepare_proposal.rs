@@ -1,19 +1,21 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
+use crate::execution::engine::consensus_params_update::consensus_params_update;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Setters;
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
+use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
 use dpp::version::TryIntoPlatformVersioned;
-use drive::grovedb_storage::Error::{RocksDBError, StorageError};
+use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
-use tenderdash_abci::proto::types::CoreChainLock;
+use tenderdash_abci::proto::types::{ConsensusParams, CoreChainLock};
 
 pub fn prepare_proposal<'a, A, C>(
     app: &A,
@@ -33,6 +35,8 @@ where
     let platform_state = app.platform().state.load();
 
     let last_committed_core_height = platform_state.last_committed_core_height();
+
+    let starting_platform_version = platform_state.current_platform_version()?;
 
     let core_chain_lock_update = match app.platform().core_rpc.get_best_chain_lock() {
         Ok(latest_chain_lock) => {
@@ -199,8 +203,10 @@ where
             signature: chain_lock.signature.to_bytes().to_vec(),
         }),
         validator_set_update,
-        // TODO: implement consensus param updates
-        consensus_param_updates: None,
+        consensus_param_updates: consensus_params_update(
+            starting_platform_version,
+            platform_version,
+        )?,
         app_version: platform_version.protocol_version as u64,
     };
 

@@ -180,7 +180,7 @@ impl Drive {
                 .map(|&x| Vec::from(x))
                 .collect();
             let top_index_property = index.properties.first().ok_or(Error::Drive(
-                DriveError::CorruptedContractIndexes("invalid contract indices"),
+                DriveError::CorruptedContractIndexes("invalid contract indices".to_string()),
             ))?;
             index_path.push(Vec::from(top_index_property.name.as_bytes()));
 
@@ -255,7 +255,7 @@ impl Drive {
 
             for i in 1..index.properties.len() {
                 let index_property = index.properties.get(i).ok_or(Error::Drive(
-                    DriveError::CorruptedContractIndexes("invalid contract indices"),
+                    DriveError::CorruptedContractIndexes("invalid contract indices".to_string()),
                 ))?;
 
                 let document_index_field = document
@@ -441,7 +441,7 @@ impl Drive {
                     )?;
                     if !inserted {
                         return Err(Error::Drive(DriveError::CorruptedContractIndexes(
-                            "index already exists",
+                            "index already exists".to_string(),
                         )));
                     }
                 }
