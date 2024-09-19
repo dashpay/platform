@@ -41,6 +41,9 @@ runs:
           dashmate_volumes_dump
         key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
 
+    - name: Update dashmate service images
+      run: yarn dashmate update
+
     - name: Restore dashmate volumes
       run: ./scripts/dashmate/volumes/restore.sh
       shell: bash
