@@ -1,3 +1,49 @@
+## [1.3.0](https://github.com/dashpay/platform/compare/v1.2.0...v1.3.0) (2024-09-19)
+
+### Features
+
+* **platform:** query many identity balances at a time ([#2112](https://github.com/dashpay/platform/pull/2112))
+* **platform:** query block count per Evonode proposed in any given epoch ([#2114](https://github.com/dashpay/platform/pull/2114))
+* **platform:** contests on testnet/devnet/local should take less time ([#2115](https://github.com/dashpay/platform/pull/2115))
+* **dapi:** implement getIdentityBalance ([#2105](https://github.com/dashpay/platform/pull/2105))
+* **dashmate:** doctor diagnostic ([#2085](https://github.com/dashpay/platform/pull/2085))
+* **dashmate:** enhance core logging configuration ([#2121](https://github.com/dashpay/platform/pull/2121))
+* **platform:** support Tenderdash upgrade ([#2136](https://github.com/dashpay/platform/pull/2136))
+
+### Bug Fixes
+
+* **sdk:** use proofs when waiting for asset lock ([#2067](https://github.com/dashpay/platform/pull/2067))
+* **platform:** contested username distribution ([#2118](https://github.com/dashpay/platform/pull/2118))
+* **drive-abci:** require 75 percent of active, not total hpmns ([#2127](https://github.com/dashpay/platform/pull/2127))
+* **drive-abci:** cleanup of later contests on testnet only ([#2134](https://github.com/dashpay/platform/pull/2134))
+* **platform:** contested username time fix ([#2137](https://github.com/dashpay/platform/pull/2137))
+* **dashmate:** invalid debug core log path ([#2143](https://github.com/dashpay/platform/pull/2143))
+* **tests:** fix upgrade tests because of 51% limit on v1 ([#2151](https://github.com/dashpay/platform/pull/2151))
+* **platform:** add limits to identity balances and proposed block counts queries ([#2148](https://github.com/dashpay/platform/pull/2148))
+* body-parser vulnerability ([#2119](https://github.com/dashpay/platform/pull/2119))
+
+### Miscellaneous Chores
+
+* add change base branch script ([#2082](https://github.com/dashpay/platform/pull/2082))
+* emergency version upgrade to v1.3 Protocol Version 2 ([#2138](https://github.com/dashpay/platform/pull/2138))
+* disable config from testnet propagates network test ([#2149](https://github.com/dashpay/platform/pull/2149))
+* **js-sdk** connect to mainnet by default ([#2146](https://github.com/dashpay/platform/pull/2146))
+
+### Build System
+
+* cache Rust dependencies build as a docker layer ([#1900](https://github.com/dashpay/platform/pull/1900))
+* **drive-abci:** debug docker image with grovedb visualizer and tokio console ([#2012](https://github.com/dashpay/platform/pull/2012))
+* **dashmate:** update tenderdash image to fix-wrong-proposer-at-round ([#2140](https://github.com/dashpay/platform/pull/2140))
+* bump rs-tenderdash-abci to 1.2.0+1.3.0 ([#2147](https://github.com/dashpay/platform/pull/2147))
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** contested username distribution ([#2118](https://github.com/dashpay/platform/pull/2118))
+* **platform:** contests on testnet/devnet/local should take less time ([#2115](https://github.com/dashpay/platform/pull/2115))
+* **dashmate:** docker logs rotation ([#2125](https://github.com/dashpay/platform/pull/2125))
+
+**Full Changelog**: [https://github.com/dashpay/platform/compare/v1.2.0...v1.3.0](https://github.com/dashpay/platform/compare/v1.2.0...v1.3.0)
+
 ## [1.3.0-dev.7](https://github.com/dashpay/platform/compare/v1.3.0-dev.6...v1.3.0-dev.7) (2024-09-18)
 
 
