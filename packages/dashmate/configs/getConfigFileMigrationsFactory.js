@@ -893,6 +893,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '1.3.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.3';
+          });
+        return configFile;
+      },
     };
   }
 
