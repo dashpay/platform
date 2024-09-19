@@ -40,6 +40,10 @@ pub enum QueryError {
     #[error("invalid argument error: {0}")]
     InvalidArgument(String),
 
+    /// Too many elements Error
+    #[error("too many elements error: {0}")]
+    TooManyElements(String),
+
     /// Not found Error
     #[error("not found error: {0}")]
     NotFound(String),

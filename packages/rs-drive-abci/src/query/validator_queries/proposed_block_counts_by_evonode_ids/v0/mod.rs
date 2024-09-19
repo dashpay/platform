@@ -21,6 +21,14 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetEvonodesProposedEpochBlocksResponseV0>, Error> {
+        if ids.len() > self.config.drive.max_query_limit as usize {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::TooManyElements(format!(
+                    "this query only supports up to {} ids at a time",
+                    ids.len()
+                )),
+            ));
+        }
         let evonode_ids = check_validation_result_with_data!(ids
             .into_iter()
             .map(|evonode_id_vec| {
