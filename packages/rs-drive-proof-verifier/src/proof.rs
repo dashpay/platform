@@ -1700,11 +1700,11 @@ impl FromProof<platform::GetStatusRequest> for EvonodeStatus {
     type Response = platform::GetStatusResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
-        request: I,
+        _request: I,
         response: O,
-        network: Network,
-        platform_version: &PlatformVersion,
-        provider: &'a dyn ContextProvider,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+        _provider: &'a dyn ContextProvider,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
     where
         Self: Sized + 'a,
