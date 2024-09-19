@@ -96,9 +96,6 @@ jobs:
           key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
         if: inputs.restore_local_network_data == true
 
-      - name: Update dashmate service images
-        run: yarn dashmate update
-
       - name: Restore dashmate volumes
         run: ./scripts/dashmate/volumes/restore.sh
         if: steps.local-network-data.outputs.cache-hit == 'true'
