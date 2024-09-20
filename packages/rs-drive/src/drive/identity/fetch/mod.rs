@@ -180,7 +180,7 @@ impl Drive {
             path: vec![vec![RootTree::Balances as u8]],
             query: SizedQuery {
                 query,
-                limit: None,
+                limit: Some(self.config.max_query_limit),
                 offset: None,
             },
         };

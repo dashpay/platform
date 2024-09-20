@@ -3,14 +3,30 @@ daemon=0  # leave this set to 0 for Docker
 logtimestamps=1
 maxconnections=256
 reindex={{?it.reindex}}1{{??}}0{{?}}
-{{~it.core.log.file.categories :category}}
-{{? category === 'all'}}
+
+{{? it.core.log.debug.enabled }}
+logips={{? it.core.log.debug.ips }}1{{??}}0{{?}}
+logsourcelocations={{? it.core.log.debug.sourceLocations }}1{{??}}0{{?}}
+logthreadnames={{? it.core.log.debug.threadNames }}1{{??}}0{{?}}
+logtimemicros={{? it.core.log.debug.timeMicros }}1{{??}}0{{?}}
+
+  {{? it.core.log.debug.includeOnly.length === 0 }}
 debug=1
+  {{??}}
+    {{~it.core.log.debug.includeOnly :category}}
+debug={{= category }}
+    {{~}}
+  {{?}}
+  {{~it.core.log.debug.exclude :category}}
+debugexclude={{= category}}
+  {{~}}
+{{?}}
+
+{{? it.core.log.filePath === null }}
+nodebuglogfile=1
 {{??}}
-debug={{=category}}{{?}}{{~}}
-debuglogfile=/var/log/dash/{{= it.core.log.file.path.split('/').pop() }}
-logips={{=it.core.logIps }}
-fallbackfee=0.00001
+debuglogfile=/var/log/dash/debug.log
+{{?}}
 
 # JSON RPC
 server=1

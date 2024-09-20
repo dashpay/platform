@@ -87,7 +87,7 @@ pub const PROTOCOL_VERSION_4: ProtocolVersion = 4;
 /// This version introduces withdrawals.
 
 pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
-    protocol_version: 4,
+    protocol_version: PROTOCOL_VERSION_4,
     proofs: FeatureVersionBounds {
         min_version: 0,
         max_version: 0,
@@ -635,9 +635,9 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
                 },
             },
             protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
-                check_for_desired_protocol_upgrade: 0,
+                check_for_desired_protocol_upgrade: 1,
                 upgrade_protocol_version_on_epoch_change: 0,
-                protocol_version_upgrade_percentage_needed: 75,
+                protocol_version_upgrade_percentage_needed: 67,
             },
             block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
                 add_process_epoch_change_operations: 0,

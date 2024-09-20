@@ -401,36 +401,59 @@ export default {
         log: {
           type: 'object',
           properties: {
-            file: {
+            filePath: {
+              type: ['null', 'string'],
+              minLength: 1,
+            },
+            debug: {
               type: 'object',
               properties: {
-                categories: {
+                enabled: {
+                  type: 'boolean',
+                },
+                ips: {
+                  type: 'boolean',
+                },
+                sourceLocations: {
+                  type: 'boolean',
+                },
+                threadNames: {
+                  type: 'boolean',
+                },
+                timeMicros: {
+                  type: 'boolean',
+                },
+                includeOnly: {
                   type: 'array',
                   uniqueItems: true,
                   items: {
                     type: 'string',
-                    enum: ['all', 'net', 'tor', 'mempool', 'http', 'bench', 'zmq', 'walletdb', 'rpc', 'estimatefee',
+                    enum: ['net', 'tor', 'mempool', 'http', 'bench', 'zmq', 'walletdb', 'rpc', 'estimatefee',
                       'addrman', 'selectcoins', 'reindex', 'cmpctblock', 'rand', 'prune', 'proxy', 'mempoolrej',
                       'libevent', 'coindb', 'qt', 'leveldb', 'chainlocks', 'gobject', 'instantsend', 'llmq',
                       'llmq-dkg', 'llmq-sigs', 'mnpayments', 'mnsync', 'coinjoin', 'spork', 'netconn',
                     ],
                   },
                 },
-                path: {
-                  type: 'string',
-                  minLength: 1,
+                exclude: {
+                  type: 'array',
+                  uniqueItems: true,
+                  items: {
+                    type: 'string',
+                    enum: ['net', 'tor', 'mempool', 'http', 'bench', 'zmq', 'walletdb', 'rpc', 'estimatefee',
+                      'addrman', 'selectcoins', 'reindex', 'cmpctblock', 'rand', 'prune', 'proxy', 'mempoolrej',
+                      'libevent', 'coindb', 'qt', 'leveldb', 'chainlocks', 'gobject', 'instantsend', 'llmq',
+                      'llmq-dkg', 'llmq-sigs', 'mnpayments', 'mnsync', 'coinjoin', 'spork', 'netconn',
+                    ],
+                  },
                 },
               },
               additionalProperties: false,
-              required: ['categories', 'path'],
+              required: ['enabled', 'ips', 'sourceLocations', 'threadNames', 'timeMicros', 'includeOnly', 'exclude'],
             },
           },
           additionalProperties: false,
-          required: ['file'],
-        },
-        logIps: {
-          type: 'integer',
-          enum: [0, 1],
+          required: ['filePath', 'debug'],
         },
         indexes: {
           type: ['array'],
@@ -444,7 +467,7 @@ export default {
         },
       },
       required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet', 'log',
-        'logIps', 'indexes', 'insight'],
+        'indexes', 'insight'],
       additionalProperties: false,
     },
     platform: {

@@ -26,7 +26,7 @@ pub mod v0;
 /// This means that if we ever want to update EpochInfo, we will need to do so on a release
 /// where the new fields of epoch info are not being used. Then make another version once
 /// that one is activated.
-#[derive(Clone, Serialize, Deserialize, Debug, From, Eq, PartialEq)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, From, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum EpochInfo {
     /// Version 0
