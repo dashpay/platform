@@ -9,6 +9,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const BlockchainListener = require('../../../externalApis/tenderdash/BlockchainListener');
+const logger = require('../../../logger');
 
 /**
  * @param {BlockchainListener} blockchainListener
@@ -17,12 +18,23 @@ const BlockchainListener = require('../../../externalApis/tenderdash/BlockchainL
  * @return {getStatusHandler}
  */
 function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcClient) {
-  // Clean cache when new platform block committed
   let cachedResponse = null;
+  let cleanCacheTimeout = null;
 
-  blockchainListener.on(BlockchainListener.EVENTS.NEW_BLOCK, () => {
+  function cleanCache() {
     cachedResponse = null;
-  });
+
+    // cancel scheduled cache cleanup
+    if (cleanCacheTimeout !== null) {
+      clearTimeout(cleanCacheTimeout);
+      cleanCacheTimeout = null;
+    }
+
+    logger.trace({ endpoint: 'getStatus' }, 'cleanup cache');
+  }
+
+  // Clean cache when new platform block committed
+  blockchainListener.on(BlockchainListener.EVENTS.NEW_BLOCK, cleanCache);
 
   // DAPI Software version
   const packageJsonPath = path.resolve(__dirname, '..', '..', '..', '..', 'package.json');
@@ -209,6 +221,9 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
 
     cachedResponse = new GetStatusResponse();
     cachedResponse.setV0(v0);
+
+    // Clean cache in 3 minutes
+    cleanCacheTimeout = setTimeout(cleanCache, 3 * 60 * 1000);
 
     return cachedResponse;
   }

@@ -37,7 +37,6 @@ class BlockchainListener extends EventEmitter {
     processLogger.info('Subscribed to state transition results');
 
     // Emit transaction results
-    this.wsClient.subscribe(TX_QUERY);
     this.wsClient.on(TX_QUERY, (message) => {
       const [hashString] = (message.events || []).map((event) => {
         const hashAttribute = event.attributes.find((attribute) => attribute.key === 'hash');
@@ -58,10 +57,21 @@ class BlockchainListener extends EventEmitter {
       this.emit(BlockchainListener.getTransactionEventName(hashString), message);
     });
 
-    // TODO: It's not using
     // Emit blocks and contained transactions
-    // this.wsClient.subscribe(NEW_BLOCK_QUERY);
-    // this.wsClient.on(NEW_BLOCK_QUERY, (message) => this.emit(EVENTS.NEW_BLOCK, message));
+    this.wsClient.on(NEW_BLOCK_QUERY, (message) => this.emit(EVENTS.NEW_BLOCK, message));
+
+    this.wsClient.on('connect', () => {
+      this.#subscribe();
+    });
+
+    if (this.wsClient.isConnected) {
+      this.#subscribe();
+    }
+  }
+
+  #subscribe() {
+    this.wsClient.subscribe(NEW_BLOCK_QUERY);
+    this.wsClient.subscribe(TX_QUERY);
   }
 }
 
