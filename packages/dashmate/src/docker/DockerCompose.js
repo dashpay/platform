@@ -487,13 +487,23 @@ export default class DockerCompose {
    * Logs
    *
    * @param {Config} config
+   * @param {string[]} services
+   * @param {Object} options
+   * @param {number} options.tail
    * @return {Promise<void>}
    */
-  async logs(config, services = []) {
+  async logs(config, services = [], options = {}) {
     await this.throwErrorIfNotInstalled();
 
+    const args = [...services];
+    if (options.tail) {
+      args.unshift('--tail', options.tail.toString());
+    }
+
+    const commandOptions = this.#createOptions(config);
+
     try {
-      return dockerCompose.logs(services, this.#createOptions(config));
+      await dockerCompose.logs(args, commandOptions);
     } catch (e) {
       throw new DockerComposeError(e);
     }
