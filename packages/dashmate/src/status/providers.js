@@ -1,3 +1,4 @@
+import http from 'http';
 import { PortStateEnum } from './enums/portState.js';
 
 const MAX_REQUEST_TIMEOUT = 5000;
@@ -27,12 +28,6 @@ const requestJSON = async (url) => {
   }
 
   return response;
-};
-
-const requestText = async (url) => {
-  const response = await request(url);
-
-  return response.text();
 };
 
 const insightURLs = {
@@ -68,15 +63,68 @@ export default {
   },
   mnowatch: {
     checkPortStatus: async (port) => {
-      try {
-        return requestText(`https://mnowatch.org/${port}/`);
-      } catch (e) {
-        if (process.env.DEBUG) {
-          // eslint-disable-next-line no-console
-          console.warn(e);
-        }
-        return PortStateEnum.ERROR;
-      }
+      // We use http request instead fetch function to force
+      // using IPv4 otherwise mnwatch could try to connect to IPv6 node address
+      // and fail (Core listens for IPv4 only)
+      // https://github.com/dashpay/platform/issues/2100
+
+      const options = {
+        hostname: 'mnowatch.org',
+        port: 433,
+        path: `/${port}/`,
+        method: 'GET',
+        family: 4, // Force IPv4
+      };
+
+      return new Promise((resolve) => {
+        const req = http.request(options, (res) => {
+          let data = '';
+
+          // Optionally set the encoding to receive strings directly
+          res.setEncoding('utf8');
+
+          res.setTimeout(MAX_REQUEST_TIMEOUT, () => {
+            if (process.env.DEBUG) {
+              // eslint-disable-next-line no-console
+              console.warn(`Port check ${MAX_REQUEST_TIMEOUT} timeout reached`);
+            }
+
+            resolve(PortStateEnum.ERROR);
+          });
+
+          // Collect data chunks
+          res.on('data', (chunk) => {
+            data += chunk;
+          });
+
+          // Handle the end of the response
+          res.on('end', () => {
+            resolve(data);
+          });
+        });
+
+        req.on('error', (e) => {
+          if (process.env.DEBUG) {
+            // eslint-disable-next-line no-console
+            console.warn(e);
+          }
+
+          resolve(PortStateEnum.ERROR);
+        });
+
+        req.setTimeout(MAX_REQUEST_TIMEOUT, () => {
+          if (process.env.DEBUG) {
+            // eslint-disable-next-line no-console
+            console.warn(`Port check ${MAX_REQUEST_TIMEOUT} timeout reached`);
+          }
+
+          resolve(PortStateEnum.ERROR);
+
+          req.destroy(); // Abort the request
+        });
+
+        req.end();
+      });
     },
   },
 };
