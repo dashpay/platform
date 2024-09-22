@@ -1,7 +1,8 @@
-import http from 'http';
+import https from 'https';
 import { PortStateEnum } from './enums/portState.js';
 
 const MAX_REQUEST_TIMEOUT = 5000;
+const MAX_RESPONSE_SIZE = 1 * 1024 * 1024; // 1 MB
 
 const request = async (url) => {
   try {
@@ -70,14 +71,15 @@ export default {
 
       const options = {
         hostname: 'mnowatch.org',
-        port: 433,
+        port: 443,
         path: `/${port}/`,
         method: 'GET',
         family: 4, // Force IPv4
+        rejectUnauthorized: false, // Uncomment if you need to bypass SSL certificate validation
       };
 
       return new Promise((resolve) => {
-        const req = http.request(options, (res) => {
+        const req = https.request(options, (res) => {
           let data = '';
 
           // Optionally set the encoding to receive strings directly
@@ -90,11 +92,24 @@ export default {
             }
 
             resolve(PortStateEnum.ERROR);
+
+            req.destroy();
           });
 
           // Collect data chunks
           res.on('data', (chunk) => {
             data += chunk;
+
+            if (data.length > MAX_RESPONSE_SIZE) {
+              resolve(PortStateEnum.ERROR);
+
+              if (process.env.DEBUG) {
+                // eslint-disable-next-line no-console
+                console.warn('Port check response size exceeded');
+              }
+
+              req.destroy();
+            }
           });
 
           // Handle the end of the response
