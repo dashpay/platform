@@ -490,7 +490,7 @@ export default class DockerCompose {
    * @param {string[]} services
    * @param {Object} options
    * @param {number} options.tail
-   * @return {Promise<void>}
+   * @return {Promise<{exitCode: number | null, out: string, err: string}>}
    */
   async logs(config, services = [], options = {}) {
     await this.throwErrorIfNotInstalled();
@@ -503,7 +503,7 @@ export default class DockerCompose {
     const commandOptions = this.#createOptions(config);
 
     try {
-      await dockerCompose.logs(args, commandOptions);
+      return await dockerCompose.logs(args, commandOptions);
     } catch (e) {
       throw new DockerComposeError(e);
     }
