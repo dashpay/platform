@@ -1,23 +1,28 @@
 mod tests {
-    use std::collections::BTreeMap;
-    use std::sync::{Arc, Mutex};
+    use crate::asset_unlock_index;
+    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy, GENESIS_TIME_MS};
+    use crate::strategy::{
+        ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
+    };
     use dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, AssetUnlockStatusResult};
+    use dpp::dashcore::bls_sig_utils::BLSSignature;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock, Txid};
-    use dpp::dashcore::bls_sig_utils::BLSSignature;
     use dpp::data_contracts::withdrawals_contract;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::withdrawal::WithdrawalTransactionIndex;
     use drive::config::DEFAULT_QUERY_LIMIT;
-    use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
-    use drive_abci::config::{ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig, ValidatorSetConfig};
+    use drive_abci::config::{
+        ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
+        ValidatorSetConfig,
+    };
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::PlatformVersion;
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{Operation, OperationType};
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
-    use crate::asset_unlock_index;
-    use crate::execution::{continue_chain_for_strategy, GENESIS_TIME_MS, run_chain_for_strategy};
-    use crate::strategy::{ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness};
 
     struct CoreState {
         asset_unlock_statuses: BTreeMap<WithdrawalTransactionIndex, AssetUnlockStatusResult>,
@@ -57,7 +62,7 @@ mod tests {
                         Purpose::TRANSFER,
                         [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
                     )]
-                        .into(),
+                    .into(),
                 },
                 identity_contract_nonce_gaps: None,
                 signer: None,

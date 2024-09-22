@@ -2,14 +2,9 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dpp::document::Document;
-use dpp::identifier::Identifier;
-use dpp::version::PlatformVersion;
-use drive::drive::identity::withdrawals::{
-    WithdrawalTransactionIndexAndBytes,
-};
-use std::collections::{BTreeMap, HashMap};
 use dpp::block::block_info::BlockInfo;
+use dpp::document::Document;
+use dpp::version::PlatformVersion;
 use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 
 mod v0;
@@ -32,7 +27,7 @@ where
     ///
     /// # Returns
     ///
-    /// * `Result<Vec<WithdrawalTransactionIndexAndBytes>, Error>` - On success, returns a vector of tuples containing the 
+    /// * `Result<Vec<WithdrawalTransactionIndexAndBytes>, Error>` - On success, returns a vector of tuples containing the
     ///   transaction index and the encoded transaction bytes. On failure, returns an `Error`.
     pub(in crate::execution::platform_events::withdrawals) fn build_untied_withdrawal_transactions_from_documents(
         &self,
@@ -47,9 +42,12 @@ where
             .withdrawals
             .build_untied_withdrawal_transactions_from_documents
         {
-            0 => {
-                self.build_untied_withdrawal_transactions_from_documents_v0(documents, start_index, block_info, platform_version)
-            }
+            0 => self.build_untied_withdrawal_transactions_from_documents_v0(
+                documents,
+                start_index,
+                block_info,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "build_untied_withdrawal_transactions_from_documents".to_string(),
                 known_versions: vec![0],

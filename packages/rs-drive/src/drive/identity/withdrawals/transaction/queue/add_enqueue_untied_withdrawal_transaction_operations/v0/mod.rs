@@ -1,7 +1,7 @@
-use dpp::withdrawal::WithdrawalTransactionIndexAndBytes;
 use crate::drive::Drive;
 use crate::util::batch::drive_op_batch::WithdrawalOperationType;
 use crate::util::batch::DriveOperation;
+use dpp::withdrawal::WithdrawalTransactionIndexAndBytes;
 
 impl Drive {
     pub(super) fn add_enqueue_untied_withdrawal_transaction_operations_v0(

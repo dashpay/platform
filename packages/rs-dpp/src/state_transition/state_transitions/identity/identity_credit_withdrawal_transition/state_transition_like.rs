@@ -61,7 +61,7 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => {
                 transition.set_user_fee_increase(user_fee_increase)
-            },
+            }
             IdentityCreditWithdrawalTransition::V1(transition) => {
                 transition.set_user_fee_increase(user_fee_increase)
             }

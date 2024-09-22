@@ -1,17 +1,12 @@
 use dpp::block::block_info::BlockInfo;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 
 use dpp::version::PlatformVersion;
-
-use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
 use drive::grovedb::TransactionArg;
 
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-use dpp::withdrawal::WithdrawalTransactionIndexAndBytes;
 use drive::config::DEFAULT_QUERY_LIMIT;
 
 use crate::{
@@ -46,14 +41,13 @@ where
             .drive
             .fetch_next_withdrawal_transaction_index(transaction, platform_version)?;
 
-        let withdrawal_transactions = self
-            .build_untied_withdrawal_transactions_from_documents(
-                &mut documents,
-                start_transaction_index,
-                block_info,
-                platform_version,
-            )?;
-        
+        let withdrawal_transactions = self.build_untied_withdrawal_transactions_from_documents(
+            &mut documents,
+            start_transaction_index,
+            block_info,
+            platform_version,
+        )?;
+
         let withdrawal_transactions_count = withdrawal_transactions.len();
 
         let mut drive_operations = vec![];

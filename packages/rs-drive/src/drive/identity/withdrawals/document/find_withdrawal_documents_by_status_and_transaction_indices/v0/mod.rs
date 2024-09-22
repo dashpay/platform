@@ -7,11 +7,11 @@ use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::document::Document;
 use dpp::platform_value::Value;
+use dpp::withdrawal::WithdrawalTransactionIndex;
 use grovedb::TransactionArg;
 use indexmap::IndexMap;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
-use dpp::withdrawal::WithdrawalTransactionIndex;
 
 impl Drive {
     // TODO(withdrawals): Currently it queries only up to 100 documents.
@@ -97,7 +97,6 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::config::DEFAULT_QUERY_LIMIT;
-    use dpp::withdrawal::WithdrawalTransactionIndex;
     use crate::util::test_helpers::setup::{
         setup_document, setup_drive_with_initial_state_structure, setup_system_data_contract,
     };
@@ -110,6 +109,7 @@ mod tests {
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
     use dpp::version::PlatformVersion;
     use dpp::withdrawal::Pooling;
+    use dpp::withdrawal::WithdrawalTransactionIndex;
 
     use super::*;
 

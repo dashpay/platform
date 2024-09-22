@@ -1,7 +1,7 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::consensus::signature::IdentityNotFoundError;
@@ -10,6 +10,7 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
+use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -18,12 +19,17 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
@@ -33,9 +39,10 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version = platform.state.current_platform_version()?;
         let maybe_existing_identity_balance = platform.drive.fetch_identity_balance(
             self.identity_id().to_buffer(),
             tx,
@@ -59,27 +66,27 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
             ));
         }
 
-        self.transform_into_action_v0(platform)
+        self.transform_into_action_v0(platform, block_info, tx, platform_version)
     }
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let last_block_time =
-            platform
-                .state
-                .last_committed_block_time_ms()
-                .ok_or(Error::Execution(ExecutionError::StateNotInitialized(
-                    "expected a last platform block during identity update validation",
-                )))?;
-
-        Ok(ConsensusValidationResult::new_with_data(
-            IdentityCreditWithdrawalTransitionAction::from_identity_credit_withdrawal(
+        Ok(
+            IdentityCreditWithdrawalTransitionAction::try_from_identity_credit_withdrawal(
+                &platform.drive,
+                tx,
                 self,
-                last_block_time,
+                block_info,
+                platform_version,
             )
-            .into(),
-        ))
+            .map(|consensus_validation_result| {
+                consensus_validation_result.map(|withdrawal| withdrawal.into())
+            })?,
+        )
     }
 }

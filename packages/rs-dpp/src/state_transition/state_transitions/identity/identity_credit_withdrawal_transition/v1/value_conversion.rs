@@ -7,8 +7,8 @@ use crate::{state_transition::StateTransitionFieldTypes, ProtocolError};
 use crate::state_transition::identity_credit_withdrawal_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
-use platform_version::version::PlatformVersion;
 use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
+use platform_version::version::PlatformVersion;
 
 impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransitionV1 {
     fn from_object(

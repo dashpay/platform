@@ -13,7 +13,7 @@ use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::withdrawals_contract;
 use drive::dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
-use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
+use dpp::withdrawal::WithdrawalTransactionIndex;
 use drive::query::TransactionArg;
 use drive::util::batch::DriveOperation;
 

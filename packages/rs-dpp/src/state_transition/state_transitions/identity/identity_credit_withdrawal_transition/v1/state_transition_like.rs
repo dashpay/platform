@@ -8,8 +8,8 @@ use crate::{
     state_transition::{StateTransitionLike, StateTransitionType},
 };
 
-use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
+use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType::IdentityCreditWithdrawal;
 use crate::version::FeatureVersion;

@@ -22,9 +22,7 @@ use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use dpp::ProtocolError;
 
-use dpp::state_transition::identity_credit_withdrawal_transition::v0::{
-    IdentityCreditWithdrawalTransitionV0, MIN_CORE_FEE_PER_BYTE,
-};
+use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 
 use dpp::native_bls::NativeBlsModule;
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
@@ -40,6 +38,7 @@ use simple_signer::signer::SimpleSigner;
 use crate::KeyMaps;
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+use dpp::state_transition::identity_credit_withdrawal_transition::MIN_CORE_FEE_PER_BYTE;
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 

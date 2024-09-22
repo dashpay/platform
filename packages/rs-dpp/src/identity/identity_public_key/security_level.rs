@@ -7,6 +7,8 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use crate::consensus::basic::data_contract::UnknownSecurityLevelError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::identity::Purpose;
+use crate::identity::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, SYSTEM, TRANSFER, VOTING};
 use crate::ProtocolError;
 use std::convert::TryFrom;
 
@@ -33,6 +35,23 @@ pub enum SecurityLevel {
     #[default]
     HIGH = 2,
     MEDIUM = 3,
+}
+
+impl From<SecurityLevel> for [u8; 1] {
+    fn from(security_level: SecurityLevel) -> Self {
+        [security_level as u8]
+    }
+}
+
+impl From<SecurityLevel> for &'static [u8; 1] {
+    fn from(security_level: SecurityLevel) -> Self {
+        match security_level {
+            SecurityLevel::MASTER => &[0],
+            SecurityLevel::CRITICAL => &[1],
+            SecurityLevel::HIGH => &[2],
+            SecurityLevel::MEDIUM => &[3],
+        }
+    }
 }
 
 #[cfg(feature = "cbor")]

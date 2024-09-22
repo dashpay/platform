@@ -5,12 +5,12 @@ use crate::error::Error;
 use crate::query::{Query, QueryItem};
 use crate::util::batch::drive_op_batch::WithdrawalOperationType;
 use crate::util::batch::DriveOperation;
+use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::convert::TryInto;
 use std::ops::RangeFull;
-use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 
 impl Drive {
     pub(super) fn dequeue_untied_withdrawal_transactions_v0(

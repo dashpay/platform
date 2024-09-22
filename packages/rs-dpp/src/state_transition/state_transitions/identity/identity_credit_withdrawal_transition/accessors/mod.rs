@@ -21,7 +21,7 @@ impl IdentityCreditWithdrawalTransitionAccessorsV0 for IdentityCreditWithdrawalT
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => {
                 transition.identity_id = identity_id;
-            },
+            }
             IdentityCreditWithdrawalTransition::V1(transition) => {
                 transition.identity_id = identity_id;
             }
@@ -39,7 +39,7 @@ impl IdentityCreditWithdrawalTransitionAccessorsV0 for IdentityCreditWithdrawalT
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => {
                 transition.amount = amount;
-            },
+            }
             IdentityCreditWithdrawalTransition::V1(transition) => {
                 transition.amount = amount;
             }
@@ -71,7 +71,7 @@ impl IdentityCreditWithdrawalTransitionAccessorsV0 for IdentityCreditWithdrawalT
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => {
                 transition.pooling = pooling;
-            },
+            }
             IdentityCreditWithdrawalTransition::V1(transition) => {
                 transition.pooling = pooling;
             }
@@ -89,7 +89,7 @@ impl IdentityCreditWithdrawalTransitionAccessorsV0 for IdentityCreditWithdrawalT
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => {
                 transition.core_fee_per_byte = core_fee_per_byte;
-            },
+            }
             IdentityCreditWithdrawalTransition::V1(transition) => {
                 transition.core_fee_per_byte = core_fee_per_byte;
             }
@@ -98,7 +98,9 @@ impl IdentityCreditWithdrawalTransitionAccessorsV0 for IdentityCreditWithdrawalT
 
     fn output_script(&self) -> Option<CoreScript> {
         match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => Some(transition.output_script.clone()),
+            IdentityCreditWithdrawalTransition::V0(transition) => {
+                Some(transition.output_script.clone())
+            }
             IdentityCreditWithdrawalTransition::V1(transition) => transition.output_script.clone(),
         }
     }
@@ -109,7 +111,7 @@ impl IdentityCreditWithdrawalTransitionAccessorsV0 for IdentityCreditWithdrawalT
                 if let Some(output_script) = output_script {
                     transition.output_script = output_script;
                 }
-            },
+            }
             IdentityCreditWithdrawalTransition::V1(transition) => {
                 transition.output_script = output_script;
             }

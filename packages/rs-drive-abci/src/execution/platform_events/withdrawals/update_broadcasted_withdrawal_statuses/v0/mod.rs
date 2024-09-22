@@ -11,8 +11,8 @@ use dpp::version::PlatformVersion;
 use itertools::Itertools;
 use std::collections::HashSet;
 
+use dpp::withdrawal::WithdrawalTransactionIndex;
 use drive::config::DEFAULT_QUERY_LIMIT;
-use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use drive::grovedb::Transaction;
 use drive::util::batch::DriveOperation;
 

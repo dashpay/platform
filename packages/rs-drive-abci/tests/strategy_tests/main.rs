@@ -85,10 +85,10 @@ mod tests {
     };
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::state_transition::StateTransition;
+    use platform_version::version::PlatformVersion;
     use simple_signer::signer::SimpleSigner;
     use strategy_tests::transitions::create_state_transitions_for_identities;
     use tenderdash_abci::Application;
-    use platform_version::version::PlatformVersion;
 
     #[test]
     fn run_chain_nothing_happening() {

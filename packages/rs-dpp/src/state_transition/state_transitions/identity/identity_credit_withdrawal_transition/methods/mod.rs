@@ -16,6 +16,7 @@ use crate::identity::core_script::CoreScript;
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
+use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
@@ -24,7 +25,6 @@ use crate::version::PlatformVersion;
 use crate::withdrawal::Pooling;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
-use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 
 impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTransition {
     #[cfg(feature = "state-transition-signing")]

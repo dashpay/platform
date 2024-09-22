@@ -8,15 +8,19 @@ mod json_conversion;
 pub mod methods;
 mod state_transition_like;
 pub mod v0;
+pub mod v1;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
-pub mod v1;
 
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 
+use crate::balances::credits::CREDITS_PER_DUFF;
 use crate::identity::state_transition::OptionallyAssetLockProved;
+use crate::state_transition::identity_credit_withdrawal_transition::v1::{
+    IdentityCreditWithdrawalTransitionV1, IdentityCreditWithdrawalTransitionV1Signable,
+};
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
@@ -27,8 +31,6 @@ use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
-use crate::balances::credits::CREDITS_PER_DUFF;
-use crate::state_transition::identity_credit_withdrawal_transition::v1::{IdentityCreditWithdrawalTransitionV1, IdentityCreditWithdrawalTransitionV1Signable};
 
 /// Minimal core per byte. Must be a fibonacci number
 pub const MIN_CORE_FEE_PER_BYTE: u32 = 1;

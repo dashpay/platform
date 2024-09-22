@@ -1,21 +1,17 @@
-use std::collections::BTreeMap;
-use dashcore_rpc::dashcore::{
-    consensus::Encodable,
-};
+use dashcore_rpc::dashcore::consensus::Encodable;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::document::{Document, DocumentV0Setters};
 use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 
-use platform_version::version::PlatformVersion;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
     rpc::core::CoreRPCLike,
 };
+use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
 where
@@ -29,42 +25,45 @@ where
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<WithdrawalTransactionIndexAndBytes>, Error> {
-        documents.iter_mut().enumerate().map(|(i, document)| {
-            
-            let transaction_index = start_index + i as WithdrawalTransactionIndex;
-            
-            let withdrawal_transaction = document.try_into_asset_unlock_base_transaction_info(transaction_index, platform_version)?;
-            
-            let mut transaction_buffer: Vec<u8> = vec![];
+        documents
+            .iter_mut()
+            .enumerate()
+            .map(|(i, document)| {
+                let transaction_index = start_index + i as WithdrawalTransactionIndex;
 
-            withdrawal_transaction
-                .consensus_encode(&mut transaction_buffer)
-                .map_err(|_| {
+                let withdrawal_transaction = document.try_into_asset_unlock_base_transaction_info(
+                    transaction_index,
+                    platform_version,
+                )?;
+
+                let mut transaction_buffer: Vec<u8> = vec![];
+
+                withdrawal_transaction
+                    .consensus_encode(&mut transaction_buffer)
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "Can't consensus encode a withdrawal transaction",
+                        ))
+                    })?;
+
+                document.set_u64(withdrawal::properties::TRANSACTION_INDEX, transaction_index);
+
+                document.set_u8(
+                    withdrawal::properties::STATUS,
+                    withdrawals_contract::WithdrawalStatus::POOLED as u8,
+                );
+
+                document.set_updated_at(Some(block_info.time_ms));
+
+                document.increment_revision().map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Can't consensus encode a withdrawal transaction",
+                        "Could not increment document revision",
                     ))
                 })?;
 
-            document.set_u64(
-                withdrawal::properties::TRANSACTION_INDEX,
-                *transaction_index,
-            );
-
-            document.set_u8(
-                withdrawal::properties::STATUS,
-                withdrawals_contract::WithdrawalStatus::POOLED as u8,
-            );
-
-            document.set_updated_at(Some(block_info.time_ms));
-
-            document.increment_revision().map_err(|_| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "Could not increment document revision",
-                ))
-            })?;
-
-            Ok((transaction_index, transaction_buffer))
-        }).collect()
+                Ok((transaction_index, transaction_buffer))
+            })
+            .collect()
     }
 }
 
@@ -78,6 +77,8 @@ mod tests {
     use drive::util::test_helpers::setup::setup_document;
 
     mod build_withdrawal_transactions_from_documents {
+        use crate::test::helpers::setup::TestPlatformBuilder;
+        use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
         use dpp::identity::core_script::CoreScript;
@@ -88,8 +89,6 @@ mod tests {
         use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
         use drive::util::test_helpers::setup::setup_system_data_contract;
         use itertools::Itertools;
-
-        use crate::test::helpers::setup::TestPlatformBuilder;
 
         use super::*;
 
@@ -162,10 +161,17 @@ mod tests {
                 Some(&transaction),
             );
 
-            let documents = vec![document_1, document_2];
+            let mut documents = vec![document_1, document_2];
+
+            let block_info = BlockInfo::default_with_time(50);
 
             let transactions = platform
-                .build_untied_withdrawal_transactions_from_documents_v0(&documents, 50, platform_version)
+                .build_untied_withdrawal_transactions_from_documents_v0(
+                    &mut documents,
+                    50,
+                    &block_info,
+                    platform_version,
+                )
                 .expect("to build transactions from documents");
 
             assert_eq!(

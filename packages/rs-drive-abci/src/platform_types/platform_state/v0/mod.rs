@@ -20,7 +20,6 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 
 use crate::config::PlatformConfig;
-use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::signature_verification_quorum_set::{
     SignatureVerificationQuorumSet, SignatureVerificationQuorumSetForSaving,
 };

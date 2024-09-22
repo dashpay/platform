@@ -13,6 +13,8 @@ use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
 #[cfg(feature = "state-transition-signing")]
+use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
 #[cfg(feature = "state-transition-signing")]
 use crate::withdrawal::Pooling;
@@ -20,8 +22,6 @@ use crate::withdrawal::Pooling;
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
-#[cfg(feature = "state-transition-signing")]
-use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 
 impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTransitionV1 {
     #[cfg(feature = "state-transition-signing")]
@@ -60,13 +60,14 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
                     KeyType::all_key_types().into(),
                     true,
                 )
-                .or_else(|| identity
-                    .get_first_public_key_matching(
+                .or_else(|| {
+                    identity.get_first_public_key_matching(
                         Purpose::AUTHENTICATION,
                         SecurityLevel::full_range().into(),
                         KeyType::all_key_types().into(),
                         true,
-                    ))
+                    )
+                })
                 .ok_or_else(|| {
                     ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
                         "no withdrawal public key".to_string(),
