@@ -1,20 +1,15 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    identity::{
-        core_script::CoreScript,
-        signer::Signer,
-        Identity,
-        IdentityPublicKey,
-    },
+    identity::{core_script::CoreScript, signer::Signer, Identity, IdentityPublicKey},
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::StateTransition,
     withdrawal::Pooling,
     ProtocolError,
 };
 
+use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
-use crate::state_transition::StateTransitionType;
 
 /// The key purpose that is preferred for signing the withdrawal
 #[cfg(feature = "state-transition-signing")]

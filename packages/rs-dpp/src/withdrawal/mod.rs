@@ -10,12 +10,11 @@ use crate::{
 
 #[cfg(feature = "system_contracts")]
 use dashcore::{
-    ScriptBuf,
-    TxOut,
     transaction::special_transaction::asset_unlock::{
         qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE,
         unqualified_asset_unlock::{AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo},
     },
+    ScriptBuf, TxOut,
 };
 
 #[cfg(feature = "system_contracts")]

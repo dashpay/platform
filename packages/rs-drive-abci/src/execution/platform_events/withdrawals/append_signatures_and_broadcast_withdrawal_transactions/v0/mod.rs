@@ -75,11 +75,23 @@ where
                 // Ignore errors that can happen during blockchain synchronization.
                 // They will be logged with dashcore_rpc
                 Err(CoreRPCError::JsonRpc(jsonrpc::error::Error::Rpc(e)))
-                    if e.code == CORE_RPC_TX_ALREADY_IN_CHAIN
-                        || e.message == CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM
-                        || e.message == CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED =>
+                    if e.code == CORE_RPC_TX_ALREADY_IN_CHAIN =>
                 {
                     // These will never work again
+                }
+                // Ignore errors that can happen during blockchain synchronization.
+                // They will be logged with dashcore_rpc
+                Err(CoreRPCError::JsonRpc(jsonrpc::error::Error::Rpc(e)))
+                    if e.message == CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM
+                        || e.message == CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED =>
+                {
+                    tracing::debug!(
+                        tx_id = transaction.txid().to_string(),
+                        index,
+                        "Asset unlock is expired or has no active quorum {}: {}",
+                        index,
+                        e.message
+                    );
                 }
                 // Errors that can happen if we created invalid tx or Core isn't responding
                 Err(e) => {

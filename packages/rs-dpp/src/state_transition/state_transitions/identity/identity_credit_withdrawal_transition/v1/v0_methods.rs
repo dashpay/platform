@@ -1,22 +1,13 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{
-        accessors::IdentityGettersV0,
-        core_script::CoreScript,
-        signer::Signer,
-        Identity,
-        IdentityPublicKey,
-        KeyType,
-        Purpose,
-        SecurityLevel,
+        accessors::IdentityGettersV0, core_script::CoreScript, signer::Signer, Identity,
+        IdentityPublicKey, KeyType, Purpose, SecurityLevel,
     },
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::{
-        identity_credit_withdrawal_transition::{
-            methods::PreferredKeyPurposeForSigningWithdrawal,
-        },
-        GetDataContractSecurityLevelRequirementFn,
-        StateTransition,
+        identity_credit_withdrawal_transition::methods::PreferredKeyPurposeForSigningWithdrawal,
+        GetDataContractSecurityLevelRequirementFn, StateTransition,
     },
     withdrawal::Pooling,
     ProtocolError,
