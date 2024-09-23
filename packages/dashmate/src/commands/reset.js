@@ -9,7 +9,7 @@ export default class ResetCommand extends ConfigBaseCommand {
 
   static flags = {
     ...ConfigBaseCommand.flags,
-    hard: Flags.boolean({ char: 'h', description: 'reset config as well as services and data', default: false }),
+    hard: Flags.boolean({ description: 'reset config as well as services and data', default: false }),
     force: Flags.boolean({ char: 'f', description: 'skip running services check', default: false }),
     platform: Flags.boolean({ char: 'p', description: 'reset platform services and data only', default: false }),
     verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
