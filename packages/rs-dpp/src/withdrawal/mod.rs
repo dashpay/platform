@@ -1,14 +1,26 @@
-use crate::document::{Document, DocumentV0Getters};
-use crate::identity::convert_credits_to_duffs;
-use crate::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-use crate::ProtocolError;
 use bincode::{Decode, Encode};
-use dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE;
-use dashcore::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::{
-    AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo,
+
+#[cfg(feature = "system_contracts")]
+use crate::{
+    document::{Document, DocumentV0Getters},
+    identity::convert_credits_to_duffs,
+    system_data_contracts::withdrawals_contract::v1::document_types::withdrawal,
+    ProtocolError,
 };
-use dashcore::{ScriptBuf, TxOut};
+
+#[cfg(feature = "system_contracts")]
+use dashcore::{
+    ScriptBuf,
+    TxOut,
+    transaction::special_transaction::asset_unlock::{
+        qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE,
+        unqualified_asset_unlock::{AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo},
+    },
+};
+
+#[cfg(feature = "system_contracts")]
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+#[cfg(feature = "system_contracts")]
 use platform_version::version::PlatformVersion;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
@@ -29,6 +41,7 @@ pub type WithdrawalTransactionIndex = u64;
 /// Simple type alias for withdrawal transaction with it's index
 pub type WithdrawalTransactionIndexAndBytes = (WithdrawalTransactionIndex, Vec<u8>);
 
+#[cfg(feature = "system_contracts")]
 impl Document {
     pub fn try_into_asset_unlock_base_transaction_info(
         &self,

@@ -101,7 +101,6 @@ GPBObjCClassDeclaration(GetEvonodesProposedEpochBlocksResponse_GetEvonodesPropos
 GPBObjCClassDeclaration(GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodesProposedBlocks);
 GPBObjCClassDeclaration(GetIdentitiesBalancesRequest);
 GPBObjCClassDeclaration(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0);
-GPBObjCClassDeclaration(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds);
 GPBObjCClassDeclaration(GetIdentitiesBalancesResponse);
 GPBObjCClassDeclaration(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0);
 GPBObjCClassDeclaration(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances);
@@ -3065,7 +3064,7 @@ void GetEvonodesProposedEpochBlocksByIdsRequest_ClearVersionOneOfCase(GetEvonode
 
 @implementation GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpochBlocksByIdsRequestV0
 
-@dynamic epoch;
+@dynamic hasEpoch, epoch;
 @dynamic idsArray, idsArray_Count;
 @dynamic prove;
 
@@ -3087,7 +3086,7 @@ typedef struct GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpo
         .number = GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpochBlocksByIdsRequestV0_FieldNumber_Epoch,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpochBlocksByIdsRequestV0__storage_, epoch),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeUInt32,
       },
       {
@@ -3430,7 +3429,7 @@ void GetEvonodesProposedEpochBlocksByRangeRequest_ClearVersionOneOfCase(GetEvono
 @implementation GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0
 
 @dynamic startOneOfCase;
-@dynamic epoch;
+@dynamic hasEpoch, epoch;
 @dynamic hasLimit, limit;
 @dynamic startAfter;
 @dynamic startAt;
@@ -3456,7 +3455,7 @@ typedef struct GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedE
         .number = GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0_FieldNumber_Epoch,
         .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0__storage_, epoch),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeUInt32,
       },
       {
@@ -3587,12 +3586,12 @@ void GetIdentitiesBalancesRequest_ClearVersionOneOfCase(GetIdentitiesBalancesReq
 
 @implementation GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0
 
-@dynamic hasIdentitiesIds, identitiesIds;
+@dynamic idsArray, idsArray_Count;
 @dynamic prove;
 
 typedef struct GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0__storage_ {
   uint32_t _has_storage_[1];
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds *identitiesIds;
+  NSMutableArray *idsArray;
 } GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -3602,20 +3601,20 @@ typedef struct GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0__stor
   if (!descriptor) {
     static GPBMessageFieldDescription fields[] = {
       {
-        .name = "identitiesIds",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds),
-        .number = GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_IdentitiesIds,
-        .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0__storage_, identitiesIds),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
+        .name = "idsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_IdsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0__storage_, idsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
       },
       {
         .name = "prove",
         .dataTypeSpecific.clazz = Nil,
         .number = GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_Prove,
-        .hasIndex = 1,
-        .offset = 2,  // Stored in _has_storage_ to save space.
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },
@@ -3629,52 +3628,6 @@ typedef struct GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0__stor
                                    storageSize:sizeof(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentitiesBalancesRequest)];
-    #if defined(DEBUG) && DEBUG
-      NSAssert(descriptor == nil, @"Startup recursed!");
-    #endif  // DEBUG
-    descriptor = localDescriptor;
-  }
-  return descriptor;
-}
-
-@end
-
-#pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds
-
-@implementation GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds
-
-@dynamic identitiesIdsArray, identitiesIdsArray_Count;
-
-typedef struct GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds__storage_ {
-  uint32_t _has_storage_[1];
-  NSMutableArray *identitiesIdsArray;
-} GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds__storage_;
-
-// This method is threadsafe because it is initially called
-// in +initialize for each subclass.
-+ (GPBDescriptor *)descriptor {
-  static GPBDescriptor *descriptor = nil;
-  if (!descriptor) {
-    static GPBMessageFieldDescription fields[] = {
-      {
-        .name = "identitiesIdsArray",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds_FieldNumber_IdentitiesIdsArray,
-        .hasIndex = GPBNoHasBit,
-        .offset = (uint32_t)offsetof(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds__storage_, identitiesIdsArray),
-        .flags = GPBFieldRepeated,
-        .dataType = GPBDataTypeBytes,
-      },
-    };
-    GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds class]
-                                     rootClass:[PlatformRoot class]
-                                          file:PlatformRoot_FileDescriptor()
-                                        fields:fields
-                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds__storage_)
-                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG

@@ -13454,7 +13454,7 @@ $root.org = (function() {
                              * Properties of a GetIdentitiesBalancesRequestV0.
                              * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
                              * @interface IGetIdentitiesBalancesRequestV0
-                             * @property {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds|null} [identitiesIds] GetIdentitiesBalancesRequestV0 identitiesIds
+                             * @property {Array.<Uint8Array>|null} [ids] GetIdentitiesBalancesRequestV0 ids
                              * @property {boolean|null} [prove] GetIdentitiesBalancesRequestV0 prove
                              */
 
@@ -13467,6 +13467,7 @@ $root.org = (function() {
                              * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0=} [properties] Properties to set
                              */
                             function GetIdentitiesBalancesRequestV0(properties) {
+                                this.ids = [];
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -13474,12 +13475,12 @@ $root.org = (function() {
                             }
 
                             /**
-                             * GetIdentitiesBalancesRequestV0 identitiesIds.
-                             * @member {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds|null|undefined} identitiesIds
+                             * GetIdentitiesBalancesRequestV0 ids.
+                             * @member {Array.<Uint8Array>} ids
                              * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
                              * @instance
                              */
-                            GetIdentitiesBalancesRequestV0.prototype.identitiesIds = null;
+                            GetIdentitiesBalancesRequestV0.prototype.ids = $util.emptyArray;
 
                             /**
                              * GetIdentitiesBalancesRequestV0 prove.
@@ -13513,8 +13514,9 @@ $root.org = (function() {
                             GetIdentitiesBalancesRequestV0.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
-                                if (message.identitiesIds != null && Object.hasOwnProperty.call(message, "identitiesIds"))
-                                    $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.encode(message.identitiesIds, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.ids != null && message.ids.length)
+                                    for (var i = 0; i < message.ids.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.ids[i]);
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
                                 return writer;
@@ -13552,7 +13554,9 @@ $root.org = (function() {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
                                     case 1:
-                                        message.identitiesIds = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.decode(reader, reader.uint32());
+                                        if (!(message.ids && message.ids.length))
+                                            message.ids = [];
+                                        message.ids.push(reader.bytes());
                                         break;
                                     case 2:
                                         message.prove = reader.bool();
@@ -13592,10 +13596,12 @@ $root.org = (function() {
                             GetIdentitiesBalancesRequestV0.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
-                                if (message.identitiesIds != null && message.hasOwnProperty("identitiesIds")) {
-                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.verify(message.identitiesIds);
-                                    if (error)
-                                        return "identitiesIds." + error;
+                                if (message.ids != null && message.hasOwnProperty("ids")) {
+                                    if (!Array.isArray(message.ids))
+                                        return "ids: array expected";
+                                    for (var i = 0; i < message.ids.length; ++i)
+                                        if (!(message.ids[i] && typeof message.ids[i].length === "number" || $util.isString(message.ids[i])))
+                                            return "ids: buffer[] expected";
                                 }
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
@@ -13615,10 +13621,15 @@ $root.org = (function() {
                                 if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0)
                                     return object;
                                 var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0();
-                                if (object.identitiesIds != null) {
-                                    if (typeof object.identitiesIds !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.identitiesIds: object expected");
-                                    message.identitiesIds = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.fromObject(object.identitiesIds);
+                                if (object.ids) {
+                                    if (!Array.isArray(object.ids))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.ids: array expected");
+                                    message.ids = [];
+                                    for (var i = 0; i < object.ids.length; ++i)
+                                        if (typeof object.ids[i] === "string")
+                                            $util.base64.decode(object.ids[i], message.ids[i] = $util.newBuffer($util.base64.length(object.ids[i])), 0);
+                                        else if (object.ids[i].length >= 0)
+                                            message.ids[i] = object.ids[i];
                                 }
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
@@ -13638,12 +13649,15 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.defaults) {
-                                    object.identitiesIds = null;
+                                if (options.arrays || options.defaults)
+                                    object.ids = [];
+                                if (options.defaults)
                                     object.prove = false;
+                                if (message.ids && message.ids.length) {
+                                    object.ids = [];
+                                    for (var j = 0; j < message.ids.length; ++j)
+                                        object.ids[j] = options.bytes === String ? $util.base64.encode(message.ids[j], 0, message.ids[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.ids[j]) : message.ids[j];
                                 }
-                                if (message.identitiesIds != null && message.hasOwnProperty("identitiesIds"))
-                                    object.identitiesIds = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.toObject(message.identitiesIds, options);
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
                                 return object;
@@ -13659,212 +13673,6 @@ $root.org = (function() {
                             GetIdentitiesBalancesRequestV0.prototype.toJSON = function toJSON() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
-
-                            GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds = (function() {
-
-                                /**
-                                 * Properties of a GetIdentitiesBalancesByKnownIdentityIds.
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
-                                 * @interface IGetIdentitiesBalancesByKnownIdentityIds
-                                 * @property {Array.<Uint8Array>|null} [identitiesIds] GetIdentitiesBalancesByKnownIdentityIds identitiesIds
-                                 */
-
-                                /**
-                                 * Constructs a new GetIdentitiesBalancesByKnownIdentityIds.
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
-                                 * @classdesc Represents a GetIdentitiesBalancesByKnownIdentityIds.
-                                 * @implements IGetIdentitiesBalancesByKnownIdentityIds
-                                 * @constructor
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds=} [properties] Properties to set
-                                 */
-                                function GetIdentitiesBalancesByKnownIdentityIds(properties) {
-                                    this.identitiesIds = [];
-                                    if (properties)
-                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                            if (properties[keys[i]] != null)
-                                                this[keys[i]] = properties[keys[i]];
-                                }
-
-                                /**
-                                 * GetIdentitiesBalancesByKnownIdentityIds identitiesIds.
-                                 * @member {Array.<Uint8Array>} identitiesIds
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
-                                 * @instance
-                                 */
-                                GetIdentitiesBalancesByKnownIdentityIds.prototype.identitiesIds = $util.emptyArray;
-
-                                /**
-                                 * Creates a new GetIdentitiesBalancesByKnownIdentityIds instance using the specified properties.
-                                 * @function create
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
-                                 * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds=} [properties] Properties to set
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} GetIdentitiesBalancesByKnownIdentityIds instance
-                                 */
-                                GetIdentitiesBalancesByKnownIdentityIds.create = function create(properties) {
-                                    return new GetIdentitiesBalancesByKnownIdentityIds(properties);
-                                };
-
-                                /**
-                                 * Encodes the specified GetIdentitiesBalancesByKnownIdentityIds message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.verify|verify} messages.
-                                 * @function encode
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
-                                 * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds} message GetIdentitiesBalancesByKnownIdentityIds message or plain object to encode
-                                 * @param {$protobuf.Writer} [writer] Writer to encode to
-                                 * @returns {$protobuf.Writer} Writer
-                                 */
-                                GetIdentitiesBalancesByKnownIdentityIds.encode = function encode(message, writer) {
-                                    if (!writer)
-                                        writer = $Writer.create();
-                                    if (message.identitiesIds != null && message.identitiesIds.length)
-                                        for (var i = 0; i < message.identitiesIds.length; ++i)
-                                            writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identitiesIds[i]);
-                                    return writer;
-                                };
-
-                                /**
-                                 * Encodes the specified GetIdentitiesBalancesByKnownIdentityIds message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.verify|verify} messages.
-                                 * @function encodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
-                                 * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.IGetIdentitiesBalancesByKnownIdentityIds} message GetIdentitiesBalancesByKnownIdentityIds message or plain object to encode
-                                 * @param {$protobuf.Writer} [writer] Writer to encode to
-                                 * @returns {$protobuf.Writer} Writer
-                                 */
-                                GetIdentitiesBalancesByKnownIdentityIds.encodeDelimited = function encodeDelimited(message, writer) {
-                                    return this.encode(message, writer).ldelim();
-                                };
-
-                                /**
-                                 * Decodes a GetIdentitiesBalancesByKnownIdentityIds message from the specified reader or buffer.
-                                 * @function decode
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
-                                 * @static
-                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                                 * @param {number} [length] Message length if known beforehand
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} GetIdentitiesBalancesByKnownIdentityIds
-                                 * @throws {Error} If the payload is not a reader or valid buffer
-                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                                 */
-                                GetIdentitiesBalancesByKnownIdentityIds.decode = function decode(reader, length) {
-                                    if (!(reader instanceof $Reader))
-                                        reader = $Reader.create(reader);
-                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds();
-                                    while (reader.pos < end) {
-                                        var tag = reader.uint32();
-                                        switch (tag >>> 3) {
-                                        case 1:
-                                            if (!(message.identitiesIds && message.identitiesIds.length))
-                                                message.identitiesIds = [];
-                                            message.identitiesIds.push(reader.bytes());
-                                            break;
-                                        default:
-                                            reader.skipType(tag & 7);
-                                            break;
-                                        }
-                                    }
-                                    return message;
-                                };
-
-                                /**
-                                 * Decodes a GetIdentitiesBalancesByKnownIdentityIds message from the specified reader or buffer, length delimited.
-                                 * @function decodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
-                                 * @static
-                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} GetIdentitiesBalancesByKnownIdentityIds
-                                 * @throws {Error} If the payload is not a reader or valid buffer
-                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                                 */
-                                GetIdentitiesBalancesByKnownIdentityIds.decodeDelimited = function decodeDelimited(reader) {
-                                    if (!(reader instanceof $Reader))
-                                        reader = new $Reader(reader);
-                                    return this.decode(reader, reader.uint32());
-                                };
-
-                                /**
-                                 * Verifies a GetIdentitiesBalancesByKnownIdentityIds message.
-                                 * @function verify
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
-                                 * @static
-                                 * @param {Object.<string,*>} message Plain object to verify
-                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                                 */
-                                GetIdentitiesBalancesByKnownIdentityIds.verify = function verify(message) {
-                                    if (typeof message !== "object" || message === null)
-                                        return "object expected";
-                                    if (message.identitiesIds != null && message.hasOwnProperty("identitiesIds")) {
-                                        if (!Array.isArray(message.identitiesIds))
-                                            return "identitiesIds: array expected";
-                                        for (var i = 0; i < message.identitiesIds.length; ++i)
-                                            if (!(message.identitiesIds[i] && typeof message.identitiesIds[i].length === "number" || $util.isString(message.identitiesIds[i])))
-                                                return "identitiesIds: buffer[] expected";
-                                    }
-                                    return null;
-                                };
-
-                                /**
-                                 * Creates a GetIdentitiesBalancesByKnownIdentityIds message from a plain object. Also converts values to their respective internal types.
-                                 * @function fromObject
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
-                                 * @static
-                                 * @param {Object.<string,*>} object Plain object
-                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} GetIdentitiesBalancesByKnownIdentityIds
-                                 */
-                                GetIdentitiesBalancesByKnownIdentityIds.fromObject = function fromObject(object) {
-                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds)
-                                        return object;
-                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds();
-                                    if (object.identitiesIds) {
-                                        if (!Array.isArray(object.identitiesIds))
-                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.identitiesIds: array expected");
-                                        message.identitiesIds = [];
-                                        for (var i = 0; i < object.identitiesIds.length; ++i)
-                                            if (typeof object.identitiesIds[i] === "string")
-                                                $util.base64.decode(object.identitiesIds[i], message.identitiesIds[i] = $util.newBuffer($util.base64.length(object.identitiesIds[i])), 0);
-                                            else if (object.identitiesIds[i].length >= 0)
-                                                message.identitiesIds[i] = object.identitiesIds[i];
-                                    }
-                                    return message;
-                                };
-
-                                /**
-                                 * Creates a plain object from a GetIdentitiesBalancesByKnownIdentityIds message. Also converts values to other types if specified.
-                                 * @function toObject
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
-                                 * @static
-                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds} message GetIdentitiesBalancesByKnownIdentityIds
-                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
-                                 * @returns {Object.<string,*>} Plain object
-                                 */
-                                GetIdentitiesBalancesByKnownIdentityIds.toObject = function toObject(message, options) {
-                                    if (!options)
-                                        options = {};
-                                    var object = {};
-                                    if (options.arrays || options.defaults)
-                                        object.identitiesIds = [];
-                                    if (message.identitiesIds && message.identitiesIds.length) {
-                                        object.identitiesIds = [];
-                                        for (var j = 0; j < message.identitiesIds.length; ++j)
-                                            object.identitiesIds[j] = options.bytes === String ? $util.base64.encode(message.identitiesIds[j], 0, message.identitiesIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.identitiesIds[j]) : message.identitiesIds[j];
-                                    }
-                                    return object;
-                                };
-
-                                /**
-                                 * Converts this GetIdentitiesBalancesByKnownIdentityIds to JSON.
-                                 * @function toJSON
-                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds
-                                 * @instance
-                                 * @returns {Object.<string,*>} JSON object
-                                 */
-                                GetIdentitiesBalancesByKnownIdentityIds.prototype.toJSON = function toJSON() {
-                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                                };
-
-                                return GetIdentitiesBalancesByKnownIdentityIds;
-                            })();
 
                             return GetIdentitiesBalancesRequestV0;
                         })();

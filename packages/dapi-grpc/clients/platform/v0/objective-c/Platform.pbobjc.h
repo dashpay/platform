@@ -77,7 +77,6 @@ CF_EXTERN_C_BEGIN
 @class GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodeProposedBlocks;
 @class GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodesProposedBlocks;
 @class GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0;
-@class GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds;
 @class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0;
 @class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances;
 @class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance;
@@ -1396,8 +1395,10 @@ typedef GPB_ENUM(GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedE
 
 GPB_FINAL @interface GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpochBlocksByIdsRequestV0 : GPBMessage
 
+/** The epoch we are querying for, if none is set, get current epoch */
 @property(nonatomic, readwrite) uint32_t epoch;
 
+@property(nonatomic, readwrite) BOOL hasEpoch;
 /** IDs of the evonodes for which we want to get their proposed blocks */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *idsArray;
 /** The number of items in @c idsArray without causing the array to be created. */
@@ -1539,9 +1540,10 @@ typedef GPB_ENUM(GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesPropose
 
 GPB_FINAL @interface GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0 : GPBMessage
 
-/** The epoch we are querying for */
+/** The epoch we are querying for, if none is set, get current epoch */
 @property(nonatomic, readwrite) uint32_t epoch;
 
+@property(nonatomic, readwrite) BOOL hasEpoch;
 /** Maximum number of evonodes proposed epoch blocks to return */
 @property(nonatomic, readwrite) uint32_t limit;
 
@@ -1591,31 +1593,17 @@ void GetIdentitiesBalancesRequest_ClearVersionOneOfCase(GetIdentitiesBalancesReq
 #pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0
 
 typedef GPB_ENUM(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber) {
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_IdentitiesIds = 1,
+  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_IdsArray = 1,
   GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_Prove = 2,
 };
 
 GPB_FINAL @interface GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0 : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds *identitiesIds;
-/** Test to see if @c identitiesIds has been set. */
-@property(nonatomic, readwrite) BOOL hasIdentitiesIds;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *idsArray;
+/** The number of items in @c idsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger idsArray_Count;
 
 @property(nonatomic, readwrite) BOOL prove;
-
-@end
-
-#pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds
-
-typedef GPB_ENUM(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds_FieldNumber) {
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds_FieldNumber_IdentitiesIdsArray = 1,
-};
-
-GPB_FINAL @interface GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds : GPBMessage
-
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identitiesIdsArray;
-/** The number of items in @c identitiesIdsArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger identitiesIdsArray_Count;
 
 @end
 
