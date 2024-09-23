@@ -15,7 +15,9 @@ use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
-use dpp::state_transition::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
+use dpp::state_transition::identity_credit_withdrawal_transition::methods::{
+    IdentityCreditWithdrawalTransitionMethodsV0, PreferredKeyPurposeForSigningWithdrawal,
+};
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::withdrawal::Pooling;
 use drive::drive::Drive;
@@ -27,7 +29,7 @@ pub trait WithdrawFromIdentity {
     async fn withdraw<S: Signer + Send>(
         &self,
         sdk: &Sdk,
-        address: Address,
+        address: Option<Address>,
         amount: u64,
         core_fee_per_byte: Option<u32>,
         user_fee_increase: Option<UserFeeIncrease>,
@@ -41,7 +43,7 @@ impl WithdrawFromIdentity for Identity {
     async fn withdraw<S: Signer + Send>(
         &self,
         sdk: &Sdk,
-        address: Address,
+        address: Option<Address>,
         amount: u64,
         core_fee_per_byte: Option<u32>,
         user_fee_increase: Option<UserFeeIncrease>,
@@ -49,15 +51,17 @@ impl WithdrawFromIdentity for Identity {
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
         let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
+        let script = address.map(|address| CoreScript::new(address.script_pubkey()));
         let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             self,
             None,
-            CoreScript::new(address.script_pubkey()),
+            script,
             amount,
             Pooling::Never,
             core_fee_per_byte.unwrap_or(1),
             user_fee_increase.unwrap_or_default(),
             signer,
+            PreferredKeyPurposeForSigningWithdrawal::TransferPreferred,
             new_identity_nonce,
             sdk.version(),
             None,

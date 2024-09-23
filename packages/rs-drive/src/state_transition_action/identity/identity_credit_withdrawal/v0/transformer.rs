@@ -2,7 +2,6 @@ use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
-use crate::state_transition_action::StateTransitionAction;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::identity::identity_public_key_is_disabled_error::IdentityPublicKeyIsDisabledError;
 use dpp::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;

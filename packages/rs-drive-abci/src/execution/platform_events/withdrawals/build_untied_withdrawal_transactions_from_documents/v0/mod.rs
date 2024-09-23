@@ -69,14 +69,11 @@ where
 
 #[cfg(test)]
 mod tests {
-
-    use dpp::withdrawal::Pooling;
-    use dpp::{
-        data_contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture,
-    };
+    use dpp::tests::fixtures::get_withdrawal_document_fixture;
     use drive::util::test_helpers::setup::setup_document;
 
     mod build_withdrawal_transactions_from_documents {
+        use super::*;
         use crate::test::helpers::setup::TestPlatformBuilder;
         use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -84,13 +81,11 @@ mod tests {
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
         use dpp::prelude::Identifier;
+        use dpp::system_data_contracts::withdrawals_contract::WithdrawalStatus;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
-        use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
+        use dpp::withdrawal::Pooling;
         use drive::util::test_helpers::setup::setup_system_data_contract;
-        use itertools::Itertools;
-
-        use super::*;
 
         #[test]
         fn test_build() {
@@ -117,7 +112,7 @@ mod tests {
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                    "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
+                    "status": WithdrawalStatus::POOLED as u8,
                     "transactionIndex": 1u64,
                 }),
                 None,
@@ -145,7 +140,7 @@ mod tests {
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                    "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
+                    "status": WithdrawalStatus::POOLED as u8,
                     "transactionIndex": 2u64,
                 }),
                 None,
@@ -175,11 +170,7 @@ mod tests {
                 .expect("to build transactions from documents");
 
             assert_eq!(
-                transactions
-                    .values()
-                    .cloned()
-                    .sorted()
-                    .collect::<Vec<WithdrawalTransactionIndexAndBytes>>(),
+                transactions,
                 vec![
                     (
                         50,
@@ -198,9 +189,6 @@ mod tests {
                         ],
                     ),
                 ]
-                .into_iter()
-                .sorted()
-                .collect::<Vec<WithdrawalTransactionIndexAndBytes>>(),
             );
         }
     }

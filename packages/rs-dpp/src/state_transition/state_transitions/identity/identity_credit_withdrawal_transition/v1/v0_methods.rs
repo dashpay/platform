@@ -13,6 +13,8 @@ use crate::prelude::{IdentityNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::identity_credit_withdrawal_transition::methods::IdentityCreditWithdrawalTransitionMethodsV0;
 #[cfg(feature = "state-transition-signing")]
+use crate::state_transition::identity_credit_withdrawal_transition::methods::PreferredKeyPurposeForSigningWithdrawal;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
@@ -34,6 +36,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
         core_fee_per_byte: u32,
         user_fee_increase: UserFeeIncrease,
         signer: S,
+        preferred_key_purpose_for_signing_withdrawal: PreferredKeyPurposeForSigningWithdrawal,
         nonce: IdentityNonce,
         _platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
@@ -52,27 +55,81 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
         .into();
 
         let identity_public_key = match withdrawal_key_to_use {
-            Some(key) => key,
-            None => identity
-                .get_first_public_key_matching(
-                    Purpose::TRANSFER,
-                    SecurityLevel::full_range().into(),
-                    KeyType::all_key_types().into(),
-                    true,
-                )
-                .or_else(|| {
-                    identity.get_first_public_key_matching(
-                        Purpose::AUTHENTICATION,
-                        SecurityLevel::full_range().into(),
-                        KeyType::all_key_types().into(),
-                        true,
-                    )
-                })
-                .ok_or_else(|| {
+            Some(key) => {
+                if signer.can_sign_with(key) {
+                    key
+                } else {
+                    return Err(
+                        ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
+                            "specified withdrawal public key cannot be used for signing"
+                                .to_string(),
+                        ),
+                    );
+                }
+            }
+            None => {
+                let mut key: Option<&IdentityPublicKey> = None;
+
+                match preferred_key_purpose_for_signing_withdrawal {
+                    PreferredKeyPurposeForSigningWithdrawal::MasterPreferred => {
+                        key = identity.get_first_public_key_matching(
+                            Purpose::AUTHENTICATION,
+                            SecurityLevel::full_range().into(),
+                            KeyType::all_key_types().into(),
+                            true,
+                        );
+
+                        if key.is_none() || !signer.can_sign_with(key.unwrap()) {
+                            key = identity.get_first_public_key_matching(
+                                Purpose::TRANSFER,
+                                SecurityLevel::full_range().into(),
+                                KeyType::all_key_types().into(),
+                                true,
+                            );
+                        }
+                    }
+                    PreferredKeyPurposeForSigningWithdrawal::TransferPreferred
+                    | PreferredKeyPurposeForSigningWithdrawal::Any => {
+                        key = identity.get_first_public_key_matching(
+                            Purpose::TRANSFER,
+                            SecurityLevel::full_range().into(),
+                            KeyType::all_key_types().into(),
+                            true,
+                        );
+
+                        if key.is_none() || !signer.can_sign_with(key.unwrap()) {
+                            key = identity.get_first_public_key_matching(
+                                Purpose::AUTHENTICATION,
+                                SecurityLevel::full_range().into(),
+                                KeyType::all_key_types().into(),
+                                true,
+                            );
+                        }
+                    }
+                    PreferredKeyPurposeForSigningWithdrawal::MasterOnly => {
+                        key = identity.get_first_public_key_matching(
+                            Purpose::AUTHENTICATION,
+                            SecurityLevel::full_range().into(),
+                            KeyType::all_key_types().into(),
+                            true,
+                        );
+                    }
+                    PreferredKeyPurposeForSigningWithdrawal::TransferOnly => {
+                        key = identity.get_first_public_key_matching(
+                            Purpose::TRANSFER,
+                            SecurityLevel::full_range().into(),
+                            KeyType::all_key_types().into(),
+                            true,
+                        );
+                    }
+                }
+
+                key.ok_or_else(|| {
                     ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
                         "no withdrawal public key".to_string(),
                     )
-                })?,
+                })?
+            }
         };
 
         transition.sign_external(

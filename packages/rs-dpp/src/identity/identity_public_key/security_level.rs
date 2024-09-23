@@ -7,8 +7,6 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use crate::consensus::basic::data_contract::UnknownSecurityLevelError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::identity::Purpose;
-use crate::identity::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, SYSTEM, TRANSFER, VOTING};
 use crate::ProtocolError;
 use std::convert::TryFrom;
 

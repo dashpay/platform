@@ -4,6 +4,7 @@ mod tests {
     use crate::strategy::{
         ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
     };
+    use assert_matches::assert_matches;
     use dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, AssetUnlockStatusResult};
     use dpp::dashcore::bls_sig_utils::BLSSignature;
     use dpp::dashcore::hashes::Hash;
@@ -92,6 +93,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: 3000,
+            initial_protocol_version: 4,
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
@@ -174,6 +176,16 @@ mod tests {
                 1,
                 &mut None,
             );
+
+            for tx_results_per_block in outcome.state_transition_results_per_block.values() {
+                for (state_transition, result) in tx_results_per_block {
+                    assert_eq!(
+                        result.code, 0,
+                        "state transition got code {} : {:?}",
+                        result.code, state_transition
+                    );
+                }
+            }
 
             // Withdrawal transactions are not populated to block execution context yet
             assert_eq!(outcome.withdrawals.len(), 0);

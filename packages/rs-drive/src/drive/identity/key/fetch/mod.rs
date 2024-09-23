@@ -938,12 +938,14 @@ impl IdentityKeysRequest {
             }
             KeyRequestType::LatestWithdrawalKey => {
                 let query_keys_path = identity_transfer_keys_path_vec(&identity_id);
+                let mut query = Query::new_with_direction(false);
+                query.insert_all();
                 PathQuery {
                     path: query_keys_path,
                     query: SizedQuery {
-                        query: Query::new_single_key(vec![]),
-                        limit,
-                        offset,
+                        query,
+                        limit: None,
+                        offset: None,
                     },
                 }
             }

@@ -321,7 +321,6 @@ pub fn identity_transfer_keys_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
         identity_id.to_vec(),
         vec![IdentityRootStructure::IdentityTreeKeyReferences as u8],
         vec![Purpose::TRANSFER as u8],
-        vec![SecurityLevel::CRITICAL as u8],
     ]
 }
 

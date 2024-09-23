@@ -18,6 +18,21 @@ use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
+/// The key purpose that is preferred for signing the withdrawal
+#[cfg(feature = "state-transition-signing")]
+pub enum PreferredKeyPurposeForSigningWithdrawal {
+    /// Use any key
+    Any,
+    /// Use the master key, then the transfer key
+    MasterPreferred,
+    /// Use the transfer key, then the master key
+    TransferPreferred,
+    /// Only use the master key
+    MasterOnly,
+    /// Only use the transfer key
+    TransferOnly,
+}
+
 pub trait IdentityCreditWithdrawalTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity<S: Signer>(
@@ -29,6 +44,7 @@ pub trait IdentityCreditWithdrawalTransitionMethodsV0 {
         core_fee_per_byte: u32,
         user_fee_increase: UserFeeIncrease,
         signer: S,
+        preferred_key_purpose_for_signing_withdrawal: PreferredKeyPurposeForSigningWithdrawal,
         nonce: IdentityNonce,
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,

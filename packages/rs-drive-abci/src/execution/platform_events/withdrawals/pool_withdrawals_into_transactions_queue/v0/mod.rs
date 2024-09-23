@@ -119,6 +119,7 @@ mod tests {
     use drive::util::test_helpers::setup::{setup_document, setup_system_data_contract};
 
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::document::DocumentV0Getters;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
     use dpp::system_data_contracts::load_system_data_contract;

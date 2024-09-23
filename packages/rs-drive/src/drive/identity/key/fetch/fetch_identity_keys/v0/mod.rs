@@ -67,8 +67,7 @@ impl Drive {
             }
             SearchKey(_)
             | ContractBoundKey(_, _, KeyKindRequestType::CurrentKeyOfKindRequest)
-            | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::CurrentKeyOfKindRequest)
-            | LatestWithdrawalKey => {
+            | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::CurrentKeyOfKindRequest) => {
                 let path_query = key_request.into_path_query();
 
                 let result = self.grove_get_path_query_with_optional(
@@ -81,10 +80,11 @@ impl Drive {
                 T::try_from_path_key_optional(result, platform_version)
             }
             ContractBoundKey(_, _, KeyKindRequestType::AllKeysOfKindRequest)
-            | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::AllKeysOfKindRequest) => {
+            | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::AllKeysOfKindRequest)
+            | LatestWithdrawalKey => {
                 let path_query = key_request.into_path_query();
 
-                let (result, _) = self.grove_get_raw_path_query(
+                let (result, _) = self.grove_get_path_query(
                     &path_query,
                     transaction,
                     QueryPathKeyElementTrioResultType,

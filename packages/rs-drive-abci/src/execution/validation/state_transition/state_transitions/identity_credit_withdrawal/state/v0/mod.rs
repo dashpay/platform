@@ -3,7 +3,6 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::consensus::signature::IdentityNotFoundError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::prelude::ConsensusValidationResult;
