@@ -2,6 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
@@ -29,6 +30,7 @@ where
     pub(in crate::execution) fn pool_withdrawals_into_transactions_queue(
         &self,
         block_info: &BlockInfo,
+        last_committed_platform_state: &PlatformState,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -40,6 +42,7 @@ where
         {
             0 => self.pool_withdrawals_into_transactions_queue_v0(
                 block_info,
+                last_committed_platform_state,
                 transaction,
                 platform_version,
             ),

@@ -9,6 +9,8 @@ use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use drive::config::DEFAULT_QUERY_LIMIT;
 
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
@@ -23,9 +25,23 @@ where
     pub(super) fn pool_withdrawals_into_transactions_queue_v0(
         &self,
         block_info: &BlockInfo,
+        last_committed_platform_state: &PlatformState,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        let Some(position_of_current_quorum) =
+            last_committed_platform_state.current_validator_set_position_in_list_by_most_recent()
+        else {
+            tracing::warn!("Current quorum not in current validator set, not making withdrawals");
+            return Ok(());
+        };
+        if position_of_current_quorum != 0 {
+            tracing::debug!(
+                "Current quorum is not most recent, it is in position {}, not making withdrawals",
+                position_of_current_quorum
+            );
+            return Ok(());
+        }
         let mut documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
             DEFAULT_QUERY_LIMIT,
@@ -201,9 +217,12 @@ mod tests {
             Some(&transaction),
         );
 
+        let platform_state = platform.state.load();
+
         platform
             .pool_withdrawals_into_transactions_queue_v0(
                 &block_info,
+                &platform_state,
                 Some(&transaction),
                 platform_version,
             )
