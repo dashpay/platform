@@ -4,3 +4,4 @@ mod status;
 mod total_credits_in_platform;
 mod version_upgrade_state;
 mod version_upgrade_vote_status;
+mod current_quorums_info;

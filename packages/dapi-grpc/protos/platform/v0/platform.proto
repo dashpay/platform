@@ -54,6 +54,7 @@ service Platform {
   rpc getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse);
   rpc getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse);
   rpc getStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -1183,4 +1184,21 @@ message GetStatusResponse {
   }
 
   oneof version { GetStatusResponseV0 v0 = 1; }
+}
+
+message GetCurrentQuorumsInfoRequest {
+  message GetCurrentQuorumsInfoRequestV0 {
+  }
+
+  oneof version { GetCurrentQuorumsInfoRequestV0 v0 = 1; }
+}
+
+message GetCurrentQuorumsInfoResponse {
+  message GetCurrentQuorumsInfoResponseV0 {
+    repeated bytes quorum_hashes = 1;
+    uint32 current_quorum_index = 2;
+    repeated bytes current_quorum_members = 3;
+    uint32 current_proposer_index = 4;
+  }
+  oneof version { GetCurrentQuorumsInfoResponseV0 v0 = 1; }
 }
