@@ -62,7 +62,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
                 }
             }
             None => {
-                let mut key: Option<&IdentityPublicKey> = None;
+                let mut key: Option<&IdentityPublicKey>;
 
                 match preferred_key_purpose_for_signing_withdrawal {
                     PreferredKeyPurposeForSigningWithdrawal::MasterPreferred => {
