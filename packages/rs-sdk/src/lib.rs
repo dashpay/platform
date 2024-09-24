@@ -73,9 +73,9 @@ pub mod sdk;
 pub use error::Error;
 pub use sdk::{RequestSettings, Sdk, SdkBuilder};
 
+pub use dashcore_rpc;
 pub use dpp;
 pub use rs_dapi_client as dapi_client;
-pub use dashcore_rpc;
 
 /// Version of the SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

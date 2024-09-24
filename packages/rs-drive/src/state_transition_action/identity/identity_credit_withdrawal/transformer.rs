@@ -3,8 +3,8 @@ use crate::error::Error;
 use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
 use crate::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
 use dpp::block::block_info::BlockInfo;
-use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use dpp::validation::ConsensusValidationResult;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
