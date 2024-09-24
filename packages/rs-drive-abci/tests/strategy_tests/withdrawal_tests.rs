@@ -18,6 +18,7 @@ mod tests {
         ValidatorSetConfig,
     };
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
+    use platform_version::version::mocks::v3_test::TEST_PLATFORM_V3;
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
@@ -32,7 +33,9 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_and_withdraw_from_identities() {
-        let platform_version = PlatformVersion::latest();
+        // TEST_PLATFORM_V3 is like v4, but without the single quorum can sign withdrawals restriction
+        let platform_version = PlatformVersion::get(TEST_PLATFORM_V3.protocol_version)
+            .expect("expected to get platform version");
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -93,7 +96,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            initial_protocol_version: 4,
+            initial_protocol_version: TEST_PLATFORM_V3.protocol_version,
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
