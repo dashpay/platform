@@ -10,6 +10,7 @@ mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
     use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::Network::Regtest;
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::version::PlatformVersion;
     use drive::config::DriveConfig;
@@ -775,6 +776,7 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
+                    network: Regtest,
                     validator_set: ValidatorSetConfig {
                         quorum_size: 40,
                         ..Default::default()
@@ -1015,6 +1017,7 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let mut config = PlatformConfig {
+                    network: Regtest,
                     validator_set: ValidatorSetConfig {
                         quorum_size: 50,
                         ..Default::default()
