@@ -47,7 +47,7 @@ where
                 // this means we are at the last member of the quorum
                 if last_member_pro_tx_hash.as_byte_array() == &proposer_pro_tx_hash {
                     tracing::debug!(
-                    method = "validator_set_update_v0",
+                    method = "validator_set_update_v1",
                     "rotation: quorum finished as we hit last member {} of quorum {}. All known quorums are: [{}]. quorum rotation expected",
                     hex::encode(proposer_pro_tx_hash),
                         hex::encode(platform_state.current_validator_set_quorum_hash().as_byte_array()),
@@ -62,7 +62,7 @@ where
             } else {
                 // the validator set has no members, very weird, but let's just perform a rotation
                 tracing::debug!(
-                    method = "validator_set_update_v0",
+                    method = "validator_set_update_v1",
                     "rotation: validator set has no members",
                 );
                 perform_rotation = true;
@@ -83,7 +83,7 @@ where
                 // 2 - The new proposer is before the old proposer
                 // 3 - There are more than one quorum in the system
                 tracing::debug!(
-                    method = "validator_set_update_v0",
+                    method = "validator_set_update_v1",
                 "rotation: quorum finished as we hit last an earlier member {} than last block proposer {} for quorum {}. All known quorums are: [{}]. quorum rotation expected",
                 hex::encode(proposer_pro_tx_hash),
                     hex::encode(block_execution_context.block_platform_state().last_committed_block_proposer_pro_tx_hash()),
@@ -99,8 +99,8 @@ where
         } else {
             // we also need to perform a rotation if the validator set is being removed
             tracing::debug!(
-                method = "validator_set_update_v0",
-                "rotation: new quorums not containing current quorum current {:?}, {}. quorum rotation expected˚",
+                method = "validator_set_update_v1",
+                "rotation: new quorums not containing current quorum current {:?}, {}. quorum rotation expected",
                 block_execution_context
                     .block_platform_state()
                     .validator_sets()
@@ -154,7 +154,7 @@ where
                             .get(quorum_hash)
                         {
                             tracing::debug!(
-                                method = "validator_set_update_v0",
+                                method = "validator_set_update_v1",
                                 "rotation: to new quorum: {} with {} members",
                                 &quorum_hash,
                                 new_validator_set.members().len()
@@ -177,7 +177,7 @@ where
                         .first()
                     {
                         tracing::debug!(
-                            method = "validator_set_update_v0",
+                            method = "validator_set_update_v1",
                             "rotation: all quorums changed, rotation to new quorum: {}",
                             &quorum_hash
                         );
@@ -200,13 +200,13 @@ where
                 // Something changed, for example the IP of a validator changed, or someone's ban status
 
                 tracing::debug!(
-                    method = "validator_set_update_v0",
+                    method = "validator_set_update_v1",
                     "validator set update without rotation"
                 );
                 Ok(Some(current_validator_set.into()))
             } else {
                 tracing::debug!(
-                    method = "validator_set_update_v0",
+                    method = "validator_set_update_v1",
                     "no validator set update",
                 );
                 Ok(None)
