@@ -20,7 +20,7 @@ impl Drive {
         drive_operation_types: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<WithdrawalTransactionIndexAndBytes>, Error> {
-        let mut query = Query::new();
+        let mut query = Query::new_with_direction(true);
 
         query.insert_item(QueryItem::RangeFull(RangeFull));
 
@@ -37,7 +37,7 @@ impl Drive {
             .grove
             .query_raw(
                 &path_query,
-                transaction.is_some(),
+                true,
                 true,
                 true,
                 QueryResultType::QueryKeyElementPairResultType,

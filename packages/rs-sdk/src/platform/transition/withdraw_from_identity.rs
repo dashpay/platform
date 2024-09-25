@@ -54,13 +54,13 @@ impl WithdrawFromIdentity for Identity {
         let script = address.map(|address| CoreScript::new(address.script_pubkey()));
         let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             self,
-            None,
             script,
             amount,
             Pooling::Never,
             core_fee_per_byte.unwrap_or(1),
             user_fee_increase.unwrap_or_default(),
             signer,
+            None,
             PreferredKeyPurposeForSigningWithdrawal::TransferPreferred,
             new_identity_nonce,
             sdk.version(),

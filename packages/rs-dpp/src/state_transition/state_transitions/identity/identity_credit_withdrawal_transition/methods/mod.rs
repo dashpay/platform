@@ -31,13 +31,13 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity<S: Signer>(
         identity: &Identity,
-        withdrawal_key_to_use: Option<&IdentityPublicKey>,
         output_script: Option<CoreScript>,
         amount: u64,
         pooling: Pooling,
         core_fee_per_byte: u32,
         user_fee_increase: UserFeeIncrease,
         signer: S,
+        signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         preferred_key_purpose_for_signing_withdrawal: PreferredKeyPurposeForSigningWithdrawal,
         nonce: IdentityNonce,
         platform_version: &PlatformVersion,
@@ -51,13 +51,13 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
         ) {
             1 => Ok(IdentityCreditWithdrawalTransitionV1::try_from_identity(
                 identity,
-                withdrawal_key_to_use,
                 output_script,
                 amount,
                 pooling,
                 core_fee_per_byte,
                 user_fee_increase,
                 signer,
+                signing_withdrawal_key_to_use,
                 preferred_key_purpose_for_signing_withdrawal,
                 nonce,
                 platform_version,

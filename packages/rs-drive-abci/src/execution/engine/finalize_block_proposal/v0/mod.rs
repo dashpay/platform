@@ -62,7 +62,7 @@ where
     pub(super) fn finalize_block_proposal_v0(
         &self,
         request_finalize_block: FinalizeBlockCleanedRequest,
-        mut block_execution_context: BlockExecutionContext,
+        block_execution_context: BlockExecutionContext,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
@@ -74,7 +74,7 @@ where
 
         // Let's decompose the request
         let FinalizeBlockCleanedRequest {
-            commit: mut commit_info,
+            commit: commit_info,
             misbehavior: _,
             hash,
             height,
@@ -143,16 +143,16 @@ where
         let expected_withdrawal_transactions =
             block_execution_context.unsigned_withdrawal_transactions();
 
-        if !expected_withdrawal_transactions
-            .are_matching_with_vote_extensions(&commit_info.threshold_vote_extensions)
-        {
+        let Some(transaction_to_extension_matches) = expected_withdrawal_transactions
+            .verify_and_match_with_vote_extensions(&commit_info.threshold_vote_extensions)
+        else {
             validation_result.add_error(AbciError::VoteExtensionMismatchReceived {
                 got: commit_info.threshold_vote_extensions,
-                expected: expected_withdrawal_transactions.into(),
+                expected: (&expected_withdrawal_transactions.clone()).into(),
             });
 
             return Ok(validation_result.into());
-        }
+        };
 
         // Verify commit
 
@@ -202,34 +202,9 @@ where
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
-        // Append signatures and broadcast asset unlock transactions to Core
-
-        // Drain withdrawal transaction instead of cloning
-        let unsigned_withdrawal_transactions = block_execution_context
-            .unsigned_withdrawal_transactions_mut()
-            .drain();
-
-        if !unsigned_withdrawal_transactions.is_empty() {
-            // Drain signatures instead of cloning
-            let signatures = commit_info
-                .threshold_vote_extensions
-                .drain(..)
-                .map(|vote_extension| {
-                    let signature_bytes: [u8; 96] =
-                        vote_extension.signature.try_into().map_err(|e| {
-                            AbciError::BadRequestDataSize(format!(
-                                "invalid votes extension signature size: {}",
-                                hex::encode(e)
-                            ))
-                        })?;
-
-                    Ok(BLSSignature::from(signature_bytes))
-                })
-                .collect::<Result<_, AbciError>>()?;
-
+        if !transaction_to_extension_matches.is_empty() {
             self.append_signatures_and_broadcast_withdrawal_transactions(
-                unsigned_withdrawal_transactions,
-                signatures,
+                transaction_to_extension_matches,
                 platform_version,
             )?;
         }

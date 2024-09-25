@@ -176,13 +176,13 @@ mod tests {
 
         let credit_withdrawal_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             &identity,
-            Some(&withdrawal_key),
             Some(CoreScript::random_p2pkh(&mut rng)),
             withdrawal_amount,
             Pooling::Never,
             1,
             0,
             signer,
+            Some(&withdrawal_key),
             PreferredKeyPurposeForSigningWithdrawal::Any,
             2,
             platform_version,
@@ -252,13 +252,13 @@ mod tests {
 
         let credit_withdrawal_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             &identity,
-            Some(&withdrawal_key),
             Some(CoreScript::random_p2pkh(&mut rng)),
             withdrawal_amount,
             Pooling::Never,
             1,
             0,
             signer,
+            Some(&withdrawal_key),
             PreferredKeyPurposeForSigningWithdrawal::Any,
             2,
             platform_version,
@@ -327,13 +327,13 @@ mod tests {
 
         let credit_withdrawal_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             &identity,
-            Some(&withdrawal_key),
             None,
             withdrawal_amount,
             Pooling::Never,
             1,
             0,
             signer,
+            Some(&withdrawal_key),
             PreferredKeyPurposeForSigningWithdrawal::TransferOnly,
             2,
             platform_version,
@@ -405,13 +405,13 @@ mod tests {
             let credit_withdrawal_transition =
                 IdentityCreditWithdrawalTransition::try_from_identity(
                     &identity,
-                    Some(&withdrawal_key),
                     None,
                     withdrawal_amount,
                     Pooling::Never,
                     1,
                     0,
                     signer,
+                    Some(&withdrawal_key),
                     PreferredKeyPurposeForSigningWithdrawal::TransferOnly,
                     2,
                     platform_version,

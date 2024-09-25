@@ -1277,6 +1277,7 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
         max_field_value_size: 5120,       //5 KiB
         max_state_transition_size: 20480, //20 KiB
         max_transitions_in_documents_batch: 1,
+        withdrawal_transactions_per_block_limit: 4,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,

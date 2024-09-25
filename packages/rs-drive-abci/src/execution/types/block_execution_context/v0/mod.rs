@@ -33,6 +33,7 @@ use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 
+use crate::execution::types::block_execution_context::BlockExecutionContext;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;
 
 /// V0 of the Block execution context

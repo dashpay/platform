@@ -23,13 +23,13 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity<S: Signer>(
         identity: &Identity,
-        withdrawal_key_to_use: Option<&IdentityPublicKey>,
         output_script: Option<CoreScript>,
         amount: u64,
         pooling: Pooling,
         core_fee_per_byte: u32,
         user_fee_increase: UserFeeIncrease,
         signer: S,
+        signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         preferred_key_purpose_for_signing_withdrawal: PreferredKeyPurposeForSigningWithdrawal,
         nonce: IdentityNonce,
         _platform_version: &PlatformVersion,
@@ -48,7 +48,7 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
         }
         .into();
 
-        let identity_public_key = match withdrawal_key_to_use {
+        let identity_public_key = match signing_withdrawal_key_to_use {
             Some(key) => {
                 if signer.can_sign_with(key) {
                     key
