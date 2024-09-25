@@ -1,6 +1,5 @@
-use crate::identity::SecurityLevel::CRITICAL;
+use crate::identity::SecurityLevel::{CRITICAL, MASTER};
 use crate::identity::{KeyID, Purpose, SecurityLevel};
-
 use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 use crate::state_transition::StateTransitionIdentitySigned;
 
@@ -13,11 +12,16 @@ impl StateTransitionIdentitySigned for IdentityCreditWithdrawalTransitionV1 {
         self.signature_public_key_id = key_id
     }
 
-    fn security_level_requirement(&self) -> Vec<SecurityLevel> {
-        vec![CRITICAL]
+    fn security_level_requirement(&self, purpose: Purpose) -> Vec<SecurityLevel> {
+        if purpose == Purpose::AUTHENTICATION {
+            vec![MASTER]
+        } else {
+            // for transfer
+            vec![CRITICAL]
+        }
     }
 
-    fn purpose_requirement(&self) -> Purpose {
-        Purpose::TRANSFER
+    fn purpose_requirement(&self) -> Vec<Purpose> {
+        vec![Purpose::TRANSFER, Purpose::AUTHENTICATION]
     }
 }
