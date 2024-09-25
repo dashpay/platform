@@ -222,6 +222,12 @@ function getStatusHandlerFactory(blockchainListener, driveClient, tenderdashRpcC
     cachedResponse = new GetStatusResponse();
     cachedResponse.setV0(v0);
 
+    // Cancel any existing scheduled cache cleanup
+    if (cleanCacheTimeout !== null) {
+      clearTimeout(cleanCacheTimeout);
+      cleanCacheTimeout = null;
+    }
+
     // Clean cache in 3 minutes
     cleanCacheTimeout = setTimeout(cleanCache, 3 * 60 * 1000);
 
