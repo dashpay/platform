@@ -1,8 +1,6 @@
-import chalk from 'chalk';
 import { Listr } from 'listr2';
 
 import { Flags } from '@oclif/core';
-import process from 'process';
 import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
 
@@ -50,7 +48,7 @@ export default class ResetCommand extends ConfigBaseCommand {
                   + ' kept.';
                 if (ctx.isPlatformOnlyReset) {
                   message = 'Are you sure you want to reset platform related configuration? Data'
-                   + ' will be kept';
+                    + ' will be kept';
                 }
               } else {
                 message = 'Are you sure you want to reset you node data and configuration?';
