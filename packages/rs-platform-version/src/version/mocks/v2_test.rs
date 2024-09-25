@@ -1236,6 +1236,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 hash: 0,
                 get_raw_for_contract: 0,
                 get_raw_for_document_type: 0,
+                try_into_asset_unlock_base_transaction_info: 0,
             },
         },
         identity_versions: IdentityVersions {
@@ -1273,6 +1274,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_field_value_size: 5000,
         max_state_transition_size: 20000,
         max_transitions_in_documents_batch: 1,
+        withdrawal_transactions_per_block_limit: 4,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,

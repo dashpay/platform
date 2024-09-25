@@ -1138,7 +1138,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: StateTransitionConversionVersions {
             identity_to_identity_create_transition: 0,
             identity_to_identity_top_up_transition: 0,
-            identity_to_identity_withdrawal_transition: 0,
+            identity_to_identity_withdrawal_transition: 1,
             identity_to_identity_create_transition_with_signer: 0,
         },
         state_transition_method_versions: StateTransitionMethodVersions {
@@ -1242,6 +1242,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                 hash: 0,
                 get_raw_for_contract: 0,
                 get_raw_for_document_type: 0,
+                try_into_asset_unlock_base_transaction_info: 0,
             },
         },
         identity_versions: IdentityVersions {
@@ -1281,6 +1282,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
         max_field_value_size: 5120,       //5 KiB
         max_state_transition_size: 20480, //20 KiB
         max_transitions_in_documents_batch: 1,
+        withdrawal_transactions_per_block_limit: 4,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,

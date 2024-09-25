@@ -1343,6 +1343,8 @@ export namespace GetEvonodesProposedEpochBlocksByIdsRequest {
   }
 
   export class GetEvonodesProposedEpochBlocksByIdsRequestV0 extends jspb.Message {
+    hasEpoch(): boolean;
+    clearEpoch(): void;
     getEpoch(): number;
     setEpoch(value: number): void;
 
@@ -1520,6 +1522,8 @@ export namespace GetEvonodesProposedEpochBlocksByRangeRequest {
   }
 
   export class GetEvonodesProposedEpochBlocksByRangeRequestV0 extends jspb.Message {
+    hasEpoch(): boolean;
+    clearEpoch(): void;
     getEpoch(): number;
     setEpoch(value: number): void;
 
@@ -1601,10 +1605,12 @@ export namespace GetIdentitiesBalancesRequest {
   }
 
   export class GetIdentitiesBalancesRequestV0 extends jspb.Message {
-    hasIdentitiesIds(): boolean;
-    clearIdentitiesIds(): void;
-    getIdentitiesIds(): GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds | undefined;
-    setIdentitiesIds(value?: GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds): void;
+    clearIdsList(): void;
+    getIdsList(): Array<Uint8Array | string>;
+    getIdsList_asU8(): Array<Uint8Array>;
+    getIdsList_asB64(): Array<string>;
+    setIdsList(value: Array<Uint8Array | string>): void;
+    addIds(value: Uint8Array | string, index?: number): Uint8Array | string;
 
     getProve(): boolean;
     setProve(value: boolean): void;
@@ -1621,32 +1627,8 @@ export namespace GetIdentitiesBalancesRequest {
 
   export namespace GetIdentitiesBalancesRequestV0 {
     export type AsObject = {
-      identitiesIds?: GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.GetIdentitiesBalancesByKnownIdentityIds.AsObject,
+      idsList: Array<Uint8Array | string>,
       prove: boolean,
-    }
-
-    export class GetIdentitiesBalancesByKnownIdentityIds extends jspb.Message {
-      clearIdentitiesIdsList(): void;
-      getIdentitiesIdsList(): Array<Uint8Array | string>;
-      getIdentitiesIdsList_asU8(): Array<Uint8Array>;
-      getIdentitiesIdsList_asB64(): Array<string>;
-      setIdentitiesIdsList(value: Array<Uint8Array | string>): void;
-      addIdentitiesIds(value: Uint8Array | string, index?: number): Uint8Array | string;
-
-      serializeBinary(): Uint8Array;
-      toObject(includeInstance?: boolean): GetIdentitiesBalancesByKnownIdentityIds.AsObject;
-      static toObject(includeInstance: boolean, msg: GetIdentitiesBalancesByKnownIdentityIds): GetIdentitiesBalancesByKnownIdentityIds.AsObject;
-      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-      static serializeBinaryToWriter(message: GetIdentitiesBalancesByKnownIdentityIds, writer: jspb.BinaryWriter): void;
-      static deserializeBinary(bytes: Uint8Array): GetIdentitiesBalancesByKnownIdentityIds;
-      static deserializeBinaryFromReader(message: GetIdentitiesBalancesByKnownIdentityIds, reader: jspb.BinaryReader): GetIdentitiesBalancesByKnownIdentityIds;
-    }
-
-    export namespace GetIdentitiesBalancesByKnownIdentityIds {
-      export type AsObject = {
-        identitiesIdsList: Array<Uint8Array | string>,
-      }
     }
   }
 

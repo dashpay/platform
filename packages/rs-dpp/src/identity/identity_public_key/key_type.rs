@@ -100,6 +100,17 @@ impl KeyType {
         }
     }
 
+    /// Can this key type be understood as an address on the Core chain?
+    pub fn is_core_address_key_type(&self) -> bool {
+        match self {
+            KeyType::ECDSA_SECP256K1 => false,
+            KeyType::BLS12_381 => false,
+            KeyType::ECDSA_HASH160 => true,
+            KeyType::BIP13_SCRIPT_HASH => true,
+            KeyType::EDDSA_25519_HASH160 => false,
+        }
+    }
+
     pub fn signature_verify_cost(
         &self,
         platform_version: &PlatformVersion,

@@ -20,10 +20,10 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 
 use crate::config::PlatformConfig;
-use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::signature_verification_quorum_set::{
     SignatureVerificationQuorumSet, SignatureVerificationQuorumSetForSaving,
 };
+use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use itertools::Itertools;
 use std::collections::BTreeMap;
@@ -344,6 +344,24 @@ pub trait PlatformStateV0Methods {
 
     /// Returns the quorum hash of the current validator set.
     fn current_validator_set_quorum_hash(&self) -> QuorumHash;
+
+    /// Where is the current validator set in the list
+    fn current_validator_set_position_in_list_by_most_recent(&self) -> Option<u16> {
+        // Get the current quorum hash
+        let current_quorum_hash = self.current_validator_set_quorum_hash();
+
+        // Get the validator sets and collect them into a vector for sorting
+        let mut validator_sets: Vec<&ValidatorSet> = self.validator_sets().values().collect();
+
+        // Sort the validator sets by core height in descending order
+        validator_sets.sort_by(|a, b| b.core_height().cmp(&a.core_height()));
+
+        // Find the position of the current validator set in the sorted list
+        validator_sets
+            .iter()
+            .position(|&validator_set| validator_set.quorum_hash() == &current_quorum_hash)
+            .map(|position| position as u16) // Convert position to u16
+    }
 
     /// Returns the quorum hash of the next validator set, if it exists.
     fn next_validator_set_quorum_hash(&self) -> &Option<QuorumHash>;

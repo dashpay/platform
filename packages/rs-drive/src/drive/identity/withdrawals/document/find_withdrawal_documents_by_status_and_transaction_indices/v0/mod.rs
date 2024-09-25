@@ -1,5 +1,4 @@
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
-use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause};
@@ -8,6 +7,7 @@ use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::document::Document;
 use dpp::platform_value::Value;
+use dpp::withdrawal::WithdrawalTransactionIndex;
 use grovedb::TransactionArg;
 use indexmap::IndexMap;
 use platform_version::version::PlatformVersion;
@@ -97,7 +97,6 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::config::DEFAULT_QUERY_LIMIT;
-    use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
     use crate::util::test_helpers::setup::{
         setup_document, setup_drive_with_initial_state_structure, setup_system_data_contract,
     };
@@ -110,6 +109,7 @@ mod tests {
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
     use dpp::version::PlatformVersion;
     use dpp::withdrawal::Pooling;
+    use dpp::withdrawal::WithdrawalTransactionIndex;
 
     use super::*;
 

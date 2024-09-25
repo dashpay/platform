@@ -13,7 +13,7 @@ use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::withdrawals_contract;
 use drive::dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
-use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
+use dpp::withdrawal::WithdrawalTransactionIndex;
 use drive::query::TransactionArg;
 use drive::util::batch::DriveOperation;
 
@@ -27,8 +27,6 @@ use crate::{
 use dpp::errors::ProtocolError;
 
 use drive::config::DEFAULT_QUERY_LIMIT;
-
-const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
 
 impl<C> Platform<C>
 where
@@ -44,9 +42,11 @@ where
     ) -> Result<UnsignedWithdrawalTxs, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
-        // Get 16 latest withdrawal transactions from the queue
+        // Get withdrawal_transactions_per_block_limit (normally 16) latest withdrawal transactions from the queue
         let untied_withdrawal_transactions = self.drive.dequeue_untied_withdrawal_transactions(
-            WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT,
+            platform_version
+                .system_limits
+                .withdrawal_transactions_per_block_limit,
             transaction,
             &mut drive_operations,
             platform_version,
