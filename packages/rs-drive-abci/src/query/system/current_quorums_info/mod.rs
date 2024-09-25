@@ -42,8 +42,7 @@ impl<C> Platform<C> {
         }
         match version {
             RequestVersion::V0(request_v0) => {
-                let result =
-                    self.query_current_quorums_info_v0(request_v0, platform_state, platform_version)?;
+                let result = self.query_current_quorums_info_v0(request_v0, platform_state)?;
 
                 Ok(result.map(|response_v0| GetCurrentQuorumsInfoResponse {
                     version: Some(ResponseVersion::V0(response_v0)),

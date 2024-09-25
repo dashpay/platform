@@ -1,87 +1,68 @@
-use dapi_grpc::platform::v0::get_current_quorums_info_request::GetCurrentQuorumsInfoRequestV0;
-use dapi_grpc::platform::v0::get_current_quorums_info_response::GetCurrentQuorumsInfoResponseV0;
-use dpp::dashcore::hashes::Hash;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::query::QueryValidationResult;
-use crate::platform_types::platform_state::PlatformState;
-use dpp::version::PlatformVersion;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
+use crate::query::QueryValidationResult;
+use dapi_grpc::platform::v0::get_current_quorums_info_request::GetCurrentQuorumsInfoRequestV0;
+use dapi_grpc::platform::v0::get_current_quorums_info_response::{
+    GetCurrentQuorumsInfoResponseV0, ValidatorSetV0, ValidatorV0,
+};
+use dpp::dashcore::hashes::Hash;
 
 impl<C> Platform<C> {
     pub(super) fn query_current_quorums_info_v0(
         &self,
-        GetCurrentQuorumsInfoRequestV0 {
-        }: GetCurrentQuorumsInfoRequestV0,
+        GetCurrentQuorumsInfoRequestV0 {}: GetCurrentQuorumsInfoRequestV0,
         platform_state: &PlatformState,
-        platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetCurrentQuorumsInfoResponseV0>, Error> {
-        let validator_sets = platform_state.validator_sets_sorted_by_core_height_by_most_recent();
-        platform_state.current_validator_set_quorum_hash()
+        // Get all validator sets sorted by core height
+        let validator_sets_sorted =
+            platform_state.validator_sets_sorted_by_core_height_by_most_recent();
 
+        // Collect the validator sets in the desired format
+        let validator_sets: Vec<ValidatorSetV0> = validator_sets_sorted
+            .iter()
+            .map(|validator_set| {
+                // Map each ProTxHash to a ValidatorV0 object
+                let members: Vec<ValidatorV0> = validator_set
+                    .members()
+                    .iter()
+                    .map(|(pro_tx_hash, validator)| ValidatorV0 {
+                        pro_tx_hash: pro_tx_hash.as_byte_array().to_vec(),
+                        node_ip: validator.node_ip.clone(),
+                    })
+                    .collect();
+
+                // Construct a ValidatorSetV0 object
+                ValidatorSetV0 {
+                    quorum_hash: validator_set.quorum_hash().as_byte_array().to_vec(),
+                    core_height: validator_set.core_height(),
+                    members,
+                    threshold_public_key: validator_set.threshold_public_key().to_bytes().to_vec(),
+                }
+            })
+            .collect();
+
+        // Get the current proposer index and current quorum index, if applicable
+        let current_quorum_index = platform_state.current_validator_set_quorum_hash();
+        let last_committed_block_proposer_pro_tx_hash =
+            platform_state.last_committed_block_proposer_pro_tx_hash();
+
+        // Construct the response
         let response = GetCurrentQuorumsInfoResponseV0 {
-            quorum_hashes: validator_sets.iter().map(|validator_set| validator_set.quorum_hash().as_byte_array().to_vec()).collect(),
-            current_quorum_index: 0,
-            current_quorum_members: vec![],
-            current_proposer_index: 0,
+            quorum_hashes: validator_sets_sorted
+                .iter()
+                .map(|validator_set| validator_set.quorum_hash().as_byte_array().to_vec())
+                .collect(),
+            validator_sets,
+            last_block_proposer: last_committed_block_proposer_pro_tx_hash.to_vec(),
+            current_quorum_hash: current_quorum_index.as_byte_array().to_vec(),
+            last_platform_block_height: platform_state.last_committed_block_height(),
+            last_core_block_height: platform_state.last_committed_core_height(),
         };
 
+        // Return the response wrapped in a QueryValidationResult
         Ok(QueryValidationResult::new_with_data(response))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::query::tests::setup_platform;
-    use dpp::dashcore::Network;
-
-    #[test]
-    fn test_query_empty_epoch_infos() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-
-        let request = GetEpochsInfoRequestV0 {
-            start_epoch: None, // 0
-            count: 5,
-            ascending: true,
-            prove: false,
-        };
-
-        let result = platform
-            .query_epoch_infos_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert!(matches!(
-            result.data,
-            Some(GetEpochsInfoResponseV0 {
-                result: Some(get_epochs_info_response_v0::Result::Epochs(EpochInfos { epoch_infos })),
-                metadata: Some(_),
-            }) if epoch_infos.is_empty()
-        ));
-    }
-
-    #[test]
-    fn test_query_empty_epoch_infos_descending() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-
-        let request = GetEpochsInfoRequestV0 {
-            start_epoch: None, // 0
-            count: 5,
-            ascending: false,
-            prove: false,
-        };
-
-        let validation_result = platform
-            .query_epoch_infos_v0(request, &state, version)
-            .expect("expected query to succeed");
-
-        assert!(matches!(
-            validation_result.data,
-            Some(GetEpochsInfoResponseV0 {
-                result: Some(get_epochs_info_response_v0::Result::Epochs(EpochInfos { epoch_infos })),
-                metadata: Some(_),
-            }) if epoch_infos.is_empty()
-        ));
     }
 }

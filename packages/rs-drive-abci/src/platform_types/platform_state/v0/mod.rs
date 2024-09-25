@@ -344,14 +344,15 @@ pub trait PlatformStateV0Methods {
 
     /// Returns the quorum hash of the current validator set.
     fn current_validator_set_quorum_hash(&self) -> QuorumHash;
-    
+
+    /// Get validator sets sorted by their core height by most recent order coming first
     fn validator_sets_sorted_by_core_height_by_most_recent(&self) -> Vec<&ValidatorSet> {
         // Get the validator sets and collect them into a vector for sorting
         let mut validator_sets: Vec<&ValidatorSet> = self.validator_sets().values().collect();
 
         // Sort the validator sets by core height in descending order
         validator_sets.sort_by(|a, b| b.core_height().cmp(&a.core_height()));
-        
+
         validator_sets
     }
 
