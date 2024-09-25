@@ -699,7 +699,7 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
             block_end: DriveAbciBlockEndMethodVersions {
                 update_state_cache: 0,
                 update_drive_cache: 0,
-                validator_set_update: 0,
+                validator_set_update: 1,
             },
             platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
                 fetch_platform_state: 0,
