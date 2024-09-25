@@ -20,8 +20,16 @@ where
 {
     /// We need to validate against the platform state for rotation and not the block execution
     /// context state
+    /// We introduced v1 because the end quorums could be rotating out, giving a small advantage
+    /// to proposers with a smaller pro_tx_hash
+    /// To understand this imagine we have proposers
+    /// `a b c d e f g h i j k` in quorum 24
+    /// c is the current proposer
+    /// Quorum 24 no longer is valid
+    /// We jump to quorum 0.
+    /// a b and c just got paid, but the rest did not.
     #[inline(always)]
-    pub(super) fn validator_set_update_v0(
+    pub(super) fn validator_set_update_v1(
         &self,
         proposer_pro_tx_hash: [u8; 32],
         platform_state: &PlatformState,
@@ -39,7 +47,7 @@ where
                 // this means we are at the last member of the quorum
                 if last_member_pro_tx_hash.as_byte_array() == &proposer_pro_tx_hash {
                     tracing::debug!(
-                    method = "validator_set_update_v0",
+                    method = "validator_set_update_v1",
                     "rotation: quorum finished as we hit last member {} of quorum {}. All known quorums are: [{}]. quorum rotation expected",
                     hex::encode(proposer_pro_tx_hash),
                         hex::encode(platform_state.current_validator_set_quorum_hash().as_byte_array()),
@@ -54,7 +62,7 @@ where
             } else {
                 // the validator set has no members, very weird, but let's just perform a rotation
                 tracing::debug!(
-                    method = "validator_set_update_v0",
+                    method = "validator_set_update_v1",
                     "rotation: validator set has no members",
                 );
                 perform_rotation = true;
@@ -75,7 +83,7 @@ where
                 // 2 - The new proposer is before the old proposer
                 // 3 - There are more than one quorum in the system
                 tracing::debug!(
-                    method = "validator_set_update_v0",
+                    method = "validator_set_update_v1",
                 "rotation: quorum finished as we hit last an earlier member {} than last block proposer {} for quorum {}. All known quorums are: [{}]. quorum rotation expected",
                 hex::encode(proposer_pro_tx_hash),
                     hex::encode(block_execution_context.block_platform_state().last_committed_block_proposer_pro_tx_hash()),
@@ -91,7 +99,7 @@ where
         } else {
             // we also need to perform a rotation if the validator set is being removed
             tracing::debug!(
-                method = "validator_set_update_v0",
+                method = "validator_set_update_v1",
                 "rotation: new quorums not containing current quorum current {:?}, {}. quorum rotation expected",
                 block_execution_context
                     .block_platform_state()
@@ -124,9 +132,16 @@ where
                 1 => Ok(None), // no rotation as we are the only quorum
                 count => {
                     let start_index = index;
-                    index = (index + 1) % count;
+                    let oldest_quorum_index_we_can_go_to = if count > 10 {
+                        // if we have a lot of quorums (like on testnet and mainnet)
+                        // we shouldn't start using the last ones as they could cycle out
+                        count - 2
+                    } else {
+                        count
+                    };
+                    index = (index + 1) % oldest_quorum_index_we_can_go_to;
                     // We can't just take the next item because it might no longer be in the state
-                    while index != start_index {
+                    for _i in 0..oldest_quorum_index_we_can_go_to {
                         let (quorum_hash, _) = platform_state
                             .validator_sets()
                             .get_index(index)
@@ -139,7 +154,7 @@ where
                             .get(quorum_hash)
                         {
                             tracing::debug!(
-                                method = "validator_set_update_v0",
+                                method = "validator_set_update_v1",
                                 "rotation: to new quorum: {} with {} members",
                                 &quorum_hash,
                                 new_validator_set.members().len()
@@ -150,7 +165,10 @@ where
                                 .set_next_validator_set_quorum_hash(Some(*quorum_hash));
                             return Ok(Some(validator_set_update));
                         }
-                        index = (index + 1) % count;
+                        index = (index + 1) % oldest_quorum_index_we_can_go_to;
+                        if index == start_index {
+                            break;
+                        }
                     }
                     // All quorums changed
                     if let Some((quorum_hash, new_validator_set)) = block_execution_context
@@ -159,7 +177,7 @@ where
                         .first()
                     {
                         tracing::debug!(
-                            method = "validator_set_update_v0",
+                            method = "validator_set_update_v1",
                             "rotation: all quorums changed, rotation to new quorum: {}",
                             &quorum_hash
                         );
@@ -182,13 +200,13 @@ where
                 // Something changed, for example the IP of a validator changed, or someone's ban status
 
                 tracing::debug!(
-                    method = "validator_set_update_v0",
+                    method = "validator_set_update_v1",
                     "validator set update without rotation"
                 );
                 Ok(Some(current_validator_set.into()))
             } else {
                 tracing::debug!(
-                    method = "validator_set_update_v0",
+                    method = "validator_set_update_v1",
                     "no validator set update",
                 );
                 Ok(None)
