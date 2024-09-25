@@ -36,7 +36,7 @@ impl InvalidSignaturePublicKeyPurposeError {
     pub fn public_key_purpose(&self) -> Purpose {
         self.public_key_purpose
     }
-    pub fn allowed_key_purpose(&self) -> &Vec<Purpose> {
+    pub fn allowed_key_purposes(&self) -> &Vec<Purpose> {
         &self.allowed_key_purposes
     }
 }

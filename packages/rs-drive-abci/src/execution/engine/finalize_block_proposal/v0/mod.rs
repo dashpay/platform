@@ -8,8 +8,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::version::PlatformVersion;
 
-use dpp::dashcore::bls_sig_utils::BLSSignature;
-
 use tenderdash_abci::{
     proto::{serializers::timestamp::ToMilis, types::BlockId as ProtoBlockId},
     signatures::Hashable,
@@ -19,8 +17,7 @@ use crate::abci::AbciError;
 
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::{
-    BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
-    BlockExecutionContextV0OwnedGetters,
+    BlockExecutionContextV0Getters, BlockExecutionContextV0OwnedGetters,
 };
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::block_state_info::v0::{

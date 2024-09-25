@@ -1,9 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::{
-    tx_to_extend_vote_extension, UnsignedWithdrawalTxs,
-};
 use crate::rpc::core::{
     CoreRPCLike, CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED, CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM,
     CORE_RPC_TX_ALREADY_IN_CHAIN,

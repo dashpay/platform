@@ -9,8 +9,6 @@ use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use drive::config::DEFAULT_QUERY_LIMIT;
 
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use crate::platform_types::platform_state::PlatformState;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
