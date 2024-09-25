@@ -1,4 +1,3 @@
-use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Address;
 use dpp::identity::accessors::IdentityGettersV0;
 
@@ -7,21 +6,15 @@ use dpp::identity::signer::Signer;
 use dpp::identity::Identity;
 use dpp::prelude::UserFeeIncrease;
 
-use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
-use drive_proof_verifier::error::ContextProviderError;
-use drive_proof_verifier::DataContractProvider;
-
-use crate::platform::block_info_from_metadata::block_info_from_metadata;
-use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
 use dpp::state_transition::identity_credit_withdrawal_transition::methods::{
     IdentityCreditWithdrawalTransitionMethodsV0, PreferredKeyPurposeForSigningWithdrawal,
 };
+use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::withdrawal::Pooling;
-use drive::drive::Drive;
-use rs_dapi_client::{DapiRequest, RequestSettings};
 
 #[async_trait::async_trait]
 pub trait WithdrawFromIdentity {
@@ -67,38 +60,12 @@ impl WithdrawFromIdentity for Identity {
             None,
         )?;
 
-        let request = state_transition.broadcast_request_for_state_transition()?;
-
-        request
-            .clone()
-            .execute(sdk, settings.unwrap_or_default().request_settings)
-            .await?;
-
-        let request = state_transition.wait_for_state_transition_result_request()?;
-
-        let response = request.execute(sdk, RequestSettings::default()).await?;
-
-        let block_info = block_info_from_metadata(response.metadata()?)?;
-
-        let proof = response.proof_owned()?;
-        let context_provider =
-            sdk.context_provider()
-                .ok_or(Error::from(ContextProviderError::Config(
-                    "Context provider not initialized".to_string(),
-                )))?;
-
-        let (_, result) = Drive::verify_state_transition_was_executed_with_proof(
-            &state_transition,
-            &block_info,
-            proof.grovedb_proof.as_slice(),
-            &context_provider.as_contract_lookup_fn(),
-            sdk.version(),
-        )?;
+        let result = state_transition.broadcast_and_wait(sdk, None).await?;
 
         match result {
             StateTransitionProofResult::VerifiedPartialIdentity(identity) => {
                 identity.balance.ok_or(Error::DapiClientError(
-                    "expected an identity balance".to_string(),
+                    "expected an identity balance after withdrawal".to_string(),
                 ))
             }
             _ => Err(Error::DapiClientError("proved a non identity".to_string())),

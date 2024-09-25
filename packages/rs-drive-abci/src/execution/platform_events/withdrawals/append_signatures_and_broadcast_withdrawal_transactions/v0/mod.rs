@@ -95,6 +95,7 @@ where
                         "Asset unlock is expired or has no active quorum: {}",
                         e.message
                     );
+                    transaction_submission_failures.push((transaction.txid(), tx_bytes));
                 }
                 // Handle other errors
                 Err(e) => {

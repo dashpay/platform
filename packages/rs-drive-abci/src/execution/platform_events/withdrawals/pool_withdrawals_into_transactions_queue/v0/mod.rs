@@ -29,6 +29,8 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // Currently Core only supports using the first 2 quorums (out of 24 for mainnet).
+        // For us, we just use the latest quorum to be extra safe.
         let Some(position_of_current_quorum) =
             last_committed_platform_state.current_validator_set_position_in_list_by_most_recent()
         else {

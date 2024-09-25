@@ -75,8 +75,8 @@ pub enum KeyRequestType {
     SpecificKeys(Vec<KeyID>),
     /// Search for keys on an identity
     SearchKey(BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>),
-    /// Latest withdrawal key
-    LatestWithdrawalKey,
+    /// Recent withdrawal keys
+    RecentWithdrawalKeys,
     /// Search for contract bound keys
     ContractBoundKey([u8; 32], Purpose, KeyKindRequestType),
     /// Search for contract bound keys
@@ -675,10 +675,11 @@ impl IdentityKeysRequest {
                     ))),
                 }
             }
-            KeyRequestType::LatestWithdrawalKey => Ok(platform_version
-                .fee_version
-                .processing
-                .fetch_single_identity_key_processing_cost),
+            KeyRequestType::RecentWithdrawalKeys => Ok(self.limit.unwrap_or(10) as Credits
+                * platform_version
+                    .fee_version
+                    .processing
+                    .fetch_single_identity_key_processing_cost),
         }
     }
 
@@ -936,7 +937,7 @@ impl IdentityKeysRequest {
                     },
                 }
             }
-            KeyRequestType::LatestWithdrawalKey => {
+            KeyRequestType::RecentWithdrawalKeys => {
                 let query_keys_path = identity_transfer_keys_path_vec(&identity_id);
                 let mut query = Query::new_with_direction(false);
                 query.insert_all();
@@ -944,8 +945,8 @@ impl IdentityKeysRequest {
                     path: query_keys_path,
                     query: SizedQuery {
                         query,
-                        limit: None,
-                        offset: None,
+                        limit,
+                        offset,
                     },
                 }
             }

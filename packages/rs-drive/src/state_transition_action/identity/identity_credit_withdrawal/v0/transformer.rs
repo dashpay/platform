@@ -1,4 +1,6 @@
-use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
+use crate::drive::identity::key::fetch::{
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
@@ -83,46 +85,66 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Self>, Error> {
-        let output_script_bytes =
-            if let Some(output_script) = &identity_credit_withdrawal.output_script {
-                output_script.to_bytes()
-            } else {
-                let key_request = IdentityKeysRequest {
+        let output_script_bytes = if let Some(output_script) =
+            &identity_credit_withdrawal.output_script
+        {
+            output_script.to_bytes()
+        } else {
+            let key_request = IdentityKeysRequest {
+                identity_id: identity_credit_withdrawal.identity_id.to_buffer(),
+                request_type: KeyRequestType::RecentWithdrawalKeys,
+                limit: None,
+                offset: None,
+            };
+            let key: Option<IdentityPublicKey> =
+                drive.fetch_identity_keys(key_request, tx, platform_version)?;
+            let Some(mut key) = key else {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::MissingTransferKeyError(
+                        MissingTransferKeyError::new(identity_credit_withdrawal.identity_id),
+                    )),
+                ));
+            };
+            if key.is_disabled() {
+                // The first key is disabled, let's look at some more withdrawal keys to find one that isn't disabled
+                let after_first_key_request = IdentityKeysRequest {
                     identity_id: identity_credit_withdrawal.identity_id.to_buffer(),
-                    request_type: KeyRequestType::LatestWithdrawalKey,
-                    limit: None,
-                    offset: None,
+                    request_type: KeyRequestType::RecentWithdrawalKeys,
+                    limit: Some(5),
+                    offset: Some(1),
                 };
-                let key: Option<IdentityPublicKey> =
-                    drive.fetch_identity_keys(key_request, tx, platform_version)?;
-                let Some(key) = key else {
-                    return Ok(ConsensusValidationResult::new_with_error(
-                        ConsensusError::StateError(StateError::MissingTransferKeyError(
-                            MissingTransferKeyError::new(identity_credit_withdrawal.identity_id),
-                        )),
-                    ));
-                };
-                if key.is_disabled() {
+                let other_keys: KeyIDIdentityPublicKeyPairBTreeMap =
+                    drive.fetch_identity_keys(after_first_key_request, tx, platform_version)?;
+
+                if let Some(found_non_disabled_key) = other_keys
+                    .values()
+                    .rev()
+                    .find(|identity_public_key| !identity_public_key.is_disabled())
+                    .cloned()
+                {
+                    key = found_non_disabled_key
+                } else {
                     return Ok(ConsensusValidationResult::new_with_error(
                         ConsensusError::StateError(StateError::IdentityPublicKeyIsDisabledError(
                             IdentityPublicKeyIsDisabledError::new(key.id()),
                         )),
                     ));
                 }
-                if !key.key_type().is_core_address_key_type() {
-                    return Ok(ConsensusValidationResult::new_with_error(
-                        ConsensusError::StateError(
-                            StateError::NoTransferKeyForCoreWithdrawalAvailableError(
-                                NoTransferKeyForCoreWithdrawalAvailableError::new(
-                                    identity_credit_withdrawal.identity_id,
-                                ),
+            }
+            if !key.key_type().is_core_address_key_type() {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(
+                        StateError::NoTransferKeyForCoreWithdrawalAvailableError(
+                            NoTransferKeyForCoreWithdrawalAvailableError::new(
+                                identity_credit_withdrawal.identity_id,
                             ),
                         ),
-                    ));
-                }
-                // We should get the withdrawal address
-                CoreScript::new_p2pkh(key.public_key_hash()?).to_bytes()
-            };
+                    ),
+                ));
+            }
+            // We should get the withdrawal address
+            CoreScript::new_p2pkh(key.public_key_hash()?).to_bytes()
+        };
 
         let mut entropy = Vec::new();
         entropy.extend_from_slice(&identity_credit_withdrawal.nonce.to_be_bytes());
