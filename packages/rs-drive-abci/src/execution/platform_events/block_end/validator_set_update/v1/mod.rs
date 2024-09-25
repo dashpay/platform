@@ -141,7 +141,7 @@ where
                     };
                     index = (index + 1) % oldest_quorum_index_we_can_go_to;
                     // We can't just take the next item because it might no longer be in the state
-                    while index != start_index {
+                    for _i in 0..oldest_quorum_index_we_can_go_to {
                         let (quorum_hash, _) = platform_state
                             .validator_sets()
                             .get_index(index)
@@ -166,6 +166,9 @@ where
                             return Ok(Some(validator_set_update));
                         }
                         index = (index + 1) % oldest_quorum_index_we_can_go_to;
+                        if index == start_index {
+                            break;
+                        }
                     }
                     // All quorums changed
                     if let Some((quorum_hash, new_validator_set)) = block_execution_context
