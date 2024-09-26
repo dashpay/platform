@@ -62,7 +62,7 @@ export default class ResetCommand extends ConfigBaseCommand {
                 message = 'Are you sure you want to reset platform related docker containers?';
               }
             } else {
-              message = 'Are you sure you want to reset you node data?';
+              message = 'Are you sure you want to reset your node data?';
               if (ctx.isPlatformOnlyReset) {
                 message = 'Are you sure you want to reset platform related data?';
               }
