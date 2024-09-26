@@ -75,6 +75,7 @@ export default {
         path: `/${port}/`,
         method: 'GET',
         family: 4, // Force IPv4
+        timeout: MAX_REQUEST_TIMEOUT,
       };
 
       return new Promise((resolve) => {
@@ -83,17 +84,6 @@ export default {
 
           // Optionally set the encoding to receive strings directly
           res.setEncoding('utf8');
-
-          res.setTimeout(MAX_REQUEST_TIMEOUT, () => {
-            if (process.env.DEBUG) {
-              // eslint-disable-next-line no-console
-              console.warn(`Port check ${MAX_REQUEST_TIMEOUT} timeout reached`);
-            }
-
-            resolve(PortStateEnum.ERROR);
-
-            req.destroy();
-          });
 
           // Collect data chunks
           res.on('data', (chunk) => {
@@ -120,21 +110,10 @@ export default {
         req.on('error', (e) => {
           if (process.env.DEBUG) {
             // eslint-disable-next-line no-console
-            console.warn(e);
+            console.warn(`Port check request failed: ${e}`);
           }
 
           resolve(PortStateEnum.ERROR);
-        });
-
-        req.setTimeout(MAX_REQUEST_TIMEOUT, () => {
-          if (process.env.DEBUG) {
-            // eslint-disable-next-line no-console
-            console.warn(`Port check ${MAX_REQUEST_TIMEOUT} timeout reached`);
-          }
-
-          resolve(PortStateEnum.ERROR);
-
-          req.destroy(); // Abort the request
         });
 
         req.end();
