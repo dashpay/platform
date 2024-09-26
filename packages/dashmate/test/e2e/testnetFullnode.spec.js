@@ -141,7 +141,7 @@ describe('Testnet Fullnode', function main() {
 
       await task.run({
         isVerbose: true,
-        isForce: true,
+        isSafe: true,
       });
 
       await assertServiceRunning(config, 'core');
@@ -161,7 +161,7 @@ describe('Testnet Fullnode', function main() {
 
       await task.run({
         isVerbose: true,
-        isForce: true,
+        isSafe: true,
       });
 
       await assertServiceRunning(config, 'core', false);
