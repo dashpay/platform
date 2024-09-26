@@ -28,6 +28,8 @@ use drive::grovedb::Element;
 use std::collections::{BTreeMap, BTreeSet};
 
 use dpp::block::block_info::BlockInfo;
+use dpp::core_types::validator_set::ValidatorSet;
+use dpp::dashcore::QuorumHash;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::grovedb::query_result_type::Path;
 #[cfg(feature = "mocks")]
@@ -324,6 +326,74 @@ pub struct ContestedVote(ContestedDocumentResourceVotePoll, ResourceVoteChoice);
 
 /// Votes casted by some identity.
 pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
+
+/// Represents the current state of quorums in the platform.
+///
+/// This struct holds various information related to the current quorums,
+/// including the list of quorum hashes, the current active quorum hash,
+/// and details about the validators and their statuses.
+///
+/// # Fields
+///
+/// - `quorum_hashes`: A list of 32-byte hashes representing the active quorums.
+/// - `current_quorum_hash`: A 32-byte hash identifying the currently active quorum.
+///   This is the quorum that is currently responsible for platform operations.
+/// - `validator_sets`: A collection of [`ValidatorSet`] structs, each representing
+///   a set of validators for different quorums. This provides detailed information
+///   about the members of each quorum.
+/// - `last_block_proposer`: A vector of bytes representing the identity of the last
+///   block proposer. This is typically the ProTxHash of the masternode that proposed
+///   the most recent platform block.
+/// - `last_platform_block_height`: The height of the most recent platform block.
+///   This indicates the latest block height at the platform level, which may differ
+///   from the core blockchain height.
+/// - `last_core_block_height`: The height of the most recent core blockchain block
+///   associated with the platform. This is the height of the blockchain where the
+///   platform block was anchored.
+///
+/// # Derives
+///
+/// - `Debug`: Provides a debug representation of the `CurrentQuorumsInfo` struct, useful
+///   for logging and debugging purposes.
+/// - `Clone`: Allows the `CurrentQuorumsInfo` struct to be cloned, creating a deep copy
+///   of its contents.
+///
+/// # Conditional Derives
+///
+/// When the `mocks` feature is enabled, the following derives and attributes are applied:
+///
+/// - `Encode`: Allows the struct to be serialized into a binary format using the `bincode` crate.
+/// - `Decode`: Allows the struct to be deserialized from a binary format using the `bincode` crate.
+/// - `PlatformSerialize`: Enables serialization of the struct using the platform-specific
+///   serialization format.
+/// - `PlatformDeserialize`: Enables deserialization of the struct using the platform-specific
+///   deserialization format.
+/// - `platform_serialize(unversioned)`: Specifies that the struct should be serialized
+///   without including a version field in the serialized data.
+///
+/// This structure is typically used in scenarios where the state of the current quorums
+/// needs to be accessed, for example, when validating or proposing new blocks, or when
+/// determining the active set of validators.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct CurrentQuorumsInfo {
+    /// A list of 32-byte hashes representing the active quorums.
+    pub quorum_hashes: Vec<[u8; 32]>,
+    /// A 32-byte hash identifying the currently active quorum.
+    pub current_quorum_hash: [u8; 32],
+    /// A collection of [`ValidatorSet`] structs, each representing a set of validators for different quorums.
+    pub validator_sets: Vec<ValidatorSet>,
+    /// A vector of bytes representing the identity of the last block proposer.
+    pub last_block_proposer: [u8; 32],
+    /// The height of the most recent platform block.
+    pub last_platform_block_height: u64,
+    /// The height of the most recent core blockchain block associated with the platform.
+    pub last_core_block_height: u32,
+}
 
 /// Prefunded specialized balance.
 #[derive(Debug, derive_more::From, Copy, Clone)]

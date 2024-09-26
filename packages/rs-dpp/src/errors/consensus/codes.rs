@@ -231,6 +231,8 @@ impl ErrorWithCode for StateError {
             Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 40211,
             Self::DocumentTypeUpdateError(_) => 40212,
             Self::DataContractUpdatePermissionError(_) => 40213,
+            Self::MissingTransferKeyError(_) => 40214,
+            Self::NoTransferKeyForCoreWithdrawalAvailableError(_) => 40215,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,

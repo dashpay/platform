@@ -8,10 +8,9 @@ use dpp::consensus::ConsensusError;
 
 use crate::error::Error;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_withdrawal_transition::v0::{
-    MIN_CORE_FEE_PER_BYTE, MIN_WITHDRAWAL_AMOUNT,
+use dpp::state_transition::identity_credit_withdrawal_transition::{
+    IdentityCreditWithdrawalTransition, MIN_CORE_FEE_PER_BYTE, MIN_WITHDRAWAL_AMOUNT,
 };
-use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::util::is_fibonacci_number::is_fibonacci_number;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::withdrawal::Pooling;
@@ -57,13 +56,15 @@ impl IdentityCreditWithdrawalStateTransitionStructureValidationV1
             return Ok(result);
         }
 
-        // validate output_script types
-        if !self.output_script().is_p2pkh() && !self.output_script().is_p2sh() {
-            result.add_error(
-                InvalidIdentityCreditWithdrawalTransitionOutputScriptError::new(
-                    self.output_script().clone(),
-                ),
-            );
+        if let Some(output_script) = self.output_script() {
+            // validate output_script types
+            if !output_script.is_p2pkh() && !output_script.is_p2sh() {
+                result.add_error(
+                    InvalidIdentityCreditWithdrawalTransitionOutputScriptError::new(
+                        output_script.clone(),
+                    ),
+                );
+            }
         }
 
         Ok(result)

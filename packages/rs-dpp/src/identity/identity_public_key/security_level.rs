@@ -35,6 +35,23 @@ pub enum SecurityLevel {
     MEDIUM = 3,
 }
 
+impl From<SecurityLevel> for [u8; 1] {
+    fn from(security_level: SecurityLevel) -> Self {
+        [security_level as u8]
+    }
+}
+
+impl From<SecurityLevel> for &'static [u8; 1] {
+    fn from(security_level: SecurityLevel) -> Self {
+        match security_level {
+            SecurityLevel::MASTER => &[0],
+            SecurityLevel::CRITICAL => &[1],
+            SecurityLevel::HIGH => &[2],
+            SecurityLevel::MEDIUM => &[3],
+        }
+    }
+}
+
 #[cfg(feature = "cbor")]
 impl Into<CborValue> for SecurityLevel {
     fn into(self) -> CborValue {

@@ -74,6 +74,8 @@ use dpp::consensus::state::document::document_incorrect_purchase_price_error::Do
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
+use dpp::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
+use dpp::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
@@ -295,6 +297,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentContestDocumentWithSameIdAlreadyPresentError(e) => {
             generic_consensus_error!(DocumentContestDocumentWithSameIdAlreadyPresentError, e).into()
+        }
+        StateError::MissingTransferKeyError(e) => {
+            generic_consensus_error!(MissingTransferKeyError, e).into()
+        }
+        StateError::NoTransferKeyForCoreWithdrawalAvailableError(e) => {
+            generic_consensus_error!(NoTransferKeyForCoreWithdrawalAvailableError, e).into()
         }
     }
 }

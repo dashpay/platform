@@ -14,6 +14,6 @@ pub trait IdentityCreditWithdrawalTransitionAccessorsV0 {
     fn set_pooling(&mut self, pooling: Pooling);
     fn core_fee_per_byte(&self) -> u32;
     fn set_core_fee_per_byte(&mut self, amount: u32);
-    fn output_script(&self) -> CoreScript;
-    fn set_output_script(&mut self, output_script: CoreScript);
+    fn output_script(&self) -> Option<CoreScript>;
+    fn set_output_script(&mut self, output_script: Option<CoreScript>);
 }
