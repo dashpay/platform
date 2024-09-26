@@ -44,7 +44,7 @@ export default class ResetCommand extends ConfigBaseCommand {
             let message;
             if (ctx.isHardReset) {
               if (ctx.keepData) {
-                message = 'Are you sure you want to reset you node configuration? Data will be'
+                message = 'Are you sure you want to reset your node configuration? Data will be'
                   + ' kept.';
                 if (ctx.isPlatformOnlyReset) {
                   message = 'Are you sure you want to reset platform related configuration? Data'
