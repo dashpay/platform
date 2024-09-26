@@ -209,6 +209,7 @@ describe('Testnet Evonode', function main() {
       await task.run({
         isVerbose: true,
         platformOnly: true,
+        isSafe: true,
       });
 
       await assertServiceRunning(config, 'core', true);
