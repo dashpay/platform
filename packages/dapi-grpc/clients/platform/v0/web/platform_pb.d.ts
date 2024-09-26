@@ -5816,6 +5816,194 @@ export namespace GetStatusResponse {
   }
 }
 
+export class GetCurrentQuorumsInfoRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0 | undefined;
+  setV0(value?: GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0): void;
+
+  getVersionCase(): GetCurrentQuorumsInfoRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetCurrentQuorumsInfoRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetCurrentQuorumsInfoRequest): GetCurrentQuorumsInfoRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetCurrentQuorumsInfoRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetCurrentQuorumsInfoRequest;
+  static deserializeBinaryFromReader(message: GetCurrentQuorumsInfoRequest, reader: jspb.BinaryReader): GetCurrentQuorumsInfoRequest;
+}
+
+export namespace GetCurrentQuorumsInfoRequest {
+  export type AsObject = {
+    v0?: GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.AsObject,
+  }
+
+  export class GetCurrentQuorumsInfoRequestV0 extends jspb.Message {
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetCurrentQuorumsInfoRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetCurrentQuorumsInfoRequestV0): GetCurrentQuorumsInfoRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetCurrentQuorumsInfoRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetCurrentQuorumsInfoRequestV0;
+    static deserializeBinaryFromReader(message: GetCurrentQuorumsInfoRequestV0, reader: jspb.BinaryReader): GetCurrentQuorumsInfoRequestV0;
+  }
+
+  export namespace GetCurrentQuorumsInfoRequestV0 {
+    export type AsObject = {
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetCurrentQuorumsInfoResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0 | undefined;
+  setV0(value?: GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0): void;
+
+  getVersionCase(): GetCurrentQuorumsInfoResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetCurrentQuorumsInfoResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetCurrentQuorumsInfoResponse): GetCurrentQuorumsInfoResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetCurrentQuorumsInfoResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetCurrentQuorumsInfoResponse;
+  static deserializeBinaryFromReader(message: GetCurrentQuorumsInfoResponse, reader: jspb.BinaryReader): GetCurrentQuorumsInfoResponse;
+}
+
+export namespace GetCurrentQuorumsInfoResponse {
+  export type AsObject = {
+    v0?: GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.AsObject,
+  }
+
+  export class ValidatorV0 extends jspb.Message {
+    getProTxHash(): Uint8Array | string;
+    getProTxHash_asU8(): Uint8Array;
+    getProTxHash_asB64(): string;
+    setProTxHash(value: Uint8Array | string): void;
+
+    getNodeIp(): string;
+    setNodeIp(value: string): void;
+
+    getIsBanned(): boolean;
+    setIsBanned(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ValidatorV0.AsObject;
+    static toObject(includeInstance: boolean, msg: ValidatorV0): ValidatorV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ValidatorV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ValidatorV0;
+    static deserializeBinaryFromReader(message: ValidatorV0, reader: jspb.BinaryReader): ValidatorV0;
+  }
+
+  export namespace ValidatorV0 {
+    export type AsObject = {
+      proTxHash: Uint8Array | string,
+      nodeIp: string,
+      isBanned: boolean,
+    }
+  }
+
+  export class ValidatorSetV0 extends jspb.Message {
+    getQuorumHash(): Uint8Array | string;
+    getQuorumHash_asU8(): Uint8Array;
+    getQuorumHash_asB64(): string;
+    setQuorumHash(value: Uint8Array | string): void;
+
+    getCoreHeight(): number;
+    setCoreHeight(value: number): void;
+
+    clearMembersList(): void;
+    getMembersList(): Array<GetCurrentQuorumsInfoResponse.ValidatorV0>;
+    setMembersList(value: Array<GetCurrentQuorumsInfoResponse.ValidatorV0>): void;
+    addMembers(value?: GetCurrentQuorumsInfoResponse.ValidatorV0, index?: number): GetCurrentQuorumsInfoResponse.ValidatorV0;
+
+    getThresholdPublicKey(): Uint8Array | string;
+    getThresholdPublicKey_asU8(): Uint8Array;
+    getThresholdPublicKey_asB64(): string;
+    setThresholdPublicKey(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ValidatorSetV0.AsObject;
+    static toObject(includeInstance: boolean, msg: ValidatorSetV0): ValidatorSetV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ValidatorSetV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ValidatorSetV0;
+    static deserializeBinaryFromReader(message: ValidatorSetV0, reader: jspb.BinaryReader): ValidatorSetV0;
+  }
+
+  export namespace ValidatorSetV0 {
+    export type AsObject = {
+      quorumHash: Uint8Array | string,
+      coreHeight: number,
+      membersList: Array<GetCurrentQuorumsInfoResponse.ValidatorV0.AsObject>,
+      thresholdPublicKey: Uint8Array | string,
+    }
+  }
+
+  export class GetCurrentQuorumsInfoResponseV0 extends jspb.Message {
+    clearQuorumHashesList(): void;
+    getQuorumHashesList(): Array<Uint8Array | string>;
+    getQuorumHashesList_asU8(): Array<Uint8Array>;
+    getQuorumHashesList_asB64(): Array<string>;
+    setQuorumHashesList(value: Array<Uint8Array | string>): void;
+    addQuorumHashes(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getCurrentQuorumHash(): Uint8Array | string;
+    getCurrentQuorumHash_asU8(): Uint8Array;
+    getCurrentQuorumHash_asB64(): string;
+    setCurrentQuorumHash(value: Uint8Array | string): void;
+
+    clearValidatorSetsList(): void;
+    getValidatorSetsList(): Array<GetCurrentQuorumsInfoResponse.ValidatorSetV0>;
+    setValidatorSetsList(value: Array<GetCurrentQuorumsInfoResponse.ValidatorSetV0>): void;
+    addValidatorSets(value?: GetCurrentQuorumsInfoResponse.ValidatorSetV0, index?: number): GetCurrentQuorumsInfoResponse.ValidatorSetV0;
+
+    getLastBlockProposer(): Uint8Array | string;
+    getLastBlockProposer_asU8(): Uint8Array;
+    getLastBlockProposer_asB64(): string;
+    setLastBlockProposer(value: Uint8Array | string): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetCurrentQuorumsInfoResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetCurrentQuorumsInfoResponseV0): GetCurrentQuorumsInfoResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetCurrentQuorumsInfoResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetCurrentQuorumsInfoResponseV0;
+    static deserializeBinaryFromReader(message: GetCurrentQuorumsInfoResponseV0, reader: jspb.BinaryReader): GetCurrentQuorumsInfoResponseV0;
+  }
+
+  export namespace GetCurrentQuorumsInfoResponseV0 {
+    export type AsObject = {
+      quorumHashesList: Array<Uint8Array | string>,
+      currentQuorumHash: Uint8Array | string,
+      validatorSetsList: Array<GetCurrentQuorumsInfoResponse.ValidatorSetV0.AsObject>,
+      lastBlockProposer: Uint8Array | string,
+      metadata?: ResponseMetadata.AsObject,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export interface KeyPurposeMap {
   AUTHENTICATION: 0;
   ENCRYPTION: 1;
