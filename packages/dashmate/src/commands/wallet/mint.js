@@ -52,7 +52,7 @@ Mint given amount of tDash to a new or specified address
     }
 
     if (config.get('core.masternode.enable')) {
-      throw new Error(`A masternode doesn't support generation of dash`);
+      throw new Error('A masternode doesn\'t support generation of dash');
     }
 
     const tasks = new Listr(
