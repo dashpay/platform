@@ -148,7 +148,7 @@ describe('Testnet Evonode', function main() {
 
       await task.run({
         isVerbose: true,
-        isSafe: true,
+        isForce: true,
       });
 
       // TODO: Assert all services are running
@@ -233,7 +233,7 @@ describe('Testnet Evonode', function main() {
 
       await task.run({
         isVerbose: true,
-        isSafe: true,
+        isForce: true,
       });
 
       // TODO: Assert all services are running

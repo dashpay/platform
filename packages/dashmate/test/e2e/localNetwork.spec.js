@@ -129,7 +129,7 @@ describe('Local Network', function main() {
         const task = restartNodeTask(config);
         await task.run({
           isVerbose: true,
-          isSafe: true,
+          isForce: true,
         });
       }
 
@@ -147,7 +147,7 @@ describe('Local Network', function main() {
         const task = stopNodeTask(config);
         await task.run({
           isVerbose: true,
-          isSafe: true,
+          isForce: true,
         });
       }
 
