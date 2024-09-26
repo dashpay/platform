@@ -709,7 +709,7 @@ export default {
                                 type: 'string',
                               },
                               description: 'JSON fields and values. If null, default template is'
-                                + ' is used. More info:'
+                                + ' used. More info:'
                                 + ' https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage#format-dictionaries',
                             },
                           },
