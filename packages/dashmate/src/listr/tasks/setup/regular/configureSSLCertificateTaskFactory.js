@@ -1,12 +1,14 @@
 import fs from 'fs';
 import { Listr } from 'listr2';
-import crypto from 'node:crypto';
+
+import validateSslCertificateFiles from '../../../prompts/validators/validateSslCertificateFiles.js';
 
 import {
   PRESET_MAINNET,
   SSL_PROVIDERS,
   NODE_TYPE_FULLNODE,
 } from '../../../../constants.js';
+
 import validateFileExists from '../../../prompts/validators/validateFileExists.js';
 import listCertificates from '../../../../ssl/zerossl/listCertificates.js';
 
@@ -66,29 +68,7 @@ export default function configureSSLCertificateTaskFactory(
                   return 'the same path for both files';
                 }
 
-                const bundlePem = fs.readFileSync(chainFilePath, 'utf8');
-                const privateKeyPem = fs.readFileSync(privateFilePath, 'utf8');
-
-                // Step 2: Create a signature using the private key
-                const data = 'This is a test message';
-                const sign = crypto.createSign('SHA256');
-                sign.update(data);
-                sign.end();
-
-                const signature = sign.sign(privateKeyPem, 'hex');
-
-                // Verify the signature using the public key from the certificate
-                const verify = crypto.createVerify('SHA256');
-                verify.update(data);
-                verify.end();
-
-                // Extract the public key from the first certificate in the bundle
-                const certificate = crypto.createPublicKey({
-                  key: bundlePem,
-                  format: 'pem',
-                });
-
-                const isValid = verify.verify(certificate, signature, 'hex');
+                const isValid = validateSslCertificateFiles(chainFilePath, privateFilePath);
 
                 if (!isValid) {
                   return 'The certificate and private key do not match';

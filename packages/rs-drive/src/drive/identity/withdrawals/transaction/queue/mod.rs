@@ -5,15 +5,13 @@ pub mod dequeue_untied_withdrawal_transactions;
 
 #[cfg(test)]
 mod tests {
-    use crate::drive::identity::withdrawals::{
-        WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
-    };
     use crate::util::batch::DriveOperation;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
+    use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 
     #[test]
     fn test_enqueue_and_dequeue() {

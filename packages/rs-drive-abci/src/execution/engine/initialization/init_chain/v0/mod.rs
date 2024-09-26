@@ -10,6 +10,7 @@ use drive::grovedb::Transaction;
 use crate::platform_types::cleaned_abci_messages::request_init_chain_cleaned_params;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::validator_set::ValidatorSetExt;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
@@ -105,10 +106,7 @@ where
                 ExecutionError::InitializationError("we should have at least one quorum"),
             )?;
 
-            (
-                *validator_set_inner.0,
-                ValidatorSetUpdate::from(validator_set_inner.1),
-            )
+            (*validator_set_inner.0, validator_set_inner.1.to_update())
         };
 
         initial_platform_state.set_current_validator_set_quorum_hash(quorum_hash);

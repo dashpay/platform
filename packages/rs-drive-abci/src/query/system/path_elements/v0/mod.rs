@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_query_total_system_credits_from_path_elements_query() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let platform_version = PlatformVersion::latest();
 

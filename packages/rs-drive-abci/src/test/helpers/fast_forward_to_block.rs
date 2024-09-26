@@ -105,9 +105,6 @@ pub(crate) fn process_epoch_change(
             previous_epoch_index: epoch_index.checked_sub(1),
             is_epoch_change: true,
         }),
-        // TODO: It doesn't seem correct to use previous block count of hpmns.
-        //  We currently not using this field in the codebase. We probably should just remove it.
-        hpmn_count: 100,
         unsigned_withdrawal_transactions: UnsignedWithdrawalTxs::default(),
         block_platform_state: platform_state,
         proposer_results: None,

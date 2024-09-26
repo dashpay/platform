@@ -23,6 +23,7 @@ use crate::config::PlatformConfig;
 use crate::platform_types::signature_verification_quorum_set::{
     SignatureVerificationQuorumSet, SignatureVerificationQuorumSetForSaving,
 };
+use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use itertools::Itertools;
 use std::collections::BTreeMap;
@@ -344,6 +345,32 @@ pub trait PlatformStateV0Methods {
     /// Returns the quorum hash of the current validator set.
     fn current_validator_set_quorum_hash(&self) -> QuorumHash;
 
+    /// Get validator sets sorted by their core height by most recent order coming first
+    fn validator_sets_sorted_by_core_height_by_most_recent(&self) -> Vec<&ValidatorSet> {
+        // Get the validator sets and collect them into a vector for sorting
+        let mut validator_sets: Vec<&ValidatorSet> = self.validator_sets().values().collect();
+
+        // Sort the validator sets by core height in descending order
+        validator_sets.sort_by(|a, b| b.core_height().cmp(&a.core_height()));
+
+        validator_sets
+    }
+
+    /// Where is the current validator set in the list
+    fn current_validator_set_position_in_list_by_most_recent(&self) -> Option<u16> {
+        // Get the current quorum hash
+        let current_quorum_hash = self.current_validator_set_quorum_hash();
+
+        // Get the validator sets by post recent
+        let validator_sets = self.validator_sets_sorted_by_core_height_by_most_recent();
+
+        // Find the position of the current validator set in the sorted list
+        validator_sets
+            .iter()
+            .position(|&validator_set| validator_set.quorum_hash() == &current_quorum_hash)
+            .map(|position| position as u16) // Convert position to u16
+    }
+
     /// Returns the quorum hash of the next validator set, if it exists.
     fn next_validator_set_quorum_hash(&self) -> &Option<QuorumHash>;
 
@@ -453,6 +480,9 @@ pub trait PlatformStateV0Methods {
     fn hpmn_masternode_list_changes(&self, previous: &Self) -> MasternodeListChanges
     where
         Self: Sized;
+
+    /// The size of the hpmn list that are currently not banned
+    fn hpmn_active_list_len(&self) -> usize;
 }
 
 impl PlatformStateV0PrivateMethods for PlatformStateV0 {
@@ -563,6 +593,14 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     /// HPMN list len
     fn hpmn_list_len(&self) -> usize {
         self.hpmn_masternode_list.len()
+    }
+
+    /// HPMN active list len
+    fn hpmn_active_list_len(&self) -> usize {
+        self.hpmn_masternode_list
+            .values()
+            .filter(|masternode| masternode.state.pose_ban_height.is_none())
+            .count()
     }
 
     /// Get the current quorum

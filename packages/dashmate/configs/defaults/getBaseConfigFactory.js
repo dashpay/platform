@@ -14,7 +14,7 @@ const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'pack
  * @param {HomeDir} homeDir
  * @returns {getBaseConfig}
  */
-export default function getBaseConfigFactory(homeDir) {
+export default function getBaseConfigFactory() {
   const prereleaseTag = semver.prerelease(version) === null ? '' : `-${semver.prerelease(version)[0]}`;
   const dockerImageVersion = `${semver.major(version)}${prereleaseTag}`;
 
@@ -134,12 +134,17 @@ export default function getBaseConfigFactory(homeDir) {
           },
         },
         log: {
-          file: {
-            categories: [],
-            path: homeDir.joinPath('logs', 'base', 'core.log'),
+          filePath: null,
+          debug: {
+            enabled: false,
+            ips: false,
+            sourceLocations: false,
+            threadNames: false,
+            timeMicros: false,
+            includeOnly: [],
+            exclude: [],
           },
         },
-        logIps: 0,
         indexes: [],
       },
       platform: {
@@ -306,7 +311,7 @@ export default function getBaseConfigFactory(homeDir) {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1',
+              image: 'dashpay/tenderdash:1.3',
             },
             p2p: {
               host: '0.0.0.0',

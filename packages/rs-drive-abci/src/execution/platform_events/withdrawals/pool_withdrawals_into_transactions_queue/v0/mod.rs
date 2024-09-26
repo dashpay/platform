@@ -1,18 +1,16 @@
 use dpp::block::block_info::BlockInfo;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 
 use dpp::version::PlatformVersion;
-
-use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
 use drive::grovedb::TransactionArg;
 
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use drive::config::DEFAULT_QUERY_LIMIT;
 
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
@@ -27,9 +25,25 @@ where
     pub(super) fn pool_withdrawals_into_transactions_queue_v0(
         &self,
         block_info: &BlockInfo,
+        last_committed_platform_state: &PlatformState,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // Currently Core only supports using the first 2 quorums (out of 24 for mainnet).
+        // For us, we just use the latest quorum to be extra safe.
+        let Some(position_of_current_quorum) =
+            last_committed_platform_state.current_validator_set_position_in_list_by_most_recent()
+        else {
+            tracing::warn!("Current quorum not in current validator set, not making withdrawals");
+            return Ok(());
+        };
+        if position_of_current_quorum != 0 {
+            tracing::debug!(
+                "Current quorum is not most recent, it is in position {}, not making withdrawals",
+                position_of_current_quorum
+            );
+            return Ok(());
+        }
         let mut documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
             DEFAULT_QUERY_LIMIT,
@@ -45,46 +59,16 @@ where
             .drive
             .fetch_next_withdrawal_transaction_index(transaction, platform_version)?;
 
-        let untied_withdrawal_transactions = self
-            .build_untied_withdrawal_transactions_from_documents(
-                &documents,
-                start_transaction_index,
-                platform_version,
-            )?;
-
-        for document in documents.iter_mut() {
-            let Some((transaction_index, _)) = untied_withdrawal_transactions.get(&document.id())
-            else {
-                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "transactions must contain a transaction",
-                )));
-            };
-
-            document.set_u64(
-                withdrawal::properties::TRANSACTION_INDEX,
-                *transaction_index,
-            );
-
-            document.set_u8(
-                withdrawal::properties::STATUS,
-                withdrawals_contract::WithdrawalStatus::POOLED as u8,
-            );
-
-            document.set_updated_at(Some(block_info.time_ms));
-
-            document.increment_revision().map_err(|_| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "Could not increment document revision",
-                ))
-            })?;
-        }
-
-        let withdrawal_transactions: Vec<WithdrawalTransactionIndexAndBytes> =
-            untied_withdrawal_transactions.into_values().collect();
+        let withdrawal_transactions = self.build_untied_withdrawal_transactions_from_documents(
+            &mut documents,
+            start_transaction_index,
+            block_info,
+            platform_version,
+        )?;
 
         let withdrawal_transactions_count = withdrawal_transactions.len();
 
-        let mut drive_operations = Vec::new();
+        let mut drive_operations = vec![];
 
         self.drive
             .add_enqueue_untied_withdrawal_transaction_operations(
@@ -153,6 +137,7 @@ mod tests {
     use drive::util::test_helpers::setup::{setup_document, setup_system_data_contract};
 
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::document::DocumentV0Getters;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
     use dpp::system_data_contracts::load_system_data_contract;
@@ -234,9 +219,12 @@ mod tests {
             Some(&transaction),
         );
 
+        let platform_state = platform.state.load();
+
         platform
             .pool_withdrawals_into_transactions_queue_v0(
                 &block_info,
+                &platform_state,
                 Some(&transaction),
                 platform_version,
             )

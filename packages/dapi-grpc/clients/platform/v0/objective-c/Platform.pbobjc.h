@@ -54,6 +54,10 @@ CF_EXTERN_C_BEGIN
 @class GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo;
 @class GetContestedResourcesResponse_GetContestedResourcesResponseV0;
 @class GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues;
+@class GetCurrentQuorumsInfoRequest_GetCurrentQuorumsInfoRequestV0;
+@class GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0;
+@class GetCurrentQuorumsInfoResponse_ValidatorSetV0;
+@class GetCurrentQuorumsInfoResponse_ValidatorV0;
 @class GetDataContractHistoryRequest_GetDataContractHistoryRequestV0;
 @class GetDataContractHistoryResponse_GetDataContractHistoryResponseV0;
 @class GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistory;
@@ -71,6 +75,15 @@ CF_EXTERN_C_BEGIN
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos;
+@class GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpochBlocksByIdsRequestV0;
+@class GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0;
+@class GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0;
+@class GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodeProposedBlocks;
+@class GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodesProposedBlocks;
+@class GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0;
+@class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0;
+@class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances;
+@class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance;
 @class GetIdentitiesContractKeysRequest_GetIdentitiesContractKeysRequestV0;
 @class GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0;
 @class GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentitiesKeys;
@@ -1347,6 +1360,339 @@ typedef GPB_ENUM(GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResp
 GPB_FINAL @interface GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentitiesKeys : GPBMessage
 
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetIdentitiesContractKeysResponse_GetIdentitiesContractKeysResponseV0_IdentityKeys*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - GetEvonodesProposedEpochBlocksByIdsRequest
+
+typedef GPB_ENUM(GetEvonodesProposedEpochBlocksByIdsRequest_FieldNumber) {
+  GetEvonodesProposedEpochBlocksByIdsRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetEvonodesProposedEpochBlocksByIdsRequest_Version_OneOfCase) {
+  GetEvonodesProposedEpochBlocksByIdsRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetEvonodesProposedEpochBlocksByIdsRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetEvonodesProposedEpochBlocksByIdsRequest : GPBMessage
+
+@property(nonatomic, readonly) GetEvonodesProposedEpochBlocksByIdsRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpochBlocksByIdsRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetEvonodesProposedEpochBlocksByIdsRequest_ClearVersionOneOfCase(GetEvonodesProposedEpochBlocksByIdsRequest *message);
+
+#pragma mark - GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpochBlocksByIdsRequestV0
+
+typedef GPB_ENUM(GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpochBlocksByIdsRequestV0_FieldNumber) {
+  GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpochBlocksByIdsRequestV0_FieldNumber_Epoch = 1,
+  GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpochBlocksByIdsRequestV0_FieldNumber_IdsArray = 2,
+  GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpochBlocksByIdsRequestV0_FieldNumber_Prove = 3,
+};
+
+GPB_FINAL @interface GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpochBlocksByIdsRequestV0 : GPBMessage
+
+/** The epoch we are querying for, if none is set, get current epoch */
+@property(nonatomic, readwrite) uint32_t epoch;
+
+@property(nonatomic, readwrite) BOOL hasEpoch;
+/** IDs of the evonodes for which we want to get their proposed blocks */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *idsArray;
+/** The number of items in @c idsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger idsArray_Count;
+
+/** Flag to request a proof as the response */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetEvonodesProposedEpochBlocksResponse
+
+typedef GPB_ENUM(GetEvonodesProposedEpochBlocksResponse_FieldNumber) {
+  GetEvonodesProposedEpochBlocksResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetEvonodesProposedEpochBlocksResponse_Version_OneOfCase) {
+  GetEvonodesProposedEpochBlocksResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetEvonodesProposedEpochBlocksResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetEvonodesProposedEpochBlocksResponse : GPBMessage
+
+@property(nonatomic, readonly) GetEvonodesProposedEpochBlocksResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetEvonodesProposedEpochBlocksResponse_ClearVersionOneOfCase(GetEvonodesProposedEpochBlocksResponse *message);
+
+#pragma mark - GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0
+
+typedef GPB_ENUM(GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_FieldNumber) {
+  GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_FieldNumber_EvonodesProposedBlockCountsInfo = 1,
+  GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_FieldNumber_Proof = 2,
+  GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_Result_OneOfCase) {
+  GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_Result_OneOfCase_EvonodesProposedBlockCountsInfo = 1,
+  GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_Result_OneOfCase resultOneOfCase;
+
+/** The actual result */
+@property(nonatomic, readwrite, strong, null_resettable) GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodesProposedBlocks *evonodesProposedBlockCountsInfo;
+
+/** Proof of the keys data, if requested */
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_ClearResultOneOfCase(GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0 *message);
+
+#pragma mark - GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodeProposedBlocks
+
+typedef GPB_ENUM(GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodeProposedBlocks_FieldNumber) {
+  GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodeProposedBlocks_FieldNumber_ProTxHash = 1,
+  GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodeProposedBlocks_FieldNumber_Count = 2,
+};
+
+GPB_FINAL @interface GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodeProposedBlocks : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *proTxHash;
+
+@property(nonatomic, readwrite) uint64_t count;
+
+@end
+
+#pragma mark - GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodesProposedBlocks
+
+typedef GPB_ENUM(GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodesProposedBlocks_FieldNumber) {
+  GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodesProposedBlocks_FieldNumber_EvonodesProposedBlockCountsArray = 1,
+};
+
+GPB_FINAL @interface GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodesProposedBlocks : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodeProposedBlocks*> *evonodesProposedBlockCountsArray;
+/** The number of items in @c evonodesProposedBlockCountsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger evonodesProposedBlockCountsArray_Count;
+
+@end
+
+#pragma mark - GetEvonodesProposedEpochBlocksByRangeRequest
+
+typedef GPB_ENUM(GetEvonodesProposedEpochBlocksByRangeRequest_FieldNumber) {
+  GetEvonodesProposedEpochBlocksByRangeRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetEvonodesProposedEpochBlocksByRangeRequest_Version_OneOfCase) {
+  GetEvonodesProposedEpochBlocksByRangeRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetEvonodesProposedEpochBlocksByRangeRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetEvonodesProposedEpochBlocksByRangeRequest : GPBMessage
+
+@property(nonatomic, readonly) GetEvonodesProposedEpochBlocksByRangeRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetEvonodesProposedEpochBlocksByRangeRequest_ClearVersionOneOfCase(GetEvonodesProposedEpochBlocksByRangeRequest *message);
+
+#pragma mark - GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0
+
+typedef GPB_ENUM(GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0_FieldNumber) {
+  GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0_FieldNumber_Epoch = 1,
+  GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0_FieldNumber_Limit = 2,
+  GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0_FieldNumber_StartAfter = 3,
+  GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0_FieldNumber_StartAt = 4,
+  GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0_FieldNumber_Prove = 5,
+};
+
+typedef GPB_ENUM(GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0_Start_OneOfCase) {
+  GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0_Start_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0_Start_OneOfCase_StartAfter = 3,
+  GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0_Start_OneOfCase_StartAt = 4,
+};
+
+GPB_FINAL @interface GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0 : GPBMessage
+
+/** The epoch we are querying for, if none is set, get current epoch */
+@property(nonatomic, readwrite) uint32_t epoch;
+
+@property(nonatomic, readwrite) BOOL hasEpoch;
+/** Maximum number of evonodes proposed epoch blocks to return */
+@property(nonatomic, readwrite) uint32_t limit;
+
+@property(nonatomic, readwrite) BOOL hasLimit;
+@property(nonatomic, readonly) GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0_Start_OneOfCase startOneOfCase;
+
+/** Start retrieval after this document */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAfter;
+
+/** Start retrieval at this document */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAt;
+
+/** Flag to request a proof as the response */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'start'.
+ **/
+void GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0_ClearStartOneOfCase(GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0 *message);
+
+#pragma mark - GetIdentitiesBalancesRequest
+
+typedef GPB_ENUM(GetIdentitiesBalancesRequest_FieldNumber) {
+  GetIdentitiesBalancesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentitiesBalancesRequest_Version_OneOfCase) {
+  GetIdentitiesBalancesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentitiesBalancesRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentitiesBalancesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetIdentitiesBalancesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentitiesBalancesRequest_ClearVersionOneOfCase(GetIdentitiesBalancesRequest *message);
+
+#pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0
+
+typedef GPB_ENUM(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber) {
+  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_IdsArray = 1,
+  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *idsArray;
+/** The number of items in @c idsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger idsArray_Count;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetIdentitiesBalancesResponse
+
+typedef GPB_ENUM(GetIdentitiesBalancesResponse_FieldNumber) {
+  GetIdentitiesBalancesResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentitiesBalancesResponse_Version_OneOfCase) {
+  GetIdentitiesBalancesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentitiesBalancesResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentitiesBalancesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetIdentitiesBalancesResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentitiesBalancesResponse_ClearVersionOneOfCase(GetIdentitiesBalancesResponse *message);
+
+#pragma mark - GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0
+
+typedef GPB_ENUM(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_FieldNumber) {
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_FieldNumber_IdentitiesBalances = 1,
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_FieldNumber_Proof = 2,
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_Result_OneOfCase) {
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_Result_OneOfCase_IdentitiesBalances = 1,
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances *identitiesBalances;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_ClearResultOneOfCase(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0 *message);
+
+#pragma mark - GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance
+
+typedef GPB_ENUM(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance_FieldNumber) {
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance_FieldNumber_IdentityId = 1,
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance_FieldNumber_Balance = 2,
+};
+
+GPB_FINAL @interface GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
+
+@property(nonatomic, readwrite) uint64_t balance;
+
+@property(nonatomic, readwrite) BOOL hasBalance;
+@end
+
+#pragma mark - GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances
+
+typedef GPB_ENUM(GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances_FieldNumber) {
+  GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance*> *entriesArray;
 /** The number of items in @c entriesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger entriesArray_Count;
 
@@ -4488,6 +4834,131 @@ GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_StateSync : GPBMessag
 @property(nonatomic, readwrite) uint64_t backfilledBlocks;
 
 @property(nonatomic, readwrite) uint64_t backfillBlocksTotal;
+
+@end
+
+#pragma mark - GetCurrentQuorumsInfoRequest
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoRequest_FieldNumber) {
+  GetCurrentQuorumsInfoRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoRequest_Version_OneOfCase) {
+  GetCurrentQuorumsInfoRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetCurrentQuorumsInfoRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetCurrentQuorumsInfoRequest : GPBMessage
+
+@property(nonatomic, readonly) GetCurrentQuorumsInfoRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetCurrentQuorumsInfoRequest_GetCurrentQuorumsInfoRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetCurrentQuorumsInfoRequest_ClearVersionOneOfCase(GetCurrentQuorumsInfoRequest *message);
+
+#pragma mark - GetCurrentQuorumsInfoRequest_GetCurrentQuorumsInfoRequestV0
+
+GPB_FINAL @interface GetCurrentQuorumsInfoRequest_GetCurrentQuorumsInfoRequestV0 : GPBMessage
+
+@end
+
+#pragma mark - GetCurrentQuorumsInfoResponse
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoResponse_FieldNumber) {
+  GetCurrentQuorumsInfoResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoResponse_Version_OneOfCase) {
+  GetCurrentQuorumsInfoResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetCurrentQuorumsInfoResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetCurrentQuorumsInfoResponse : GPBMessage
+
+@property(nonatomic, readonly) GetCurrentQuorumsInfoResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetCurrentQuorumsInfoResponse_ClearVersionOneOfCase(GetCurrentQuorumsInfoResponse *message);
+
+#pragma mark - GetCurrentQuorumsInfoResponse_ValidatorV0
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoResponse_ValidatorV0_FieldNumber) {
+  GetCurrentQuorumsInfoResponse_ValidatorV0_FieldNumber_ProTxHash = 1,
+  GetCurrentQuorumsInfoResponse_ValidatorV0_FieldNumber_NodeIp = 2,
+  GetCurrentQuorumsInfoResponse_ValidatorV0_FieldNumber_IsBanned = 3,
+};
+
+GPB_FINAL @interface GetCurrentQuorumsInfoResponse_ValidatorV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *proTxHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *nodeIp;
+
+@property(nonatomic, readwrite) BOOL isBanned;
+
+@end
+
+#pragma mark - GetCurrentQuorumsInfoResponse_ValidatorSetV0
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoResponse_ValidatorSetV0_FieldNumber) {
+  GetCurrentQuorumsInfoResponse_ValidatorSetV0_FieldNumber_QuorumHash = 1,
+  GetCurrentQuorumsInfoResponse_ValidatorSetV0_FieldNumber_CoreHeight = 2,
+  GetCurrentQuorumsInfoResponse_ValidatorSetV0_FieldNumber_MembersArray = 3,
+  GetCurrentQuorumsInfoResponse_ValidatorSetV0_FieldNumber_ThresholdPublicKey = 4,
+};
+
+GPB_FINAL @interface GetCurrentQuorumsInfoResponse_ValidatorSetV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *quorumHash;
+
+@property(nonatomic, readwrite) uint32_t coreHeight;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetCurrentQuorumsInfoResponse_ValidatorV0*> *membersArray;
+/** The number of items in @c membersArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger membersArray_Count;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *thresholdPublicKey;
+
+@end
+
+#pragma mark - GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0_FieldNumber) {
+  GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0_FieldNumber_QuorumHashesArray = 1,
+  GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0_FieldNumber_CurrentQuorumHash = 2,
+  GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0_FieldNumber_ValidatorSetsArray = 3,
+  GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0_FieldNumber_LastBlockProposer = 4,
+  GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0_FieldNumber_Metadata = 5,
+};
+
+GPB_FINAL @interface GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *quorumHashesArray;
+/** The number of items in @c quorumHashesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger quorumHashesArray_Count;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *currentQuorumHash;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetCurrentQuorumsInfoResponse_ValidatorSetV0*> *validatorSetsArray;
+/** The number of items in @c validatorSetsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger validatorSetsArray_Count;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *lastBlockProposer;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
 
 @end
 

@@ -17,13 +17,15 @@ impl StateTransitionIdentitySigned for MasternodeVoteTransition {
         }
     }
 
-    fn security_level_requirement(&self) -> Vec<SecurityLevel> {
+    fn security_level_requirement(&self, purpose: Purpose) -> Vec<SecurityLevel> {
         match self {
-            MasternodeVoteTransition::V0(transition) => transition.security_level_requirement(),
+            MasternodeVoteTransition::V0(transition) => {
+                transition.security_level_requirement(purpose)
+            }
         }
     }
 
-    fn purpose_requirement(&self) -> Purpose {
+    fn purpose_requirement(&self) -> Vec<Purpose> {
         match self {
             MasternodeVoteTransition::V0(transition) => transition.purpose_requirement(),
         }

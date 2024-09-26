@@ -8,7 +8,7 @@ use crate::platform_types::epoch_info::v0::{
     EpochInfoV0, EpochInfoV0Getters, EpochInfoV0Methods, EpochInfoV0Setters,
 };
 use derive_more::From;
-use dpp::block::epoch::Epoch;
+use dpp::block::epoch::{Epoch, EpochIndex};
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +26,7 @@ pub mod v0;
 /// This means that if we ever want to update EpochInfo, we will need to do so on a release
 /// where the new fields of epoch info are not being used. Then make another version once
 /// that one is activated.
-#[derive(Clone, Serialize, Deserialize, Debug, From, Eq, PartialEq)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, From, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum EpochInfo {
     /// Version 0
@@ -37,6 +37,11 @@ impl EpochInfoV0Methods for EpochInfo {
     fn is_epoch_change_but_not_genesis(&self) -> bool {
         match self {
             EpochInfo::V0(v0) => v0.is_epoch_change_but_not_genesis(),
+        }
+    }
+    fn is_first_block_of_epoch(&self, epoch_index: EpochIndex) -> bool {
+        match self {
+            EpochInfo::V0(v0) => v0.is_first_block_of_epoch(epoch_index),
         }
     }
 }

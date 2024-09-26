@@ -1,6 +1,7 @@
 use crate::drive::RootTree;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
+use crate::drive::votes::paths::{ACTIVE_POLLS_TREE_KEY, CONTESTED_RESOURCE_TREE_KEY};
 use dpp::data_contract::DataContract;
 
 /// The various GroveDB paths underneath a contract
@@ -11,8 +12,15 @@ pub trait DataContractPaths {
     fn documents_path(&self) -> [&[u8]; 3];
     /// The document type path, this is based on the document type name
     fn document_type_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 4];
+    /// The contested document type path, this is based on the document type name
+    fn contested_document_type_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 5];
     /// The document primary key path, this is under the document type
     fn documents_primary_key_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 5];
+    /// The contested document primary key path, this is under the document type
+    fn contested_documents_primary_key_path<'a>(
+        &'a self,
+        document_type_name: &'a str,
+    ) -> [&'a [u8]; 6];
     /// The underlying storage for documents that keep history
     fn documents_with_history_primary_key_path<'a>(
         &'a self,
@@ -46,11 +54,35 @@ impl DataContractPaths for DataContract {
         ]
     }
 
+    fn contested_document_type_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 5] {
+        [
+            Into::<&[u8; 1]>::into(RootTree::Votes), // 1
+            &[CONTESTED_RESOURCE_TREE_KEY as u8],    // 1
+            &[ACTIVE_POLLS_TREE_KEY as u8],          // 1
+            self.id_ref().as_bytes(),                // 32
+            document_type_name.as_bytes(),
+        ]
+    }
+
     fn documents_primary_key_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 5] {
         [
             Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
             self.id_ref().as_bytes(),
             &[1],
+            document_type_name.as_bytes(),
+            &[0],
+        ]
+    }
+
+    fn contested_documents_primary_key_path<'a>(
+        &'a self,
+        document_type_name: &'a str,
+    ) -> [&'a [u8]; 6] {
+        [
+            Into::<&[u8; 1]>::into(RootTree::Votes), // 1
+            &[CONTESTED_RESOURCE_TREE_KEY as u8],    // 1
+            &[ACTIVE_POLLS_TREE_KEY as u8],          // 1
+            self.id_ref().as_bytes(),                // 32
             document_type_name.as_bytes(),
             &[0],
         ]

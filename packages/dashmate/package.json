@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "1.2.0",
+  "version": "1.4.0-dev.1",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
@@ -159,6 +159,9 @@
       },
       "wallet": {
         "description": "Wallet related commands"
+      },
+      "doctor": {
+        "description": "Node diagnostics and reporting"
       }
     },
     "topicSeparator": " "

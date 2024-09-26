@@ -27,6 +27,10 @@ use dpp::{
 use drive::grovedb::Element;
 use std::collections::{BTreeMap, BTreeSet};
 
+use dpp::block::block_info::BlockInfo;
+use dpp::core_types::validator_set::ValidatorSet;
+use dpp::dashcore::QuorumHash;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::grovedb::query_result_type::Path;
 #[cfg(feature = "mocks")]
 use {
@@ -52,6 +56,22 @@ use {
 /// * `O`: The type of the objects in the map.
 pub type RetrievedObjects<K, O> = BTreeMap<K, Option<O>>;
 
+/// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
+///
+/// This type is typically returned by functions that operate on multiple objects, such as fetching multiple objects
+/// from a server using [`FetchMany`](dash_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
+/// using [`FromProof`](crate::FromProof).
+///
+/// Each key in the `RetrievedObjects` corresponds to an object of generic type `O`.
+/// If a value is found for a given key, the value is `value`.
+/// If no value is found for a given key, the value is `0`.
+///
+/// # Generic Type Parameters
+///
+/// * `K`: The type of the keys in the map.
+/// * `I`: The type of the integer in the map.
+pub type RetrievedIntegerValue<K, I> = BTreeMap<K, I>;
+
 /// History of a data contract.
 ///
 /// Contains a map of data contract revisions to data contracts.
@@ -73,6 +93,8 @@ pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
     platform_serialize(unversioned)
 )]
 pub struct Contenders {
+    /// The winner if the contest is finished
+    pub winner: Option<(ContestedDocumentVotePollWinnerInfo, BlockInfo)>,
     /// Contenders indexed by their identity IDs.
     pub contenders: BTreeMap<Identifier, ContenderWithSerializedDocument>,
     /// Tally of abstain votes.
@@ -107,6 +129,7 @@ impl FromIterator<(Identifier, Option<ContenderWithSerializedDocument>)> for Con
         iter: T,
     ) -> Self {
         Self {
+            winner: None,
             contenders: BTreeMap::from_iter(
                 iter.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))),
             ),
@@ -304,6 +327,74 @@ pub struct ContestedVote(ContestedDocumentResourceVotePoll, ResourceVoteChoice);
 /// Votes casted by some identity.
 pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
 
+/// Represents the current state of quorums in the platform.
+///
+/// This struct holds various information related to the current quorums,
+/// including the list of quorum hashes, the current active quorum hash,
+/// and details about the validators and their statuses.
+///
+/// # Fields
+///
+/// - `quorum_hashes`: A list of 32-byte hashes representing the active quorums.
+/// - `current_quorum_hash`: A 32-byte hash identifying the currently active quorum.
+///   This is the quorum that is currently responsible for platform operations.
+/// - `validator_sets`: A collection of [`ValidatorSet`] structs, each representing
+///   a set of validators for different quorums. This provides detailed information
+///   about the members of each quorum.
+/// - `last_block_proposer`: A vector of bytes representing the identity of the last
+///   block proposer. This is typically the ProTxHash of the masternode that proposed
+///   the most recent platform block.
+/// - `last_platform_block_height`: The height of the most recent platform block.
+///   This indicates the latest block height at the platform level, which may differ
+///   from the core blockchain height.
+/// - `last_core_block_height`: The height of the most recent core blockchain block
+///   associated with the platform. This is the height of the blockchain where the
+///   platform block was anchored.
+///
+/// # Derives
+///
+/// - `Debug`: Provides a debug representation of the `CurrentQuorumsInfo` struct, useful
+///   for logging and debugging purposes.
+/// - `Clone`: Allows the `CurrentQuorumsInfo` struct to be cloned, creating a deep copy
+///   of its contents.
+///
+/// # Conditional Derives
+///
+/// When the `mocks` feature is enabled, the following derives and attributes are applied:
+///
+/// - `Encode`: Allows the struct to be serialized into a binary format using the `bincode` crate.
+/// - `Decode`: Allows the struct to be deserialized from a binary format using the `bincode` crate.
+/// - `PlatformSerialize`: Enables serialization of the struct using the platform-specific
+///   serialization format.
+/// - `PlatformDeserialize`: Enables deserialization of the struct using the platform-specific
+///   deserialization format.
+/// - `platform_serialize(unversioned)`: Specifies that the struct should be serialized
+///   without including a version field in the serialized data.
+///
+/// This structure is typically used in scenarios where the state of the current quorums
+/// needs to be accessed, for example, when validating or proposing new blocks, or when
+/// determining the active set of validators.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct CurrentQuorumsInfo {
+    /// A list of 32-byte hashes representing the active quorums.
+    pub quorum_hashes: Vec<[u8; 32]>,
+    /// A 32-byte hash identifying the currently active quorum.
+    pub current_quorum_hash: [u8; 32],
+    /// A collection of [`ValidatorSet`] structs, each representing a set of validators for different quorums.
+    pub validator_sets: Vec<ValidatorSet>,
+    /// A vector of bytes representing the identity of the last block proposer.
+    pub last_block_proposer: [u8; 32],
+    /// The height of the most recent platform block.
+    pub last_platform_block_height: u64,
+    /// The height of the most recent core blockchain block associated with the platform.
+    pub last_core_block_height: u32,
+}
+
 /// Prefunded specialized balance.
 #[derive(Debug, derive_more::From, Copy, Clone)]
 #[cfg_attr(
@@ -407,6 +498,9 @@ pub type IdentityPublicKeys = RetrievedObjects<KeyID, IdentityPublicKey>;
 /// Collection of documents.
 pub type Documents = RetrievedObjects<Identifier, Document>;
 
+/// Collection of balances.
+pub type IdentityBalances = RetrievedObjects<Identifier, Credits>;
+
 /// Collection of epoch information
 pub type ExtendedEpochInfos = RetrievedObjects<EpochIndex, ExtendedEpochInfo>;
 
@@ -467,3 +561,56 @@ impl PlatformVersionedDecode for MasternodeProtocolVote {
 /// Information about protocol version voted by each node, returned by [ProtocolVersion::fetch_many()].
 /// Indexed by [ProTxHash] of nodes.
 pub type MasternodeProtocolVotes = RetrievedObjects<ProTxHash, MasternodeProtocolVote>;
+
+/// Proposer block counts
+///
+/// Mapping between proposers and the blocks they might have proposed
+#[derive(Debug, Default)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProposerBlockCounts(pub RetrievedIntegerValue<Identifier, u64>);
+
+impl FromIterator<(ProTxHash, Option<ProposerBlockCountByRange>)> for ProposerBlockCounts {
+    fn from_iter<I: IntoIterator<Item = (ProTxHash, Option<ProposerBlockCountByRange>)>>(
+        iter: I,
+    ) -> Self {
+        let map = iter
+            .into_iter()
+            .map(|(pro_tx_hash, proposer_block_count_by_range)| {
+                let block_count = proposer_block_count_by_range
+                    .map_or(0, |proposer_block_count| proposer_block_count.0);
+                let identifier = Identifier::from(pro_tx_hash.to_byte_array()); // Adjust this conversion logic as needed
+                (identifier, block_count)
+            })
+            .collect::<BTreeMap<Identifier, u64>>();
+
+        ProposerBlockCounts(map)
+    }
+}
+
+impl FromIterator<(ProTxHash, Option<ProposerBlockCountById>)> for ProposerBlockCounts {
+    fn from_iter<I: IntoIterator<Item = (ProTxHash, Option<ProposerBlockCountById>)>>(
+        iter: I,
+    ) -> Self {
+        let map = iter
+            .into_iter()
+            .map(|(pro_tx_hash, proposer_block_count_by_range)| {
+                let block_count = proposer_block_count_by_range
+                    .map_or(0, |proposer_block_count| proposer_block_count.0);
+                let identifier = Identifier::from(pro_tx_hash.to_byte_array()); // Adjust this conversion logic as needed
+                (identifier, block_count)
+            })
+            .collect::<BTreeMap<Identifier, u64>>();
+
+        ProposerBlockCounts(map)
+    }
+}
+
+/// A block count struct
+#[derive(Debug)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProposerBlockCountByRange(pub u64);
+
+/// A block count struct
+#[derive(Debug)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct ProposerBlockCountById(pub u64);

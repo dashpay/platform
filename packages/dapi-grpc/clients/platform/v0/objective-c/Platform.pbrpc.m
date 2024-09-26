@@ -210,6 +210,26 @@
              responseClass:[GetIdentityBalanceResponse class]];
 }
 
+#pragma mark getIdentitiesBalances(GetIdentitiesBalancesRequest) returns (GetIdentitiesBalancesResponse)
+
+- (void)getIdentitiesBalancesWithRequest:(GetIdentitiesBalancesRequest *)request handler:(void(^)(GetIdentitiesBalancesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentitiesBalancesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetIdentitiesBalancesWithRequest:(GetIdentitiesBalancesRequest *)request handler:(void(^)(GetIdentitiesBalancesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentitiesBalances"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentitiesBalancesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getIdentitiesBalancesWithMessage:(GetIdentitiesBalancesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentitiesBalances"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentitiesBalancesResponse class]];
+}
+
 #pragma mark getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest) returns (GetIdentityBalanceAndRevisionResponse)
 
 - (void)getIdentityBalanceAndRevisionWithRequest:(GetIdentityBalanceAndRevisionRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler{
@@ -228,6 +248,46 @@
            responseHandler:handler
                callOptions:callOptions
              responseClass:[GetIdentityBalanceAndRevisionResponse class]];
+}
+
+#pragma mark getEvonodesProposedEpochBlocksByIds(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse)
+
+- (void)getEvonodesProposedEpochBlocksByIdsWithRequest:(GetEvonodesProposedEpochBlocksByIdsRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetEvonodesProposedEpochBlocksByIdsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetEvonodesProposedEpochBlocksByIdsWithRequest:(GetEvonodesProposedEpochBlocksByIdsRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getEvonodesProposedEpochBlocksByIds"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetEvonodesProposedEpochBlocksResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getEvonodesProposedEpochBlocksByIdsWithMessage:(GetEvonodesProposedEpochBlocksByIdsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getEvonodesProposedEpochBlocksByIds"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetEvonodesProposedEpochBlocksResponse class]];
+}
+
+#pragma mark getEvonodesProposedEpochBlocksByRange(GetEvonodesProposedEpochBlocksByRangeRequest) returns (GetEvonodesProposedEpochBlocksResponse)
+
+- (void)getEvonodesProposedEpochBlocksByRangeWithRequest:(GetEvonodesProposedEpochBlocksByRangeRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetEvonodesProposedEpochBlocksByRangeWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetEvonodesProposedEpochBlocksByRangeWithRequest:(GetEvonodesProposedEpochBlocksByRangeRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getEvonodesProposedEpochBlocksByRange"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetEvonodesProposedEpochBlocksResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getEvonodesProposedEpochBlocksByRangeWithMessage:(GetEvonodesProposedEpochBlocksByRangeRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getEvonodesProposedEpochBlocksByRange"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetEvonodesProposedEpochBlocksResponse class]];
 }
 
 #pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
@@ -693,6 +753,26 @@
            responseHandler:handler
                callOptions:callOptions
              responseClass:[GetStatusResponse class]];
+}
+
+#pragma mark getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse)
+
+- (void)getCurrentQuorumsInfoWithRequest:(GetCurrentQuorumsInfoRequest *)request handler:(void(^)(GetCurrentQuorumsInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetCurrentQuorumsInfoWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetCurrentQuorumsInfoWithRequest:(GetCurrentQuorumsInfoRequest *)request handler:(void(^)(GetCurrentQuorumsInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getCurrentQuorumsInfo"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetCurrentQuorumsInfoResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getCurrentQuorumsInfoWithMessage:(GetCurrentQuorumsInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getCurrentQuorumsInfo"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetCurrentQuorumsInfoResponse class]];
 }
 
 @end

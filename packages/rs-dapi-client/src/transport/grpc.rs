@@ -209,6 +209,14 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    platform_proto::GetIdentitiesBalancesRequest,
+    platform_proto::GetIdentitiesBalancesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identities_balances
+);
+
+impl_transport_request_grpc!(
     platform_proto::GetIdentityNonceRequest,
     platform_proto::GetIdentityNonceResponse,
     PlatformGrpcClient,
@@ -323,6 +331,24 @@ impl_transport_request_grpc!(
     get_vote_polls_by_end_date
 );
 
+// rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetEvonodesProposedEpochBlocksByIdsRequest,
+    platform_proto::GetEvonodesProposedEpochBlocksResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_evonodes_proposed_epoch_blocks_by_ids
+);
+
+// rpc GetEvonodesProposedEpochBlocksByRangeRequest(GetEvonodesProposedEpochBlocksByRangeRequest) returns (GetEvonodesProposedEpochBlocksResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetEvonodesProposedEpochBlocksByRangeRequest,
+    platform_proto::GetEvonodesProposedEpochBlocksResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_evonodes_proposed_epoch_blocks_by_range
+);
+
 // rpc getPrefundedSpecializedBalance(GetPrefundedSpecializedBalanceRequest) returns (GetPrefundedSpecializedBalanceResponse);
 impl_transport_request_grpc!(
     platform_proto::GetPrefundedSpecializedBalanceRequest,
@@ -348,6 +374,15 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_total_credits_in_platform
+);
+
+// rpc getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetCurrentQuorumsInfoRequest,
+    platform_proto::GetCurrentQuorumsInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_current_quorums_info
 );
 
 // Link to each core gRPC request what client and method to use:

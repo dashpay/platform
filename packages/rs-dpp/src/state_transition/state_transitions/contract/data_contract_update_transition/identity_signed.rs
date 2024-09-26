@@ -1,4 +1,4 @@
-use crate::identity::{KeyID, SecurityLevel};
+use crate::identity::{KeyID, Purpose, SecurityLevel};
 
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::StateTransitionIdentitySigned;
@@ -18,9 +18,11 @@ impl StateTransitionIdentitySigned for DataContractUpdateTransition {
         }
     }
 
-    fn security_level_requirement(&self) -> Vec<SecurityLevel> {
+    fn security_level_requirement(&self, purpose: Purpose) -> Vec<SecurityLevel> {
         match self {
-            DataContractUpdateTransition::V0(transition) => transition.security_level_requirement(),
+            DataContractUpdateTransition::V0(transition) => {
+                transition.security_level_requirement(purpose)
+            }
         }
     }
 }

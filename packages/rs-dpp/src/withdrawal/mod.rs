@@ -1,3 +1,6 @@
+#[cfg(feature = "system_contracts")]
+mod document_try_into_asset_unlock_base_transaction_info;
+
 use bincode::{Decode, Encode};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
@@ -11,3 +14,9 @@ pub enum Pooling {
     IfAvailable = 1,
     Standard = 2,
 }
+
+/// Transaction index type
+pub type WithdrawalTransactionIndex = u64;
+
+/// Simple type alias for withdrawal transaction with it's index
+pub type WithdrawalTransactionIndexAndBytes = (WithdrawalTransactionIndex, Vec<u8>);

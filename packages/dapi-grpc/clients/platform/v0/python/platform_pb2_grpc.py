@@ -49,10 +49,25 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetIdentityBalanceRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityBalanceResponse.FromString,
                 )
+        self.getIdentitiesBalances = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getIdentitiesBalances',
+                request_serializer=platform__pb2.GetIdentitiesBalancesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentitiesBalancesResponse.FromString,
+                )
         self.getIdentityBalanceAndRevision = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityBalanceAndRevision',
                 request_serializer=platform__pb2.GetIdentityBalanceAndRevisionRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityBalanceAndRevisionResponse.FromString,
+                )
+        self.getEvonodesProposedEpochBlocksByIds = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getEvonodesProposedEpochBlocksByIds',
+                request_serializer=platform__pb2.GetEvonodesProposedEpochBlocksByIdsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetEvonodesProposedEpochBlocksResponse.FromString,
+                )
+        self.getEvonodesProposedEpochBlocksByRange = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getEvonodesProposedEpochBlocksByRange',
+                request_serializer=platform__pb2.GetEvonodesProposedEpochBlocksByRangeRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetEvonodesProposedEpochBlocksResponse.FromString,
                 )
         self.getProofs = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getProofs',
@@ -154,6 +169,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetStatusRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetStatusResponse.FromString,
                 )
+        self.getCurrentQuorumsInfo = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getCurrentQuorumsInfo',
+                request_serializer=platform__pb2.GetCurrentQuorumsInfoRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetCurrentQuorumsInfoResponse.FromString,
+                )
 
 
 class PlatformServicer(object):
@@ -201,7 +221,25 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getIdentitiesBalances(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getIdentityBalanceAndRevision(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getEvonodesProposedEpochBlocksByIds(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getEvonodesProposedEpochBlocksByRange(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -332,6 +370,12 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getCurrentQuorumsInfo(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -370,10 +414,25 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetIdentityBalanceRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityBalanceResponse.SerializeToString,
             ),
+            'getIdentitiesBalances': grpc.unary_unary_rpc_method_handler(
+                    servicer.getIdentitiesBalances,
+                    request_deserializer=platform__pb2.GetIdentitiesBalancesRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentitiesBalancesResponse.SerializeToString,
+            ),
             'getIdentityBalanceAndRevision': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityBalanceAndRevision,
                     request_deserializer=platform__pb2.GetIdentityBalanceAndRevisionRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityBalanceAndRevisionResponse.SerializeToString,
+            ),
+            'getEvonodesProposedEpochBlocksByIds': grpc.unary_unary_rpc_method_handler(
+                    servicer.getEvonodesProposedEpochBlocksByIds,
+                    request_deserializer=platform__pb2.GetEvonodesProposedEpochBlocksByIdsRequest.FromString,
+                    response_serializer=platform__pb2.GetEvonodesProposedEpochBlocksResponse.SerializeToString,
+            ),
+            'getEvonodesProposedEpochBlocksByRange': grpc.unary_unary_rpc_method_handler(
+                    servicer.getEvonodesProposedEpochBlocksByRange,
+                    request_deserializer=platform__pb2.GetEvonodesProposedEpochBlocksByRangeRequest.FromString,
+                    response_serializer=platform__pb2.GetEvonodesProposedEpochBlocksResponse.SerializeToString,
             ),
             'getProofs': grpc.unary_unary_rpc_method_handler(
                     servicer.getProofs,
@@ -474,6 +533,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getStatus,
                     request_deserializer=platform__pb2.GetStatusRequest.FromString,
                     response_serializer=platform__pb2.GetStatusResponse.SerializeToString,
+            ),
+            'getCurrentQuorumsInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.getCurrentQuorumsInfo,
+                    request_deserializer=platform__pb2.GetCurrentQuorumsInfoRequest.FromString,
+                    response_serializer=platform__pb2.GetCurrentQuorumsInfoResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -605,6 +669,23 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
+    def getIdentitiesBalances(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentitiesBalances',
+            platform__pb2.GetIdentitiesBalancesRequest.SerializeToString,
+            platform__pb2.GetIdentitiesBalancesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
     def getIdentityBalanceAndRevision(request,
             target,
             options=(),
@@ -618,6 +699,40 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityBalanceAndRevision',
             platform__pb2.GetIdentityBalanceAndRevisionRequest.SerializeToString,
             platform__pb2.GetIdentityBalanceAndRevisionResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getEvonodesProposedEpochBlocksByIds(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getEvonodesProposedEpochBlocksByIds',
+            platform__pb2.GetEvonodesProposedEpochBlocksByIdsRequest.SerializeToString,
+            platform__pb2.GetEvonodesProposedEpochBlocksResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getEvonodesProposedEpochBlocksByRange(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getEvonodesProposedEpochBlocksByRange',
+            platform__pb2.GetEvonodesProposedEpochBlocksByRangeRequest.SerializeToString,
+            platform__pb2.GetEvonodesProposedEpochBlocksResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -958,5 +1073,22 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getStatus',
             platform__pb2.GetStatusRequest.SerializeToString,
             platform__pb2.GetStatusResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getCurrentQuorumsInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getCurrentQuorumsInfo',
+            platform__pb2.GetCurrentQuorumsInfoRequest.SerializeToString,
+            platform__pb2.GetCurrentQuorumsInfoResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

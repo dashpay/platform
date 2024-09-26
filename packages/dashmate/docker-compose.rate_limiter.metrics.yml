@@ -1,11 +1,19 @@
 ---
 
+x-default-logging: &default-logging
+  driver: local
+  options:
+    max-size: "500m"
+    max-file: "5"
+    compress: "true"
+
 services:
   gateway_rate_limiter_metrics:
     image: ${PLATFORM_GATEWAY_RATE_LIMITER_METRICS_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "Gateway rate limiter metrics exporter"
     restart: unless-stopped
+    logging: *default-logging
     entrypoint: /bin/statsd_exporter
     command:
       - "--statsd.mapping-config=/etc/statsd-exporter/config.yaml"

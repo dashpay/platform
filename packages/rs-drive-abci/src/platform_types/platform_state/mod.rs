@@ -25,6 +25,7 @@ use indexmap::IndexMap;
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
+use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::util::hash::hash_double;
@@ -280,6 +281,12 @@ impl PlatformStateV0Methods for PlatformState {
     fn hpmn_list_len(&self) -> usize {
         match self {
             PlatformState::V0(v0) => v0.hpmn_list_len(),
+        }
+    }
+
+    fn hpmn_active_list_len(&self) -> usize {
+        match self {
+            PlatformState::V0(v0) => v0.hpmn_active_list_len(),
         }
     }
 
