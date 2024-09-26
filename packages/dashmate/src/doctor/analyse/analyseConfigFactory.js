@@ -134,6 +134,10 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
                 description: chalk`ZeroSSL certificate is not valid.`,
                 solution: chalk`Please run {bold.cyanBright dashmate ssl zerossl obtain} to get a new one.`,
               },
+              [ERRORS.ZERO_SSL_API_ERROR]: {
+                description: ssl?.data?.error?.message,
+                solution: chalk`Please contact ZeroSSL support if needed.`,
+              },
             }[ssl.error] ?? {};
 
             if (description) {
