@@ -53,6 +53,7 @@ pub mod signing;
 pub mod system_data_contracts;
 pub mod voting;
 
+pub mod core_types;
 pub mod withdrawal;
 
 pub use async_trait;

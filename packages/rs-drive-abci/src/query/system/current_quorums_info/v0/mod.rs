@@ -31,6 +31,7 @@ impl<C> Platform<C> {
                     .map(|(pro_tx_hash, validator)| ValidatorV0 {
                         pro_tx_hash: pro_tx_hash.as_byte_array().to_vec(),
                         node_ip: validator.node_ip.clone(),
+                        is_banned: validator.is_banned,
                     })
                     .collect();
 
@@ -58,8 +59,7 @@ impl<C> Platform<C> {
             validator_sets,
             last_block_proposer: last_committed_block_proposer_pro_tx_hash.to_vec(),
             current_quorum_hash: current_quorum_index.as_byte_array().to_vec(),
-            last_platform_block_height: platform_state.last_committed_block_height(),
-            last_core_block_height: platform_state.last_committed_core_height(),
+            metadata: Some(self.response_metadata_v0(platform_state)),
         };
 
         // Return the response wrapped in a QueryValidationResult

@@ -14,6 +14,7 @@ pub use proof::{FromProof, Length};
 pub use provider::MockContextProvider;
 pub use provider::{ContextProvider, DataContractProvider};
 pub mod from_request;
+pub mod unproved;
 
 // Needed for #[derive(PlatformSerialize, PlatformDeserialize)]
 #[cfg(feature = "mocks")]
