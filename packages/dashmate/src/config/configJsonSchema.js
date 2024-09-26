@@ -436,7 +436,7 @@ export default {
                 includeOnly: {
                   type: 'array',
                   uniqueItems: true,
-                  description: 'Log all categories if empty or only specified otherwise.',
+                  description: 'Log all categories if empty. Otherwise, log only the specified categories.',
                   items: {
                     type: 'string',
                     enum: ['net', 'tor', 'mempool', 'http', 'bench', 'zmq', 'walletdb', 'rpc', 'estimatefee',
