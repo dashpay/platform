@@ -60,7 +60,7 @@ class BlockchainListener extends EventEmitter {
     this.wsClient.on(NEW_BLOCK_QUERY, (message) => {
       this.processLogger.trace('Received new platform block');
 
-      this.emit(EVENTS.NEW_BLOCK, message)
+      this.emit(EVENTS.NEW_BLOCK, message);
     });
 
     this.wsClient.on('connect', () => {
@@ -73,8 +73,8 @@ class BlockchainListener extends EventEmitter {
   }
 
   #subscribe() {
-    this.wsClient.subscribe(NEW_BLOCK_QUERY);
     this.wsClient.subscribe(TX_QUERY);
+    this.wsClient.subscribe(NEW_BLOCK_QUERY);
     this.processLogger.debug('Subscribed to platform blockchain events');
   }
 }
