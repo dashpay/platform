@@ -82,6 +82,18 @@ export default {
         const req = https.request(options, (res) => {
           let data = '';
 
+          // Check if the status code is 200
+          if (res.statusCode !== 200) {
+            if (process.env.DEBUG) {
+              // eslint-disable-next-line no-console
+              console.warn(`Port check request failed with status code ${res.statusCode}`);
+            }
+            // Consume response data to free up memory
+            res.resume();
+            resolve(PortStateEnum.ERROR);
+            return;
+          }
+
           // Optionally set the encoding to receive strings directly
           res.setEncoding('utf8');
 
