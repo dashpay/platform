@@ -1109,6 +1109,39 @@ $root.org = (function() {
                          * @variation 2
                          */
 
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getCurrentQuorumsInfo}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getCurrentQuorumsInfoCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse} [response] GetCurrentQuorumsInfoResponse
+                         */
+
+                        /**
+                         * Calls getCurrentQuorumsInfo.
+                         * @function getCurrentQuorumsInfo
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoRequest} request GetCurrentQuorumsInfoRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getCurrentQuorumsInfoCallback} callback Node-style callback called with the error, if any, and GetCurrentQuorumsInfoResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getCurrentQuorumsInfo = function getCurrentQuorumsInfo(request, callback) {
+                            return this.rpcCall(getCurrentQuorumsInfo, $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest, $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse, request, callback);
+                        }, "name", { value: "getCurrentQuorumsInfo" });
+
+                        /**
+                         * Calls getCurrentQuorumsInfo.
+                         * @function getCurrentQuorumsInfo
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoRequest} request GetCurrentQuorumsInfoRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse>} Promise
+                         * @variation 2
+                         */
+
                         return Platform;
                     })();
 
@@ -45099,6 +45132,1464 @@ $root.org = (function() {
                         })();
 
                         return GetStatusResponse;
+                    })();
+
+                    v0.GetCurrentQuorumsInfoRequest = (function() {
+
+                        /**
+                         * Properties of a GetCurrentQuorumsInfoRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetCurrentQuorumsInfoRequest
+                         * @property {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.IGetCurrentQuorumsInfoRequestV0|null} [v0] GetCurrentQuorumsInfoRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetCurrentQuorumsInfoRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetCurrentQuorumsInfoRequest.
+                         * @implements IGetCurrentQuorumsInfoRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoRequest=} [properties] Properties to set
+                         */
+                        function GetCurrentQuorumsInfoRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetCurrentQuorumsInfoRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.IGetCurrentQuorumsInfoRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @instance
+                         */
+                        GetCurrentQuorumsInfoRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetCurrentQuorumsInfoRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetCurrentQuorumsInfoRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetCurrentQuorumsInfoRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest} GetCurrentQuorumsInfoRequest instance
+                         */
+                        GetCurrentQuorumsInfoRequest.create = function create(properties) {
+                            return new GetCurrentQuorumsInfoRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetCurrentQuorumsInfoRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoRequest} message GetCurrentQuorumsInfoRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetCurrentQuorumsInfoRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetCurrentQuorumsInfoRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoRequest} message GetCurrentQuorumsInfoRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetCurrentQuorumsInfoRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetCurrentQuorumsInfoRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest} GetCurrentQuorumsInfoRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetCurrentQuorumsInfoRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetCurrentQuorumsInfoRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest} GetCurrentQuorumsInfoRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetCurrentQuorumsInfoRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetCurrentQuorumsInfoRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetCurrentQuorumsInfoRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetCurrentQuorumsInfoRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest} GetCurrentQuorumsInfoRequest
+                         */
+                        GetCurrentQuorumsInfoRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetCurrentQuorumsInfoRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest} message GetCurrentQuorumsInfoRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetCurrentQuorumsInfoRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetCurrentQuorumsInfoRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetCurrentQuorumsInfoRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetCurrentQuorumsInfoRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                             * @interface IGetCurrentQuorumsInfoRequestV0
+                             */
+
+                            /**
+                             * Constructs a new GetCurrentQuorumsInfoRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                             * @classdesc Represents a GetCurrentQuorumsInfoRequestV0.
+                             * @implements IGetCurrentQuorumsInfoRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.IGetCurrentQuorumsInfoRequestV0=} [properties] Properties to set
+                             */
+                            function GetCurrentQuorumsInfoRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * Creates a new GetCurrentQuorumsInfoRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.IGetCurrentQuorumsInfoRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0} GetCurrentQuorumsInfoRequestV0 instance
+                             */
+                            GetCurrentQuorumsInfoRequestV0.create = function create(properties) {
+                                return new GetCurrentQuorumsInfoRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetCurrentQuorumsInfoRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.IGetCurrentQuorumsInfoRequestV0} message GetCurrentQuorumsInfoRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetCurrentQuorumsInfoRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetCurrentQuorumsInfoRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.IGetCurrentQuorumsInfoRequestV0} message GetCurrentQuorumsInfoRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetCurrentQuorumsInfoRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetCurrentQuorumsInfoRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0} GetCurrentQuorumsInfoRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetCurrentQuorumsInfoRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetCurrentQuorumsInfoRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0} GetCurrentQuorumsInfoRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetCurrentQuorumsInfoRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetCurrentQuorumsInfoRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetCurrentQuorumsInfoRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetCurrentQuorumsInfoRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0} GetCurrentQuorumsInfoRequestV0
+                             */
+                            GetCurrentQuorumsInfoRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0)
+                                    return object;
+                                return new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0();
+                            };
+
+                            /**
+                             * Creates a plain object from a GetCurrentQuorumsInfoRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0} message GetCurrentQuorumsInfoRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetCurrentQuorumsInfoRequestV0.toObject = function toObject() {
+                                return {};
+                            };
+
+                            /**
+                             * Converts this GetCurrentQuorumsInfoRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetCurrentQuorumsInfoRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetCurrentQuorumsInfoRequestV0;
+                        })();
+
+                        return GetCurrentQuorumsInfoRequest;
+                    })();
+
+                    v0.GetCurrentQuorumsInfoResponse = (function() {
+
+                        /**
+                         * Properties of a GetCurrentQuorumsInfoResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetCurrentQuorumsInfoResponse
+                         * @property {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IGetCurrentQuorumsInfoResponseV0|null} [v0] GetCurrentQuorumsInfoResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetCurrentQuorumsInfoResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetCurrentQuorumsInfoResponse.
+                         * @implements IGetCurrentQuorumsInfoResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoResponse=} [properties] Properties to set
+                         */
+                        function GetCurrentQuorumsInfoResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetCurrentQuorumsInfoResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IGetCurrentQuorumsInfoResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @instance
+                         */
+                        GetCurrentQuorumsInfoResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetCurrentQuorumsInfoResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetCurrentQuorumsInfoResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetCurrentQuorumsInfoResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse} GetCurrentQuorumsInfoResponse instance
+                         */
+                        GetCurrentQuorumsInfoResponse.create = function create(properties) {
+                            return new GetCurrentQuorumsInfoResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetCurrentQuorumsInfoResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoResponse} message GetCurrentQuorumsInfoResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetCurrentQuorumsInfoResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetCurrentQuorumsInfoResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoResponse} message GetCurrentQuorumsInfoResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetCurrentQuorumsInfoResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetCurrentQuorumsInfoResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse} GetCurrentQuorumsInfoResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetCurrentQuorumsInfoResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetCurrentQuorumsInfoResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse} GetCurrentQuorumsInfoResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetCurrentQuorumsInfoResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetCurrentQuorumsInfoResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetCurrentQuorumsInfoResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetCurrentQuorumsInfoResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse} GetCurrentQuorumsInfoResponse
+                         */
+                        GetCurrentQuorumsInfoResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetCurrentQuorumsInfoResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse} message GetCurrentQuorumsInfoResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetCurrentQuorumsInfoResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetCurrentQuorumsInfoResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetCurrentQuorumsInfoResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetCurrentQuorumsInfoResponse.ValidatorV0 = (function() {
+
+                            /**
+                             * Properties of a ValidatorV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                             * @interface IValidatorV0
+                             * @property {Uint8Array|null} [proTxHash] ValidatorV0 proTxHash
+                             * @property {string|null} [nodeIp] ValidatorV0 nodeIp
+                             * @property {boolean|null} [isBanned] ValidatorV0 isBanned
+                             */
+
+                            /**
+                             * Constructs a new ValidatorV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                             * @classdesc Represents a ValidatorV0.
+                             * @implements IValidatorV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorV0=} [properties] Properties to set
+                             */
+                            function ValidatorV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * ValidatorV0 proTxHash.
+                             * @member {Uint8Array} proTxHash
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @instance
+                             */
+                            ValidatorV0.prototype.proTxHash = $util.newBuffer([]);
+
+                            /**
+                             * ValidatorV0 nodeIp.
+                             * @member {string} nodeIp
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @instance
+                             */
+                            ValidatorV0.prototype.nodeIp = "";
+
+                            /**
+                             * ValidatorV0 isBanned.
+                             * @member {boolean} isBanned
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @instance
+                             */
+                            ValidatorV0.prototype.isBanned = false;
+
+                            /**
+                             * Creates a new ValidatorV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0} ValidatorV0 instance
+                             */
+                            ValidatorV0.create = function create(properties) {
+                                return new ValidatorV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified ValidatorV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorV0} message ValidatorV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ValidatorV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.proTxHash != null && Object.hasOwnProperty.call(message, "proTxHash"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.proTxHash);
+                                if (message.nodeIp != null && Object.hasOwnProperty.call(message, "nodeIp"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.nodeIp);
+                                if (message.isBanned != null && Object.hasOwnProperty.call(message, "isBanned"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.isBanned);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified ValidatorV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorV0} message ValidatorV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ValidatorV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a ValidatorV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0} ValidatorV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ValidatorV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.proTxHash = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.nodeIp = reader.string();
+                                        break;
+                                    case 3:
+                                        message.isBanned = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a ValidatorV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0} ValidatorV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ValidatorV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a ValidatorV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            ValidatorV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                    if (!(message.proTxHash && typeof message.proTxHash.length === "number" || $util.isString(message.proTxHash)))
+                                        return "proTxHash: buffer expected";
+                                if (message.nodeIp != null && message.hasOwnProperty("nodeIp"))
+                                    if (!$util.isString(message.nodeIp))
+                                        return "nodeIp: string expected";
+                                if (message.isBanned != null && message.hasOwnProperty("isBanned"))
+                                    if (typeof message.isBanned !== "boolean")
+                                        return "isBanned: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a ValidatorV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0} ValidatorV0
+                             */
+                            ValidatorV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0();
+                                if (object.proTxHash != null)
+                                    if (typeof object.proTxHash === "string")
+                                        $util.base64.decode(object.proTxHash, message.proTxHash = $util.newBuffer($util.base64.length(object.proTxHash)), 0);
+                                    else if (object.proTxHash.length >= 0)
+                                        message.proTxHash = object.proTxHash;
+                                if (object.nodeIp != null)
+                                    message.nodeIp = String(object.nodeIp);
+                                if (object.isBanned != null)
+                                    message.isBanned = Boolean(object.isBanned);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a ValidatorV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0} message ValidatorV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            ValidatorV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.proTxHash = "";
+                                    else {
+                                        object.proTxHash = [];
+                                        if (options.bytes !== Array)
+                                            object.proTxHash = $util.newBuffer(object.proTxHash);
+                                    }
+                                    object.nodeIp = "";
+                                    object.isBanned = false;
+                                }
+                                if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                    object.proTxHash = options.bytes === String ? $util.base64.encode(message.proTxHash, 0, message.proTxHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.proTxHash) : message.proTxHash;
+                                if (message.nodeIp != null && message.hasOwnProperty("nodeIp"))
+                                    object.nodeIp = message.nodeIp;
+                                if (message.isBanned != null && message.hasOwnProperty("isBanned"))
+                                    object.isBanned = message.isBanned;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this ValidatorV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            ValidatorV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return ValidatorV0;
+                        })();
+
+                        GetCurrentQuorumsInfoResponse.ValidatorSetV0 = (function() {
+
+                            /**
+                             * Properties of a ValidatorSetV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                             * @interface IValidatorSetV0
+                             * @property {Uint8Array|null} [quorumHash] ValidatorSetV0 quorumHash
+                             * @property {number|null} [coreHeight] ValidatorSetV0 coreHeight
+                             * @property {Array.<org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorV0>|null} [members] ValidatorSetV0 members
+                             * @property {Uint8Array|null} [thresholdPublicKey] ValidatorSetV0 thresholdPublicKey
+                             */
+
+                            /**
+                             * Constructs a new ValidatorSetV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                             * @classdesc Represents a ValidatorSetV0.
+                             * @implements IValidatorSetV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorSetV0=} [properties] Properties to set
+                             */
+                            function ValidatorSetV0(properties) {
+                                this.members = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * ValidatorSetV0 quorumHash.
+                             * @member {Uint8Array} quorumHash
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @instance
+                             */
+                            ValidatorSetV0.prototype.quorumHash = $util.newBuffer([]);
+
+                            /**
+                             * ValidatorSetV0 coreHeight.
+                             * @member {number} coreHeight
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @instance
+                             */
+                            ValidatorSetV0.prototype.coreHeight = 0;
+
+                            /**
+                             * ValidatorSetV0 members.
+                             * @member {Array.<org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorV0>} members
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @instance
+                             */
+                            ValidatorSetV0.prototype.members = $util.emptyArray;
+
+                            /**
+                             * ValidatorSetV0 thresholdPublicKey.
+                             * @member {Uint8Array} thresholdPublicKey
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @instance
+                             */
+                            ValidatorSetV0.prototype.thresholdPublicKey = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new ValidatorSetV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorSetV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0} ValidatorSetV0 instance
+                             */
+                            ValidatorSetV0.create = function create(properties) {
+                                return new ValidatorSetV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified ValidatorSetV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorSetV0} message ValidatorSetV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ValidatorSetV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.quorumHash != null && Object.hasOwnProperty.call(message, "quorumHash"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.quorumHash);
+                                if (message.coreHeight != null && Object.hasOwnProperty.call(message, "coreHeight"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.coreHeight);
+                                if (message.members != null && message.members.length)
+                                    for (var i = 0; i < message.members.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.encode(message.members[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.thresholdPublicKey != null && Object.hasOwnProperty.call(message, "thresholdPublicKey"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.thresholdPublicKey);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified ValidatorSetV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorSetV0} message ValidatorSetV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ValidatorSetV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a ValidatorSetV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0} ValidatorSetV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ValidatorSetV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.quorumHash = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.coreHeight = reader.uint32();
+                                        break;
+                                    case 3:
+                                        if (!(message.members && message.members.length))
+                                            message.members = [];
+                                        message.members.push($root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.decode(reader, reader.uint32()));
+                                        break;
+                                    case 4:
+                                        message.thresholdPublicKey = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a ValidatorSetV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0} ValidatorSetV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ValidatorSetV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a ValidatorSetV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            ValidatorSetV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.quorumHash != null && message.hasOwnProperty("quorumHash"))
+                                    if (!(message.quorumHash && typeof message.quorumHash.length === "number" || $util.isString(message.quorumHash)))
+                                        return "quorumHash: buffer expected";
+                                if (message.coreHeight != null && message.hasOwnProperty("coreHeight"))
+                                    if (!$util.isInteger(message.coreHeight))
+                                        return "coreHeight: integer expected";
+                                if (message.members != null && message.hasOwnProperty("members")) {
+                                    if (!Array.isArray(message.members))
+                                        return "members: array expected";
+                                    for (var i = 0; i < message.members.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.verify(message.members[i]);
+                                        if (error)
+                                            return "members." + error;
+                                    }
+                                }
+                                if (message.thresholdPublicKey != null && message.hasOwnProperty("thresholdPublicKey"))
+                                    if (!(message.thresholdPublicKey && typeof message.thresholdPublicKey.length === "number" || $util.isString(message.thresholdPublicKey)))
+                                        return "thresholdPublicKey: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a ValidatorSetV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0} ValidatorSetV0
+                             */
+                            ValidatorSetV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0();
+                                if (object.quorumHash != null)
+                                    if (typeof object.quorumHash === "string")
+                                        $util.base64.decode(object.quorumHash, message.quorumHash = $util.newBuffer($util.base64.length(object.quorumHash)), 0);
+                                    else if (object.quorumHash.length >= 0)
+                                        message.quorumHash = object.quorumHash;
+                                if (object.coreHeight != null)
+                                    message.coreHeight = object.coreHeight >>> 0;
+                                if (object.members) {
+                                    if (!Array.isArray(object.members))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.members: array expected");
+                                    message.members = [];
+                                    for (var i = 0; i < object.members.length; ++i) {
+                                        if (typeof object.members[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.members: object expected");
+                                        message.members[i] = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.fromObject(object.members[i]);
+                                    }
+                                }
+                                if (object.thresholdPublicKey != null)
+                                    if (typeof object.thresholdPublicKey === "string")
+                                        $util.base64.decode(object.thresholdPublicKey, message.thresholdPublicKey = $util.newBuffer($util.base64.length(object.thresholdPublicKey)), 0);
+                                    else if (object.thresholdPublicKey.length >= 0)
+                                        message.thresholdPublicKey = object.thresholdPublicKey;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a ValidatorSetV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0} message ValidatorSetV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            ValidatorSetV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.members = [];
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.quorumHash = "";
+                                    else {
+                                        object.quorumHash = [];
+                                        if (options.bytes !== Array)
+                                            object.quorumHash = $util.newBuffer(object.quorumHash);
+                                    }
+                                    object.coreHeight = 0;
+                                    if (options.bytes === String)
+                                        object.thresholdPublicKey = "";
+                                    else {
+                                        object.thresholdPublicKey = [];
+                                        if (options.bytes !== Array)
+                                            object.thresholdPublicKey = $util.newBuffer(object.thresholdPublicKey);
+                                    }
+                                }
+                                if (message.quorumHash != null && message.hasOwnProperty("quorumHash"))
+                                    object.quorumHash = options.bytes === String ? $util.base64.encode(message.quorumHash, 0, message.quorumHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.quorumHash) : message.quorumHash;
+                                if (message.coreHeight != null && message.hasOwnProperty("coreHeight"))
+                                    object.coreHeight = message.coreHeight;
+                                if (message.members && message.members.length) {
+                                    object.members = [];
+                                    for (var j = 0; j < message.members.length; ++j)
+                                        object.members[j] = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.toObject(message.members[j], options);
+                                }
+                                if (message.thresholdPublicKey != null && message.hasOwnProperty("thresholdPublicKey"))
+                                    object.thresholdPublicKey = options.bytes === String ? $util.base64.encode(message.thresholdPublicKey, 0, message.thresholdPublicKey.length) : options.bytes === Array ? Array.prototype.slice.call(message.thresholdPublicKey) : message.thresholdPublicKey;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this ValidatorSetV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            ValidatorSetV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return ValidatorSetV0;
+                        })();
+
+                        GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetCurrentQuorumsInfoResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                             * @interface IGetCurrentQuorumsInfoResponseV0
+                             * @property {Array.<Uint8Array>|null} [quorumHashes] GetCurrentQuorumsInfoResponseV0 quorumHashes
+                             * @property {Uint8Array|null} [currentQuorumHash] GetCurrentQuorumsInfoResponseV0 currentQuorumHash
+                             * @property {Array.<org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorSetV0>|null} [validatorSets] GetCurrentQuorumsInfoResponseV0 validatorSets
+                             * @property {Uint8Array|null} [lastBlockProposer] GetCurrentQuorumsInfoResponseV0 lastBlockProposer
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetCurrentQuorumsInfoResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetCurrentQuorumsInfoResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                             * @classdesc Represents a GetCurrentQuorumsInfoResponseV0.
+                             * @implements IGetCurrentQuorumsInfoResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IGetCurrentQuorumsInfoResponseV0=} [properties] Properties to set
+                             */
+                            function GetCurrentQuorumsInfoResponseV0(properties) {
+                                this.quorumHashes = [];
+                                this.validatorSets = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetCurrentQuorumsInfoResponseV0 quorumHashes.
+                             * @member {Array.<Uint8Array>} quorumHashes
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @instance
+                             */
+                            GetCurrentQuorumsInfoResponseV0.prototype.quorumHashes = $util.emptyArray;
+
+                            /**
+                             * GetCurrentQuorumsInfoResponseV0 currentQuorumHash.
+                             * @member {Uint8Array} currentQuorumHash
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @instance
+                             */
+                            GetCurrentQuorumsInfoResponseV0.prototype.currentQuorumHash = $util.newBuffer([]);
+
+                            /**
+                             * GetCurrentQuorumsInfoResponseV0 validatorSets.
+                             * @member {Array.<org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorSetV0>} validatorSets
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @instance
+                             */
+                            GetCurrentQuorumsInfoResponseV0.prototype.validatorSets = $util.emptyArray;
+
+                            /**
+                             * GetCurrentQuorumsInfoResponseV0 lastBlockProposer.
+                             * @member {Uint8Array} lastBlockProposer
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @instance
+                             */
+                            GetCurrentQuorumsInfoResponseV0.prototype.lastBlockProposer = $util.newBuffer([]);
+
+                            /**
+                             * GetCurrentQuorumsInfoResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @instance
+                             */
+                            GetCurrentQuorumsInfoResponseV0.prototype.metadata = null;
+
+                            /**
+                             * Creates a new GetCurrentQuorumsInfoResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IGetCurrentQuorumsInfoResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0} GetCurrentQuorumsInfoResponseV0 instance
+                             */
+                            GetCurrentQuorumsInfoResponseV0.create = function create(properties) {
+                                return new GetCurrentQuorumsInfoResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetCurrentQuorumsInfoResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IGetCurrentQuorumsInfoResponseV0} message GetCurrentQuorumsInfoResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetCurrentQuorumsInfoResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.quorumHashes != null && message.quorumHashes.length)
+                                    for (var i = 0; i < message.quorumHashes.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.quorumHashes[i]);
+                                if (message.currentQuorumHash != null && Object.hasOwnProperty.call(message, "currentQuorumHash"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.currentQuorumHash);
+                                if (message.validatorSets != null && message.validatorSets.length)
+                                    for (var i = 0; i < message.validatorSets.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.encode(message.validatorSets[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.lastBlockProposer != null && Object.hasOwnProperty.call(message, "lastBlockProposer"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.lastBlockProposer);
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetCurrentQuorumsInfoResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IGetCurrentQuorumsInfoResponseV0} message GetCurrentQuorumsInfoResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetCurrentQuorumsInfoResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetCurrentQuorumsInfoResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0} GetCurrentQuorumsInfoResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetCurrentQuorumsInfoResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.quorumHashes && message.quorumHashes.length))
+                                            message.quorumHashes = [];
+                                        message.quorumHashes.push(reader.bytes());
+                                        break;
+                                    case 2:
+                                        message.currentQuorumHash = reader.bytes();
+                                        break;
+                                    case 3:
+                                        if (!(message.validatorSets && message.validatorSets.length))
+                                            message.validatorSets = [];
+                                        message.validatorSets.push($root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.decode(reader, reader.uint32()));
+                                        break;
+                                    case 4:
+                                        message.lastBlockProposer = reader.bytes();
+                                        break;
+                                    case 5:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetCurrentQuorumsInfoResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0} GetCurrentQuorumsInfoResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetCurrentQuorumsInfoResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetCurrentQuorumsInfoResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetCurrentQuorumsInfoResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.quorumHashes != null && message.hasOwnProperty("quorumHashes")) {
+                                    if (!Array.isArray(message.quorumHashes))
+                                        return "quorumHashes: array expected";
+                                    for (var i = 0; i < message.quorumHashes.length; ++i)
+                                        if (!(message.quorumHashes[i] && typeof message.quorumHashes[i].length === "number" || $util.isString(message.quorumHashes[i])))
+                                            return "quorumHashes: buffer[] expected";
+                                }
+                                if (message.currentQuorumHash != null && message.hasOwnProperty("currentQuorumHash"))
+                                    if (!(message.currentQuorumHash && typeof message.currentQuorumHash.length === "number" || $util.isString(message.currentQuorumHash)))
+                                        return "currentQuorumHash: buffer expected";
+                                if (message.validatorSets != null && message.hasOwnProperty("validatorSets")) {
+                                    if (!Array.isArray(message.validatorSets))
+                                        return "validatorSets: array expected";
+                                    for (var i = 0; i < message.validatorSets.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.verify(message.validatorSets[i]);
+                                        if (error)
+                                            return "validatorSets." + error;
+                                    }
+                                }
+                                if (message.lastBlockProposer != null && message.hasOwnProperty("lastBlockProposer"))
+                                    if (!(message.lastBlockProposer && typeof message.lastBlockProposer.length === "number" || $util.isString(message.lastBlockProposer)))
+                                        return "lastBlockProposer: buffer expected";
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetCurrentQuorumsInfoResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0} GetCurrentQuorumsInfoResponseV0
+                             */
+                            GetCurrentQuorumsInfoResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0();
+                                if (object.quorumHashes) {
+                                    if (!Array.isArray(object.quorumHashes))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.quorumHashes: array expected");
+                                    message.quorumHashes = [];
+                                    for (var i = 0; i < object.quorumHashes.length; ++i)
+                                        if (typeof object.quorumHashes[i] === "string")
+                                            $util.base64.decode(object.quorumHashes[i], message.quorumHashes[i] = $util.newBuffer($util.base64.length(object.quorumHashes[i])), 0);
+                                        else if (object.quorumHashes[i].length >= 0)
+                                            message.quorumHashes[i] = object.quorumHashes[i];
+                                }
+                                if (object.currentQuorumHash != null)
+                                    if (typeof object.currentQuorumHash === "string")
+                                        $util.base64.decode(object.currentQuorumHash, message.currentQuorumHash = $util.newBuffer($util.base64.length(object.currentQuorumHash)), 0);
+                                    else if (object.currentQuorumHash.length >= 0)
+                                        message.currentQuorumHash = object.currentQuorumHash;
+                                if (object.validatorSets) {
+                                    if (!Array.isArray(object.validatorSets))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.validatorSets: array expected");
+                                    message.validatorSets = [];
+                                    for (var i = 0; i < object.validatorSets.length; ++i) {
+                                        if (typeof object.validatorSets[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.validatorSets: object expected");
+                                        message.validatorSets[i] = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.fromObject(object.validatorSets[i]);
+                                    }
+                                }
+                                if (object.lastBlockProposer != null)
+                                    if (typeof object.lastBlockProposer === "string")
+                                        $util.base64.decode(object.lastBlockProposer, message.lastBlockProposer = $util.newBuffer($util.base64.length(object.lastBlockProposer)), 0);
+                                    else if (object.lastBlockProposer.length >= 0)
+                                        message.lastBlockProposer = object.lastBlockProposer;
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetCurrentQuorumsInfoResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0} message GetCurrentQuorumsInfoResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetCurrentQuorumsInfoResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults) {
+                                    object.quorumHashes = [];
+                                    object.validatorSets = [];
+                                }
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.currentQuorumHash = "";
+                                    else {
+                                        object.currentQuorumHash = [];
+                                        if (options.bytes !== Array)
+                                            object.currentQuorumHash = $util.newBuffer(object.currentQuorumHash);
+                                    }
+                                    if (options.bytes === String)
+                                        object.lastBlockProposer = "";
+                                    else {
+                                        object.lastBlockProposer = [];
+                                        if (options.bytes !== Array)
+                                            object.lastBlockProposer = $util.newBuffer(object.lastBlockProposer);
+                                    }
+                                    object.metadata = null;
+                                }
+                                if (message.quorumHashes && message.quorumHashes.length) {
+                                    object.quorumHashes = [];
+                                    for (var j = 0; j < message.quorumHashes.length; ++j)
+                                        object.quorumHashes[j] = options.bytes === String ? $util.base64.encode(message.quorumHashes[j], 0, message.quorumHashes[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.quorumHashes[j]) : message.quorumHashes[j];
+                                }
+                                if (message.currentQuorumHash != null && message.hasOwnProperty("currentQuorumHash"))
+                                    object.currentQuorumHash = options.bytes === String ? $util.base64.encode(message.currentQuorumHash, 0, message.currentQuorumHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.currentQuorumHash) : message.currentQuorumHash;
+                                if (message.validatorSets && message.validatorSets.length) {
+                                    object.validatorSets = [];
+                                    for (var j = 0; j < message.validatorSets.length; ++j)
+                                        object.validatorSets[j] = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.toObject(message.validatorSets[j], options);
+                                }
+                                if (message.lastBlockProposer != null && message.hasOwnProperty("lastBlockProposer"))
+                                    object.lastBlockProposer = options.bytes === String ? $util.base64.encode(message.lastBlockProposer, 0, message.lastBlockProposer.length) : options.bytes === Array ? Array.prototype.slice.call(message.lastBlockProposer) : message.lastBlockProposer;
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetCurrentQuorumsInfoResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetCurrentQuorumsInfoResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetCurrentQuorumsInfoResponseV0;
+                        })();
+
+                        return GetCurrentQuorumsInfoResponse;
                     })();
 
                     return v0;

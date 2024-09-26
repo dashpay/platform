@@ -5,26 +5,32 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_path_elements_request::Version as RequestVersion;
-use dapi_grpc::platform::v0::get_path_elements_response::Version as ResponseVersion;
-use dapi_grpc::platform::v0::{GetPathElementsRequest, GetPathElementsResponse};
+use dapi_grpc::platform::v0::get_current_quorums_info_request::Version as RequestVersion;
+use dapi_grpc::platform::v0::get_current_quorums_info_response::Version as ResponseVersion;
+use dapi_grpc::platform::v0::{GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse};
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C> {
-    /// Querying of version upgrade state
-    pub fn query_path_elements(
+    /// Querying of current quorums info
+    pub fn query_current_quorums_info(
         &self,
-        GetPathElementsRequest { version }: GetPathElementsRequest,
+        GetCurrentQuorumsInfoRequest { version }: GetCurrentQuorumsInfoRequest,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
-    ) -> Result<QueryValidationResult<GetPathElementsResponse>, Error> {
+    ) -> Result<QueryValidationResult<GetCurrentQuorumsInfoResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
-                QueryError::DecodingError("could not decode path elements".to_string()),
+                QueryError::DecodingError(
+                    "could not decode current quorums info request".to_string(),
+                ),
             ));
         };
 
-        let feature_version_bounds = &platform_version.drive_abci.query.system.path_elements;
+        let feature_version_bounds = &platform_version
+            .drive_abci
+            .query
+            .system
+            .current_quorums_info;
 
         let feature_version = match &version {
             RequestVersion::V0(_) => 0,
@@ -32,7 +38,7 @@ impl<C> Platform<C> {
         if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::UnsupportedQueryVersion(
-                    "path_elements".to_string(),
+                    "current_quorums_info".to_string(),
                     feature_version_bounds.min_version,
                     feature_version_bounds.max_version,
                     platform_version.protocol_version,
@@ -42,10 +48,9 @@ impl<C> Platform<C> {
         }
         match version {
             RequestVersion::V0(request_v0) => {
-                let result =
-                    self.query_path_elements_v0(request_v0, platform_state, platform_version)?;
+                let result = self.query_current_quorums_info_v0(request_v0, platform_state)?;
 
-                Ok(result.map(|response_v0| GetPathElementsResponse {
+                Ok(result.map(|response_v0| GetCurrentQuorumsInfoResponse {
                     version: Some(ResponseVersion::V0(response_v0)),
                 }))
             }

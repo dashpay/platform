@@ -981,6 +981,11 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                current_quorums_info: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
                 partial_status: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,

@@ -26,6 +26,8 @@
 @class GetContestedResourceVotersForIdentityResponse;
 @class GetContestedResourcesRequest;
 @class GetContestedResourcesResponse;
+@class GetCurrentQuorumsInfoRequest;
+@class GetCurrentQuorumsInfoResponse;
 @class GetDataContractHistoryRequest;
 @class GetDataContractHistoryResponse;
 @class GetDataContractRequest;
@@ -243,6 +245,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getStatus(GetStatusRequest) returns (GetStatusResponse)
 
 - (GRPCUnaryProtoCall *)getStatusWithMessage:(GetStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse)
+
+- (GRPCUnaryProtoCall *)getCurrentQuorumsInfoWithMessage:(GetCurrentQuorumsInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -517,6 +523,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse)
+
+- (void)getCurrentQuorumsInfoWithRequest:(GetCurrentQuorumsInfoRequest *)request handler:(void(^)(GetCurrentQuorumsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetCurrentQuorumsInfoWithRequest:(GetCurrentQuorumsInfoRequest *)request handler:(void(^)(GetCurrentQuorumsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end
