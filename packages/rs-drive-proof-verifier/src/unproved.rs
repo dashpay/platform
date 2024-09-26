@@ -11,6 +11,30 @@ use dpp::dashcore::{Network, ProTxHash, PubkeyHash, QuorumHash};
 use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
 
+/// Trait for parsing unproved responses from the Platform.
+///
+/// This trait defines methods for extracting data from responses received from the Platform
+/// without the need for cryptographic proof validation. It is primarily used for scenarios where
+/// the proof data is not available or not required, and only the data itself is needed.
+///
+/// ## Associated Types
+///
+/// - `Request`: The type of the request sent to the server. This represents the format of the
+///   data that the platform expects when making a query.
+/// - `Response`: The type of the response received from the server. This represents the format of
+///   the data returned by the platform after executing the query.
+///
+/// ## Methods
+///
+/// - `maybe_from_unproved`: Parses the response to retrieve the requested object, if any.
+/// - `maybe_from_unproved_with_metadata`: Parses the response to retrieve the requested object
+///   along with response metadata, if any.
+/// - `from_unproved`: Retrieves the requested object from the response, returning an error if the
+///   object is not found.
+/// - `from_unproved_with_metadata`: Retrieves the requested object from the response along with
+///   metadata, returning an error if the object is not found.
+///
+/// ```
 pub trait FromUnproved<Req> {
     /// Request type for which this trait is implemented.
     type Request;
