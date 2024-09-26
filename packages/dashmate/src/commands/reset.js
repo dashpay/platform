@@ -77,7 +77,7 @@ export default class ResetCommand extends ConfigBaseCommand {
             });
 
             if (!agreement) {
-              throw new Error('Archive creation was declined');
+              throw new Error('Reset operation was declined');
             }
           },
         },
