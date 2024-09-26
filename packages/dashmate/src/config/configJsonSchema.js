@@ -404,9 +404,10 @@ export default {
             filePath: {
               type: ['null', 'string'],
               minLength: 1,
-              description: 'Write logs only to stdout if null. Write to stdout and log'
-                + ' file (absolute file path on host machine). Use file log to persist core logs.'
-                + ' stdout logs are stored with docker containers and removed together',
+              description: 'Write logs only to stdout if null. Provide an absolute file path on'
+                + ' the host machine to also write to a log file there. Use a log file if logs must be'
+                + ' retained since stdout logs are stored inside the docker container'
+                + ' and removed if the container is removed.',
             },
             debug: {
               type: 'object',
