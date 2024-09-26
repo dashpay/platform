@@ -55,7 +55,7 @@ impl FetchUnproved for drive_proof_verifier::types::CurrentQuorumsInfo {
         settings: RequestSettings,
     ) -> Result<Option<Self>, Error> {
         // Create the request from the query
-        let request = proto::GetCurrentQuorumsInfoRequest {
+        let request = Self::Request {
             version: Some(proto::get_current_quorums_info_request::Version::V0(
                 GetCurrentQuorumsInfoRequestV0 {},
             )),

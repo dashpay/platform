@@ -31,14 +31,14 @@ pub trait FromUnproved<Req> {
     /// * `Ok(Some(object))` when the requested object was found in the response.
     /// * `Ok(None)` when the requested object was not found.
     /// * `Err(Error)` when parsing fails or data is invalid.
-    fn maybe_from_unproved<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_unproved<I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
         network: Network,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Self>, Error>
     where
-        Self: Sized + 'a,
+        Self: Sized,
     {
         Self::maybe_from_unproved_with_metadata(request, response, network, platform_version)
             .map(|maybe_result| maybe_result.0)
@@ -58,14 +58,14 @@ pub trait FromUnproved<Req> {
     /// * `Ok((Some(object), metadata))` when the requested object was found.
     /// * `Ok((None, metadata))` when the requested object was not found.
     /// * `Err(Error)` when parsing fails or data is invalid.
-    fn maybe_from_unproved_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
         network: Network,
         platform_version: &PlatformVersion,
     ) -> Result<(Option<Self>, ResponseMetadata), Error>
     where
-        Self: Sized + 'a;
+        Self: Sized;
 
     /// Retrieve the requested object from the response.
     ///
@@ -81,14 +81,14 @@ pub trait FromUnproved<Req> {
     /// * `Ok(object)` when the requested object was found.
     /// * `Err(Error::NotFound)` when the requested object was not found.
     /// * `Err(Error)` when parsing fails or data is invalid.
-    fn from_unproved<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn from_unproved<I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
         network: Network,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Error>
     where
-        Self: Sized + 'a,
+        Self: Sized,
     {
         Self::maybe_from_unproved(request, response, network, platform_version)?
             .ok_or(Error::NotFound)
@@ -108,14 +108,14 @@ pub trait FromUnproved<Req> {
     /// * `Ok((object, metadata))` when the requested object was found.
     /// * `Err(Error::NotFound)` when the requested object was not found.
     /// * `Err(Error)` when parsing fails or data is invalid.
-    fn from_unproved_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
         network: Network,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, ResponseMetadata), Error>
     where
-        Self: Sized + 'a,
+        Self: Sized,
     {
         let (main_item, response_metadata) =
             Self::maybe_from_unproved_with_metadata(request, response, network, platform_version)?;
@@ -127,20 +127,20 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
     type Request = platform::GetCurrentQuorumsInfoRequest;
     type Response = platform::GetCurrentQuorumsInfoResponse;
 
-    fn maybe_from_unproved_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
         _request: I,
         response: O,
         _network: Network,
         _platform_version: &PlatformVersion,
     ) -> Result<(Option<Self>, ResponseMetadata), Error>
     where
-        Self: Sized + 'a,
+        Self: Sized,
     {
         // Convert the response into a GetCurrentQuorumsInfoResponse
         let response: platform::GetCurrentQuorumsInfoResponse = response.into();
 
         // Extract metadata from the response
-        let metadata = match response.version.clone() {
+        let metadata = match &response.version {
             Some(platform::get_current_quorums_info_response::Version::V0(ref v0)) => {
                 v0.metadata.clone()
             }
@@ -157,14 +157,32 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
                     .into_iter()
                     .map(|q_hash| {
                         let mut q_hash_array = [0u8; 32];
+                        if q_hash.len() != 32 {
+                            return Err(Error::ProtocolError {
+                                error: "Invalid quorum_hash length".to_string(),
+                            });
+                        }
                         q_hash_array.copy_from_slice(&q_hash);
-                        q_hash_array
+                        Ok(q_hash_array)
                     })
-                    .collect();
+                    .collect::<Result<Vec<[u8; 32]>, Error>>()?;
 
                 // Extract current quorum hash
                 let mut current_quorum_hash = [0u8; 32];
+                if v0.current_quorum_hash.len() != 32 {
+                    return Err(Error::ProtocolError {
+                        error: "Invalid current_quorum_hash length".to_string(),
+                    });
+                }
                 current_quorum_hash.copy_from_slice(&v0.current_quorum_hash);
+
+                let mut last_block_proposer = [0u8; 32];
+                if v0.last_block_proposer.len() != 32 {
+                    return Err(Error::ProtocolError {
+                        error: "Invalid last_block_proposer length".to_string(),
+                    });
+                }
+                last_block_proposer.copy_from_slice(&v0.last_block_proposer);
 
                 // Extract validator sets
                 let validator_sets =
@@ -221,7 +239,7 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
                     quorum_hashes,
                     current_quorum_hash,
                     validator_sets,
-                    last_block_proposer: v0.last_block_proposer,
+                    last_block_proposer,
                     last_platform_block_height: metadata.height,
                     last_core_block_height: metadata.core_chain_locked_height,
                 })

@@ -20,11 +20,17 @@ impl<C> Platform<C> {
     ) -> Result<QueryValidationResult<GetCurrentQuorumsInfoResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
-                QueryError::DecodingError("could not decode epoch info request".to_string()),
+                QueryError::DecodingError(
+                    "could not decode current quorums info request".to_string(),
+                ),
             ));
         };
 
-        let feature_version_bounds = &platform_version.drive_abci.query.system.epoch_infos;
+        let feature_version_bounds = &platform_version
+            .drive_abci
+            .query
+            .system
+            .current_quorums_info;
 
         let feature_version = match &version {
             RequestVersion::V0(_) => 0,

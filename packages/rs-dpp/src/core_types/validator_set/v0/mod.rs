@@ -102,6 +102,7 @@ impl Decode for ValidatorSetV0 {
     }
 }
 
+#[cfg(feature = "core-types-serialization")]
 impl<'de> BorrowDecode<'de> for ValidatorSetV0 {
     fn borrow_decode<D: Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
         // Decode each field in the same order as they were encoded

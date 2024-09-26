@@ -388,7 +388,7 @@ pub struct CurrentQuorumsInfo {
     /// A collection of [`ValidatorSet`] structs, each representing a set of validators for different quorums.
     pub validator_sets: Vec<ValidatorSet>,
     /// A vector of bytes representing the identity of the last block proposer.
-    pub last_block_proposer: Vec<u8>,
+    pub last_block_proposer: [u8; 32],
     /// The height of the most recent platform block.
     pub last_platform_block_height: u64,
     /// The height of the most recent core blockchain block associated with the platform.

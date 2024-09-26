@@ -89,6 +89,7 @@ all_features = [
   "identity-hashing",
   "identity-serialization",
   "ciborium",
+  "core-types",
   "core-types-serialization",
   "core-types-serde-conversion",
   "document-serde-conversion",
@@ -133,6 +134,7 @@ dash-sdk-features = [
   "document-value-conversion",
   "data-contract-value-conversion",
   "identity-value-conversion",
+  "core-types",
   "core-types-serialization",
   "core-types-serde-conversion",
   "state-transition-serde-conversion",
@@ -156,6 +158,7 @@ all_features_without_client = [
   "identity-hashing",
   "identity-serialization",
   "ciborium",
+  "core-types",
   "core-types-serialization",
   "core-types-serde-conversion",
   "document-serde-conversion",
@@ -195,6 +198,7 @@ abci = [
   "identity-serialization",
   "vote-serialization",
   "platform-value-cbor",
+  "core-types",
   "core-types-serialization",
   "core-types-serde-conversion",
 ]
@@ -269,8 +273,9 @@ state-transition-signing = [
 ]
 vote-serialization = []
 vote-serde-conversion = []
-core-types-serialization = []
-core-types-serde-conversion = []
+core-types = ["bls-signatures"]
+core-types-serialization = ["core-types"]
+core-types-serde-conversion = ["core-types"]
 state-transitions = []
 system_contracts = ["factories", "data-contracts", "platform-value-json"]
 fixtures-and-mocks = ["system_contracts", "platform-value/json"]

@@ -1211,7 +1211,7 @@ message GetCurrentQuorumsInfoResponse {
     bytes current_quorum_hash = 2;
     repeated ValidatorSetV0 validator_sets = 3;
     bytes last_block_proposer = 4;
-    ResponseMetadata metadata = 7;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 5;
   }
   oneof version { GetCurrentQuorumsInfoResponseV0 v0 = 1; }
 }
