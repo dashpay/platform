@@ -11,6 +11,7 @@ export const ERRORS = {
   CERTIFICATE_EXPIRES_SOON: 'CERTIFICATE_EXPIRES_SOON',
   CERTIFICATE_IS_NOT_VALIDATED: 'CERTIFICATE_IS_NOT_VALIDATED',
   CERTIFICATE_IS_NOT_VALID: 'CERTIFICATE_IS_NOT_VALID',
+  ZERO_SSL_API_ERROR: 'ZERO_SSL_API_ERROR',
 };
 
 /**
@@ -68,9 +69,22 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
     data.isBundleFilePresent = fs.existsSync(data.bundleFilePath);
 
     // This function will throw an error if certificate with specified ID is not present
-    const certificate = await getCertificate(data.apiKey, certificateId);
+    try {
+      data.certificate = await getCertificate(data.apiKey, certificateId);
+    } catch (e) {
+      if (e.code) {
+        data.error = e;
 
-    data.isExpiresSoon = certificate.isExpiredInDays(expirationDays);
+        return {
+          error: ERRORS.ZERO_SSL_API_ERROR,
+          data,
+        };
+      }
+
+      throw e;
+    }
+
+    data.isExpiresSoon = data.certificate.isExpiredInDays(expirationDays);
 
     // If certificate exists but private key does not, then we can't setup TLS connection
     // In this case we need to regenerate a certificate or put back this private key
@@ -82,17 +96,16 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
     }
 
     // We need to make sure that external IP and certificate IP match
-    if (certificate.common_name !== data.externalIp) {
+    if (data.certificate.common_name !== data.externalIp) {
       return {
         error: ERRORS.EXTERNAL_IP_MISMATCH,
         data,
       };
     }
 
-    if (['pending_validation', 'draft'].includes(certificate.status)) {
+    if (['pending_validation', 'draft'].includes(data.certificate.status)) {
       // Certificate is already created, so we just need to pass validation
       // and download certificate file
-      data.certificate = certificate;
 
       // We need to download new certificate bundle
       data.isBundleFilePresent = false;
@@ -103,7 +116,7 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
       };
     }
 
-    if (certificate.status !== 'issued' || data.isExpiresSoon) {
+    if (data.certificate.status !== 'issued' || data.isExpiresSoon) {
       // Certificate is going to expire soon, or current certificate is not valid
       // we need to obtain a new one
 
@@ -128,8 +141,6 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
     }
 
     // Certificate is valid, so we might need only to download certificate bundle
-    data.certificate = certificate;
-
     return {
       data,
     };
