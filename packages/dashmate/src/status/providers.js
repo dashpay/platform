@@ -75,7 +75,6 @@ export default {
         path: `/${port}/`,
         method: 'GET',
         family: 4, // Force IPv4
-        rejectUnauthorized: false, // Uncomment if you need to bypass SSL certificate validation
       };
 
       return new Promise((resolve) => {
