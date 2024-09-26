@@ -26,7 +26,6 @@ use dpp::{
     util::deserializer::ProtocolVersion,
 };
 use drive::grovedb::Element;
-use hex::ToHex;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::Error;
@@ -627,7 +626,7 @@ pub struct ProposerBlockCountById(pub u64);
 /// Status of a network node
 pub struct EvonodeStatus {
     /// The Identifier of the Evonode
-    pub pro_tx_hash: String,
+    pub pro_tx_hash: [u8; ProTxHash::LEN],
     /// The latest block height stored on the Evonode
     pub latest_block_height: u64,
 }
@@ -646,13 +645,20 @@ impl TryFrom<GetStatusResponse> for EvonodeStatus {
                     error: "missing chain information".to_string(),
                 })?;
 
+                let protx = node.pro_tx_hash.ok_or(Error::ProtocolError {
+                    error: "Missing pro_tx_hash".to_string(),
+                })?;
+                let protx_len = protx.len();
+
                 Ok(Self {
-                    pro_tx_hash: node
-                        .pro_tx_hash
-                        .ok_or(Error::ProtocolError {
-                            error: "Missing pro_tx_hash".to_string(),
-                        })?
-                        .encode_hex(),
+                    pro_tx_hash: protx.clone().try_into().map_err(|_| Error::ProtocolError {
+                        error: format!(
+                            "Invalid pro_tx_hash size: {} != {}",
+                            protx_len,
+                            ProTxHash::LEN
+                        ),
+                    })?,
+
                     latest_block_height: chain.latest_block_height,
                 })
             }
