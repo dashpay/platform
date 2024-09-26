@@ -413,7 +413,7 @@ export default {
               properties: {
                 enabled: {
                   type: 'boolean',
-                  description: 'Enable debug logging (debug=1)',
+                  description: 'Enable debug logging. Equivalent to setting "debug=1" in the Core configuration file)',
                 },
                 ips: {
                   type: 'boolean',
