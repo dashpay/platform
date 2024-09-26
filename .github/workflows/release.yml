@@ -214,7 +214,7 @@ jobs:
           - package_type: deb
             os: ubuntu-22.04
           - package_type: macos
-            os: macos-12
+            os: macos-14
     steps:
       - name: Check out repo
         uses: actions/checkout@v4

@@ -169,6 +169,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetStatusRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetStatusResponse.FromString,
                 )
+        self.getCurrentQuorumsInfo = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getCurrentQuorumsInfo',
+                request_serializer=platform__pb2.GetCurrentQuorumsInfoRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetCurrentQuorumsInfoResponse.FromString,
+                )
 
 
 class PlatformServicer(object):
@@ -365,6 +370,12 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getCurrentQuorumsInfo(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -522,6 +533,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getStatus,
                     request_deserializer=platform__pb2.GetStatusRequest.FromString,
                     response_serializer=platform__pb2.GetStatusResponse.SerializeToString,
+            ),
+            'getCurrentQuorumsInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.getCurrentQuorumsInfo,
+                    request_deserializer=platform__pb2.GetCurrentQuorumsInfoRequest.FromString,
+                    response_serializer=platform__pb2.GetCurrentQuorumsInfoResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1057,5 +1073,22 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getStatus',
             platform__pb2.GetStatusRequest.SerializeToString,
             platform__pb2.GetStatusResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getCurrentQuorumsInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getCurrentQuorumsInfo',
+            platform__pb2.GetCurrentQuorumsInfoRequest.SerializeToString,
+            platform__pb2.GetCurrentQuorumsInfoResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

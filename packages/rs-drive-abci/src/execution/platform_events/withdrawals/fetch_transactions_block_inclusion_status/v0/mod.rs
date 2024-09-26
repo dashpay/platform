@@ -1,8 +1,7 @@
-use dashcore_rpc::dashcore_rpc_json::AssetUnlockStatus;
-use drive::drive::identity::withdrawals::WithdrawalTransactionIndex;
-use std::collections::BTreeMap;
-
 use crate::{error::Error, platform_types::platform::Platform, rpc::core::CoreRPCLike};
+use dashcore_rpc::dashcore_rpc_json::AssetUnlockStatus;
+use dpp::withdrawal::WithdrawalTransactionIndex;
+use std::collections::BTreeMap;
 
 impl<C> Platform<C>
 where

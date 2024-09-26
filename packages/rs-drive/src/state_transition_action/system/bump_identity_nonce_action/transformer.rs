@@ -137,22 +137,14 @@ impl BumpIdentityNonceAction {
     pub fn from_identity_credit_withdrawal_transition(
         value: IdentityCreditWithdrawalTransition,
     ) -> Self {
-        match value {
-            IdentityCreditWithdrawalTransition::V0(v0) => {
-                BumpIdentityNonceActionV0::from_identity_credit_withdrawal(v0).into()
-            }
-        }
+        BumpIdentityNonceActionV0::from_identity_credit_withdrawal(value).into()
     }
 
     /// from borrowed identity withdrawal
     pub fn from_borrowed_identity_credit_withdrawal_transition(
         value: &IdentityCreditWithdrawalTransition,
     ) -> Self {
-        match value {
-            IdentityCreditWithdrawalTransition::V0(v0) => {
-                BumpIdentityNonceActionV0::from_borrowed_identity_credit_withdrawal(v0).into()
-            }
-        }
+        BumpIdentityNonceActionV0::from_borrowed_identity_credit_withdrawal(value).into()
     }
 
     /// from identity withdrawal action

@@ -400,12 +400,12 @@ impl StateTransition {
     }
 
     /// returns the key security level requirement for the state transition
-    pub fn security_level_requirement(&self) -> Option<Vec<SecurityLevel>> {
-        call_getter_method_identity_signed!(self, security_level_requirement)
+    pub fn security_level_requirement(&self, purpose: Purpose) -> Option<Vec<SecurityLevel>> {
+        call_getter_method_identity_signed!(self, security_level_requirement, purpose)
     }
 
     /// returns the key purpose requirement for the state transition
-    pub fn purpose_requirement(&self) -> Option<Purpose> {
+    pub fn purpose_requirement(&self) -> Option<Vec<Purpose>> {
         call_getter_method_identity_signed!(self, purpose_requirement)
     }
 
@@ -457,7 +457,7 @@ impl StateTransition {
                     return Err(ProtocolError::WrongPublicKeyPurposeError(
                         WrongPublicKeyPurposeError::new(
                             identity_public_key.purpose(),
-                            Purpose::AUTHENTICATION,
+                            vec![Purpose::AUTHENTICATION],
                         ),
                     ));
                 }

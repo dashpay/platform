@@ -323,7 +323,7 @@ export default function collectSamplesTaskFactory(
               services.map(async (service) => {
                 const [inspect, logs] = (await Promise.allSettled([
                   dockerCompose.inspectService(config, service.name),
-                  dockerCompose.logs(config, [service.name]),
+                  dockerCompose.logs(config, [service.name], { tail: 300000 }),
                 ])).map((e) => e.value || e.reason);
 
                 if (logs?.out) {

@@ -39,6 +39,49 @@ export default class ResetCommand extends ConfigBaseCommand {
     const tasks = new Listr(
       [
         {
+          enabled: (ctx) => !ctx.isForce,
+          task: async (ctx, task) => {
+            let message;
+            if (ctx.isHardReset) {
+              if (ctx.keepData) {
+                message = 'Are you sure you want to reset your node configuration? Data will be'
+                  + ' kept.';
+                if (ctx.isPlatformOnlyReset) {
+                  message = 'Are you sure you want to reset platform related configuration? Data'
+                    + ' will be kept';
+                }
+              } else {
+                message = 'Are you sure you want to reset your node data and configuration?';
+                if (ctx.isPlatformOnlyReset) {
+                  message = 'Are you sure you want to reset platform related data and configuration?';
+                }
+              }
+            } else if (ctx.keepData) {
+              message = 'Are you sure you want to reset docker containers?';
+              if (ctx.isPlatformOnlyReset) {
+                message = 'Are you sure you want to reset platform related docker containers?';
+              }
+            } else {
+              message = 'Are you sure you want to reset your node data?';
+              if (ctx.isPlatformOnlyReset) {
+                message = 'Are you sure you want to reset platform related data?';
+              }
+            }
+
+            const agreement = await task.prompt({
+              type: 'toggle',
+              name: 'confirm',
+              message,
+              enabled: 'Yes',
+              disabled: 'No',
+            });
+
+            if (!agreement) {
+              throw new Error('Reset operation was declined');
+            }
+          },
+        },
+        {
           title: `Reset ${config.getName()} node`,
           task: () => resetNodeTask(config),
         },

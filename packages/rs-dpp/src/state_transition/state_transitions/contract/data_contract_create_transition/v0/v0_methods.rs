@@ -65,11 +65,11 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
             )),
         )?;
 
-        let security_level_requirements = state_transition.security_level_requirement().ok_or(
-            ProtocolError::CorruptedCodeExecution(
+        let security_level_requirements = state_transition
+            .security_level_requirement(public_key.purpose())
+            .ok_or(ProtocolError::CorruptedCodeExecution(
                 "expected security level requirements".to_string(),
-            ),
-        )?;
+            ))?;
 
         if !security_level_requirements.contains(&public_key.security_level()) {
             return Err(ProtocolError::ConsensusError(Box::new(
