@@ -51,6 +51,10 @@ Mint given amount of tDash to a new or specified address
       throw new Error('Only local network supports generation of dash');
     }
 
+    if (config.get('core.masternode.enable')) {
+      throw new Error(`A masternode doesn't support generation of dash`);
+    }
+
     const tasks = new Listr(
       [
         {
