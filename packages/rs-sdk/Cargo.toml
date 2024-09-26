@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 arc-swap = { version = "1.7.1" }
+bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
 ] }
@@ -26,7 +27,7 @@ serde = { version = "1.0.197", default-features = false, features = [
 ], optional = true }
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 tracing = { version = "0.1.40" }
-hex = { version = "0.4.3"}
+hex = { version = "0.4.3" }
 dotenvy = { version = "0.15.7", optional = true }
 envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.30" }
@@ -58,6 +59,7 @@ test-case = { version = "3.3.1" }
 default = ["mocks", "offline-testing"]
 
 mocks = [
+  "dep:bincode",
   "dep:serde",
   "dep:serde_json",
   "rs-dapi-client/mocks",

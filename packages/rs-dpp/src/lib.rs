@@ -42,7 +42,6 @@ pub mod block;
 pub mod core_subsidy;
 pub mod fee;
 pub mod nft;
-pub mod node;
 pub mod prefunded_specialized_balance;
 pub mod serialization;
 #[cfg(any(

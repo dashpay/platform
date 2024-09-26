@@ -13,8 +13,8 @@ use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
 use dpp::voting::votes::Vote;
 use dpp::{
-    block::extended_epoch_info::ExtendedEpochInfo, document::Document, node::status::EvonodeStatus,
-    platform_value::Identifier, prelude::Identity,
+    block::extended_epoch_info::ExtendedEpochInfo, document::Document, platform_value::Identifier,
+    prelude::Identity,
 };
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
@@ -281,8 +281,4 @@ impl Fetch for drive_proof_verifier::types::PrefundedSpecializedBalance {
 
 impl Fetch for Vote {
     type Request = platform_proto::GetContestedResourceIdentityVotesRequest;
-}
-
-impl Fetch for EvonodeStatus {
-    type Request = platform_proto::GetStatusRequest;
 }

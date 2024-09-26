@@ -1,7 +1,8 @@
-use crate::types::CurrentQuorumsInfo;
+use crate::types::{CurrentQuorumsInfo, EvonodeStatus};
 use crate::Error;
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dapi_grpc::platform::v0::{self as platform};
+use dapi_grpc::tonic::async_trait;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::v0::ValidatorSetV0;
@@ -271,5 +272,24 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
         }?;
 
         Ok((Some(info), metadata))
+    }
+}
+
+#[async_trait]
+impl FromUnproved<platform::GetStatusRequest> for EvonodeStatus {
+    type Request = platform::GetStatusRequest;
+    type Response = platform::GetStatusResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        let status = Self::try_from(response.into())?;
+        Ok((Some(status), Default::default()))
     }
 }

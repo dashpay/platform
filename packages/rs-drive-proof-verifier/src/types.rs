@@ -5,6 +5,7 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
+use dapi_grpc::platform::v0::GetStatusResponse;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
@@ -25,13 +26,15 @@ use dpp::{
     util::deserializer::ProtocolVersion,
 };
 use drive::grovedb::Element;
+use hex::ToHex;
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::Error;
 use dpp::block::block_info::BlockInfo;
 use dpp::core_types::validator_set::ValidatorSet;
-use dpp::dashcore::QuorumHash;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::grovedb::query_result_type::Path;
+
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
@@ -614,3 +617,46 @@ pub struct ProposerBlockCountByRange(pub u64);
 #[derive(Debug)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProposerBlockCountById(pub u64);
+
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+/// Status of a network node
+pub struct EvonodeStatus {
+    /// The Identifier of the Evonode
+    pub pro_tx_hash: String,
+    /// The latest block height stored on the Evonode
+    pub latest_block_height: u64,
+}
+
+impl TryFrom<GetStatusResponse> for EvonodeStatus {
+    type Error = Error;
+    fn try_from(response: GetStatusResponse) -> Result<Self, Self::Error> {
+        use dapi_grpc::platform::v0::get_status_response::Version;
+        match response.version {
+            Some(Version::V0(v0)) => {
+                let node = v0.node.ok_or(Error::ProtocolError {
+                    error: "missing node information".to_string(),
+                })?;
+
+                let chain = v0.chain.ok_or(Error::ProtocolError {
+                    error: "missing chain information".to_string(),
+                })?;
+
+                Ok(Self {
+                    pro_tx_hash: node
+                        .pro_tx_hash
+                        .ok_or(Error::ProtocolError {
+                            error: "Missing pro_tx_hash".to_string(),
+                        })?
+                        .encode_hex(),
+                    latest_block_height: chain.latest_block_height,
+                })
+            }
+            None => Err(Error::EmptyVersion),
+        }
+    }
+}

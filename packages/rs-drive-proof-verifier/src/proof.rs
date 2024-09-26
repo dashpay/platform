@@ -25,8 +25,6 @@ use dpp::dashcore::{Network, ProTxHash};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dpp::identity::Purpose;
-use dpp::node::status::v0::EvonodeStatusV0;
-use dpp::node::status::EvonodeStatus;
 use dpp::platform_value::{self};
 use dpp::prelude::{DataContract, Identifier, Identity};
 use dpp::serialization::PlatformDeserializable;
@@ -34,7 +32,6 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
-use dpp::ProtocolError;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
@@ -83,7 +80,7 @@ pub trait FromProof<Req> {
     ///
     /// * `Ok(Some(object, metadata))` when the requested object was found in the proof.
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
-    /// For collections, returns Ok(None) if none of the requested objects were found.
+    ///    For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -113,7 +110,7 @@ pub trait FromProof<Req> {
     ///
     /// * `Ok(Some((object, metadata)))` when the requested object was found in the proof.
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
-    /// For collections, returns Ok(None) if none of the requested objects were found.
+    ///    For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -1719,71 +1716,6 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
         ))
     }
 }
-
-impl FromProof<platform::GetStatusRequest> for EvonodeStatus {
-    type Request = platform::GetStatusRequest;
-    type Response = platform::GetStatusResponse;
-
-    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
-        response: O,
-        _network: Network,
-        _platform_version: &PlatformVersion,
-        _provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
-    where
-        Self: Sized + 'a,
-    {
-        let response: Self::Response = response.into();
-        let version = match response.version {
-            Some(version) => version,
-            None => {
-                return Err(ProtocolError::Generic("No version in the response".to_string()).into())
-            }
-        };
-        let (pro_tx_hash, latest_block_height) = match version {
-            platform::get_status_response::Version::V0(v0) => {
-                let pro_tx_hash = match v0.node {
-                    Some(node) => node.pro_tx_hash,
-                    None => None,
-                };
-                let chain = match v0.chain {
-                    Some(chain) => chain.latest_block_height,
-                    None => {
-                        tracing::debug!("Missing chain message from response");
-                        0
-                    }
-                };
-                (pro_tx_hash, chain)
-            }
-        };
-
-        match pro_tx_hash {
-            Some(hash) => match Identifier::from_bytes(&hash) {
-                Ok(identifier) => {
-                    let evonode_status = EvonodeStatus::V0(EvonodeStatusV0 {
-                        pro_tx_hash: identifier
-                            .to_string(platform_value::string_encoding::Encoding::Base58),
-                        latest_block_height,
-                    });
-
-                    Ok((
-                        Some(evonode_status),
-                        ResponseMetadata::default(),
-                        Proof::default(),
-                    ))
-                }
-                Err(e) => Err(ProtocolError::Generic(format!(
-                    "Failed to convert pro_tx_hash to Identifier: {}",
-                    e
-                ))
-                .into()),
-            },
-            None => Ok((None, ResponseMetadata::default(), Proof::default())),
-        }
-    }
-}
-
 impl FromProof<platform::GetEvonodesProposedEpochBlocksByIdsRequest> for ProposerBlockCounts {
     type Request = platform::GetEvonodesProposedEpochBlocksByIdsRequest;
     type Response = platform::GetEvonodesProposedEpochBlocksResponse;

@@ -1,16 +1,18 @@
 use crate::error::Error;
-use crate::platform::proto;
+use crate::mock::MockResponse;
 use crate::Sdk;
-use dapi_grpc::platform::v0::get_current_quorums_info_request::GetCurrentQuorumsInfoRequestV0;
-use dapi_grpc::platform::v0::{self as platform_proto};
+use dapi_grpc::platform::v0::{self as platform_proto, ResponseMetadata};
+use drive_proof_verifier::types::EvonodeStatus;
 use drive_proof_verifier::unproved::FromUnproved;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::fmt::Debug;
 
+use super::Query;
+
 #[async_trait::async_trait]
 pub trait FetchUnproved
 where
-    Self: Sized + Debug,
+    Self: Sized + Debug + MockResponse,
 {
     /// Type of request used to fetch data from Platform.
     type Request: TransportRequest;
@@ -25,8 +27,20 @@ where
     /// * `Ok(Some(Self))` when object is found.
     /// * `Ok(None)` when object is not found.
     /// * [`Err(Error)`](Error) when an error occurs.
-    async fn fetch_unproved(sdk: &Sdk) -> Result<Option<Self>, Error> {
-        Self::fetch_unproved_with_settings(sdk, RequestSettings::default()).await
+    async fn fetch_unproved<Q: Query<<Self as FetchUnproved>::Request>>(
+        sdk: &Sdk,
+        query: Q,
+    ) -> Result<Option<Self>, Error>
+    where
+        Self: FromUnproved<
+            <Self as FetchUnproved>::Request,
+            Request = <Self as FetchUnproved>::Request,
+            Response = <<Self as FetchUnproved>::Request as TransportRequest>::Response,
+        >,
+    {
+        let (obj, _mtd) =
+            Self::fetch_unproved_with_settings(sdk, query, RequestSettings::default()).await?;
+        Ok(obj)
     }
 
     /// Fetch unproved data from the Platform with custom settings.
@@ -40,36 +54,36 @@ where
     /// * `Ok(Some(Self))` when object is found.
     /// * `Ok(None)` when object is not found.
     /// * [`Err(Error)`](Error) when an error occurs.
-    async fn fetch_unproved_with_settings(
+    async fn fetch_unproved_with_settings<Q: Query<<Self as FetchUnproved>::Request>>(
         sdk: &Sdk,
+        query: Q,
         settings: RequestSettings,
-    ) -> Result<Option<Self>, Error>;
-}
-
-#[async_trait::async_trait]
-impl FetchUnproved for drive_proof_verifier::types::CurrentQuorumsInfo {
-    type Request = platform_proto::GetCurrentQuorumsInfoRequest;
-
-    async fn fetch_unproved_with_settings(
-        sdk: &Sdk,
-        settings: RequestSettings,
-    ) -> Result<Option<Self>, Error> {
-        // Create the request from the query
-        let request = Self::Request {
-            version: Some(proto::get_current_quorums_info_request::Version::V0(
-                GetCurrentQuorumsInfoRequestV0 {},
-            )),
-        };
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: FromUnproved<
+            <Self as FetchUnproved>::Request,
+            Request = <Self as FetchUnproved>::Request,
+            Response = <<Self as FetchUnproved>::Request as TransportRequest>::Response,
+        >,
+    {
+        // Default implementation
+        let request: <Self as FetchUnproved>::Request = query.query(false)?;
 
         // Execute the request using the Sdk instance
         let response = request.clone().execute(sdk, settings).await?;
 
-        // Parse the response into a CurrentQuorumsInfo object along with metadata
-        match Self::maybe_from_unproved_with_metadata(request, response, sdk.network, sdk.version())
-        {
-            Ok((Some(info), _metadata)) => Ok(Some(info)),
-            Ok((None, _metadata)) => Ok(None),
-            Err(err) => Err(err.into()),
-        }
+        // Parse the response into the appropriate type along with metadata
+        let (object, mtd): (Option<Self>, platform_proto::ResponseMetadata) =
+            Self::maybe_from_unproved_with_metadata(request, response, sdk.network, sdk.version())?;
+
+        Ok((object, mtd))
     }
+}
+
+impl FetchUnproved for drive_proof_verifier::types::CurrentQuorumsInfo {
+    type Request = platform_proto::GetCurrentQuorumsInfoRequest;
+}
+
+impl FetchUnproved for EvonodeStatus {
+    type Request = platform_proto::GetStatusRequest;
 }

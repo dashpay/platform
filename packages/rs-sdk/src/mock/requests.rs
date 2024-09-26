@@ -6,7 +6,6 @@ use dpp::{
     document::{serialization_traits::DocumentCborMethodsV0, Document},
     identifier::Identifier,
     identity::IdentityPublicKey,
-    node::status::EvonodeStatus,
     platform_serialization::{platform_encode_to_vec, platform_versioned_decode_from_slice},
     prelude::{DataContract, Identity},
     serialization::{
@@ -16,13 +15,14 @@ use dpp::{
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
 use drive_proof_verifier::types::{
-    Contenders, ContestedResources, ElementFetchRequestItem, IdentityBalanceAndRevision,
-    MasternodeProtocolVote, PrefundedSpecializedBalance, ProposerBlockCounts,
-    RetrievedIntegerValue, TotalCreditsInPlatform, VotePollsGroupedByTimestamp, Voters,
+    Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem, EvonodeStatus,
+    IdentityBalanceAndRevision, MasternodeProtocolVote, PrefundedSpecializedBalance,
+    ProposerBlockCounts, RetrievedIntegerValue, TotalCreditsInPlatform,
+    VotePollsGroupedByTimestamp, Voters,
 };
 use std::collections::BTreeMap;
 
-static BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
+pub(crate) static BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
 /// Trait implemented by objects that can be used in mock expectation responses.
 ///
@@ -245,3 +245,4 @@ impl_mock_response!(PrefundedSpecializedBalance);
 impl_mock_response!(TotalCreditsInPlatform);
 impl_mock_response!(ElementFetchRequestItem);
 impl_mock_response!(EvonodeStatus);
+impl_mock_response!(CurrentQuorumsInfo);
