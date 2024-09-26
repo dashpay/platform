@@ -448,7 +448,7 @@ export default {
                 },
                 exclude: {
                   type: 'array',
-                  description: 'Exclude debugging information for a category or categories.',
+                  description: 'Exclude debugging information for one or more categories.',
                   uniqueItems: true,
                   items: {
                     type: 'string',
