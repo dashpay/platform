@@ -321,6 +321,7 @@ where
         // Corresponding withdrawal documents are changed from queued to pooled
         self.pool_withdrawals_into_transactions_queue(
             &block_info,
+            &last_committed_platform_state,
             Some(transaction),
             platform_version,
         )?;

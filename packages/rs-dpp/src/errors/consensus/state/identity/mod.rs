@@ -14,3 +14,5 @@ pub mod invalid_identity_revision_error;
 pub mod master_public_key_update_error;
 pub mod max_identity_public_key_limit_reached_error;
 pub mod missing_identity_public_key_ids_error;
+pub mod missing_transfer_key_error;
+pub mod no_transfer_key_for_core_withdrawal_available_error;

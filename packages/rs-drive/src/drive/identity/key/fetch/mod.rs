@@ -22,6 +22,7 @@ use {
 };
 
 // Conditional imports for the feature "server"
+use crate::drive::identity::identity_transfer_keys_path_vec;
 #[cfg(feature = "server")]
 use {
     crate::error::{drive::DriveError, fee::FeeError, identity::IdentityError, Error},
@@ -74,6 +75,8 @@ pub enum KeyRequestType {
     SpecificKeys(Vec<KeyID>),
     /// Search for keys on an identity
     SearchKey(BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>),
+    /// Recent withdrawal keys
+    RecentWithdrawalKeys,
     /// Search for contract bound keys
     ContractBoundKey([u8; 32], Purpose, KeyKindRequestType),
     /// Search for contract bound keys
@@ -655,7 +658,9 @@ impl IdentityKeysRequest {
                     .fee_version
                     .processing
                     .fetch_single_identity_key_processing_cost),
-            SearchKey(_search) => todo!(),
+            SearchKey(_) => Err(Error::Fee(FeeError::OperationNotAllowed(
+                "You can not get costs for requesting search key",
+            ))),
             ContractBoundKey(_, _, key_kind) | ContractDocumentTypeBoundKey(_, _, _, key_kind) => {
                 match key_kind {
                     CurrentKeyOfKindRequest => {
@@ -670,6 +675,11 @@ impl IdentityKeysRequest {
                     ))),
                 }
             }
+            KeyRequestType::RecentWithdrawalKeys => Ok(self.limit.unwrap_or(10) as Credits
+                * platform_version
+                    .fee_version
+                    .processing
+                    .fetch_single_identity_key_processing_cost),
         }
     }
 
@@ -918,6 +928,19 @@ impl IdentityKeysRequest {
                         Query::new_single_query_item(QueryItem::RangeFull(RangeFull))
                     }
                 };
+                PathQuery {
+                    path: query_keys_path,
+                    query: SizedQuery {
+                        query,
+                        limit,
+                        offset,
+                    },
+                }
+            }
+            KeyRequestType::RecentWithdrawalKeys => {
+                let query_keys_path = identity_transfer_keys_path_vec(&identity_id);
+                let mut query = Query::new_with_direction(false);
+                query.insert_all();
                 PathQuery {
                     path: query_keys_path,
                     query: SizedQuery {

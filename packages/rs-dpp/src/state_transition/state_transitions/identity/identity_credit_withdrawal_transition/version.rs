@@ -6,6 +6,7 @@ impl FeatureVersioned for IdentityCreditWithdrawalTransition {
     fn feature_version(&self) -> FeatureVersion {
         match self {
             IdentityCreditWithdrawalTransition::V0(v0) => v0.feature_version(),
+            IdentityCreditWithdrawalTransition::V1(v1) => v1.feature_version(),
         }
     }
 }

@@ -373,33 +373,13 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
                 }
             };
 
-        let key_request = match parse_key_request_type(&request_type)? {
-            KeyRequestType::SpecificKeys(specific_keys) => {
-                IdentityKeysRequest::new_specific_keys_query(&identity_id, specific_keys)
-            }
-            KeyRequestType::AllKeys => IdentityKeysRequest::new_all_keys_query(&identity_id, None),
-            KeyRequestType::SearchKey(criteria) => IdentityKeysRequest {
-                identity_id,
-                request_type: KeyRequestType::SearchKey(criteria),
-                limit,
-                offset,
-            },
-            KeyRequestType::ContractBoundKey(id, purpose, kind) => IdentityKeysRequest {
-                identity_id,
-                request_type: KeyRequestType::ContractBoundKey(id, purpose, kind),
-                limit,
-                offset,
-            },
-            KeyRequestType::ContractDocumentTypeBoundKey(id, s, purpose, kind) => {
-                IdentityKeysRequest {
-                    identity_id,
-                    request_type: KeyRequestType::ContractDocumentTypeBoundKey(
-                        id, s, purpose, kind,
-                    ),
-                    limit,
-                    offset,
-                }
-            }
+        let request_type = parse_key_request_type(&request_type)?;
+
+        let key_request = IdentityKeysRequest {
+            identity_id,
+            request_type,
+            limit,
+            offset,
         };
 
         tracing::debug!(?identity_id, "checking proof of identity keys");

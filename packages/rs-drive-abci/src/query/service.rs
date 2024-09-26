@@ -15,12 +15,13 @@ use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
     GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
     GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
-    GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
-    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
-    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
-    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
-    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse,
+    GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest,
+    GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
+    GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
+    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
+    GetEvonodesProposedEpochBlocksResponse, GetIdentitiesBalancesRequest,
+    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentityBalanceAndRevisionRequest,
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
     GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
@@ -593,6 +594,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_proposed_block_counts_by_range,
             "query_proposed_block_counts_by_range",
+        )
+        .await
+    }
+
+    async fn get_current_quorums_info(
+        &self,
+        request: Request<GetCurrentQuorumsInfoRequest>,
+    ) -> Result<Response<GetCurrentQuorumsInfoResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_current_quorums_info,
+            "query_current_quorums_info",
         )
         .await
     }

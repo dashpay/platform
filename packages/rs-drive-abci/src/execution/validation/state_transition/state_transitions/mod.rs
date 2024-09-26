@@ -345,6 +345,7 @@ pub(in crate::execution) mod tests {
     pub(in crate::execution) fn setup_identity_with_withdrawal_key_and_system_credits(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
+        withdrawal_key_type: KeyType,
         credits: Credits,
     ) -> (Identity, SimpleSigner, IdentityPublicKey, IdentityPublicKey) {
         let platform_version = PlatformVersion::latest();
@@ -382,7 +383,7 @@ pub(in crate::execution) mod tests {
                 &mut rng,
                 Purpose::TRANSFER,
                 SecurityLevel::CRITICAL,
-                KeyType::ECDSA_SECP256K1,
+                withdrawal_key_type,
                 None,
                 platform_version,
             )

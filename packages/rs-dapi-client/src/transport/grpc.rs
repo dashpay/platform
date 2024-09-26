@@ -376,6 +376,15 @@ impl_transport_request_grpc!(
     get_total_credits_in_platform
 );
 
+// rpc getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetCurrentQuorumsInfoRequest,
+    platform_proto::GetCurrentQuorumsInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_current_quorums_info
+);
+
 // Link to each core gRPC request what client and method to use:
 
 impl_transport_request_grpc!(
