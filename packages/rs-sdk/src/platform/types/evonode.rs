@@ -5,6 +5,7 @@ use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 use dapi_grpc::platform::v0::{self as proto, get_status_request, GetStatusRequest};
 use dapi_grpc::tonic::IntoRequest;
+pub use drive_proof_verifier::types::EvonodeStatus;
 use futures::future::BoxFuture;
 use futures::{FutureExt, TryFutureExt};
 use rs_dapi_client::transport::{
@@ -18,18 +19,27 @@ use std::fmt::Debug;
 ///
 /// ## Example
 ///
-/// ```rust
-/// use dash_sdk::{platform::query::EvoNode, Sdk};
+/// ```rust,no_run
+/// use dash_sdk::{platform::types::evonode::EvoNode,platform::FetchUnproved, Sdk};
+/// use drive_proof_verifier::types::EvonodeStatus;
 /// use futures::executor::block_on;
 ///
 /// let sdk = Sdk::new_mock();
-/// let node = EvoNode::new("https://44.232.196.6:443".parse().unwrap());
-/// let status = block_on(node.get_status(&sdk)).unwrap();
+/// let uri: http::Uri = "http://127.0.0.1:1".parse().unwrap();
+/// let node = EvoNode::new(uri.into());
+/// let status = block_on(EvonodeStatus::fetch_unproved(&sdk, node)).unwrap();
 /// ```
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "mocks", derive(Serialize, Deserialize))]
 pub struct EvoNode(Address);
+
+impl EvoNode {
+    /// Creates a new `EvoNode` with the given address.  
+    pub fn new(address: Address) -> Self {
+        Self(address)
+    }
+}
 
 #[cfg(feature = "mocks")]
 impl Mockable for EvoNode {
