@@ -51,7 +51,7 @@ export default class ResetCommand extends ConfigBaseCommand {
                     + ' will be kept';
                 }
               } else {
-                message = 'Are you sure you want to reset you node data and configuration?';
+                message = 'Are you sure you want to reset your node data and configuration?';
                 if (ctx.isPlatformOnlyReset) {
                   message = 'Are you sure you want to reset platform related data and configuration?';
                 }
