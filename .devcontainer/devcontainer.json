@@ -8,13 +8,18 @@
     "vscode": {
       "settings": {},
       "extensions": [
-        "ms-vscode.cpptools",
+        "arcanis.vscode-zipfs",
+        "chrmarti.regex",
+        "davidanson.vscode-markdownlint",
+        "arcanis.vscode-zipfs",
         "ms-vscode.cmake-tools",
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "vadimcn.vscode-lldb",
         "rust-lang.rust-analyzer",
         "tamasfe.even-better-toml",
+        "zhangyue.rust-mod-generator",
+        "ms-azuretools.vscode-docker"
       ]
     }
   },
@@ -33,5 +38,8 @@
     "ghcr.io/eitsupi/devcontainer-features/jq-likes:2": {},
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
   },
-  "postCreateCommand": "cargo install wasm-bindgen-cli@0.2.85"
+  "postCreateCommand": {
+    "wasm-bindgen-ci": "cargo install wasm-bindgen-cli@0.2.85",
+    "corepack": "corepack enable && yarn install",
+  }
 }
