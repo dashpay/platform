@@ -17,6 +17,7 @@ mod contested_resource_voters;
 mod data_contract;
 mod document;
 mod epoch;
+mod evonode;
 mod identity;
 mod identity_contract_nonce;
 mod mock_fetch;

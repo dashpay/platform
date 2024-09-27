@@ -421,3 +421,12 @@ impl_transport_request_grpc!(
     },
     subscribe_to_transactions_with_proofs
 );
+
+// rpc getStatus(GetStatusRequest) returns (GetStatusResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetStatusRequest,
+    platform_proto::GetStatusResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_status
+);
