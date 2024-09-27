@@ -21,13 +21,13 @@ use std::fmt::Debug;
 ///
 /// ```rust,no_run
 /// use dash_sdk::{platform::types::evonode::EvoNode,platform::FetchUnproved, Sdk};
-/// use drive_proof_verifier::types::EvonodeStatus;
+/// use drive_proof_verifier::types::EvoNodeStatus;
 /// use futures::executor::block_on;
 ///
 /// let sdk = Sdk::new_mock();
 /// let uri: http::Uri = "http://127.0.0.1:1".parse().unwrap();
 /// let node = EvoNode::new(uri.into());
-/// let status = block_on(EvonodeStatus::fetch_unproved(&sdk, node)).unwrap();
+/// let status = block_on(EvoNodeStatus::fetch_unproved(&sdk, node)).unwrap();
 /// ```
 
 #[derive(Debug, Clone)]

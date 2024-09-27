@@ -1,7 +1,10 @@
 //! Status details of EvoNode, like version, current height, etc.
 
 use crate::Error;
-use dapi_grpc::platform::v0::{get_status_response, GetStatusResponse};
+use dapi_grpc::platform::v0::{
+    get_status_response::{self},
+    GetStatusResponse,
+};
 
 #[cfg(feature = "mocks")]
 use {
@@ -208,7 +211,22 @@ impl TryFrom<GetStatusResponse> for EvoNodeStatus {
     type Error = Error;
 
     fn try_from(response: GetStatusResponse) -> Result<Self, Self::Error> {
-        match response.version {
+        Ok(Self {
+            version: Version::try_from(&response)?,
+            node: Node::try_from(&response)?,
+            chain: Chain::try_from(&response)?,
+            network: Network::try_from(&response)?,
+            state_sync: StateSync::try_from(&response)?,
+            time: Time::try_from(&response)?,
+        })
+    }
+}
+
+impl TryFrom<&GetStatusResponse> for Version {
+    type Error = Error;
+
+    fn try_from(response: &GetStatusResponse) -> Result<Self, Self::Error> {
+        match &response.version {
             Some(get_status_response::Version::V0(v0)) => {
                 let software = v0
                     .version
@@ -220,54 +238,109 @@ impl TryFrom<GetStatusResponse> for EvoNodeStatus {
                         tenderdash: s.tenderdash,
                     });
 
-                let protocol = v0.version.and_then(|v| v.protocol).map(|p| Protocol {
-                    tenderdash: p.tenderdash.map(|t| TenderdashProtocol {
-                        p2p: t.p2p,
-                        block: t.block,
-                    }),
-                    drive: p.drive.map(|d| DriveProtocol {
-                        latest: d.latest,
-                        current: d.current,
-                    }),
-                });
+                let protocol = v0
+                    .version
+                    .as_ref()
+                    .and_then(|v| v.protocol.clone())
+                    .map(|p| Protocol {
+                        tenderdash: p.tenderdash.map(|t| TenderdashProtocol {
+                            p2p: t.p2p,
+                            block: t.block,
+                        }),
+                        drive: p.drive.map(|d| DriveProtocol {
+                            latest: d.latest,
+                            current: d.current,
+                        }),
+                    });
 
-                let version = Version { software, protocol };
+                Ok(Self { software, protocol })
+            }
+            _ => Err(Error::EmptyVersion),
+        }
+    }
+}
 
+impl TryFrom<&GetStatusResponse> for Node {
+    type Error = Error;
+
+    fn try_from(response: &GetStatusResponse) -> Result<Self, Self::Error> {
+        match &response.version {
+            Some(get_status_response::Version::V0(v0)) => {
                 let node = v0
                     .node
-                    .map(|n| Node {
-                        id: n.id,
-                        pro_tx_hash: n.pro_tx_hash,
+                    .as_ref()
+                    .map(|n| Self {
+                        id: n.id.clone(),
+                        pro_tx_hash: n.pro_tx_hash.clone(),
                     })
                     .unwrap_or_default();
+                Ok(node)
+            }
+            _ => Err(Error::EmptyVersion),
+        }
+    }
+}
 
+impl TryFrom<&GetStatusResponse> for Chain {
+    type Error = Error;
+
+    fn try_from(response: &GetStatusResponse) -> Result<Self, Self::Error> {
+        match &response.version {
+            Some(get_status_response::Version::V0(v0)) => {
                 let chain = v0
                     .chain
-                    .map(|c| Chain {
+                    .as_ref()
+                    .map(|c| Self {
                         catching_up: c.catching_up,
-                        latest_block_hash: c.latest_block_hash,
-                        latest_app_hash: c.latest_app_hash,
-                        earliest_block_hash: c.earliest_block_hash,
-                        earliest_app_hash: c.earliest_app_hash,
+                        latest_block_hash: c.latest_block_hash.clone(),
+                        latest_app_hash: c.latest_app_hash.clone(),
+                        earliest_block_hash: c.earliest_block_hash.clone(),
+                        earliest_app_hash: c.earliest_app_hash.clone(),
                         latest_block_height: c.latest_block_height,
                         earliest_block_height: c.earliest_block_height,
                         max_peer_block_height: c.max_peer_block_height,
                         core_chain_locked_height: c.core_chain_locked_height,
                     })
                     .unwrap_or_default();
+                Ok(chain)
+            }
+            _ => Err(Error::EmptyVersion),
+        }
+    }
+}
 
+impl TryFrom<&GetStatusResponse> for Network {
+    type Error = Error;
+
+    fn try_from(response: &GetStatusResponse) -> Result<Self, Self::Error> {
+        match &response.version {
+            Some(get_status_response::Version::V0(v0)) => {
                 let network = v0
                     .network
-                    .map(|n| Network {
-                        chain_id: n.chain_id,
+                    .as_ref()
+                    .map(|n| Self {
+                        chain_id: n.chain_id.clone(),
                         peers_count: n.peers_count,
                         listening: n.listening,
                     })
                     .unwrap_or_default();
+                Ok(network)
+            }
+            _ => Err(Error::EmptyVersion),
+        }
+    }
+}
 
+impl TryFrom<&GetStatusResponse> for StateSync {
+    type Error = Error;
+
+    fn try_from(response: &GetStatusResponse) -> Result<Self, Self::Error> {
+        match &response.version {
+            Some(get_status_response::Version::V0(v0)) => {
                 let state_sync = v0
                     .state_sync
-                    .map(|s| StateSync {
+                    .as_ref()
+                    .map(|s| Self {
                         total_synced_time: s.total_synced_time,
                         remaining_time: s.remaining_time,
                         total_snapshots: s.total_snapshots,
@@ -278,27 +351,32 @@ impl TryFrom<GetStatusResponse> for EvoNodeStatus {
                         backfill_blocks_total: s.backfill_blocks_total,
                     })
                     .unwrap_or_default();
+                Ok(state_sync)
+            }
+            _ => Err(Error::EmptyVersion),
+        }
+    }
+}
 
+impl TryFrom<&GetStatusResponse> for Time {
+    type Error = Error;
+
+    fn try_from(response: &GetStatusResponse) -> Result<Self, Self::Error> {
+        match &response.version {
+            Some(get_status_response::Version::V0(v0)) => {
                 let time = v0
                     .time
-                    .map(|t| Time {
+                    .as_ref()
+                    .map(|t| Self {
                         local: t.local,
                         block: t.block,
                         genesis: t.genesis,
                         epoch: t.epoch,
                     })
                     .unwrap_or_default();
-
-                Ok(Self {
-                    version,
-                    node,
-                    chain,
-                    network,
-                    state_sync,
-                    time,
-                })
+                Ok(time)
             }
-            None => Err(Error::EmptyVersion),
+            _ => Err(Error::EmptyVersion),
         }
     }
 }
