@@ -614,9 +614,10 @@ pub fn create_identity_credit_transfer_transition(
 ///   platform version is used is crucial for compatibility and consistency in state transition creation.
 ///
 /// # Returns
-/// A vector of tuples, where each tuple contains:
-/// 1. `Identity`: The generated random identity object.
-/// 2. `StateTransition`: The generated state transition representing the creation of the identity.
+/// A vector of results, where each result is either:
+/// 1. `Ok((Identity, StateTransition))`: A tuple containing the generated random identity object and
+///    the generated state transition representing the creation of the identity.
+/// 2. `Err(ProtocolError)`: An error that occurred during the process.
 ///
 /// # Examples
 /// ```ignore
@@ -642,7 +643,7 @@ pub fn create_identities_state_transitions(
     rng: &mut StdRng,
     asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
     platform_version: &PlatformVersion,
-) -> Result<Vec<(Identity, StateTransition)>, ProtocolError> {
+) -> Vec<Result<(Identity, StateTransition), ProtocolError>> {
     let (mut identities, mut keys) =
         Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
             count,
@@ -650,6 +651,10 @@ pub fn create_identities_state_transitions(
             rng,
             platform_version,
         )
+        .map_err(|e| {
+            tracing::error!("Failed to create identities and keys: {:?}", e);
+            ProtocolError::Generic("Failed to create identities and keys".to_string())
+        })
         .expect("Expected to create identities and keys");
 
     let starting_id_num = signer
@@ -663,18 +668,28 @@ pub fn create_identities_state_transitions(
         for (_, (purpose, security_to_key_type_map)) in extra_keys.iter().enumerate() {
             for (security_level, key_types) in security_to_key_type_map {
                 for key_type in key_types {
-                    let (key, private_key) = IdentityPublicKey::random_key_with_known_attributes(
-                        (identity.public_keys().len() + 1) as KeyID,
-                        rng,
-                        *purpose,
-                        *security_level,
-                        *key_type,
-                        None,
-                        platform_version,
-                    )?;
-                    identity.add_public_key(key.clone());
-                    let key_num = key_count as usize * (i + 1) + i;
-                    keys.insert(key_num, (key, private_key))
+                    // Generate a key with known attributes, handle any potential error
+                    if let Ok((key, private_key)) =
+                        IdentityPublicKey::random_key_with_known_attributes(
+                            (identity.public_keys().len() + 1) as KeyID,
+                            rng,
+                            *purpose,
+                            *security_level,
+                            *key_type,
+                            None,
+                            platform_version,
+                        )
+                    {
+                        identity.add_public_key(key.clone());
+                        let key_num = key_count as usize * (i + 1) + i;
+                        keys.insert(key_num, (key, private_key));
+                    } else {
+                        tracing::error!(
+                            "Failed to generate key with known attributes for identity index {}",
+                            i
+                        );
+                        continue;
+                    }
                 }
             }
         }
@@ -704,9 +719,10 @@ pub fn create_identities_state_transitions(
                 .values_mut()
                 .enumerate()
                 .for_each(|(key_index, public_key)| {
-                    let IdentityPublicKey::V0(ref mut id_pub_key_v0) = public_key;
-                    let new_id = identity_starting_id + key_index as u32;
-                    id_pub_key_v0.set_id(new_id);
+                    if let IdentityPublicKey::V0(ref mut id_pub_key_v0) = public_key {
+                        let new_id = identity_starting_id + key_index as u32;
+                        id_pub_key_v0.set_id(new_id);
+                    }
                 });
 
             if let Some(proof_and_pk) = asset_lock_proofs.pop() {
@@ -725,16 +741,20 @@ pub fn create_identities_state_transitions(
                         identity.set_id(identity_create_transition.owner_id());
                         Ok((identity, identity_create_transition))
                     }
-                    Err(e) => Err(e),
+                    Err(e) => {
+                        tracing::error!("Error creating transition: {:?}", e);
+                        Err(e)
+                    }
                 }
             } else {
+                tracing::error!("No asset lock proof to create transition");
                 Err(ProtocolError::Generic(
                     "No asset lock proofs available for create_identities_state_transitions"
                         .to_string(),
                 ))
             }
         })
-        .collect::<Result<Vec<(Identity, StateTransition)>, ProtocolError>>()
+        .collect::<Vec<Result<(Identity, StateTransition), ProtocolError>>>()
 }
 
 /// Generates state transitions for the creation of new identities.
