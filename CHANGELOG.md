@@ -19,7 +19,6 @@
 
 ### Bug Fixes
 
-* build dashmate on macos14
 * **dapi:** getStatus cache invalidation ([#2155](https://github.com/dashpay/platform/issues/2155))
 * **dapi:** invalid mainnet seed ports ([#2173](https://github.com/dashpay/platform/issues/2173))
 * **dashmate:** cannot read properties of undefined (reading 'expires') ([#2164](https://github.com/dashpay/platform/issues/2164))
@@ -28,6 +27,11 @@
 * **dashmate:** port marks as closed if ipv6 is not disabled ([#2162](https://github.com/dashpay/platform/issues/2162))
 * **dashmate:** remove confusing short flag name ([#2165](https://github.com/dashpay/platform/issues/2165))
 
+
+### Continuous integration
+
+* build dashmate package on macos14
+  
 
 ### Documentation
 
