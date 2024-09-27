@@ -16,7 +16,7 @@ async fn test_evonode_status() {
     let cfg = Config::new();
     let sdk = cfg.setup_api("test_evonode_status").await;
 
-    let addresses = sdk.address_list().unwrap();
+    let addresses = cfg.address_list();
 
     for address in addresses {
         let node = EvoNode::new(address.clone());
@@ -55,7 +55,6 @@ async fn test_evonode_status() {
 
 /// Given invalid evonode URI, when we request status, we get error.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[cfg(feature = "network-testing")] // No mocking of error responses
 async fn test_evonode_status_refused() {
     setup_logs();
 
