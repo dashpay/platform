@@ -198,11 +198,6 @@ impl AddressList {
     pub fn is_empty(&self) -> bool {
         self.addresses.is_empty()
     }
-
-    /// Getter function that returns a reference to the Hashset of addresses
-    pub fn addresses(&self) -> &HashSet<Address> {
-        &self.addresses
-    }
 }
 
 impl From<&str> for AddressList {
@@ -224,5 +219,14 @@ impl FromIterator<Uri> for AddressList {
         }
 
         address_list
+    }
+}
+
+impl IntoIterator for AddressList {
+    type Item = Address;
+    type IntoIter = std::collections::hash_set::IntoIter<Address>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.addresses.into_iter()
     }
 }

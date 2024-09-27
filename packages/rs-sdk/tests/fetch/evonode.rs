@@ -20,7 +20,7 @@ async fn test_evonode_status() {
 
     let addresses = sdk.address_list().unwrap();
 
-    for address in addresses.addresses() {
+    for address in addresses {
         let node = EvoNode::new(address.clone());
         match timeout(
             Duration::from_secs(3),
@@ -57,6 +57,7 @@ async fn test_evonode_status() {
 
 /// Given invalid evonode URI, when we request status, we get error.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg(feature = "network-testing")] // No mocking of error responses
 async fn test_evonode_status_refused() {
     setup_logs();
 
