@@ -22,3 +22,4 @@ services:
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/core/insight/dashcore-node.json:/insight/dashcore-node.json
     profiles:
       - core
+    oom_kill_disable: false

@@ -25,6 +25,7 @@ services:
     volumes:
       - ${DASHMATE_HOME_DIR:?err}:/home/dashmate/.dashmate
       - /var/run/docker.sock:/var/run/docker.sock
+    oom_kill_disable: false
 
   core:
     image: ${CORE_DOCKER_IMAGE:?err}
@@ -48,6 +49,7 @@ services:
       - WSL2_FIX=${WSL2_FIX:-0}
     profiles:
       - core
+    oom_kill_disable: false
 
   drive_abci:
     image: ${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE:?err}
@@ -105,6 +107,7 @@ services:
       - ${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_HOST:?err}:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}:${PLATFORM_DRIVE_ABCI_TOKIO_CONSOLE_PORT:?err}
       - ${PLATFORM_DRIVE_ABCI_METRICS_HOST:?err}:${PLATFORM_DRIVE_ABCI_METRICS_PORT:?err}:29090
       - ${PLATFORM_DRIVE_ABCI_GROVEDB_VISUALIZER_HOST:?err}:${PLATFORM_DRIVE_ABCI_GROVEDB_VISUALIZER_PORT:?err}:${PLATFORM_DRIVE_ABCI_GROVEDB_VISUALIZER_PORT:?err}
+    oom_kill_disable: false
 
   drive_tenderdash:
     image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}
@@ -125,6 +128,7 @@ services:
     stop_grace_period: 10s
     profiles:
       - platform
+    oom_kill_disable: false
 
   dapi_api:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
@@ -160,6 +164,7 @@ services:
       - 3005
     profiles:
       - platform
+    oom_kill_disable: false
 
   dapi_core_streams:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
@@ -189,6 +194,7 @@ services:
     stop_grace_period: 10s
     profiles:
       - platform
+    oom_kill_disable: false
 
   gateway:
     image: ${PLATFORM_GATEWAY_DOCKER_IMAGE:?err}
@@ -221,6 +227,7 @@ services:
     stop_grace_period: 10s
     profiles:
       - platform
+    oom_kill_disable: false
 
 volumes:
   core_data:

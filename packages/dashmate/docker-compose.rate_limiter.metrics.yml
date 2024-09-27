@@ -26,3 +26,4 @@ services:
       - 9125/udp
     ports:
       - ${PLATFORM_GATEWAY_RATE_LIMITER_METRICS_HOST:?err}:${PLATFORM_GATEWAY_RATE_LIMITER_METRICS_PORT:?err}:9102
+    oom_kill_disable: false

@@ -48,6 +48,7 @@ services:
       - 8081
     profiles:
       - platform
+    oom_kill_disable: false
 
   gateway_rate_limiter_redis:
     labels:
@@ -61,3 +62,4 @@ services:
       - gateway_rate_limiter
     profiles:
       - platform
+    oom_kill_disable: false
