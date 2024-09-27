@@ -519,7 +519,7 @@ impl Sdk {
                 Ok(address_list_lock.clone())
             }
             SdkInstance::Mock { .. } => {
-                todo!();
+                unimplemented!("mock Sdk does not have address list")
             }
         }
     }
