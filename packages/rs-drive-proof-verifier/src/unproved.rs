@@ -290,6 +290,7 @@ impl FromUnproved<platform::GetStatusRequest> for EvonodeStatus {
         Self: Sized,
     {
         let status = Self::try_from(response.into())?;
+        // we use default response metadata, as this request does not return any metadata
         Ok((Some(status), Default::default()))
     }
 }

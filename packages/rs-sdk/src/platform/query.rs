@@ -100,7 +100,7 @@ where
 {
     fn query(self, prove: bool) -> Result<T, Error> {
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            tracing::warn!(request= ?self, "sending query without proof, ensure data is trusted");
         }
         Ok(self)
     }

@@ -1,12 +1,10 @@
 //! Test evo node status and other node-related functionality.
 
+use super::{common::setup_logs, config::Config};
 use dash_sdk::platform::{types::evonode::EvoNode, FetchUnproved};
 use dpp::dashcore::{hashes::Hash, ProTxHash};
 use drive_proof_verifier::types::EvonodeStatus;
 use http::Uri;
-
-use super::{common::setup_logs, config::Config};
-
 use std::time::Duration;
 /// Given some existing evonode URIs, WHEN we connect to them, THEN we get status.
 use tokio::time::timeout;
@@ -68,8 +66,7 @@ async fn test_evonode_status_refused() {
 
     let node = EvoNode::new(uri.clone().into());
     let result = EvonodeStatus::fetch_unproved(&sdk, node).await;
+    tracing::debug!(?result, ?uri, "evonode status");
 
     assert!(result.is_err());
-
-    tracing::debug!(?result, ?uri, "evonode status");
 }

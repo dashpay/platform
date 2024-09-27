@@ -1,13 +1,16 @@
+use super::{types::evonode::EvoNode, Query};
 use crate::error::Error;
 use crate::mock::MockResponse;
 use crate::Sdk;
-use dapi_grpc::platform::v0::{self as platform_proto, ResponseMetadata};
+use dapi_grpc::platform::v0::{
+    self as platform_proto, get_status_request::GetStatusRequestV0, GetStatusRequest,
+    GetStatusResponse, ResponseMetadata,
+};
+use dpp::{dashcore::Network, version::PlatformVersion};
 use drive_proof_verifier::types::EvonodeStatus;
 use drive_proof_verifier::unproved::FromUnproved;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::fmt::Debug;
-
-use super::Query;
 
 #[async_trait::async_trait]
 pub trait FetchUnproved
@@ -85,5 +88,29 @@ impl FetchUnproved for drive_proof_verifier::types::CurrentQuorumsInfo {
 }
 
 impl FetchUnproved for EvonodeStatus {
-    type Request = platform_proto::GetStatusRequest;
+    type Request = EvoNode;
+}
+
+// We need to delegate FromUnproved for the impl FetchUnproved for EvonodeStatus.
+#[async_trait::async_trait]
+impl FromUnproved<EvoNode> for EvonodeStatus {
+    type Request = EvoNode;
+    type Response = GetStatusResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), drive_proof_verifier::Error>
+    where
+        Self: Sized,
+    {
+        <Self as FromUnproved<GetStatusRequest>>::maybe_from_unproved_with_metadata(
+            GetStatusRequestV0 {},
+            response,
+            network,
+            platform_version,
+        )
+    }
 }
