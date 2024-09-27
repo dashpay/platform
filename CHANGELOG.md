@@ -1,4 +1,4 @@
-## [1.4.0-dev.2](https://github.com/dashpay/platform/compare/v1.3.0...v1.4.0-dev.2) (2024-09-27)
+## [1.4.0-dev.1](https://github.com/dashpay/platform/compare/v1.3.0...v1.4.0-dev.1) (2024-09-27)
 
 
 ### ⚠ BREAKING CHANGES
@@ -43,6 +43,7 @@
 
 * **dashmate:** do not call mint on masternodes ([#2172](https://github.com/dashpay/platform/issues/2172))
 * **platform:** protocol version 4 creation ([#2153](https://github.com/dashpay/platform/issues/2153))
+
 
 ## [1.3.0](https://github.com/dashpay/platform/compare/v1.2.0...v1.3.0) (2024-09-19)
 
