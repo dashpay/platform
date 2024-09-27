@@ -26,6 +26,7 @@ use dpp::{
     util::deserializer::ProtocolVersion,
 };
 use drive::grovedb::Element;
+use hex::ToHex;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::Error;
@@ -623,12 +624,76 @@ pub struct ProposerBlockCountById(pub u64);
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-/// Status of a network node
+/// Status of a network node.
+///
+/// Some fields may be `None` if the information is not available, eg. when the node is not fully functional.
 pub struct EvonodeStatus {
     /// The Identifier of the Evonode
-    pub pro_tx_hash: [u8; ProTxHash::LEN],
+    pub pro_tx_hash: Option<[u8; ProTxHash::LEN]>, // We don't use ProTxHash as it doesn't implement Encode/Decode
     /// The latest block height stored on the Evonode
-    pub latest_block_height: u64,
+    pub latest_block_height: Option<u64>,
+    /// Version of DAPI service
+    pub dapi_version: Option<String>,
+    /// Version of Drive-ABCI service
+    pub drive_version: Option<String>,
+    /// Version of Tenderdash service
+    pub tenderdash_version: Option<String>,
+    /// Tenderdash P2P protocol version information
+    pub tenderdash_p2p_protocol: Option<u32>,
+    /// Tenderdash block protocol version information
+    pub tenderdash_block_protocol: Option<u32>,
+    /// Latest supported Drive protocol version
+    pub drive_latest_protocol: Option<u32>,
+    /// Current active Drive protocol version
+    pub drive_current_protocol: Option<u32>,
+    /// Local time of the node, in seconds since the Unix epoch
+    pub local_time: Option<u64>,
+    /// Last block time, in seconds since the Unix epoch
+    pub block_time: Option<u64>,
+    /// Genesis time, in seconds since the Unix epoch
+    pub genesis_time: Option<u64>,
+    /// Time of the current epoch
+    pub epoch_time: Option<u32>,
+    /// Tenderdash node ID (public key derived from the private key)
+    pub tenderdash_node_id: Option<Vec<u8>>,
+    /// Information if the node is catching up the Platform chain (Tenderdash)
+    pub catching_up: Option<bool>,
+    /// Latest platfom block hash
+    pub latest_block_hash: Option<Vec<u8>>,
+    /// Latest platform app hash
+    pub latest_app_hash: Option<Vec<u8>>,
+    /// Earliest block hash stored by the node
+    pub earliest_block_hash: Option<Vec<u8>>,
+    /// Earliest app hash stored by the node
+    pub earliest_app_hash: Option<Vec<u8>>,
+    /// Earliest block height stored by the node
+    pub earliest_block_height: Option<u64>,
+    /// Maximum block height of the peers
+    pub max_peer_block_height: Option<u64>,
+    /// Core chain locked height used by the node
+    pub core_chain_locked_height: Option<u32>,
+    /// Network chain ID
+    pub chain_id: Option<String>,
+    /// Number of peers in the addressbook
+    pub peers_count: Option<u32>,
+    /// Information if the node is listening for incoming connections
+    pub listening: Option<bool>,
+    /// State sync total time
+    pub sync_total_time: Option<u64>,
+    /// State sync remaining time
+    pub sync_remaining_time: Option<u64>,
+    /// State sync total snapshots
+    pub sync_total_snapshots: Option<u32>,
+    /// State sync chunk process average time
+    pub sync_chunk_process_avg_time: Option<u64>,
+    /// State sync snapshot height
+    pub sync_snapshot_height: Option<u64>,
+    /// State sync snapshot chunks count
+    pub sync_snapshot_chunks_count: Option<u64>,
+    /// State sync backfilled blocks
+    pub sync_backfilled_blocks: Option<u64>,
+    /// State sync backfill blocks total
+    pub sync_backfill_blocks_total: Option<u64>,
 }
 
 impl TryFrom<GetStatusResponse> for EvonodeStatus {
@@ -637,29 +702,74 @@ impl TryFrom<GetStatusResponse> for EvonodeStatus {
         use dapi_grpc::platform::v0::get_status_response::Version;
         match response.version {
             Some(Version::V0(v0)) => {
-                let node = v0.node.ok_or(Error::ProtocolError {
-                    error: "missing node information".to_string(),
-                })?;
+                let node = v0.node;
+                let chain = v0.chain;
+                let protx: Option<[u8; ProTxHash::LEN]> = node
+                    .as_ref()
+                    .and_then(|n| {
+                        n.pro_tx_hash.as_ref().map(|h| {
+                            h.clone().try_into().map_err(|_| Error::ProtocolError {
+                                error: format!(
+                                    "unvalid protxhash length: {:?}",
+                                    h.encode_hex::<String>()
+                                ),
+                            })
+                        })
+                    })
+                    .transpose()?;
 
-                let chain = v0.chain.ok_or(Error::ProtocolError {
-                    error: "missing chain information".to_string(),
-                })?;
+                let software = v0.version.as_ref().and_then(|v| v.software.clone());
+                let protocol = v0.version.as_ref().and_then(|v| v.protocol.clone());
 
-                let protx = node.pro_tx_hash.ok_or(Error::ProtocolError {
-                    error: "Missing pro_tx_hash".to_string(),
-                })?;
-                let protx_len = protx.len();
+                let tenderdash_protocol = protocol.as_ref().and_then(|p| p.tenderdash.clone());
+                let drive_protocol = protocol.as_ref().and_then(|p| p.drive.clone());
+
+                let time = v0.time;
+                let network = v0.network;
+                let state_sync = v0.state_sync;
 
                 Ok(Self {
-                    pro_tx_hash: protx.clone().try_into().map_err(|_| Error::ProtocolError {
-                        error: format!(
-                            "Invalid pro_tx_hash size: {} != {}",
-                            protx_len,
-                            ProTxHash::LEN
-                        ),
-                    })?,
-
-                    latest_block_height: chain.latest_block_height,
+                    pro_tx_hash: protx,
+                    latest_block_height: chain.as_ref().map(|c| c.latest_block_height),
+                    dapi_version: software.as_ref().map(|s| s.dapi.clone()),
+                    drive_version: software.as_ref().and_then(|s| s.drive.clone()),
+                    tenderdash_version: software.as_ref().and_then(|s| s.tenderdash.clone()),
+                    tenderdash_p2p_protocol: tenderdash_protocol.as_ref().map(|p| p.p2p),
+                    tenderdash_block_protocol: tenderdash_protocol.as_ref().map(|p| p.block),
+                    drive_latest_protocol: drive_protocol.as_ref().map(|d| d.latest),
+                    drive_current_protocol: drive_protocol.as_ref().map(|d| d.current),
+                    local_time: time.as_ref().map(|t| t.local),
+                    block_time: time.as_ref().and_then(|t| t.block),
+                    genesis_time: time.as_ref().and_then(|t| t.genesis),
+                    epoch_time: time.as_ref().and_then(|t| t.epoch),
+                    tenderdash_node_id: node.as_ref().map(|n| n.id.clone()),
+                    catching_up: chain.as_ref().map(|c| c.catching_up),
+                    latest_block_hash: chain.as_ref().map(|c| c.latest_block_hash.clone()),
+                    latest_app_hash: chain.as_ref().map(|c| c.latest_app_hash.clone()),
+                    earliest_block_hash: chain.as_ref().map(|c| c.earliest_block_hash.clone()),
+                    earliest_app_hash: chain.as_ref().map(|c| c.earliest_app_hash.clone()),
+                    earliest_block_height: chain.as_ref().map(|c| c.earliest_block_height),
+                    max_peer_block_height: chain.as_ref().map(|c| c.max_peer_block_height),
+                    core_chain_locked_height: chain
+                        .as_ref()
+                        .and_then(|c| c.core_chain_locked_height),
+                    chain_id: network.as_ref().map(|n| n.chain_id.clone()),
+                    peers_count: network.as_ref().map(|n| n.peers_count),
+                    listening: network.as_ref().map(|n| n.listening),
+                    sync_total_time: state_sync.as_ref().map(|s| s.total_synced_time),
+                    sync_remaining_time: state_sync.as_ref().map(|s| s.remaining_time),
+                    sync_total_snapshots: state_sync.as_ref().map(|s| s.total_snapshots),
+                    sync_chunk_process_avg_time: state_sync
+                        .as_ref()
+                        .map(|s| s.chunk_process_avg_time),
+                    sync_snapshot_height: state_sync.as_ref().map(|s| s.snapshot_height),
+                    sync_snapshot_chunks_count: state_sync
+                        .as_ref()
+                        .map(|s| s.snapshot_chunks_count),
+                    sync_backfilled_blocks: state_sync.as_ref().map(|s| s.backfilled_blocks),
+                    sync_backfill_blocks_total: state_sync
+                        .as_ref()
+                        .map(|s| s.backfill_blocks_total),
                 })
             }
             None => Err(Error::EmptyVersion),

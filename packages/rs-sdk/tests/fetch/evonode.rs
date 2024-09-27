@@ -30,11 +30,11 @@ async fn test_evonode_status() {
                 tracing::debug!(?status, ?address, "evonode status");
                 // Add assertions here to verify the status contents
                 assert!(
-                    status.latest_block_height > 0,
+                    status.latest_block_height.unwrap_or_default() > 0,
                     "latest block height must be positive"
                 );
                 assert!(
-                    status.pro_tx_hash.len() == ProTxHash::LEN,
+                    status.pro_tx_hash.unwrap_or_default().len() == ProTxHash::LEN,
                     "latest block hash must be non-empty"
                 );
                 // Add more specific assertions based on expected status properties
