@@ -1,7 +1,5 @@
 //! Listing of gRPC requests used in DAPI.
 
-use std::time::Duration;
-
 use super::{CanRetry, TransportClient, TransportRequest};
 use crate::connection_pool::{ConnectionPool, PoolPrefix};
 use crate::{request_settings::AppliedRequestSettings, RequestSettings};
@@ -9,9 +7,11 @@ use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::core::v0::{self as core_proto};
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
 use dapi_grpc::tonic::transport::Uri;
+use dapi_grpc::tonic::transport::{Certificate, ClientTlsConfig};
 use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{transport::Channel, IntoRequest};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
+use std::time::Duration;
 
 /// Platform Client using gRPC transport.
 pub type PlatformGrpcClient = PlatformClient<Channel>;
@@ -19,11 +19,22 @@ pub type PlatformGrpcClient = PlatformClient<Channel>;
 pub type CoreGrpcClient = CoreClient<Channel>;
 
 fn create_channel(uri: Uri, settings: Option<&AppliedRequestSettings>) -> Channel {
+    let host = uri.host().expect("Failed to get host from URI").to_string();
+
     let mut builder = Channel::builder(uri);
 
     if let Some(settings) = settings {
         if let Some(timeout) = settings.connect_timeout {
             builder = builder.connect_timeout(timeout);
+        }
+        if let Some(pem) = settings.ca_certificate.as_ref() {
+            let cert = Certificate::from_pem(pem);
+            let tls_config = ClientTlsConfig::new()
+                .domain_name(host)
+                .ca_certificate(cert);
+            builder = builder
+                .tls_config(tls_config)
+                .expect("Failed to set TLS config");
         }
     }
 
@@ -186,8 +197,10 @@ impl_transport_request_grpc!(
     platform_proto::WaitForStateTransitionResultResponse,
     PlatformGrpcClient,
     RequestSettings {
-        timeout: Some(Duration::from_secs(120)),
-        ..RequestSettings::default()
+        timeout: Some(Duration::from_secs(80)),
+        retries: Some(0),
+        ban_failed_address: None,
+        connect_timeout: None,
     },
     wait_for_state_transition_result
 );
@@ -408,7 +421,9 @@ impl_transport_request_grpc!(
     CoreGrpcClient,
     RequestSettings {
         timeout: Some(STREAMING_TIMEOUT),
-        ..RequestSettings::default()
+        ban_failed_address: None,
+        connect_timeout: None,
+        retries: None,
     },
     subscribe_to_transactions_with_proofs
 );
