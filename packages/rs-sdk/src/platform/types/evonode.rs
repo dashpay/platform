@@ -11,6 +11,7 @@ use rs_dapi_client::transport::{
     AppliedRequestSettings, PlatformGrpcClient, TransportClient, TransportRequest,
 };
 use rs_dapi_client::{Address, ConnectionPool, RequestSettings};
+#[cfg(feature = "mocks")]
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
