@@ -29,7 +29,7 @@
 # 3. Github Actions have shared networking configured, so we need to set a random
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
-ARG ALPINE_VERSION=3.18
+ARG ALPINE_VERSION=3.20
 ARG PROTOC_VERSION=25.2
 ARG RUSTC_WRAPPER
 
@@ -48,6 +48,7 @@ RUN apk add --no-cache \
         ca-certificates \
         clang-static clang-dev \
         cmake \
+        curl \
         git \
         libc-dev \
         linux-headers \
@@ -152,7 +153,7 @@ ARG AWS_SECRET_ACCESS_KEY
 FROM deps-${RUSTC_WRAPPER:-base} AS deps
 
 ARG SCCACHE_S3_KEY_PREFIX
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl-alpine${ALPINE_VERSION}
 
 WORKDIR /platform
 
@@ -161,7 +162,7 @@ WORKDIR /platform
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH}_alpine${ALPINE_VERSION},target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     source $HOME/.cargo/env && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
@@ -194,7 +195,7 @@ FROM deps AS build-drive-abci
 SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
 ARG SCCACHE_S3_KEY_PREFIX
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl-alpine${ALPINE_VERSION}
 
 WORKDIR /platform
 
@@ -204,7 +205,7 @@ COPY --from=build-planner /platform/recipe.json recipe.json
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH}_alpine${ALPINE_VERSION},target=/platform/target \
     source $HOME/.cargo/env && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
@@ -249,7 +250,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 FROM deps AS build-js
 
 ARG SCCACHE_S3_KEY_PREFIX
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/wasm/wasm32
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/wasm/wasm32-alpine${ALPINE_VERSION}
 
 WORKDIR /platform
 
