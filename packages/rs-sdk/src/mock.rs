@@ -38,6 +38,4 @@ pub use noop::MockResponse;
 #[cfg(feature = "mocks")]
 pub use requests::MockResponse;
 #[cfg(feature = "mocks")]
-pub(crate) use requests::BINCODE_CONFIG;
-#[cfg(feature = "mocks")]
 pub use sdk::MockDashPlatformSdk;

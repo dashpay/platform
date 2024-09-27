@@ -1213,7 +1213,6 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "base64 0.22.1",
- "bincode",
  "bip37-bloom-filter",
  "chrono",
  "ciborium",

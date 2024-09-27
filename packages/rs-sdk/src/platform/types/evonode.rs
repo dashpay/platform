@@ -1,6 +1,5 @@
 //! Evo Node represents a network node (server).
 
-use crate::mock::BINCODE_CONFIG;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 use dapi_grpc::platform::v0::{self as proto, get_status_request, GetStatusRequest};

@@ -22,7 +22,7 @@ use drive_proof_verifier::types::{
 };
 use std::collections::BTreeMap;
 
-pub(crate) static BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
+static BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
 /// Trait implemented by objects that can be used in mock expectation responses.
 ///
