@@ -41,12 +41,13 @@ impl EvoNode {
     }
 }
 
-#[cfg(feature = "mocks")]
 impl Mockable for EvoNode {
+    #[cfg(feature = "mocks")]
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
         serde_json::de::from_slice(data).ok()
     }
 
+    #[cfg(feature = "mocks")]
     fn mock_serialize(&self) -> Option<Vec<u8>> {
         serde_json::ser::to_vec(self).ok()
     }

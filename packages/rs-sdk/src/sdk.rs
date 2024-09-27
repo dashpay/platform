@@ -518,6 +518,7 @@ impl Sdk {
                     .map_err(|e| format!("Failed to read address list: {e}"))?;
                 Ok(address_list_lock.clone())
             }
+            #[cfg(feature = "mocks")]
             SdkInstance::Mock { .. } => {
                 unimplemented!("mock Sdk does not have address list")
             }
