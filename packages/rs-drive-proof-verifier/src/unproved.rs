@@ -1,4 +1,4 @@
-use crate::types::{CurrentQuorumsInfo, EvonodeStatus};
+use crate::types::{CurrentQuorumsInfo, EvoNodeStatus};
 use crate::Error;
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dapi_grpc::platform::v0::{self as platform};
@@ -276,7 +276,7 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
 }
 
 #[async_trait]
-impl FromUnproved<platform::GetStatusRequest> for EvonodeStatus {
+impl FromUnproved<platform::GetStatusRequest> for EvoNodeStatus {
     type Request = platform::GetStatusRequest;
     type Response = platform::GetStatusResponse;
 

@@ -3,7 +3,7 @@
 use super::{common::setup_logs, config::Config};
 use dash_sdk::platform::{types::evonode::EvoNode, FetchUnproved};
 use dpp::dashcore::{hashes::Hash, ProTxHash};
-use drive_proof_verifier::types::EvonodeStatus;
+use drive_proof_verifier::types::EvoNodeStatus;
 use http::Uri;
 use std::time::Duration;
 /// Given some existing evonode URIs, WHEN we connect to them, THEN we get status.
@@ -22,7 +22,7 @@ async fn test_evonode_status() {
         let node = EvoNode::new(address.clone());
         match timeout(
             Duration::from_secs(3),
-            EvonodeStatus::fetch_unproved(&sdk, node),
+            EvoNodeStatus::fetch_unproved(&sdk, node),
         )
         .await
         {
@@ -30,11 +30,11 @@ async fn test_evonode_status() {
                 tracing::debug!(?status, ?address, "evonode status");
                 // Add assertions here to verify the status contents
                 assert!(
-                    status.latest_block_height.unwrap_or_default() > 0,
+                    status.chain.latest_block_height > 0,
                     "latest block height must be positive"
                 );
                 assert!(
-                    status.pro_tx_hash.unwrap_or_default().len() == ProTxHash::LEN,
+                    status.node.pro_tx_hash.unwrap_or_default().len() == ProTxHash::LEN,
                     "latest block hash must be non-empty"
                 );
                 // Add more specific assertions based on expected status properties
@@ -64,7 +64,7 @@ async fn test_evonode_status_refused() {
     let uri: Uri = "http://127.0.0.1:1".parse().unwrap();
 
     let node = EvoNode::new(uri.clone().into());
-    let result = EvonodeStatus::fetch_unproved(&sdk, node).await;
+    let result = EvoNodeStatus::fetch_unproved(&sdk, node).await;
     tracing::debug!(?result, ?uri, "evonode status");
 
     assert!(result.is_err());

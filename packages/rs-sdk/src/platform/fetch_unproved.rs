@@ -6,7 +6,7 @@ use dapi_grpc::platform::v0::{
     self as platform_proto, GetStatusRequest, GetStatusResponse, ResponseMetadata,
 };
 use dpp::{dashcore::Network, version::PlatformVersion};
-use drive_proof_verifier::types::EvonodeStatus;
+use drive_proof_verifier::types::EvoNodeStatus;
 use drive_proof_verifier::unproved::FromUnproved;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::fmt::Debug;
@@ -88,13 +88,13 @@ impl FetchUnproved for drive_proof_verifier::types::CurrentQuorumsInfo {
     type Request = platform_proto::GetCurrentQuorumsInfoRequest;
 }
 
-impl FetchUnproved for EvonodeStatus {
+impl FetchUnproved for EvoNodeStatus {
     type Request = EvoNode;
 }
 
 // We need to delegate FromUnproved for the impl FetchUnproved for EvonodeStatus.
 #[async_trait::async_trait]
-impl FromUnproved<EvoNode> for EvonodeStatus {
+impl FromUnproved<EvoNode> for EvoNodeStatus {
     type Request = EvoNode;
     type Response = GetStatusResponse;
 

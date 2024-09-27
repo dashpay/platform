@@ -4,7 +4,7 @@ use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 use dapi_grpc::platform::v0::{self as proto, get_status_request, GetStatusRequest};
 use dapi_grpc::tonic::IntoRequest;
-pub use drive_proof_verifier::types::EvonodeStatus;
+pub use drive_proof_verifier::types::EvoNodeStatus;
 use futures::future::BoxFuture;
 use futures::{FutureExt, TryFutureExt};
 use rs_dapi_client::transport::{
