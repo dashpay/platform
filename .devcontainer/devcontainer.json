@@ -42,7 +42,7 @@
       "installYarnUsingApt": false,
     },
     "ghcr.io/eitsupi/devcontainer-features/jq-likes:2": {},
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
     "ghcr.io/schlich/devcontainer-features/starship:0": {},
   },
   "postCreateCommand": "git config --global --add safe.directory $PWD",
