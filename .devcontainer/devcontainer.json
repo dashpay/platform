@@ -1,0 +1,37 @@
+{
+  "name": "Dash Platform Dev Container",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {},
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "vadimcn.vscode-lldb",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+      ]
+    }
+  },
+  "remoteUser": "vscode",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": 1.80,
+      "targets": "wasm32-unknown-unknown",
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": 20,
+      "installYarnUsingApt": false,
+    },
+    "ghcr.io/eitsupi/devcontainer-features/jq-likes:2": {},
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+  "postCreateCommand": "cargo install wasm-bindgen-cli@0.2.85"
+}
