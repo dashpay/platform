@@ -1,3 +1,49 @@
+## [1.4.0-dev.2](https://github.com/dashpay/platform/compare/v1.3.0...v1.4.0-dev.2) (2024-09-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** change default network to mainnet (#2161)
+* **dashmate:** confirm a node reset (#2160)
+* **platform:** withdrawals polishing and fixes for mainnet (#2166)
+* **platform:** do not switch to oldest quorums in validator set update (#2167)
+
+### Features
+
+* **dashmate:** confirm a node reset ([#2160](https://github.com/dashpay/platform/issues/2160))
+* **platform:** do not switch to oldest quorums in validator set update ([#2167](https://github.com/dashpay/platform/issues/2167))
+* **platform:** get current quorum info  ([#2168](https://github.com/dashpay/platform/issues/2168))
+* **platform:** withdrawals polishing and fixes for mainnet ([#2166](https://github.com/dashpay/platform/issues/2166))
+* **sdk:** change default network to mainnet ([#2161](https://github.com/dashpay/platform/issues/2161))
+
+
+### Bug Fixes
+
+* build dashmate on macos14
+* **dapi:** getStatus cache invalidation ([#2155](https://github.com/dashpay/platform/issues/2155))
+* **dapi:** invalid mainnet seed ports ([#2173](https://github.com/dashpay/platform/issues/2173))
+* **dashmate:** cannot read properties of undefined (reading 'expires') ([#2164](https://github.com/dashpay/platform/issues/2164))
+* **dashmate:** colors[updated] is not a function ([#2157](https://github.com/dashpay/platform/issues/2157))
+* **dashmate:** doctor fails collecting to big logs ([#2158](https://github.com/dashpay/platform/issues/2158))
+* **dashmate:** port marks as closed if ipv6 is not disabled ([#2162](https://github.com/dashpay/platform/issues/2162))
+* **dashmate:** remove confusing short flag name ([#2165](https://github.com/dashpay/platform/issues/2165))
+
+
+### Documentation
+
+* **dashmate:** document logging configuration ([#2156](https://github.com/dashpay/platform/issues/2156))
+
+
+### Tests
+
+* **dashmate:** e2e tests failing due to DKG interval check ([#2171](https://github.com/dashpay/platform/issues/2171))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** do not call mint on masternodes ([#2172](https://github.com/dashpay/platform/issues/2172))
+* **platform:** protocol version 4 creation ([#2153](https://github.com/dashpay/platform/issues/2153))
+
 ## [1.3.0](https://github.com/dashpay/platform/compare/v1.2.0...v1.3.0) (2024-09-19)
 
 ### Features
