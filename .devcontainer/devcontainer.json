@@ -26,8 +26,23 @@
   "remoteUser": "vscode",
   "mounts": [
     {
-      "source": "devcontainer-cargo-cache-${devcontainerId}",
-      "target": "/usr/local/cargo",
+      "source": "devcontainer-platform-cargo-registry-index-${devcontainerId}",
+      "target": "/home/vscode/.cargo/registry",
+      "type": "volume"
+    },
+    {
+      "source": "devcontainer-platform-cargo-registry-cache-${devcontainerId}",
+      "target": "/home/vscode/.cargo/registry/cache",
+      "type": "volume"
+    },
+    {
+      "source": "devcontainer-platform-cargo-git-db-${devcontainerId}",
+      "target": "/home/vscode/.cargo/git/db",
+      "type": "volume"
+    },
+    {
+      "source": "devcontainer-platform-target-${devcontainerId}",
+      "target": "${containerWorkspaceFolder}/target",
       "type": "volume"
     }
   ],
@@ -52,5 +67,8 @@
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
     "ghcr.io/schlich/devcontainer-features/starship:0": {},
   },
-  "postCreateCommand": "git config --global --add safe.directory $PWD",
+  "postCreateCommand": {
+    "git-safe": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+    "cargo-permissions": "sudo chown -R vscode:vscode /home/vscode/.cargo ${containerWorkspaceFolder}/target"
+  }
 }
