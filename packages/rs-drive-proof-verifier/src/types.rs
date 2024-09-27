@@ -5,7 +5,10 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
-use dapi_grpc::platform::v0::{get_status_response, GetStatusResponse};
+mod evonode_status;
+
+use dpp::block::block_info::BlockInfo;
+use dpp::core_types::validator_set::ValidatorSet;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
@@ -14,6 +17,7 @@ use dpp::version::PlatformVersion;
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::contender_structs::{Contender, ContenderWithSerializedDocument};
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::ResourceVote;
@@ -25,14 +29,9 @@ use dpp::{
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
 };
+use drive::grovedb::query_result_type::Path;
 use drive::grovedb::Element;
 use std::collections::{BTreeMap, BTreeSet};
-
-use crate::Error;
-use dpp::block::block_info::BlockInfo;
-use dpp::core_types::validator_set::ValidatorSet;
-use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
-use drive::grovedb::query_result_type::Path;
 
 #[cfg(feature = "mocks")]
 use {
@@ -41,6 +40,8 @@ use {
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
+
+pub use evonode_status::*;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
@@ -616,297 +617,3 @@ pub struct ProposerBlockCountByRange(pub u64);
 #[derive(Debug)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProposerBlockCountById(pub u64);
-
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-
-/// The status of an EvoNode.
-pub struct EvoNodeStatus {
-    /// Information about protocol and software components versions.
-    pub version: Version,
-    /// Information about the node.
-    pub node: Node,
-    /// Layer 2 blockchain information
-    pub chain: Chain,
-    /// Node networking information.
-    pub network: Network,
-    /// Information about state synchronization progress.
-    pub state_sync: StateSync,
-    /// Information about current time used by the node.
-    pub time: Time,
-}
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-
-/// Information about protocol and software components versions.
-pub struct Version {
-    /// Information about software components versions.
-    pub software: Option<Software>,
-    /// Information about protocol version.
-    pub protocol: Option<Protocol>,
-}
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-/// Information about software components versions.
-pub struct Software {
-    /// DAPI version, semver-compatible string.
-    pub dapi: String,
-    /// Drive version, semver-compatible string.
-    pub drive: Option<String>,
-    /// Tenderdash version, semver-compatible string.
-    pub tenderdash: Option<String>,
-}
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-/// Information about protocol-level versions used by the node
-pub struct Protocol {
-    /// Tenderdash protocols version.
-    pub tenderdash: Option<TenderdashProtocol>,
-    /// Drive protocols version.
-    pub drive: Option<DriveProtocol>,
-}
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-/// Tenderdash protocol versions.
-pub struct TenderdashProtocol {
-    /// Tenderdash P2P protocol version.
-    pub p2p: u32,
-    /// Tenderdash block protocol version.
-    pub block: u32,
-}
-
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-
-/// Drive protocol versions.
-pub struct DriveProtocol {
-    /// Latest version supported by the node.
-    pub latest: u32,
-    /// Current version used by the node.
-    pub current: u32,
-}
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-
-/// Information about current time used by the node.
-pub struct Time {
-    /// Local time of the node. Unix timestamp since epoch.
-    pub local: u64,
-    /// Time of the last block. Unix timestamp since epoch.
-    pub block: Option<u64>,
-    /// Genesis time. Unix timestamp since epoch.
-    pub genesis: Option<u64>,
-    /// Epoch number
-    pub epoch: Option<u32>,
-}
-
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-
-/// Evo node identification information.
-pub struct Node {
-    /// Node ID
-    pub id: Vec<u8>,
-    /// ProTxHash of masternode; None for full nodes
-    pub pro_tx_hash: Option<Vec<u8>>,
-}
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-
-/// Layer 2 blockchain information
-pub struct Chain {
-    /// Whether the node is catching up with the network.
-    pub catching_up: bool,
-    /// Block hash of the latest block on the node.
-    pub latest_block_hash: Vec<u8>,
-    /// Latest app hash of the node, as visible in the latest block.
-    pub latest_app_hash: Vec<u8>,
-    /// Block hash of the earliest block available on the node.
-    pub earliest_block_hash: Vec<u8>,
-    /// Earliest app hash of the node, as visible in the earliest block.
-    pub earliest_app_hash: Vec<u8>,
-    /// Height of the latest block available on the node.
-    pub latest_block_height: u64,
-    /// Height of the earliest block available on the node.
-    pub earliest_block_height: u64,
-    /// Maximum block height of the peers connected to the node.
-    pub max_peer_block_height: u64,
-    /// Current core chain locked height.
-    pub core_chain_locked_height: Option<u32>,
-}
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-/// Node networking information.
-pub struct Network {
-    /// Identifier of chain the node is member of.
-    pub chain_id: String,
-    /// Number of peers in the address book.
-    pub peers_count: u32,
-    /// Whether the node is listening for incoming connections.
-    pub listening: bool,
-}
-
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
-    platform_serialize(unversioned)
-)]
-/// Information about state synchronization progress.
-pub struct StateSync {
-    /// Total time spent on state synchronization.
-    pub total_synced_time: u64,
-    /// Estimated remaining time to finish state synchronization.
-    pub remaining_time: u64,
-    /// Total number of snapshots available.
-    pub total_snapshots: u32,
-    /// Average time spent on processing a chunk of snapshot data.
-    pub chunk_process_avg_time: u64,
-    /// Height of the latest snapshot.
-    pub snapshot_height: u64,
-    /// Number of chunks in the latest snapshot.
-    pub snapshot_chunks_count: u64,
-    /// Number of backfilled blocks.
-    pub backfilled_blocks: u64,
-    /// Total number of blocks to backfill.
-    pub backfill_blocks_total: u64,
-}
-
-impl TryFrom<GetStatusResponse> for EvoNodeStatus {
-    type Error = Error;
-
-    fn try_from(response: GetStatusResponse) -> Result<Self, Self::Error> {
-        match response.version {
-            Some(get_status_response::Version::V0(v0)) => {
-                let software = v0
-                    .version
-                    .as_ref()
-                    .and_then(|v| v.software.clone())
-                    .map(|s| Software {
-                        dapi: s.dapi,
-                        drive: s.drive,
-                        tenderdash: s.tenderdash,
-                    });
-
-                let protocol = v0.version.and_then(|v| v.protocol).map(|p| Protocol {
-                    tenderdash: p.tenderdash.map(|t| TenderdashProtocol {
-                        p2p: t.p2p,
-                        block: t.block,
-                    }),
-                    drive: p.drive.map(|d| DriveProtocol {
-                        latest: d.latest,
-                        current: d.current,
-                    }),
-                });
-
-                let version = Version { software, protocol };
-
-                let node = v0
-                    .node
-                    .map(|n| Node {
-                        id: n.id,
-                        pro_tx_hash: n.pro_tx_hash,
-                    })
-                    .unwrap_or_default();
-
-                let chain = v0
-                    .chain
-                    .map(|c| Chain {
-                        catching_up: c.catching_up,
-                        latest_block_hash: c.latest_block_hash,
-                        latest_app_hash: c.latest_app_hash,
-                        earliest_block_hash: c.earliest_block_hash,
-                        earliest_app_hash: c.earliest_app_hash,
-                        latest_block_height: c.latest_block_height,
-                        earliest_block_height: c.earliest_block_height,
-                        max_peer_block_height: c.max_peer_block_height,
-                        core_chain_locked_height: c.core_chain_locked_height,
-                    })
-                    .unwrap_or_default();
-
-                let network = v0
-                    .network
-                    .map(|n| Network {
-                        chain_id: n.chain_id,
-                        peers_count: n.peers_count,
-                        listening: n.listening,
-                    })
-                    .unwrap_or_default();
-
-                let state_sync = v0
-                    .state_sync
-                    .map(|s| StateSync {
-                        total_synced_time: s.total_synced_time,
-                        remaining_time: s.remaining_time,
-                        total_snapshots: s.total_snapshots,
-                        chunk_process_avg_time: s.chunk_process_avg_time,
-                        snapshot_height: s.snapshot_height,
-                        snapshot_chunks_count: s.snapshot_chunks_count,
-                        backfilled_blocks: s.backfilled_blocks,
-                        backfill_blocks_total: s.backfill_blocks_total,
-                    })
-                    .unwrap_or_default();
-
-                let time = v0
-                    .time
-                    .map(|t| Time {
-                        local: t.local,
-                        block: t.block,
-                        genesis: t.genesis,
-                        epoch: t.epoch,
-                    })
-                    .unwrap_or_default();
-
-                Ok(Self {
-                    version,
-                    node,
-                    chain,
-                    network,
-                    state_sync,
-                    time,
-                })
-            }
-            None => Err(Error::EmptyVersion),
-        }
-    }
-}
