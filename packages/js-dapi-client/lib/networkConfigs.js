@@ -53,10 +53,10 @@ module.exports = {
   },
   mainnet: {
     seeds: [
-      'seed-1.mainnet.networks.dash.org:1443',
-      'seed-2.mainnet.networks.dash.org:1443',
-      'seed-3.mainnet.networks.dash.org:1443',
-      'seed-4.mainnet.networks.dash.org:1443',
+      'seed-1.mainnet.networks.dash.org',
+      'seed-2.mainnet.networks.dash.org',
+      'seed-3.mainnet.networks.dash.org',
+      'seed-4.mainnet.networks.dash.org',
     ],
     network: 'mainnet',
   },
