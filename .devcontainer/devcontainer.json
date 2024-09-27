@@ -32,7 +32,10 @@
       "userGid": "1000",
       "upgradePackages": "true"
     },
-    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest",
+      "ppa": "false"
+    },
     "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/devcontainers/features/node:1": {
       "version": 20,
@@ -42,7 +45,5 @@
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
     "ghcr.io/schlich/devcontainer-features/starship:0": {},
   },
-  "postCreateCommand": {
-    "corepack": "COREPACK_ENABLE_NETWORK=1 yarn",
-  }
+  "postCreateCommand": "git config --global --add safe.directory $PWD",
 }
