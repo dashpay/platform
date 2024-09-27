@@ -25,21 +25,24 @@
   },
   "remoteUser": "vscode",
   "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": "true",
+      "username": "vscode",
+      "userUid": "1000",
+      "userGid": "1000",
+      "upgradePackages": "true"
+    },
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/devcontainers/features/rust:1": {
-      "version": 1.80,
-      "targets": "wasm32-unknown-unknown",
-    },
     "ghcr.io/devcontainers/features/node:1": {
       "version": 20,
       "installYarnUsingApt": false,
     },
     "ghcr.io/eitsupi/devcontainer-features/jq-likes:2": {},
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+    "ghcr.io/schlich/devcontainer-features/starship:0": {},
   },
   "postCreateCommand": {
-    "wasm-bindgen-ci": "cargo install wasm-bindgen-cli@0.2.85",
-    "corepack": "corepack enable && yarn install",
+    "corepack": "COREPACK_ENABLE_NETWORK=1 yarn",
   }
 }
