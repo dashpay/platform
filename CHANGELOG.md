@@ -1,3 +1,20 @@
+### [1.3.1](https://github.com/dashpay/platform/compare/v1.3.0...v1.3.1) (2024-09-27)
+
+
+### Bug Fixes
+
+* **dapi:** getStatus cache invalidation ([#2155](https://github.com/dashpay/platform/issues/2155))
+* **dapi:** invalid mainnet seed ports ([#2173](https://github.com/dashpay/platform/issues/2173))
+* **dashmate:** cannot read properties of undefined (reading 'expires') ([#2164](https://github.com/dashpay/platform/issues/2164))
+* **dashmate:** colors[updated] is not a function ([#2157](https://github.com/dashpay/platform/issues/2157))
+* **dashmate:** doctor fails collecting to big logs ([#2158](https://github.com/dashpay/platform/issues/2158))
+* **dashmate:** port marks as closed if ipv6 is not disabled ([#2162](https://github.com/dashpay/platform/issues/2162))
+
+
+### Tests
+
+* **dashmate:** e2e tests failing due to DKG interval check ([#2171](https://github.com/dashpay/platform/issues/2171))
+
 ## [1.3.0](https://github.com/dashpay/platform/compare/v1.2.0...v1.3.0) (2024-09-19)
 
 ### Features
