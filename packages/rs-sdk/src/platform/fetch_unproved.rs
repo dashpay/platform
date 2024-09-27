@@ -3,8 +3,7 @@ use crate::error::Error;
 use crate::mock::MockResponse;
 use crate::Sdk;
 use dapi_grpc::platform::v0::{
-    self as platform_proto, get_status_request::GetStatusRequestV0, GetStatusRequest,
-    GetStatusResponse, ResponseMetadata,
+    self as platform_proto, GetStatusRequest, GetStatusResponse, ResponseMetadata,
 };
 use dpp::{dashcore::Network, version::PlatformVersion};
 use drive_proof_verifier::types::EvonodeStatus;
@@ -24,6 +23,7 @@ where
     ///
     /// ## Parameters
     /// - `sdk`: An instance of [Sdk].
+    /// - `query`: Query used to fetch data from the Platform.
     ///
     /// ## Returns
     /// Returns:
@@ -50,6 +50,7 @@ where
     ///
     /// ## Parameters
     /// - `sdk`: An instance of [Sdk].
+    /// - `query`: Query used to fetch data from the Platform.
     /// - `settings`: Request settings for the connection to Platform.
     ///
     /// ## Returns
@@ -98,7 +99,7 @@ impl FromUnproved<EvoNode> for EvonodeStatus {
     type Response = GetStatusResponse;
 
     fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
+        request: I,
         response: O,
         network: Network,
         platform_version: &PlatformVersion,
@@ -106,8 +107,9 @@ impl FromUnproved<EvoNode> for EvonodeStatus {
     where
         Self: Sized,
     {
+        // delegate to the FromUnproved<GetStatusResponse>
         <Self as FromUnproved<GetStatusRequest>>::maybe_from_unproved_with_metadata(
-            GetStatusRequestV0 {},
+            request.into(),
             response,
             network,
             platform_version,
