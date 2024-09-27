@@ -44,11 +44,11 @@ impl EvoNode {
 #[cfg(feature = "mocks")]
 impl Mockable for EvoNode {
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
-        if let Ok((obj, _)) = bincode::serde::decode_from_slice(data, BINCODE_CONFIG) {
-            Some(obj)
-        } else {
-            None
-        }
+        serde_json::de::from_slice(data).ok()
+    }
+
+    fn mock_serialize(&self) -> Option<Vec<u8>> {
+        serde_json::ser::to_vec(self).ok()
     }
 }
 impl TransportRequest for EvoNode {
