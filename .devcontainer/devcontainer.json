@@ -24,6 +24,13 @@
     }
   },
   "remoteUser": "vscode",
+  "mounts": [
+    {
+      "source": "devcontainer-cargo-cache-${devcontainerId}",
+      "target": "/usr/local/cargo",
+      "type": "volume"
+    }
+  ],
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": "true",
