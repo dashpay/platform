@@ -63,7 +63,7 @@ export default {
     },
   },
   mnowatch: {
-    checkPortStatus: async (port) => {
+    checkPortStatus: async (port, ip = undefined) => {
       // We use http request instead fetch function to force
       // using IPv4 otherwise mnwatch could try to connect to IPv6 node address
       // and fail (Core listens for IPv4 only)
@@ -72,7 +72,7 @@ export default {
       const options = {
         hostname: 'mnowatch.org',
         port: 443,
-        path: `/${port}/`,
+        path: ip ? `/${port}/?validateIp=${ip}` : `/${port}/`,
         method: 'GET',
         family: 4, // Force IPv4
         timeout: MAX_REQUEST_TIMEOUT,

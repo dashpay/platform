@@ -160,13 +160,25 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
         if (coreP2pPort && coreP2pPort !== 'OPEN') {
           const port = config.get('core.p2p.port');
           const externalIp = config.get('externalIp');
-          const problem = new Problem(
-            'Core P2P port is unavailable for incoming connections.',
-            chalk`Please ensure that port ${port} on your public IP address ${externalIp} is open
+
+          let solution = chalk`Please ensure that port ${port} on your public IP address ${externalIp} is open
 for incoming connections. You may need to configure your firewall to
 ensure this port is accessible from the public internet. If you are using
 Network Address Translation (NAT), please enable port forwarding for port 80
-and all Dash service ports listed above.`,
+and all Dash service ports listed above.`;
+          if (externalIp) {
+            solution = chalk`Please ensure your configured IP address ${externalIp} is your public IP.
+You can change it using {bold.cyanBright dashmate config set externalIp [IP]}.
+Ensure that port ${port} on your public IP address is open
+for incoming connections. You may need to configure your firewall to
+ensure this port is accessible from the public internet. If you are using
+Network Address Translation (NAT), please enable port forwarding for port 80
+and all Dash service ports listed above.`;
+          }
+
+          const problem = new Problem(
+            'Core P2P port is unavailable for incoming connections.',
+            solution,
             SEVERITY.HIGH,
           );
 
@@ -178,13 +190,25 @@ and all Dash service ports listed above.`,
         if (gatewayHttpPort && gatewayHttpPort !== 'OPEN') {
           const port = config.get('platform.gateway.listeners.dapiAndDrive.port');
           const externalIp = config.get('externalIp');
-          const problem = new Problem(
-            'Gateway HTTP port is unavailable for incoming connections.',
-            chalk`Please ensure that port ${port} on your public IP address ${externalIp} is open
+
+          let solution = chalk`Please ensure that port ${port} on your public IP address ${externalIp} is open
 for incoming connections. You may need to configure your firewall to
 ensure this port is accessible from the public internet. If you are using
 Network Address Translation (NAT), please enable port forwarding for port 80
-and all Dash service ports listed above.`,
+and all Dash service ports listed above.`;
+          if (externalIp) {
+            solution = chalk`Please ensure your configured IP address ${externalIp} is your public IP.
+You can change it using {bold.cyanBright dashmate config set externalIp [IP]}.
+Ensure that port ${port} on your public IP address is open
+for incoming connections. You may need to configure your firewall to
+ensure this port is accessible from the public internet. If you are using
+Network Address Translation (NAT), please enable port forwarding for port 80
+and all Dash service ports listed above.`;
+          }
+
+          const problem = new Problem(
+            'Gateway HTTP port is unavailable for incoming connections.',
+            solution,
             SEVERITY.HIGH,
           );
 
@@ -196,13 +220,25 @@ and all Dash service ports listed above.`,
         if (tenderdashP2pPort && tenderdashP2pPort !== 'OPEN') {
           const port = config.get('platform.drive.tenderdash.p2p.port');
           const externalIp = config.get('externalIp');
-          const problem = new Problem(
-            'Tenderdash P2P port is unavailable for incoming connections.',
-            chalk`Please ensure that port ${port} on your public IP address ${externalIp} is open
+
+          let solution = chalk`Please ensure that port ${port} on your public IP address ${externalIp} is open
 for incoming connections. You may need to configure your firewall to
 ensure this port is accessible from the public internet. If you are using
 Network Address Translation (NAT), please enable port forwarding for port 80
-and all Dash service ports listed above.`,
+and all Dash service ports listed above.`;
+          if (externalIp) {
+            solution = chalk`Please ensure your configured IP address ${externalIp} is your public IP.
+You can change it using {bold.cyanBright dashmate config set externalIp [IP]}.
+Ensure that port ${port} on your public IP address is open
+for incoming connections. You may need to configure your firewall to
+ensure this port is accessible from the public internet. If you are using
+Network Address Translation (NAT), please enable port forwarding for port 80
+and all Dash service ports listed above.`;
+          }
+
+          const problem = new Problem(
+            'Tenderdash P2P port is unavailable for incoming connections.',
+            solution,
             SEVERITY.HIGH,
           );
 
