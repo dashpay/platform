@@ -14,7 +14,7 @@ impl<C> Platform<C> {
     /// this should only be called on epoch change
     pub(super) fn perform_events_on_first_block_of_protocol_change_v0(
         &self,
-        epoch_info: &EpochInfo,
+        _epoch_info: &EpochInfo,
         transaction: &Transaction,
         previous_protocol_version: ProtocolVersion,
         platform_version: &PlatformVersion,

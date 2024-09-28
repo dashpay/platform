@@ -29,7 +29,7 @@ impl Drive {
         );
 
         if platform_version.protocol_version >= 4 {
-            batch.add_insert_empty_tree(
+            batch.add_insert_empty_sum_tree(
                 vec![vec![RootTree::WithdrawalTransactions as u8]],
                 WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY.to_vec(),
             );
