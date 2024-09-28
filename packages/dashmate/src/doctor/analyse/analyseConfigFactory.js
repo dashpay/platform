@@ -169,7 +169,7 @@ and all Dash service ports listed above.`;
           if (externalIp) {
             solution = chalk`Please ensure your configured IP address ${externalIp} is your public IP.
 You can change it using {bold.cyanBright dashmate config set externalIp [IP]}.
-Ensure that port ${port} on your public IP address is open
+Also, ensure that port ${port} on your public IP address is open
 for incoming connections. You may need to configure your firewall to
 ensure this port is accessible from the public internet. If you are using
 Network Address Translation (NAT), please enable port forwarding for port 80
@@ -199,7 +199,7 @@ and all Dash service ports listed above.`;
           if (externalIp) {
             solution = chalk`Please ensure your configured IP address ${externalIp} is your public IP.
 You can change it using {bold.cyanBright dashmate config set externalIp [IP]}.
-Ensure that port ${port} on your public IP address is open
+Also, ensure that port ${port} on your public IP address is open
 for incoming connections. You may need to configure your firewall to
 ensure this port is accessible from the public internet. If you are using
 Network Address Translation (NAT), please enable port forwarding for port 80
@@ -229,7 +229,7 @@ and all Dash service ports listed above.`;
           if (externalIp) {
             solution = chalk`Please ensure your configured IP address ${externalIp} is your public IP.
 You can change it using {bold.cyanBright dashmate config set externalIp [IP]}.
-Ensure that port ${port} on your public IP address is open
+Also, ensure that port ${port} on your public IP address is open
 for incoming connections. You may need to configure your firewall to
 ensure this port is accessible from the public internet. If you are using
 Network Address Translation (NAT), please enable port forwarding for port 80

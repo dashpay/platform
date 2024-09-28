@@ -63,6 +63,13 @@ export default {
     },
   },
   mnowatch: {
+    /**
+     * Check the status of a port and optionally validate an IP address.
+     *
+     * @param {number} port - The port number to check.
+     * @param {string} [ip] - Optional. The IP address to validate.
+     * @returns {Promise<string>} A promise that resolves to the port status.
+     */
     checkPortStatus: async (port, ip = undefined) => {
       // We use http request instead fetch function to force
       // using IPv4 otherwise mnwatch could try to connect to IPv6 node address
