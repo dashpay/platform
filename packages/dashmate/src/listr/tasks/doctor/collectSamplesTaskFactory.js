@@ -2,6 +2,7 @@ import fs from 'fs';
 import { Listr } from 'listr2';
 import path from 'path';
 import process from 'process';
+import si from 'systeminformation';
 import obfuscateConfig from '../../../config/obfuscateConfig.js';
 import { DASHMATE_VERSION } from '../../../constants.js';
 import Certificate from '../../../ssl/zerossl/Certificate.js';
@@ -9,7 +10,6 @@ import providers from '../../../status/providers.js';
 import hideString from '../../../util/hideString.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
 import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
-import si from 'systeminformation';
 
 /**
  *
@@ -313,12 +313,9 @@ export default function collectSamplesTaskFactory(
           },
         },
         {
-          title: 'Logs',
-          task: async (ctx, task) => {
+          title: 'Docker containers info',
+          task: async (ctx) => {
             const services = await getServiceList(config);
-
-            // eslint-disable-next-line no-param-reassign
-            task.output = `Pulling logs from ${services.map((e) => e.name)}`;
 
             await Promise.all(
               services.map(async (service) => {
@@ -328,8 +325,10 @@ export default function collectSamplesTaskFactory(
                 ])).map((e) => e.value || e.reason);
 
                 const containerId = inspect?.Id;
-
-                const dockerStats = containerId ? await si.dockerContainerStats(containerId) : undefined;
+                let dockerStats;
+                if (containerId) {
+                  dockerStats = await si.dockerContainerStats(containerId);
+                }
 
                 if (logs?.out) {
                   // Hide username & external ip from logs

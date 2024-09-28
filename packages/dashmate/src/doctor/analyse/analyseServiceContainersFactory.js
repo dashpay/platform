@@ -20,7 +20,8 @@ export default function analyseServiceContainersFactory(
     const servicesNotStarted = [];
     const servicesFailed = [];
     const servicesOOMKilled = [];
-    const servicesHighResourceUsage = [];
+    const servicesHighCpuUsage = [];
+    const servicesHighMemoryUsage = [];
 
     for (const service of services) {
       const dockerInspect = samples.getServiceInfo(service.name, 'dockerInspect');
@@ -50,15 +51,30 @@ export default function analyseServiceContainersFactory(
         });
       }
 
-      if (dockerStats) {
-        const cpuUsage = dockerStats.cpuStats.cpuUsage.totalUsage / dockerStats.cpuStats.systemCpuUsage;
-        const memoryUsage = dockerStats.memoryStats.usage / dockerStats.memoryStats.limit;
+      const cpuSystemUsage = dockerStats?.cpuStats?.system_cpu_usage;
+      const cpuServiceUsage = dockerStats?.cpuStats?.cpu_usage?.total_usage;
 
-        if (cpuUsage > 0.8 || memoryUsage > 0.8) {
-          servicesHighResourceUsage.push({
+      if (Number.isInteger(cpuServiceUsage) && cpuSystemUsage > 0) {
+        const cpuUsagePercent = cpuServiceUsage / cpuSystemUsage;
+
+        if (cpuUsagePercent > 0.8) {
+          servicesHighCpuUsage.push({
             service,
-            cpuUsage,
-            memoryUsage,
+            cpuUsage: cpuUsagePercent,
+          });
+        }
+      }
+
+      const memoryLimit = dockerStats?.memoryStats?.limit;
+      const memoryServiceUsage = dockerStats?.memoryStats?.usage;
+
+      if (Number.isInteger(memoryServiceUsage) && memoryLimit > 0) {
+        const memoryUsagePercent = memoryServiceUsage / memoryLimit;
+
+        if (memoryUsagePercent > 0.8) {
+          servicesHighMemoryUsage.push({
+            service,
+            memoryUsage: memoryUsagePercent,
           });
         }
       }
@@ -118,13 +134,27 @@ export default function analyseServiceContainersFactory(
       problems.push(problem);
     }
 
-    if (servicesHighResourceUsage.length > 0) {
-      for (const highResourceService of servicesHighResourceUsage) {
-        const description = `Service ${highResourceService.service.title} is consuming too many resources. CPU usage: ${(highResourceService.cpuUsage * 100).toFixed(2)}%, Memory usage: ${(highResourceService.memoryUsage * 100).toFixed(2)}%.`;
+    if (servicesHighCpuUsage.length > 0) {
+      for (const highCpuService of servicesHighCpuUsage) {
+        const description = `Service ${highCpuService.service.title} is consuming ${(highCpuService.cpuUsage * 100).toFixed(2)}% CPU.`;
 
         const problem = new Problem(
           description,
-          'Consider upgrading your system resources or report in case of misbehaviour.',
+          'Consider upgrading CPU or report in case of misbehaviour.',
+          SEVERITY.MEDIUM,
+        );
+
+        problems.push(problem);
+      }
+    }
+
+    if (servicesHighMemoryUsage.length > 0) {
+      for (const highMemoryService of servicesHighMemoryUsage) {
+        const description = `Service ${highMemoryService.service.title} is consuming ${(highMemoryService.memoryUsage * 100).toFixed(2)}% RAM.`;
+
+        const problem = new Problem(
+          description,
+          'Consider upgrading RAM or report in case of misbehaviour.',
           SEVERITY.MEDIUM,
         );
 
