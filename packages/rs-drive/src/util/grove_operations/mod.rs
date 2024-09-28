@@ -108,12 +108,22 @@ pub mod grove_batch_operations_costs;
 /// Clear a subtree in grovedb
 pub mod grove_clear;
 
+/// Provides functionality to delete items in a path based on a query.
 pub mod batch_delete_items_in_path_query;
+
+/// Inserts an element if it does not exist and returns the existing element if it does.
 pub mod batch_insert_if_not_exists_return_existing_element;
+
+/// Inserts a sum item or adds to it if it already exists.
 pub mod batch_insert_sum_item_or_add_to_if_already_exists;
+
+/// Retrieves serialized or sum results from a path query in GroveDB.
 mod grove_get_path_query_serialized_or_sum_results;
-/// Proved path query in grovedb with a conditional query
+
+/// Executes a proved path query in GroveDB with an optional conditional query.
 pub mod grove_get_proved_path_query_with_conditional;
+
+/// Inserts an element if it does not exist and returns the existing element if it does in GroveDB.
 pub mod grove_insert_if_not_exists_return_existing_element;
 
 use grovedb_costs::CostContext;

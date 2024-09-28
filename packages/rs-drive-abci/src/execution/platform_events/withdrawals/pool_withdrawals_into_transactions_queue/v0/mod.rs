@@ -45,7 +45,7 @@ where
             );
             return Ok(());
         }
-        let mut documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
+        let documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
             DEFAULT_QUERY_LIMIT,
             transaction,
@@ -91,9 +91,9 @@ where
             .drive
             .fetch_next_withdrawal_transaction_index(transaction, platform_version)?;
 
-        let (withdrawal_transactions, amount) = self
+        let (withdrawal_transactions, total_amount) = self
             .build_untied_withdrawal_transactions_from_documents(
-                &mut documents,
+                &mut documents_to_process,
                 start_transaction_index,
                 block_info,
                 platform_version,
@@ -106,6 +106,7 @@ where
         self.drive
             .add_enqueue_untied_withdrawal_transaction_operations(
                 withdrawal_transactions,
+                total_amount,
                 &mut drive_operations,
                 platform_version,
             )?;
@@ -121,7 +122,7 @@ where
 
         tracing::debug!(
             "Pooled {} withdrawal documents into {} transactions with indices from {} to {}",
-            documents.len(),
+            documents_to_process.len(),
             withdrawal_transactions_count,
             start_transaction_index,
             end_transaction_index,
@@ -130,7 +131,7 @@ where
         let withdrawals_contract = self.drive.cache.system_data_contracts.load_withdrawals();
 
         self.drive.add_update_multiple_documents_operations(
-            &documents,
+            &documents_to_process,
             &withdrawals_contract,
             withdrawals_contract
                 .document_type_for_name(withdrawal::NAME)

@@ -44,16 +44,8 @@ impl Drive {
             drive_version,
         )?;
 
-        // Convert the query results into elements that need to be deleted
-        let elements_to_delete = QueryResultElements::from_elements(
-            query_result
-                .into_iter()
-                .map(QueryResultElement::PathKeyElementTrioResultItem)
-                .collect(),
-        );
-
         // Iterate over each element and add a delete operation for it
-        for (path, key, _) in elements_to_delete.to_path_key_elements() {
+        for (path, key, _) in query_result {
             let current_batch_operations =
                 LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
             let options = DeleteOptions {
@@ -81,7 +73,7 @@ impl Drive {
                 BatchDeleteApplyType::StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum,
                 } => self.grove.delete_operation_for_delete_internal(
-                    path,
+                    (path.as_slice()).into(),
                     key.as_slice(),
                     &options,
                     is_known_to_be_subtree_with_sum,
