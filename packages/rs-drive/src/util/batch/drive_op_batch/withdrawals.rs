@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path_vec, get_withdrawal_transactions_queue_path,
-    get_withdrawal_transactions_queue_path_vec, get_withdrawal_transactions_sum_tree_path,
-    get_withdrawal_transactions_sum_tree_path_vec, WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
+    get_withdrawal_transactions_queue_path_vec, get_withdrawal_transactions_sum_tree_path_vec,
+    WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
 };
 use crate::util::grove_operations::{BatchDeleteApplyType, BatchInsertApplyType};
 use crate::util::object_size_info::PathKeyElementInfo;
@@ -14,10 +14,7 @@ use super::DriveLowLevelOperationConverter;
 use dpp::fee::{Credits, SignedCredits};
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
-use dpp::withdrawal::{
-    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
-    WithdrawalTransactionIndexAndBytesAndAmounts,
-};
+use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 use grovedb::{Element, PathQuery, QueryItem};
 

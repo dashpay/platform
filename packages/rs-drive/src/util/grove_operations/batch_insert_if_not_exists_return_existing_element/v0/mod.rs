@@ -17,17 +17,41 @@ impl Drive {
     /// Version 0 implementation of the "insert element if the path key does not yet exist" operation.
     /// If the element already exists, it returns the existing element.
     ///
+    /// This function checks whether an element exists at a specified path and key.
+    /// If the element exists, it returns the existing element. If not, it inserts the new element
+    /// into the database and returns `None`. This operation supports different types of path, key, and element configurations
+    /// and can be applied in either stateless or stateful contexts.
+    ///
     /// # Parameters
-    /// * `path_key_element_info`: Information about the path, key, and element.
-    /// * `apply_type`: The apply type for the operation.
-    /// * `transaction`: The transaction argument for the operation.
-    /// * `drive_operations`: The list of drive operations to append to.
-    /// * `drive_version`: The drive version to select the correct function version to run.
+    ///
+    /// * `path_key_element_info`: Information about the path, key, and element to insert.
+    ///   - Supports multiple configurations: direct references, owned elements, fixed size keys, or estimated sizes.
+    /// * `apply_type`: The application type of the operation, defining whether the operation is stateless or stateful.
+    /// * `transaction`: The transaction context for the operation, allowing it to be atomic within a batch.
+    /// * `drive_operations`: A mutable reference to the list of drive operations to which this operation will be appended.
+    /// * `drive_version`: The version of the drive being used, ensuring compatibility with the function version.
     ///
     /// # Returns
-    /// * `Ok(Some(Element))` if the element already exists.
-    /// * `Ok(None)` if the element was successfully inserted because it did not exist before.
-    /// * `Err(DriveError::CorruptedCodeExecution)` if the operation is not supported.
+    ///
+    /// * `Ok(Some(Element))`: If the element already exists at the specified path and key, returning the existing element.
+    /// * `Ok(None)`: If the element was successfully inserted because it did not exist before.
+    /// * `Err(Error)`: Returns an error if:
+    ///   - The insertion operation is not supported in the current state.
+    ///   - The operation encounters any unexpected issues related to invalid configurations or unsupported features.
+    ///
+    /// # Errors
+    ///
+    /// * `Error::Drive(DriveError::NotSupportedPrivate)`: If the function encounters unsupported configurations, such as document sizes for stateful inserts.
+    /// * `Error::Drive(DriveError::UnknownVersionMismatch)`: If the drive version is not supported for the operation.
+    ///
+    /// # PathKeyElementInfo Variants
+    ///
+    /// The function supports various `PathKeyElementInfo` variants:
+    /// * `PathKeyRefElement`: Reference to the path, key, and element.
+    /// * `PathKeyElement`: Owned path, key, and element.
+    /// * `PathFixedSizeKeyRefElement`: Reference to the path with a fixed-size key and element.
+    /// * `PathKeyElementSize`: Path and key with known element size, used for estimation.
+    /// * `PathKeyUnknownElementSize`: Unsupported in this version and returns an error.
     pub(super) fn batch_insert_if_not_exists_return_existing_element_v0<const N: usize>(
         &self,
         path_key_element_info: PathKeyElementInfo<N>,

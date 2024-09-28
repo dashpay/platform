@@ -6,10 +6,7 @@ use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::withdrawal::{
-    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
-    WithdrawalTransactionIndexAndBytesAndAmounts,
-};
+use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 
 use crate::{
     error::{execution::ExecutionError, Error},
@@ -52,7 +49,7 @@ where
 
                 // Add the amount to the total, checking for overflow.
                 total_amount = total_amount.checked_add(amount).ok_or_else(|| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    Error::Execution(ExecutionError::Overflow(
                         "Overflow while calculating total amount",
                     ))
                 })?;
@@ -76,8 +73,8 @@ where
 
                 // Increment the document revision, handle error if it fails.
                 document.increment_revision().map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Could not increment document revision",
+                    Error::Execution(ExecutionError::Overflow(
+                        "Overflow when adding to document revision for withdrawals",
                     ))
                 })?;
 

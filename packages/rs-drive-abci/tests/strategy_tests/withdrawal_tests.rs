@@ -13,6 +13,10 @@ mod tests {
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::withdrawal::WithdrawalTransactionIndex;
     use drive::config::DEFAULT_QUERY_LIMIT;
+    use drive::drive::identity::withdrawals::paths::{
+        get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+    };
+    use drive::util::grove_operations::DirectQueryType;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
@@ -206,6 +210,23 @@ mod tests {
                 )
                 .unwrap();
             assert!(!withdrawal_documents_pooled.is_empty());
+
+            let locked_amount = outcome
+                .abci_app
+                .platform
+                .drive
+                .grove_get_sum_tree_total_value(
+                    (&get_withdrawal_root_path()).into(),
+                    &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+                    DirectQueryType::StatefulDirectQuery,
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to get locked amount");
+
+            assert_eq!(locked_amount, 1000000);
+
             let pooled_withdrawals = withdrawal_documents_pooled.len();
 
             (outcome, pooled_withdrawals)

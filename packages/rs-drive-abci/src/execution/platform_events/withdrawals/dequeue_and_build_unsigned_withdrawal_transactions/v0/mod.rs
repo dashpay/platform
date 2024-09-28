@@ -150,8 +150,8 @@ where
                 document.set_updated_at(Some(block_info.time_ms));
 
                 document.increment_revision().map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Could not increment document revision",
+                    Error::Execution(ExecutionError::Overflow(
+                        "Overflow when adding to document revision for withdrawals",
                     ))
                 })?;
 

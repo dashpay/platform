@@ -32,10 +32,15 @@ pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
     IntoPrimitive,
 )]
 pub enum WithdrawalStatus {
+    /// The documents are in the state and waiting to be processed.
     QUEUED = 0,
+    /// Pooled happens when we are waiting for signing.
     POOLED = 1,
+    /// We have broadcasted the transaction to core.
     BROADCASTED = 2,
+    /// The transaction is now complete.
     COMPLETE = 3,
+    /// We broadcasted the transaction but core never saw it or rejected it.
     EXPIRED = 4,
 }
 

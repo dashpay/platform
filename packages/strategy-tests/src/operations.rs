@@ -9,6 +9,7 @@ use dpp::data_contract::document_type::v0::random_document_type::RandomDocumentT
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::{DataContract as Contract, DataContract};
+use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::Value;
@@ -494,12 +495,14 @@ impl VoteAction {
     }
 }
 
+pub type AmountRange = Range<Credits>;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum OperationType {
     Document(DocumentOp),
-    IdentityTopUp,
+    IdentityTopUp(AmountRange),
     IdentityUpdate(IdentityUpdateOp),
-    IdentityWithdrawal,
+    IdentityWithdrawal(AmountRange),
     ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
     ContractUpdate(DataContractUpdateOp),
     IdentityTransfer,
@@ -509,9 +512,9 @@ pub enum OperationType {
 #[derive(Clone, Debug, Encode, Decode)]
 enum OperationTypeInSerializationFormat {
     Document(Vec<u8>),
-    IdentityTopUp,
+    IdentityTopUp(AmountRange),
     IdentityUpdate(IdentityUpdateOp),
-    IdentityWithdrawal,
+    IdentityWithdrawal(AmountRange),
     ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
     ContractUpdate(Vec<u8>),
     IdentityTransfer,
@@ -540,12 +543,14 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                     .serialize_consume_to_bytes_with_platform_version(platform_version)?;
                 OperationTypeInSerializationFormat::Document(document_op_in_serialization_format)
             }
-            OperationType::IdentityTopUp => OperationTypeInSerializationFormat::IdentityTopUp,
+            OperationType::IdentityTopUp(amount_range) => {
+                OperationTypeInSerializationFormat::IdentityTopUp(amount_range)
+            }
             OperationType::IdentityUpdate(identity_update_op) => {
                 OperationTypeInSerializationFormat::IdentityUpdate(identity_update_op)
             }
-            OperationType::IdentityWithdrawal => {
-                OperationTypeInSerializationFormat::IdentityWithdrawal
+            OperationType::IdentityWithdrawal(amount_range) => {
+                OperationTypeInSerializationFormat::IdentityWithdrawal(amount_range)
             }
             OperationType::ContractCreate(p, c) => {
                 OperationTypeInSerializationFormat::ContractCreate(p, c)
@@ -601,12 +606,14 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 )?;
                 OperationType::Document(document_op)
             }
-            OperationTypeInSerializationFormat::IdentityTopUp => OperationType::IdentityTopUp,
+            OperationTypeInSerializationFormat::IdentityTopUp(amount_range) => {
+                OperationType::IdentityTopUp(amount_range)
+            }
             OperationTypeInSerializationFormat::IdentityUpdate(identity_update_op) => {
                 OperationType::IdentityUpdate(identity_update_op)
             }
-            OperationTypeInSerializationFormat::IdentityWithdrawal => {
-                OperationType::IdentityWithdrawal
+            OperationTypeInSerializationFormat::IdentityWithdrawal(amount_range) => {
+                OperationType::IdentityWithdrawal(amount_range)
             }
             OperationTypeInSerializationFormat::ContractCreate(p, c) => {
                 OperationType::ContractCreate(p, c)

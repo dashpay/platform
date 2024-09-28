@@ -33,6 +33,7 @@ use dpp::withdrawal::Pooling;
 use rand::prelude::{IteratorRandom, StdRng};
 use simple_signer::signer::SimpleSigner;
 
+use crate::operations::AmountRange;
 use crate::KeyMaps;
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
@@ -483,6 +484,7 @@ pub fn create_identity_update_transition_disable_keys(
 /// - If the identity does not have a suitable withdrawal address or key for signing.
 pub fn create_identity_withdrawal_transition(
     identity: &mut Identity,
+    amount_range: AmountRange,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
@@ -499,12 +501,15 @@ pub fn create_identity_withdrawal_transition(
         // We can send it to the withdrawal address
         create_identity_withdrawal_transition_sent_to_identity_transfer_key(
             identity,
+            amount_range,
             identity_nonce_counter,
             signer,
+            rng,
         )
     } else {
         create_identity_withdrawal_transition_with_output_address(
             identity,
+            amount_range,
             identity_nonce_counter,
             signer,
             rng,
@@ -546,14 +551,16 @@ pub fn create_identity_withdrawal_transition(
 /// - If there's an error during the signing process.
 pub fn create_identity_withdrawal_transition_sent_to_identity_transfer_key(
     identity: &mut Identity,
+    amount_range: AmountRange,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
+    rng: &mut StdRng,
 ) -> StateTransition {
     let nonce = identity_nonce_counter.entry(identity.id()).or_default();
     *nonce += 1;
     let mut withdrawal: StateTransition = IdentityCreditWithdrawalTransitionV1 {
         identity_id: identity.id(),
-        amount: 1000000, // 1 duff
+        amount: rng.gen_range(amount_range),
         core_fee_per_byte: MIN_CORE_FEE_PER_BYTE,
         pooling: Pooling::Never,
         output_script: None,
@@ -627,6 +634,7 @@ pub fn create_identity_withdrawal_transition_sent_to_identity_transfer_key(
 /// - If there's an error during the signing process.
 pub fn create_identity_withdrawal_transition_with_output_address(
     identity: &mut Identity,
+    amount_range: AmountRange,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
@@ -635,10 +643,14 @@ pub fn create_identity_withdrawal_transition_with_output_address(
     *nonce += 1;
     let mut withdrawal: StateTransition = IdentityCreditWithdrawalTransitionV1 {
         identity_id: identity.id(),
-        amount: 1000000, // 1 duff
+        amount: rng.gen_range(amount_range),
         core_fee_per_byte: MIN_CORE_FEE_PER_BYTE,
         pooling: Pooling::Never,
-        output_script: Some(CoreScript::random_p2sh(rng)),
+        output_script: if rng.gen_bool(0.5) {
+            Some(CoreScript::random_p2pkh(rng))
+        } else {
+            Some(CoreScript::random_p2sh(rng))
+        },
         nonce: *nonce,
         user_fee_increase: 0,
         signature_public_key_id: 0,

@@ -9,27 +9,25 @@ use dpp::version::ProtocolVersion;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {
-    /// Executes specific events that need to be performed on the first block of a protocol change.
+    /// Executes protocol-specific events on the first block after a protocol version change.
+    ///
+    /// This function is triggered when there is a protocol version upgrade detected in the network.
+    /// It checks if the current protocol version has transitioned from an earlier version to version 4,
+    /// and if so, performs the necessary setup or migration tasks associated with version 4.
+    ///
+    /// Currently, the function handles the transition to version 4 by initializing new structures
+    /// or states required for the new protocol version.
     ///
     /// # Parameters
     ///
-    /// - `&self`: A reference to the current instance of the struct implementing this function.
-    /// - `block_info`: Information about the current block, encapsulated in a `BlockInfo` struct.
-    /// - `epoch_info`: Information about the current epoch, encapsulated in an `EpochInfo` struct.
-    /// - `last_committed_platform_state`: The state of the platform as it was after the last committed block, before the protocol change.
-    /// - `block_platform_state`: A mutable reference to the platform state that will be modified for the current block.
-    /// - `transaction`: The transaction object representing the current transaction context.
-    /// - `platform_version`: The version of the platform being executed, encapsulated in a `PlatformVersion` struct.
+    /// * `transaction`: A reference to the transaction context in which the changes should be applied.
+    /// * `previous_protocol_version`: The protocol version prior to the upgrade.
+    /// * `platform_version`: The current platform version containing the updated protocol version and relevant configuration details.
     ///
     /// # Returns
     ///
-    /// - `Result<(), Error>`: Returns `Ok(())` if the events are successfully executed.
-    ///   Returns an `Error` if there is a version mismatch or another execution issue.
-    ///
-    /// # Errors
-    ///
-    /// - Returns an `Error::Execution(ExecutionError::UnknownVersionMismatch)` if an unknown version is received
-    ///   that is not supported by the current implementation.
+    /// * `Ok(())`: If all events related to the protocol change were successfully executed.
+    /// * `Err(Error)`: If there was an issue executing the protocol-specific events.
     ///
     /// # Versioning
     ///
@@ -43,7 +41,6 @@ impl<C> Platform<C> {
     ///
     pub fn perform_events_on_first_block_of_protocol_change(
         &self,
-        epoch_info: &EpochInfo,
         transaction: &Transaction,
         previous_protocol_version: ProtocolVersion,
         platform_version: &PlatformVersion,
@@ -55,7 +52,6 @@ impl<C> Platform<C> {
             .perform_events_on_first_block_of_protocol_change
         {
             Some(0) => self.perform_events_on_first_block_of_protocol_change_v0(
-                epoch_info,
                 transaction,
                 previous_protocol_version,
                 platform_version,

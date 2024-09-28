@@ -2,7 +2,6 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::util::batch::DriveOperation;
-use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::withdrawal::WithdrawalTransactionIndexAndBytes;
 use platform_version::version::PlatformVersion;

@@ -10,7 +10,7 @@ license = "MIT"
 [dependencies]
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined", optional = true }
-thiserror = "1.0.58"
+thiserror = "1.0.64"
 bs58 = "0.5.1"
 base64 = "0.22.1"
 hex = "0.4.3"

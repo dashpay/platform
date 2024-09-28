@@ -1,5 +1,4 @@
 use crate::fee::Credits;
-use crate::ProtocolError;
 
 /// Calculates the daily withdrawal limit based on the total credits available in the platform.
 ///
@@ -27,5 +26,17 @@ pub fn daily_withdrawal_limit_v0(total_credits_in_platform: Credits) -> Credits 
         100
     } else {
         total_credits_in_platform
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_daily_withdrawal_limit() {
+        assert_eq!(daily_withdrawal_limit_v0(2000), 200);
+        assert_eq!(daily_withdrawal_limit_v0(500), 100);
+        assert_eq!(daily_withdrawal_limit_v0(50), 50);
     }
 }

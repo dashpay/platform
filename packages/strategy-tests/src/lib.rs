@@ -1167,7 +1167,10 @@ impl Strategy {
                     }
 
                     // Generate state transition for identity top-up operation
-                    OperationType::IdentityTopUp if !current_identities.is_empty() => {
+                    OperationType::IdentityTopUp(_amount_range)
+                        if !current_identities.is_empty() =>
+                    {
+                        // todo: use amount ranges
                         // Use a cyclic iterator over the identities to ensure we can create 'count' transitions
                         let cyclic_identities = current_identities.iter().cycle();
 
@@ -1261,13 +1264,16 @@ impl Strategy {
                     }
 
                     // Generate state transition for identity withdrawal operation
-                    OperationType::IdentityWithdrawal if !current_identities.is_empty() => {
+                    OperationType::IdentityWithdrawal(amount_range)
+                        if !current_identities.is_empty() =>
+                    {
                         for i in 0..count {
                             let index = (i as usize) % current_identities.len();
                             let random_identity = &mut current_identities[index];
                             let state_transition =
                                 crate::transitions::create_identity_withdrawal_transition(
                                     random_identity,
+                                    amount_range.clone(),
                                     identity_nonce_counter,
                                     signer,
                                     rng,

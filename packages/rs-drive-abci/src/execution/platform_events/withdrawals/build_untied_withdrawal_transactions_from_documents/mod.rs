@@ -6,10 +6,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::document::Document;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
-use dpp::withdrawal::{
-    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
-    WithdrawalTransactionIndexAndBytesAndAmounts,
-};
+use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 
 mod v0;
 
