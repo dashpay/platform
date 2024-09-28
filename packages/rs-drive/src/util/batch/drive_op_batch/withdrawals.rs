@@ -2,18 +2,24 @@ use std::collections::HashMap;
 
 use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path_vec, get_withdrawal_transactions_queue_path,
-    get_withdrawal_transactions_queue_path_vec, WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
+    get_withdrawal_transactions_queue_path_vec, get_withdrawal_transactions_sum_tree_path,
+    get_withdrawal_transactions_sum_tree_path_vec, WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
 };
-use crate::util::grove_operations::BatchDeleteApplyType;
+use crate::util::grove_operations::{BatchDeleteApplyType, BatchInsertApplyType};
 use crate::util::object_size_info::PathKeyElementInfo;
 use crate::{drive::Drive, error::Error, fees::op::LowLevelDriveOperation};
 use dpp::block::block_info::BlockInfo;
 
 use super::DriveLowLevelOperationConverter;
+use dpp::fee::{Credits, SignedCredits};
+use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
-use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
-use grovedb::Element;
+use dpp::withdrawal::{
+    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
+    WithdrawalTransactionIndexAndBytesAndAmounts,
+};
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, PathQuery, QueryItem};
 
 /// Operations for Withdrawals
 #[derive(Clone, Debug)]
@@ -33,6 +39,18 @@ pub enum WithdrawalOperationType {
         /// withdrawal transaction tuple with id and bytes
         index: WithdrawalTransactionIndex,
     },
+    /// Reserve an amount in the system for withdrawals, the reservation will expire at the date given
+    ReserveWithdrawalAmount {
+        /// amount to reserve
+        amount: Credits,
+        /// expiration date
+        expiration_after: TimestampMillis,
+    },
+    /// Free up reserved sum of withdrawal transaction
+    FreeUpReservedWithdrawalAmountsForTime {
+        /// current block time
+        block_time: TimestampMillis,
+    },
 }
 
 impl DriveLowLevelOperationConverter for WithdrawalOperationType {
@@ -42,7 +60,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
         _estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        _block_info: &BlockInfo,
+        block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -73,7 +91,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
 
                 for (index, bytes) in withdrawal_transactions {
                     drive.batch_insert(
-                        PathKeyElementInfo::PathKeyElement::<'_, 1>((
+                        PathKeyElementInfo::PathKeyElement::<'_, 0>((
                             path.clone(),
                             index.to_be_bytes().to_vec(),
                             Element::Item(bytes, None),
@@ -82,6 +100,54 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
                         &platform_version.drive,
                     )?;
                 }
+
+                Ok(drive_operations)
+            }
+            WithdrawalOperationType::ReserveWithdrawalAmount {
+                amount,
+                expiration_after,
+            } => {
+                let mut drive_operations = vec![];
+
+                let expiration_date = block_info.time_ms + expiration_after;
+
+                let sum_path = get_withdrawal_transactions_sum_tree_path_vec();
+
+                drive.batch_insert_sum_item_or_add_to_if_already_exists(
+                    PathKeyElementInfo::PathKeyElement::<'_, 0>((
+                        sum_path.clone(),
+                        expiration_date.to_be_bytes().to_vec(),
+                        Element::SumItem(amount as SignedCredits, None),
+                    )),
+                    BatchInsertApplyType::StatefulBatchInsert,
+                    transaction,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )?;
+
+                Ok(drive_operations)
+            }
+            WithdrawalOperationType::FreeUpReservedWithdrawalAmountsForTime { block_time } => {
+                let mut drive_operations = vec![];
+
+                let sum_path = get_withdrawal_transactions_sum_tree_path_vec();
+
+                let path_query = PathQuery::new_single_query_item(
+                    sum_path,
+                    QueryItem::RangeTo(..block_time.to_be_bytes().to_vec()),
+                );
+
+                drive.batch_delete_items_in_path_query(
+                    &path_query,
+                    true,
+                    // we know that we are not deleting a subtree
+                    BatchDeleteApplyType::StatefulBatchDelete {
+                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                    },
+                    transaction,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )?;
 
                 Ok(drive_operations)
             }

@@ -1,7 +1,8 @@
 use dpp::block::block_info::BlockInfo;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-
+use dpp::document::DocumentV0Getters;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
@@ -55,16 +56,48 @@ where
             return Ok(());
         }
 
+        // Only take documents up to the withdrawal amount
+        let current_withdrawal_limit = self
+            .drive
+            .calculate_current_withdrawal_limit(transaction, platform_version)?;
+
+        // Only process documents up to the current withdrawal limit.
+        let mut total_withdrawal_amount = 0u64;
+
+        // Iterate over the documents and accumulate their withdrawal amounts.
+        let mut documents_to_process = vec![];
+        for document in documents {
+            // Get the withdrawal amount from the document properties.
+            let amount: u64 = document
+                .properties()
+                .get_integer(withdrawal::properties::AMOUNT)?;
+
+            // Check if adding this amount would exceed the current withdrawal limit.
+            if total_withdrawal_amount + amount > current_withdrawal_limit {
+                // If adding this withdrawal would exceed the limit, stop processing further.
+                break;
+            }
+
+            // Add this document to the list of documents to be processed.
+            documents_to_process.push(document);
+            total_withdrawal_amount += amount;
+        }
+
+        if documents_to_process.is_empty() {
+            return Ok(());
+        }
+
         let start_transaction_index = self
             .drive
             .fetch_next_withdrawal_transaction_index(transaction, platform_version)?;
 
-        let withdrawal_transactions = self.build_untied_withdrawal_transactions_from_documents(
-            &mut documents,
-            start_transaction_index,
-            block_info,
-            platform_version,
-        )?;
+        let (withdrawal_transactions, amount) = self
+            .build_untied_withdrawal_transactions_from_documents(
+                &mut documents,
+                start_transaction_index,
+                block_info,
+                platform_version,
+            )?;
 
         let withdrawal_transactions_count = withdrawal_transactions.len();
 

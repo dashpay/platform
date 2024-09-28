@@ -338,6 +338,7 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
 pub struct DriveAbciProtocolUpgradeMethodVersions {
     pub check_for_desired_protocol_upgrade: FeatureVersion,
     pub upgrade_protocol_version_on_epoch_change: FeatureVersion,
+    pub perform_events_on_first_block_of_protocol_change: OptionalFeatureVersion,
     pub protocol_version_upgrade_percentage_needed: u64,
 }
 

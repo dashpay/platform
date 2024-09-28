@@ -71,7 +71,7 @@ impl StateTransitionBasicStructureValidationV0 for IdentityCreditWithdrawalTrans
                 // Returns not supported
                 self.validate_basic_structure_v0(platform_version)
             }
-            Some(1) => self.validate_basic_structure_v1(),
+            Some(1) => self.validate_basic_structure_v1(platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit withdrawal transition: validate_basic_structure"
                     .to_string(),

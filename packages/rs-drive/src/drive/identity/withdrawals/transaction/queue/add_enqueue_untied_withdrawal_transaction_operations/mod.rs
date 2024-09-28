@@ -2,6 +2,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::util::batch::DriveOperation;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::Credits;
 use dpp::withdrawal::WithdrawalTransactionIndexAndBytes;
 use platform_version::version::PlatformVersion;
 
@@ -12,6 +14,7 @@ impl Drive {
     pub fn add_enqueue_untied_withdrawal_transaction_operations(
         &self,
         withdrawal_transactions: Vec<WithdrawalTransactionIndexAndBytes>,
+        total_sum: Credits,
         drive_operation_types: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -27,6 +30,7 @@ impl Drive {
             0 => {
                 self.add_enqueue_untied_withdrawal_transaction_operations_v0(
                     withdrawal_transactions,
+                    total_sum,
                     drive_operation_types,
                 );
 

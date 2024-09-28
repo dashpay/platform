@@ -13,23 +13,31 @@ use dpp::state_transition::identity_credit_withdrawal_transition::{
 };
 use dpp::util::is_fibonacci_number::is_fibonacci_number;
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_credit_withdrawal) trait IdentityCreditWithdrawalStateTransitionStructureValidationV1 {
-    fn validate_basic_structure_v1(&self) -> Result<SimpleConsensusValidationResult, Error>;
+    fn validate_basic_structure_v1(&self, platform_version: &PlatformVersion) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
 impl IdentityCreditWithdrawalStateTransitionStructureValidationV1
     for IdentityCreditWithdrawalTransition
 {
-    fn validate_basic_structure_v1(&self) -> Result<SimpleConsensusValidationResult, Error> {
+    fn validate_basic_structure_v1(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
         let mut result = SimpleConsensusValidationResult::default();
 
-        if self.amount() < MIN_WITHDRAWAL_AMOUNT {
+        let amount = self.amount();
+        if amount < MIN_WITHDRAWAL_AMOUNT
+            || amount > platform_version.system_limits.max_withdrawal_amount
+        {
             result.add_error(ConsensusError::from(
                 InvalidIdentityCreditWithdrawalTransitionAmountError::new(
                     self.amount(),
                     MIN_WITHDRAWAL_AMOUNT,
+                    platform_version.system_limits.max_withdrawal_amount,
                 ),
             ));
         }

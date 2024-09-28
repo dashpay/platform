@@ -108,9 +108,13 @@ pub mod grove_batch_operations_costs;
 /// Clear a subtree in grovedb
 pub mod grove_clear;
 
+pub mod batch_delete_items_in_path_query;
+pub mod batch_insert_if_not_exists_return_existing_element;
+pub mod batch_insert_sum_item_or_add_to_if_already_exists;
 mod grove_get_path_query_serialized_or_sum_results;
 /// Proved path query in grovedb with a conditional query
 pub mod grove_get_proved_path_query_with_conditional;
+pub mod grove_insert_if_not_exists_return_existing_element;
 
 use grovedb_costs::CostContext;
 

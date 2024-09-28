@@ -11,7 +11,10 @@ mod tests {
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::version::PlatformVersion;
-    use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
+    use dpp::withdrawal::{
+        WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
+        WithdrawalTransactionIndexAndBytesAndAmounts,
+    };
 
     #[test]
     fn test_enqueue_and_dequeue() {
@@ -37,6 +40,7 @@ mod tests {
         drive
             .add_enqueue_untied_withdrawal_transaction_operations(
                 withdrawals,
+                100,
                 &mut drive_operations,
                 platform_version,
             )
