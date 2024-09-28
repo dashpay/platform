@@ -17,15 +17,16 @@ concurrency:
 
 jobs:
   build:
+    name: Build and push devcontainer
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Set up QEMU for multi-architecture builds
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      - name: Setup Docker buildx for multi-architecture builds
+      - name: Setup Docker buildx
         uses: docker/setup-buildx-action@v3
         with:
           use: true
