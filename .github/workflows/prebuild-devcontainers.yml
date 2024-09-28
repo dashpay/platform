@@ -1,0 +1,40 @@
+name: Prebuild Dev Containers
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  push:
+    paths:
+      - '.devcontainer/**'
+      - '.github/workflows/prebuild-devcontainers.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up QEMU for multi-architecture builds
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Docker buildx for multi-architecture builds
+        uses: docker/setup-buildx-action@v3
+        with:
+          use: true
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: dashpay
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Platform devcontainer
+        uses: devcontainers/ci@v0.3
+        with:
+          imageName: ghcr.io/dashpay/platform/devcontainer
+          platform: linux/amd64,linux/arm64
+          configFile: .devcontainer/build.json
+          push: true
+          cacheFrom: ghcr.io/dashpay/platform/devcontainer

@@ -1,0 +1,4 @@
+{
+  "name": "Dash Platform Dev Container",
+  "image": "ghcr.io/dashpay/platform/devcontainer"
+}
