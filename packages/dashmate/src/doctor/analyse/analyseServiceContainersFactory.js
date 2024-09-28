@@ -51,30 +51,30 @@ export default function analyseServiceContainersFactory(
         });
       }
 
-      const cpuSystemUsage = dockerStats?.cpuStats?.system_cpu_usage;
-      const cpuServiceUsage = dockerStats?.cpuStats?.cpu_usage?.total_usage;
+      const cpuSystemUsage = dockerStats?.cpuStats?.system_cpu_usage ?? 0;
+      const cpuServiceUsage = dockerStats?.cpuStats?.cpu_usage?.total_usage ?? 0;
 
-      if (Number.isInteger(cpuServiceUsage) && cpuSystemUsage > 0) {
-        const cpuUsagePercent = cpuServiceUsage / cpuSystemUsage;
+      if (cpuSystemUsage > 0) {
+        const cpuUsage = cpuServiceUsage / cpuSystemUsage;
 
-        if (cpuUsagePercent > 0.8) {
+        if (cpuUsage > 0.8) {
           servicesHighCpuUsage.push({
             service,
-            cpuUsage: cpuUsagePercent,
+            cpuUsage,
           });
         }
       }
 
-      const memoryLimit = dockerStats?.memoryStats?.limit;
-      const memoryServiceUsage = dockerStats?.memoryStats?.usage;
+      const memoryLimit = dockerStats?.memoryStats?.limit ?? 0;
+      const memoryServiceUsage = dockerStats?.memoryStats?.usage ?? 0;
 
-      if (Number.isInteger(memoryServiceUsage) && memoryLimit > 0) {
-        const memoryUsagePercent = memoryServiceUsage / memoryLimit;
+      if (memoryLimit > 0) {
+        const memoryUsage = memoryServiceUsage / memoryLimit;
 
-        if (memoryUsagePercent > 0.8) {
+        if (memoryUsage > 0.8) {
           servicesHighMemoryUsage.push({
             service,
-            memoryUsage: memoryUsagePercent,
+            memoryUsage,
           });
         }
       }
