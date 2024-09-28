@@ -20,9 +20,11 @@ export default function analyseServiceContainersFactory(
     const servicesNotStarted = [];
     const servicesFailed = [];
     const servicesOOMKilled = [];
+    const servicesHighResourceUsage = [];
 
     for (const service of services) {
       const dockerInspect = samples.getServiceInfo(service.name, 'dockerInspect');
+      const dockerStats = samples.getServiceInfo(service.name, 'dockerStats');
 
       if (!dockerInspect) {
         continue;
@@ -46,6 +48,19 @@ export default function analyseServiceContainersFactory(
         servicesOOMKilled.push({
           service,
         });
+      }
+
+      if (dockerStats) {
+        const cpuUsage = dockerStats.cpuStats.cpuUsage.totalUsage / dockerStats.cpuStats.systemCpuUsage;
+        const memoryUsage = dockerStats.memoryStats.usage / dockerStats.memoryStats.limit;
+
+        if (cpuUsage > 0.8 || memoryUsage > 0.8) {
+          servicesHighResourceUsage.push({
+            service,
+            cpuUsage,
+            memoryUsage,
+          });
+        }
       }
     }
 
@@ -101,6 +116,20 @@ export default function analyseServiceContainersFactory(
       );
 
       problems.push(problem);
+    }
+
+    if (servicesHighResourceUsage.length > 0) {
+      for (const highResourceService of servicesHighResourceUsage) {
+        const description = `Service ${highResourceService.service.title} is consuming too many resources. CPU usage: ${(highResourceService.cpuUsage * 100).toFixed(2)}%, Memory usage: ${(highResourceService.memoryUsage * 100).toFixed(2)}%.`;
+
+        const problem = new Problem(
+          description,
+          'Consider upgrading your system resources or report in case of misbehaviour.',
+          SEVERITY.MEDIUM,
+        );
+
+        problems.push(problem);
+      }
     }
 
     return problems;

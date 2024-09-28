@@ -9,6 +9,7 @@ import providers from '../../../status/providers.js';
 import hideString from '../../../util/hideString.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
 import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
+import si from 'systeminformation';
 
 /**
  *
@@ -326,6 +327,10 @@ export default function collectSamplesTaskFactory(
                   dockerCompose.logs(config, [service.name], { tail: 300000 }),
                 ])).map((e) => e.value || e.reason);
 
+                const containerId = inspect?.Id;
+
+                const dockerStats = containerId ? await si.dockerContainerStats(containerId) : undefined;
+
                 if (logs?.out) {
                   // Hide username & external ip from logs
                   logs.out = logs.out.replaceAll(
@@ -354,6 +359,7 @@ export default function collectSamplesTaskFactory(
                 ctx.samples.setServiceInfo(service.name, 'stdOut', logs?.out);
                 ctx.samples.setServiceInfo(service.name, 'stdErr', logs?.err);
                 ctx.samples.setServiceInfo(service.name, 'dockerInspect', inspect);
+                ctx.samples.setServiceInfo(service.name, 'dockerStats', dockerStats);
               }),
             );
           },
