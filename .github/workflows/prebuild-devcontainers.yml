@@ -1,8 +1,6 @@
 name: Prebuild Dev Containers
 
 on:
-  schedule:
-    - cron: "0 0 * * *"
   push:
     paths:
       - '.devcontainer/**'
@@ -18,7 +16,7 @@ concurrency:
 jobs:
   build:
     name: Build and push devcontainer
-    runs-on: ubuntu-latest
+    runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
@@ -36,7 +34,7 @@ jobs:
         with:
           registry: ghcr.io
           username: dashpay
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}π
 
       - name: Build and push Platform devcontainer
         uses: devcontainers/ci@v0.3
