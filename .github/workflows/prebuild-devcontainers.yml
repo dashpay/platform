@@ -7,6 +7,7 @@ on:
     paths:
       - '.devcontainer/**'
       - '.github/workflows/prebuild-devcontainers.yml'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -34,6 +35,7 @@ jobs:
         uses: devcontainers/ci@v0.3
         with:
           imageName: ghcr.io/dashpay/platform/devcontainer
+          imageTag: 0.1.0
           platform: linux/amd64,linux/arm64
           configFile: .devcontainer/devcontainer-build.json
           push: true
