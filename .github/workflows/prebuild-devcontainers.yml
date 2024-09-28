@@ -35,6 +35,6 @@ jobs:
         with:
           imageName: ghcr.io/dashpay/platform/devcontainer
           platform: linux/amd64,linux/arm64
-          configFile: .devcontainer/build.json
+          configFile: .devcontainer/devcontainer-build.json
           push: true
           cacheFrom: ghcr.io/dashpay/platform/devcontainer
