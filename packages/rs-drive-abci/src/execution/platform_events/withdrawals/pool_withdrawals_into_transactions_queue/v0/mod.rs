@@ -73,14 +73,22 @@ where
                 .get_integer(withdrawal::properties::AMOUNT)?;
 
             // Check if adding this amount would exceed the current withdrawal limit.
-            if total_withdrawal_amount + amount > current_withdrawal_limit {
+            if total_withdrawal_amount
+                .checked_add(amount)
+                .map_or(true, |new_total| new_total > current_withdrawal_limit)
+            {
                 // If adding this withdrawal would exceed the limit, stop processing further.
                 break;
             }
 
             // Add this document to the list of documents to be processed.
             documents_to_process.push(document);
-            total_withdrawal_amount += amount;
+            total_withdrawal_amount =
+                total_withdrawal_amount.checked_add(amount).ok_or_else(|| {
+                    Error::Execution(ExecutionError::Overflow(
+                        "overflow in total withdrawal amount",
+                    ))
+                })?;
         }
 
         if documents_to_process.is_empty() {
