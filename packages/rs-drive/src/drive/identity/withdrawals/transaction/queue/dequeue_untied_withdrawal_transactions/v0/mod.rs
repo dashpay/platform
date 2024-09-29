@@ -1,13 +1,11 @@
 use crate::drive::identity::withdrawals::paths::get_withdrawal_transactions_queue_path_vec;
-use crate::drive::identity::withdrawals::{
-    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
-};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::{Query, QueryItem};
 use crate::util::batch::drive_op_batch::WithdrawalOperationType;
 use crate::util::batch::DriveOperation;
+use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
@@ -22,7 +20,7 @@ impl Drive {
         drive_operation_types: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<WithdrawalTransactionIndexAndBytes>, Error> {
-        let mut query = Query::new();
+        let mut query = Query::new_with_direction(true);
 
         query.insert_item(QueryItem::RangeFull(RangeFull));
 
@@ -39,7 +37,7 @@ impl Drive {
             .grove
             .query_raw(
                 &path_query,
-                transaction.is_some(),
+                true,
                 true,
                 true,
                 QueryResultType::QueryKeyElementPairResultType,

@@ -123,6 +123,7 @@ impl Cli {
                     config.db_path.clone(),
                     Some(config.clone()),
                     core_rpc,
+                    None,
                 )
                 .expect("Failed to open platform");
 
@@ -201,6 +202,12 @@ fn main() -> Result<(), ExitCode> {
     install_panic_hook(cancel.clone());
 
     // Start runtime in the main thread
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        features = list_enabled_features().join(","),
+        rust = env!("CARGO_PKG_RUST_VERSION"),
+        "drive-abci server initializing",
+    );
 
     let runtime_guard = runtime.enter();
 
@@ -282,6 +289,19 @@ fn dump_config(config: &PlatformConfig) -> Result<(), String> {
     Ok(())
 }
 
+fn list_enabled_features() -> Vec<&'static str> {
+    vec![
+        #[cfg(feature = "console")]
+        "console",
+        #[cfg(feature = "testing-config")]
+        "testing-config",
+        #[cfg(feature = "grovedbg")]
+        "grovedbg",
+        #[cfg(feature = "mocks")]
+        "mocks",
+    ]
+}
+
 /// Check status of ABCI server.
 fn check_status(config: &PlatformConfig) -> Result<(), String> {
     if let Some(prometheus_addr) = &config.prometheus_bind_address {
@@ -333,7 +353,12 @@ fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
     let grovedb = drive::grovedb::GroveDb::open(db_path).expect("open grovedb");
     //todo: get platform version instead of taking latest
     let result = grovedb
-        .visualize_verify_grovedb(&PlatformVersion::latest().drive.grove_version)
+        .visualize_verify_grovedb(
+            None,
+            true,
+            true,
+            &PlatformVersion::latest().drive.grove_version,
+        )
         .map_err(|e| e.to_string());
 
     match result {
@@ -481,10 +506,9 @@ mod test {
         let cf_handle = db.cf_handle(cf).unwrap();
         let iter = db.iterator_cf(cf_handle, IteratorMode::Start);
 
-        // let iter = db.iterator(IteratorMode::Start);
         for (i, item) in iter.enumerate() {
             let (key, mut value) = item.unwrap();
-            // println!("{} = {}", hex::encode(&key), hex::encode(value));
+            // println!("{} = {}", hex::encode(&key), hex::encode(&value));
             tracing::trace!(cf, key=?hex::encode(&key), value=hex::encode(&value),"found item in rocksdb");
 
             if i == n {
@@ -509,8 +533,11 @@ mod test {
 
         corrupt_rocksdb_item(&db_path, "roots", 0);
 
-        let result = super::verify_grovedb(&db_path, true);
-        assert!(result.is_err());
+        let result_error = super::verify_grovedb(&db_path, true).expect_err("expected an error");
+        assert_eq!(
+            result_error,
+            "data corruption error: expected merk to contain value at key 0x08 for tree"
+        );
 
         println!("db path: {:?}", &db_path);
     }

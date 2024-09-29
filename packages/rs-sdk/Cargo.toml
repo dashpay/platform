@@ -1,6 +1,6 @@
 [package]
 name = "dash-sdk"
-version = "1.0.2"
+version = "1.4.0-dev.1"
 edition = "2021"
 
 [dependencies]
@@ -26,7 +26,7 @@ serde = { version = "1.0.197", default-features = false, features = [
 ], optional = true }
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 tracing = { version = "0.1.40" }
-hex = { version = "0.4.3"}
+hex = { version = "0.4.3" }
 dotenvy = { version = "0.15.7", optional = true }
 envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.30" }

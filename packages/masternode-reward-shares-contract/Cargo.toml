@@ -1,9 +1,9 @@
 [package]
 name = "masternode-reward-shares-contract"
 description = "Masternode reward shares data contract schema and tools"
-version = "1.0.2"
+version = "1.4.0-dev.1"
 edition = "2021"
-rust-version = "1.76"
+rust-version.workspace = true
 license = "MIT"
 
 [dependencies]

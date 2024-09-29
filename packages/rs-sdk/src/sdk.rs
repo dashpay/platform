@@ -11,6 +11,7 @@ use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
+use dpp::dashcore::Network;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -80,6 +81,8 @@ pub type LastQueryTimestamp = u64;
 /// See tests/ for examples of using the SDK.
 #[derive(Clone)]
 pub struct Sdk {
+    /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)  
+    pub network: Network,
     inner: SdkInstance,
     /// Use proofs when retrieving data from Platform.
     ///
@@ -205,10 +208,14 @@ impl Sdk {
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
         match self.inner {
-            SdkInstance::Dapi { .. } => {
-                O::maybe_from_proof_with_metadata(request, response, self.version(), &provider)
-                    .map(|(a, b, _)| (a, b))
-            }
+            SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
+                request,
+                response,
+                self.network,
+                self.version(),
+                &provider,
+            )
+            .map(|(a, b, _)| (a, b)),
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
                 let guard = mock.lock().await;
@@ -241,9 +248,13 @@ impl Sdk {
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
         match self.inner {
-            SdkInstance::Dapi { .. } => {
-                O::maybe_from_proof_with_metadata(request, response, self.version(), &provider)
-            }
+            SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
+                request,
+                response,
+                self.network,
+                self.version(),
+                &provider,
+            ),
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
                 let guard = mock.lock().await;
@@ -496,6 +507,23 @@ impl Sdk {
     pub fn shutdown(&self) {
         self.cancel_token.cancel();
     }
+
+    /// Return the [DapiClient] address list
+    pub fn address_list(&self) -> Result<AddressList, String> {
+        match &self.inner {
+            SdkInstance::Dapi { dapi, version: _ } => {
+                let address_list_arc = dapi.address_list();
+                let address_list_lock = address_list_arc
+                    .read()
+                    .map_err(|e| format!("Failed to read address list: {e}"))?;
+                Ok(address_list_lock.clone())
+            }
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { .. } => {
+                unimplemented!("mock Sdk does not have address list")
+            }
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -513,17 +541,6 @@ impl DapiRequestExecutor for Sdk {
                 dapi_guard.execute(request, settings).await
             }
         }
-    }
-}
-
-#[async_trait::async_trait]
-impl DapiRequestExecutor for &Sdk {
-    async fn execute<R: TransportRequest>(
-        &self,
-        request: R,
-        settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
-        DapiRequestExecutor::execute(self, request, settings).await
     }
 }
 
@@ -545,6 +562,8 @@ pub struct SdkBuilder {
     /// If `None`, a mock client will be created.
     addresses: Option<AddressList>,
     settings: RequestSettings,
+
+    network: Network,
 
     core_ip: String,
     core_port: u16,
@@ -582,6 +601,7 @@ impl Default for SdkBuilder {
         Self {
             addresses: None,
             settings: RequestSettings::default(),
+            network: Network::Dash,
             core_ip: "".to_string(),
             core_port: 0,
             core_password: "".to_string(),
@@ -641,6 +661,14 @@ impl SdkBuilder {
         unimplemented!(
             "Mainnet address list not implemented yet. Use new() and provide address list."
         )
+    }
+
+    /// Configure network type.
+    ///
+    /// Defaults to Network::Dash which is mainnet.
+    pub fn with_network(mut self, network: Network) -> Self {
+        self.network = network;
+        self
     }
 
     /// Configure request settings.
@@ -741,6 +769,7 @@ impl SdkBuilder {
 
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
+                    network: self.network,
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
                     context_provider: self.context_provider.map(Arc::new),
@@ -753,9 +782,6 @@ impl SdkBuilder {
                 if  sdk.context_provider.is_none() {
                     #[cfg(feature = "mocks")]
                     if !self.core_ip.is_empty() {
-                        tracing::warn!("ContextProvider not set; mocking with Dash Core. \
-                        Please provide your own ContextProvider with SdkBuilder::with_context_provider().");
-
                         let mut context_provider = GrpcContextProvider::new(None,
                             &self.core_ip, self.core_port, &self.core_user, &self.core_password,
                             self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
@@ -784,20 +810,37 @@ impl SdkBuilder {
             None => {
                 let dapi =Arc::new(tokio::sync::Mutex::new(  MockDapiClient::new()));
                 // We create mock context provider that will use the mock DAPI client to retrieve data contracts.
-                let  context_provider = self.context_provider.unwrap_or(Box::new(MockContextProvider::new()));
-
-                Sdk {
+                let  context_provider = self.context_provider.unwrap_or_else(||{
+                    let mut cp=MockContextProvider::new();
+                    if let Some(ref dump_dir) = self.dump_dir {
+                        cp.quorum_keys_dir(Some(dump_dir.clone()));
+                    }
+                    Box::new(cp)
+                }
+                );
+                let mock_sdk = MockDashPlatformSdk::new(self.version, Arc::clone(&dapi));
+                let mock_sdk = Arc::new(Mutex::new(mock_sdk));
+                let sdk= Sdk {
+                    network: self.network,
                     inner:SdkInstance::Mock {
-                        mock:Arc::new(Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs))),
+                        mock:mock_sdk.clone(),
                         dapi,
                         version:self.version,
+
                     },
-                    dump_dir: self.dump_dir,
+                    dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     internal_cache: Default::default(),
                     context_provider:Some(Arc::new(context_provider)),
                     cancel_token: self.cancel_token,
-                }
+                };
+                let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and connot be reconfigured");
+                guard.set_sdk(sdk.clone());
+                if let Some(ref dump_dir) = self.dump_dir {
+                    pollster::block_on(   guard.load_expectations(dump_dir))?;
+                };
+
+                sdk
             },
             #[cfg(not(feature = "mocks"))]
             None => return Err(Error::Config("Mock mode is not available. Please enable `mocks` feature or provide address list.".to_string())),

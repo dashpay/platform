@@ -45,7 +45,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
     /// 1. The proof verification fails.
     /// 2. There is a deserialization error when parsing the serialized document(s) into `Document` struct(s).
     #[inline(always)]
-    pub(crate) fn verify_vote_poll_vote_state_proof_v0(
+    pub(super) fn verify_vote_poll_vote_state_proof_v0(
         &self,
         proof: &[u8],
         platform_version: &PlatformVersion,
@@ -56,7 +56,8 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
         match self.result_type {
-            ContestedDocumentVotePollDriveQueryResultType::Documents => {
+            ContestedDocumentVotePollDriveQueryResultType::Documents
+            | ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(_) => {
                 let contenders = proved_key_values
                     .into_iter()
                     .map(|(mut path, _key, document)| {

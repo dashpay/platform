@@ -9,7 +9,7 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    pub(super) fn get_owner_identity_key_v0(
+    pub(super) fn get_owner_identity_withdrawal_key_v0(
         payout_address: [u8; 20],
         key_id: KeyID,
     ) -> Result<IdentityPublicKey, Error> {

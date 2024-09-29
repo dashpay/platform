@@ -108,15 +108,18 @@ async function main() {
   });
 
   tenderDashWsClient.on('disconnect', () => {
-    tenderdashLogger.fatal('Disconnected from Tenderdash... exiting');
+    tenderdashLogger.warn('Disconnected from tenderdash');
+  });
+
+  const blockchainListener = new BlockchainListener(tenderDashWsClient);
+
+  tenderDashWsClient.connect().then(() => {
+    blockchainListener.start();
+  }).catch((e) => {
+    tenderdashLogger.fatal(`Not able to connect to tenderdash: ${e}`);
 
     process.exit(1);
   });
-
-  await tenderDashWsClient.connect();
-
-  const blockchainListener = new BlockchainListener(tenderDashWsClient);
-  blockchainListener.start();
 
   // Start JSON RPC server
   logger.info('Starting JSON RPC server');

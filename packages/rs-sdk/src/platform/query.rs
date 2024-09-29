@@ -1,20 +1,29 @@
 //! Query trait representing criteria for fetching data from Platform.
 //!
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from Platform.
+use super::types::epoch::EpochQuery;
+use super::types::evonode::EvoNode;
+use crate::{error::Error, platform::document_query::DocumentQuery};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
 use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::GetContestedResourceVotersForIdentityRequestV0;
 use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
+use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::GetEvonodesProposedEpochBlocksByRangeRequestV0;
+use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
+use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
+use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
-    AllKeys, GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
-    GetContestedResourcesRequest, GetEpochsInfoRequest, GetIdentityKeysRequest,
+    get_path_elements_request, get_total_credits_in_platform_request, AllKeys,
+    GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourcesRequest, GetEpochsInfoRequest,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentityKeysRequest, GetPathElementsRequest,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
-    KeyRequestType,
+    GetTotalCreditsInPlatformRequest, KeyRequestType,
 };
 use dapi_grpc::platform::v0::{
-    GetContestedResourceIdentityVotesRequest, GetPrefundedSpecializedBalanceRequest,
-    GetVotePollsByEndDateRequest,
+    get_status_request, GetContestedResourceIdentityVotesRequest,
+    GetPrefundedSpecializedBalanceRequest, GetStatusRequest, GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::version::PlatformVersionError;
@@ -25,16 +34,15 @@ use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuer
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use drive_proof_verifier::from_request::TryFromRequest;
+use drive_proof_verifier::types::{KeysInPath, NoParamQuery};
 use rs_dapi_client::transport::TransportRequest;
 use std::fmt::Debug;
 
-use crate::{error::Error, platform::document_query::DocumentQuery};
-
-use super::types::epoch::EpochQuery;
 /// Default limit of epoch records returned by Platform.
 pub const DEFAULT_EPOCH_QUERY_LIMIT: u32 = 100;
 /// Default limit of epoch records returned by Platform.
 pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
+
 /// Trait implemented by objects that can be used as queries.
 ///
 /// [Query] trait is used to specify criteria for fetching data from Platform.
@@ -43,11 +51,10 @@ pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 /// Some examples of queries include:
 ///
 /// 1. [`Identifier`](crate::platform::Identifier) - fetches an object by its identifier; implemented for
-/// [Identity](dpp::prelude::Identity), [DataContract](dpp::prelude::DataContract) and [Document](dpp::document::Document).
-/// 2. [`DocumentQuery`] - fetches [Document](dpp::document::Document) based on search
-/// conditions; see
-/// [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
-/// for more details.
+///    [Identity](dpp::prelude::Identity), [DataContract](dpp::prelude::DataContract) and [Document](dpp::document::Document).
+/// 2. [`DocumentQuery`] - fetches [Document](dpp::document::Document) based on search conditions; see
+///    [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
+///    for more details.
 ///
 /// ## Example
 ///
@@ -93,7 +100,7 @@ where
 {
     fn query(self, prove: bool) -> Result<T, Error> {
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            tracing::warn!(request= ?self, "sending query without proof, ensure data is trusted");
         }
         Ok(self)
     }
@@ -433,6 +440,39 @@ impl Query<GetContestedResourceVotersForIdentityRequest>
     }
 }
 
+impl Query<GetEvonodesProposedEpochBlocksByRangeRequest>
+    for LimitQuery<GetEvonodesProposedEpochBlocksByRangeRequest>
+{
+    fn query(self, prove: bool) -> Result<GetEvonodesProposedEpochBlocksByRangeRequest, Error> {
+        use proto::get_evonodes_proposed_epoch_blocks_by_range_request::{
+            get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start, Version,
+        };
+        let query = match self.query.query(prove)?.version {
+            Some(Version::V0(v0)) => GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+                start: self.start_info.map(|v| {
+                    if v.start_included {
+                        Start::StartAt(v.start_key)
+                    } else {
+                        Start::StartAfter(v.start_key)
+                    }
+                }),
+                ..v0
+            }
+            .into(),
+            None => {
+                return Err(Error::Protocol(
+                    PlatformVersionError::UnknownVersionError(
+                        "version not present in request".into(),
+                    )
+                    .into(),
+                ))
+            }
+        };
+
+        Ok(query)
+    }
+}
+
 impl Query<GetContestedResourceIdentityVotesRequest>
     for ContestedResourceVotesGivenByIdentityQuery
 {
@@ -542,5 +582,80 @@ impl Query<GetContestedResourceIdentityVotesRequest> for LimitQuery<VoteQuery> {
             },
         }
         .into())
+    }
+}
+
+impl Query<GetPathElementsRequest> for KeysInPath {
+    fn query(self, prove: bool) -> Result<GetPathElementsRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        let request: GetPathElementsRequest = GetPathElementsRequest {
+            version: Some(get_path_elements_request::Version::V0(
+                GetPathElementsRequestV0 {
+                    path: self.path,
+                    keys: self.keys,
+                    prove,
+                },
+            )),
+        };
+
+        Ok(request)
+    }
+}
+
+impl Query<GetTotalCreditsInPlatformRequest> for NoParamQuery {
+    fn query(self, prove: bool) -> Result<GetTotalCreditsInPlatformRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        let request: GetTotalCreditsInPlatformRequest = GetTotalCreditsInPlatformRequest {
+            version: Some(get_total_credits_in_platform_request::Version::V0(
+                GetTotalCreditsInPlatformRequestV0 { prove },
+            )),
+        };
+
+        Ok(request)
+    }
+}
+
+impl Query<GetEvonodesProposedEpochBlocksByRangeRequest> for LimitQuery<Option<EpochIndex>> {
+    fn query(self, prove: bool) -> Result<GetEvonodesProposedEpochBlocksByRangeRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetEvonodesProposedEpochBlocksByRangeRequest {
+            version: Some(proto::get_evonodes_proposed_epoch_blocks_by_range_request::Version::V0(
+                GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+                    epoch: self.query.map(|v| v as u32),
+                    start: self.start_info.map(|v| {
+                        use proto::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
+                        if v.start_included {
+                            Start::StartAt(v.start_key)
+                        } else {
+                            Start::StartAfter(v.start_key)
+                        }
+                    }),
+                    limit: self.limit,
+
+                    prove,
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetStatusRequest> for EvoNode {
+    fn query(self, _prove: bool) -> Result<GetStatusRequest, Error> {
+        // ignore proof
+
+        let request: GetStatusRequest = GetStatusRequest {
+            version: Some(get_status_request::Version::V0(GetStatusRequestV0 {})),
+        };
+
+        Ok(request)
     }
 }

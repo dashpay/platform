@@ -15,6 +15,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const FailedPreconditionGrpcError = require('@dashevo/grpc-common/lib/server/error/FailedPreconditionGrpcError');
+const UnavailableGrpcError = require('@dashevo/grpc-common/lib/server/error/UnavailableGrpcError');
 const RPCError = require('../../../rpcServer/RPCError');
 
 /**
@@ -46,6 +47,10 @@ function getConsensusParamsHandlerFactory(getConsensusParams) {
     try {
       consensusParams = await getConsensusParams(height);
     } catch (e) {
+      if (e.message === 'socket hang up') {
+        throw new UnavailableGrpcError('Tenderdash is not available');
+      }
+
       if (e instanceof RPCError) {
         if (e.code === -32603) {
           throw new FailedPreconditionGrpcError(`Invalid height: ${e.data}`);

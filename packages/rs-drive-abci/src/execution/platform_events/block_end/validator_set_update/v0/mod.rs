@@ -11,6 +11,7 @@ use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
 use crate::rpc::core::CoreRPCLike;
 use itertools::Itertools;
 
+use crate::platform_types::validator_set::ValidatorSetExt;
 use dpp::dashcore::hashes::Hash;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
@@ -92,7 +93,7 @@ where
             // we also need to perform a rotation if the validator set is being removed
             tracing::debug!(
                 method = "validator_set_update_v0",
-                "rotation: new quorums not containing current quorum current {:?}, {}. quorum rotation expected˚",
+                "rotation: new quorums not containing current quorum current {:?}, {}. quorum rotation expected",
                 block_execution_context
                     .block_platform_state()
                     .validator_sets()
@@ -144,7 +145,7 @@ where
                                 &quorum_hash,
                                 new_validator_set.members().len()
                             );
-                            let validator_set_update = new_validator_set.into();
+                            let validator_set_update = new_validator_set.to_update();
                             block_execution_context
                                 .block_platform_state_mut()
                                 .set_next_validator_set_quorum_hash(Some(*quorum_hash));
@@ -163,7 +164,7 @@ where
                             "rotation: all quorums changed, rotation to new quorum: {}",
                             &quorum_hash
                         );
-                        let validator_set_update = new_validator_set.into();
+                        let validator_set_update = new_validator_set.to_update();
                         let new_quorum_hash = *quorum_hash;
                         block_execution_context
                             .block_platform_state_mut()
@@ -185,7 +186,7 @@ where
                     method = "validator_set_update_v0",
                     "validator set update without rotation"
                 );
-                Ok(Some(current_validator_set.into()))
+                Ok(Some(current_validator_set.to_update()))
             } else {
                 tracing::debug!(
                     method = "validator_set_update_v0",

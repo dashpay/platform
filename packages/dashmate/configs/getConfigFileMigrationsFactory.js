@@ -439,6 +439,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '0.25.22': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
+          });
+
+        return configFile;
+      },
       '1.0.0-dev.2': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
@@ -762,6 +770,144 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.core.indexes = [];
             options.platform.drive.abci.docker.image = 'dashpay/drive:1';
             options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+          });
+        return configFile;
+      },
+      '1.1.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (name === 'local') {
+              options.platform.drive.abci.epochTime = 1200;
+            }
+
+            if (options.network === NETWORK_MAINNET && name !== 'base') {
+              options.platform.drive.tenderdash.p2p.seeds = mainnet.get('platform.drive.tenderdash.p2p.seeds');
+            }
+
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
+
+            options.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout = '125s';
+            options.platform.dapi.api.waitForStResultTimeout = 120000;
+
+            options.platform.drive.tenderdash.p2p.maxConnections = 64;
+            options.platform.drive.tenderdash.p2p.maxOutgoingConnections = 30;
+            options.platform.drive.tenderdash.genesis
+              .consensus_params = base.get('platform.drive.tenderdash.genesis.consensus_params');
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+          });
+        return configFile;
+      },
+      '1.1.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.abci.proposer = {
+                txProcessingTimeLimit: 5000,
+              };
+              options.platform.drive.tenderdash.mempool.timeoutCheckTx = '3s';
+              options.platform.drive.tenderdash.mempool.txEnqueueTimeout = '30ms';
+              options.platform.drive.tenderdash.mempool.txSendRateLimit = 100;
+              options.platform.drive.tenderdash.mempool.txRecvRateLimit = 120;
+              options.platform.drive.tenderdash.mempool.ttlDuration = '24h';
+              options.platform.drive.tenderdash.mempool.ttlNumBlocks = 0;
+            } else if (options.network === NETWORK_MAINNET && name !== 'base') {
+              options.platform.drive.abci.proposer = {
+                txProcessingTimeLimit: 5000,
+              };
+              options.platform.drive.tenderdash.mempool.ttlDuration = '24h';
+              options.platform.drive.tenderdash.mempool.ttlNumBlocks = 0;
+            } else {
+              options.platform.drive.tenderdash.mempool.ttlDuration = '0s';
+              options.platform.drive.tenderdash.mempool.ttlNumBlocks = 0;
+              options.platform.drive.abci.proposer = {
+                txProcessingTimeLimit: null,
+              };
+            }
+          });
+        return configFile;
+      },
+      '1.1.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.2.0';
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis.chain_id = 'dash-testnet-51';
+            }
+          });
+        return configFile;
+      },
+      '1.2.0-rc.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1';
+            if (options.network === NETWORK_MAINNET && name !== 'base') {
+              options.platform.drive.tenderdash.genesis.chain_id = 'evo1';
+            }
+            if (options.network === NETWORK_TESTNET) {
+              delete options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
+            }
+          });
+        return configFile;
+      },
+      '1.3.0-dev.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
+
+            // Update core log settings
+            options.core.log.filePath = null;
+            options.core.log.debug = {
+              enabled: false,
+              ips: !!options.core.logIps,
+              sourceLocations: false,
+              threadNames: false,
+              timeMicros: false,
+              includeOnly: [],
+              exclude: [],
+            };
+
+            // If debug log was enabled
+            if (options.core.log.file.categories.length > 0) {
+              options.core.log.filePath = options.core.log.file.path;
+              options.core.log.debug.enabled = true;
+
+              if (!options.core.log.file.categories.includes('all')) {
+                options.core.log.debug.includeOnly = options.core.log.file.categories;
+              }
+            }
+
+            delete options.core.log.file;
+            delete options.core.logIps;
+          });
+        return configFile;
+      },
+      '1.3.0-dev.6': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:fix-wrong-proposer-at-round';
+          });
+        return configFile;
+      },
+      '1.3.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.3';
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+          });
+        return configFile;
+      },
+      '1.4.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.3';
+            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
           });
         return configFile;
       },

@@ -33,8 +33,9 @@ impl Drive {
             )?;
         }
 
-        // There are 4 Purposes: Authentication, Encryption, Decryption, Transfer
-        for purpose in Purpose::authentication_and_transfer() {
+        // There are 5 Purposes: Authentication, Encryption, Decryption, Transfer and Voting
+        // Searchable purposes are Authentication, Transfer and Voting
+        for purpose in Purpose::searchable_purposes() {
             self.batch_insert_empty_tree(
                 identity_query_key_tree,
                 DriveKeyInfo::Key(vec![purpose as u8]),

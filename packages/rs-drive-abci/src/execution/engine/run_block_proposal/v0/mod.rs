@@ -19,7 +19,7 @@ use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Methods, BlockStateInfoV0Setters,
 };
 use crate::execution::types::{block_execution_context, block_state_info};
-
+use crate::metrics::HistogramTiming;
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal;
 use crate::platform_types::epoch_info::v0::{EpochInfoV0Getters, EpochInfoV0Methods};
@@ -67,6 +67,7 @@ where
         last_committed_platform_state: &PlatformState,
         mut block_platform_state: PlatformState,
         platform_version: &'static PlatformVersion,
+        timer: Option<&HistogramTiming>,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
         tracing::trace!(
@@ -310,6 +311,8 @@ where
             &block_info,
             transaction,
             platform_version,
+            known_from_us,
+            timer,
         )?;
 
         // Pool withdrawals into transactions queue
@@ -318,6 +321,7 @@ where
         // Corresponding withdrawal documents are changed from queued to pooled
         self.pool_withdrawals_into_transactions_queue(
             &block_info,
+            &last_committed_platform_state,
             Some(transaction),
             platform_version,
         )?;
@@ -328,9 +332,6 @@ where
             block_execution_context::v0::BlockExecutionContextV0 {
                 block_state_info: block_state_info.into(),
                 epoch_info: epoch_info.clone(),
-                // TODO: It doesn't seem correct to use previous block count of hpmns.
-                //  We currently not using this field in the codebase. We probably should just remove it.
-                hpmn_count: last_committed_platform_state.hpmn_list_len() as u32,
                 unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
                 block_platform_state,
                 proposer_results: None,

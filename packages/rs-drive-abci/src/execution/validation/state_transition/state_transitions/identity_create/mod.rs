@@ -302,12 +302,14 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1823240);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1871240);
 
         platform
             .drive
@@ -322,7 +324,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99916906760);
+        assert_eq!(identity_balance, 99913915760);
     }
 
     #[test]
@@ -454,6 +456,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -516,6 +520,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -525,7 +531,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2098900);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2146900);
 
         platform
             .drive
@@ -540,7 +546,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99912301400); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, 99909310400); // The identity balance is smaller than if there hadn't been any issue
     }
 
     #[test]
@@ -683,6 +689,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -748,6 +756,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -908,6 +918,8 @@ mod tests {
                     &BlockInfo::default(),
                     &transaction,
                     platform_version,
+                    false,
+                    None,
                 )
                 .expect("expected to process state transition");
 
@@ -973,6 +985,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1121,6 +1135,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1151,6 +1167,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1206,6 +1224,8 @@ mod tests {
                 &BlockInfo::default(),
                 &transaction,
                 platform_version,
+                false,
+                None,
             )
             .expect("expected to process state transition");
 
@@ -1215,7 +1235,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2098900);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2146900);
 
         platform
             .drive
@@ -1230,6 +1250,6 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99912301400); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, 99909310400); // The identity balance is smaller than if there hadn't been any issue
     }
 }

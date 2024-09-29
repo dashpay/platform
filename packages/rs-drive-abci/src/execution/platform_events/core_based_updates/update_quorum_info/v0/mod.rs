@@ -7,7 +7,9 @@ use dashcore_rpc::json::{ExtendedQuorumListResult, QuorumType};
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-use crate::platform_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
+use crate::platform_types::validator_set::v0::{
+    ValidatorSetMethodsV0, ValidatorSetV0, ValidatorSetV0Getters,
+};
 use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 

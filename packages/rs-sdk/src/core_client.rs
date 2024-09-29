@@ -3,6 +3,7 @@
 //! TODO: This is a temporary implementation, effective until we integrate SPV
 //! into dash-platform-sdk.
 
+use crate::error::Error;
 use dashcore_rpc::{
     dashcore::{hashes::Hash, Amount, QuorumHash},
     dashcore_rpc_json as json,
@@ -10,10 +11,9 @@ use dashcore_rpc::{
     Auth, Client, RpcApi,
 };
 use dpp::dashcore::ProTxHash;
+use dpp::prelude::CoreBlockHeight;
 use drive_proof_verifier::error::ContextProviderError;
 use std::{fmt::Debug, sync::Mutex};
-
-use crate::error::Error;
 
 /// Core RPC client that can be used to retrieve quorum keys from core.
 ///
@@ -120,7 +120,7 @@ impl CoreClient {
         let core = self.core.lock().expect("Core lock poisoned");
         let quorum_info = core
             .get_quorum_info(json::QuorumType::from(quorum_type), &quorum_hash, None)
-            .map_err(|e: dashcore_rpc::Error| ContextProviderError::InvalidQuorum(e.to_string()))?;
+            .map_err(|e: dashcore_rpc::Error| ContextProviderError::Generic(e.to_string()))?;
         let key = quorum_info.quorum_public_key;
         let pubkey = <Vec<u8> as TryInto<[u8; 48]>>::try_into(key).map_err(|_e| {
             ContextProviderError::InvalidQuorum(
@@ -128,6 +128,25 @@ impl CoreClient {
             )
         })?;
         Ok(pubkey)
+    }
+
+    /// Retrieve platform activation height from core.
+    pub fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        let core = self.core.lock().expect("Core lock poisoned");
+
+        let fork_info = core
+            .get_blockchain_info()
+            .map(|blockchain_info| blockchain_info.softforks.get("mn_rr").cloned())
+            .map_err(|e: dashcore_rpc::Error| ContextProviderError::Generic(e.to_string()))?
+            .ok_or(ContextProviderError::ActivationForkError(
+                "no fork info for mn_rr".to_string(),
+            ))?;
+
+        fork_info
+            .height
+            .ok_or(ContextProviderError::ActivationForkError(
+                "unknown fork height".to_string(),
+            ))
     }
 
     /// Require list of validators from Core.

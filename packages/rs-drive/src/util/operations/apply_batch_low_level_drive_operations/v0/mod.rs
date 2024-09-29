@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -22,13 +23,15 @@ impl Drive {
             LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(
                 batch_operations,
             );
-        self.apply_batch_grovedb_operations(
-            estimated_costs_only_with_layer_info,
-            transaction,
-            grove_db_operations,
-            drive_operations,
-            drive_version,
-        )?;
+        if !grove_db_operations.is_empty() {
+            self.apply_batch_grovedb_operations(
+                estimated_costs_only_with_layer_info,
+                transaction,
+                grove_db_operations,
+                drive_operations,
+                drive_version,
+            )?;
+        }
         drive_operations.append(&mut other_operations);
         Ok(())
     }

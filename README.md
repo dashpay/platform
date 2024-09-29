@@ -43,7 +43,7 @@ this repository may be used on the following networks:
 
 - [x] **Development networks** ([**devnets**](https://dashplatform.readme.io/docs/reference-glossary#devnet))
 - [x] [**Testnet**](https://dashplatform.readme.io/docs/reference-glossary#testnet)
-- [ ] [Mainnet](https://dashplatform.readme.io/docs/reference-glossary#mainnet)
+- [x] [Mainnet](https://dashplatform.readme.io/docs/reference-glossary#mainnet)
 
 ## FAQ
 
@@ -53,7 +53,7 @@ this repository may be used on the following networks:
 - Install prerequisites:
   - [node.js](https://nodejs.org/) v20
   - [docker](https://docs.docker.com/get-docker/) v20.10+
-  - [rust](https://www.rust-lang.org/tools/install) v1.76+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
+  - [rust](https://www.rust-lang.org/tools/install) v1.80+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
   - [protoc - protobuf compiler](https://github.com/protocolbuffers/protobuf/releases) v25.2+
     - if needed, set PROTOC environment variable to location of `protoc` binary
   - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/):

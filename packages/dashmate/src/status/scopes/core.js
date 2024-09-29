@@ -116,7 +116,7 @@ export default function getCoreScopeFactory(
 
     const providersResult = await Promise.allSettled([
       providers.github.release('dashpay/dash'),
-      providers.mnowatch.checkPortStatus(config.get('core.p2p.port')),
+      providers.mnowatch.checkPortStatus(config.get('core.p2p.port'), config.get('externalIp')),
       providers.insight(config.get('network')).status(),
     ]);
 

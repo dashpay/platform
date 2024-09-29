@@ -23,7 +23,7 @@ pub struct ToObject {
     pub amount: u64,
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,
-    pub output_script: CoreScript,
+    pub output_script: Option<CoreScript>,
     pub nonce: IdentityNonce,
     pub signature: Option<Vec<u8>>,
     pub signature_public_key_id: Option<KeyID>,

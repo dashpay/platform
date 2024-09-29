@@ -1,19 +1,20 @@
 #[cfg(test)]
 mod tests {
-    use dpp::block::block_info::BlockInfo;
-    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-    use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
-    use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::{BlockHash, ChainLock};
-    use dpp::version::PlatformVersion;
-    use drive::config::DriveConfig;
-    use std::collections::{BTreeMap, HashMap};
-
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::strategy::{
         ChainExecutionOutcome, ChainExecutionParameters, CoreHeightIncrease,
         MasternodeListChangesStrategy, NetworkStrategy, StrategyRandomness, UpgradingInfo,
     };
+    use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::Epoch;
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::Network::Regtest;
+    use dpp::dashcore::{BlockHash, ChainLock};
+    use dpp::version::PlatformVersion;
+    use drive::config::DriveConfig;
+    use drive::query::proposer_block_count_query::ProposerQueryType;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
@@ -27,6 +28,8 @@ mod tests {
     use platform_version::version::mocks::v3_test::TEST_PROTOCOL_VERSION_3;
     use platform_version::version::patches::PatchFn;
     use platform_version::version::v1::PROTOCOL_VERSION_1;
+    use platform_version::version::INITIAL_PROTOCOL_VERSION;
+    use std::collections::{BTreeMap, HashMap};
     use strategy_tests::frequency::Frequency;
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
 
@@ -89,6 +92,7 @@ mod tests {
                 };
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(config.clone())
+                    .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
                     .build_with_mock_rpc();
                 platform
                     .core_rpc
@@ -192,6 +196,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy.clone(),
                     config.clone(),
@@ -244,6 +249,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy,
                     config,
@@ -272,6 +278,39 @@ mod tests {
                     assert_eq!(counter.get(&1).unwrap(), None); //no one has proposed 1 yet
                     assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2).unwrap(), Some(&147));
                 }
+
+                let epoch_proposers_2 = platform
+                    .drive
+                    .fetch_epoch_proposers(
+                        &Epoch::new(2).unwrap(),
+                        ProposerQueryType::ByRange(None, None),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to get epoch proposers");
+                assert_eq!(epoch_proposers_2.len(), 147);
+
+                let epoch_proposers_1 = platform
+                    .drive
+                    .fetch_epoch_proposers(
+                        &Epoch::new(1).unwrap(),
+                        ProposerQueryType::ByRange(None, None),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to get epoch proposers");
+                assert_eq!(epoch_proposers_1.len(), 299); // We had 299 proposers in epoch 1
+
+                let epoch_proposers_0 = platform
+                    .drive
+                    .fetch_epoch_proposers(
+                        &Epoch::new(0).unwrap(),
+                        ProposerQueryType::ByRange(None, None),
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to get epoch proposers");
+                assert_eq!(epoch_proposers_0.len(), 447); // We had 447 proposers in epoch 0
             })
             .expect("Failed to create thread with custom stack size");
 
@@ -337,6 +376,7 @@ mod tests {
                 };
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(config.clone())
+                    .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
                     .build_with_mock_rpc();
                 platform
                     .core_rpc
@@ -437,6 +477,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy.clone(),
                     config.clone(),
@@ -489,6 +530,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy,
                     config,
@@ -581,17 +623,13 @@ mod tests {
             },
             initial_protocol_version: PROTOCOL_VERSION_1,
             block_spacing_ms: epoch_time_length_s * 1000,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
+            .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
             .build_with_mock_rpc();
 
         let ChainExecutionOutcome {
@@ -738,6 +776,7 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
+                    network: Regtest,
                     validator_set: ValidatorSetConfig {
                         quorum_size: 40,
                         ..Default::default()
@@ -760,6 +799,7 @@ mod tests {
                 };
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(config.clone())
+                    .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
                     .build_with_mock_rpc();
                 platform
                     .core_rpc
@@ -854,6 +894,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy.clone(),
                     config.clone(),
@@ -905,6 +946,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy,
                     config,
@@ -975,6 +1017,7 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let mut config = PlatformConfig {
+                    network: Regtest,
                     validator_set: ValidatorSetConfig {
                         quorum_size: 50,
                         ..Default::default()
@@ -997,6 +1040,7 @@ mod tests {
                 };
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(config.clone())
+                    .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
                     .build_with_mock_rpc();
                 platform
                     .core_rpc
@@ -1082,6 +1126,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy,
                     config.clone(),
@@ -1181,6 +1226,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy.clone(),
                     config.clone(),
@@ -1238,6 +1284,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy,
                     config,
@@ -1338,6 +1385,7 @@ mod tests {
                 };
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(config.clone())
+                    .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
                     .build_with_mock_rpc();
                 platform
                     .core_rpc
@@ -1471,6 +1519,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy,
                     config,

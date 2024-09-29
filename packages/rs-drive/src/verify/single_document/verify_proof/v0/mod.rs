@@ -32,7 +32,7 @@ impl SingleDocumentDriveQuery {
     /// - The GroveDb query fails.
     /// - The document serialization fails.
     #[inline(always)]
-    pub(crate) fn verify_proof_v0(
+    pub(super) fn verify_proof_v0(
         &self,
         is_subset: bool,
         proof: &[u8],

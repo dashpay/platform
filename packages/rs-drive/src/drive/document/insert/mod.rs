@@ -35,12 +35,6 @@ mod add_indices_for_top_index_level_for_contract_operations;
 // This module contains functionality for adding a reference for an index level for contract operations
 mod add_reference_for_index_level_for_contract_operations;
 
-#[cfg(all(
-    feature = "fixtures-and-mocks",
-    feature = "data-contract-cbor-conversion"
-))]
-use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
-
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;

@@ -329,6 +329,7 @@ impl<'a, C: CoreRPCLike> FullAbciApplication<'a, C> {
                 transaction
                     .rollback_to_savepoint()
                     .expect("expected to rollback to savepoint");
+                transaction.set_savepoint();
 
                 let start_root_hash = self
                     .platform

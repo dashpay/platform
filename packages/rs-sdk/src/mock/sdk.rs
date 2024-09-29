@@ -1,13 +1,22 @@
 //! Mocking mechanisms for Dash Platform SDK.
 //!
 //! See [MockDashPlatformSdk] for more details.
+use crate::{
+    platform::{
+        types::{evonode::EvoNode, identity::IdentityRequest},
+        DocumentQuery, Fetch, FetchMany, Query,
+    },
+    Error, Sdk,
+};
+use arc_swap::ArcSwapOption;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dapi_grpc::{
     mock::Mockable,
     platform::v0::{self as proto},
 };
+use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
-use drive_proof_verifier::{error::ContextProviderError, FromProof, MockContextProvider};
+use drive_proof_verifier::{error::ContextProviderError, ContextProvider, FromProof};
 use rs_dapi_client::mock::MockError;
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
@@ -16,11 +25,6 @@ use rs_dapi_client::{
 };
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-
-use crate::{
-    platform::{types::identity::IdentityRequest, DocumentQuery, Fetch, FetchMany, Query},
-    Error,
-};
 
 use super::MockResponse;
 
@@ -34,47 +38,55 @@ use super::MockResponse;
 /// ## Panics
 ///
 /// Can panic on errors.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Key, Vec<u8>>,
     platform_version: &'static PlatformVersion,
     dapi: Arc<Mutex<MockDapiClient>>,
-    prove: bool,
-    quorum_provider: Option<Arc<MockContextProvider>>,
+    sdk: ArcSwapOption<Sdk>,
 }
 
 impl MockDashPlatformSdk {
-    pub(crate) fn new(
-        version: &'static PlatformVersion,
-        dapi: Arc<Mutex<MockDapiClient>>,
-        prove: bool,
-    ) -> Self {
+    /// Returns true when requests should use proofs.
+    ///
+    /// ## Panics
+    ///
+    /// Panics when sdk is not set during initialization.
+    pub fn prove(&self) -> bool {
+        if let Some(sdk) = self.sdk.load().as_ref() {
+            sdk.prove()
+        } else {
+            panic!("sdk must be set when creating mock ")
+        }
+    }
+
+    /// Create new mock SDK.
+    ///
+    /// ## Note
+    ///
+    /// You have to call [MockDashPlatformSdk::with_sdk()] to set sdk, otherwise Mock SDK will panic.
+    pub(crate) fn new(version: &'static PlatformVersion, dapi: Arc<Mutex<MockDapiClient>>) -> Self {
         Self {
             from_proof_expectations: Default::default(),
             platform_version: version,
             dapi,
-            prove,
-            quorum_provider: None,
+            sdk: ArcSwapOption::new(None),
         }
+    }
+
+    pub(crate) fn set_sdk(&mut self, sdk: Sdk) {
+        self.sdk.store(Some(Arc::new(sdk)));
     }
 
     pub(crate) fn version<'v>(&self) -> &'v PlatformVersion {
         self.platform_version
     }
-    /// Define a directory where files containing quorum information, like quorum public keys, are stored.
-    ///
-    /// This directory will be used to load quorum information from files.
-    /// You can use [SdkBuilder::with_dump_dir()](crate::SdkBuilder::with_dump_dir()) to generate these files.
-    pub fn quorum_info_dir<P: AsRef<std::path::Path>>(&mut self, dir: P) -> &mut Self {
-        let mut provider = MockContextProvider::new();
-        provider.quorum_keys_dir(Some(dir.as_ref().to_path_buf()));
-        self.quorum_provider = Some(Arc::new(provider));
-
-        self
-    }
 
     /// Load all expectations from files in a directory.
     ///
+    ///
+    /// By default, mock expectations are loaded when Sdk is built with [SdkBuilder::build()](crate::SdkBuilder::build()).
+    /// This function can be used to load expectations after the Sdk is created, or use alternative location.
     /// Expectation files must be prefixed with [DapiClient::DUMP_FILE_PREFIX] and
     /// have `.json` extension.
     pub async fn load_expectations<P: AsRef<std::path::Path>>(
@@ -184,9 +196,18 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetPrefundedSpecializedBalanceRequest>(filename)
                         .await?
                 }
+                "GetPathElementsRequest" => {
+                    self.load_expectation::<proto::GetPathElementsRequest>(filename)
+                        .await?
+                }
+                "GetTotalCreditsInPlatformRequest" => {
+                    self.load_expectation::<proto::GetTotalCreditsInPlatformRequest>(filename)
+                        .await?
+                }
+                "EvoNode" => self.load_expectation::<EvoNode>(filename).await?,
                 _ => {
                     return Err(Error::Config(format!(
-                        "unknown request type {} in {}",
+                        "unknown request type {} in {}, missing match arm in load_expectations?",
                         request_type,
                         filename.display()
                     )))
@@ -270,7 +291,7 @@ impl MockDashPlatformSdk {
     where
         <<O as Fetch>::Request as TransportRequest>::Response: Default,
     {
-        let grpc_request = query.query(self.prove).expect("query must be correct");
+        let grpc_request = query.query(self.prove()).expect("query must be correct");
         self.expect(grpc_request, object).await?;
 
         Ok(self)
@@ -324,7 +345,7 @@ impl MockDashPlatformSdk {
                 Response = <<O as FetchMany<K, R>>::Request as TransportRequest>::Response,
             > + Sync,
     {
-        let grpc_request = query.query(self.prove).expect("query must be correct");
+        let grpc_request = query.query(self.prove()).expect("query must be correct");
         self.expect(grpc_request, objects).await?;
 
         Ok(self)
@@ -385,14 +406,28 @@ impl MockDashPlatformSdk {
             ),
             None => {
                 let version = self.version();
-                let provider = self.quorum_provider.as_ref()
+                let provider = self.context_provider()
                     .ok_or(ContextProviderError::InvalidQuorum(
                         "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
                     ))?;
-                O::maybe_from_proof_with_metadata(request, response, version, provider)?
+                O::maybe_from_proof_with_metadata(
+                    request,
+                    response,
+                    Network::Regtest,
+                    version,
+                    &provider,
+                )?
             }
         };
 
         Ok(data)
+    }
+    /// Return context provider implementation defined for upstreeam Sdk object.
+    fn context_provider(&self) -> Option<impl ContextProvider> {
+        if let Some(sdk) = self.sdk.load_full() {
+            sdk.clone().context_provider()
+        } else {
+            None
+        }
     }
 }

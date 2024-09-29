@@ -1,6 +1,4 @@
 /// Default hash size
-pub const DEFAULT_HASH_SIZE: u32 = 32;
-/// Default hash size
 pub const DEFAULT_HASH_SIZE_USIZE: usize = 32;
 /// Default hash 160 size as u8
 pub const DEFAULT_HASH_160_SIZE_U8: u8 = 20;

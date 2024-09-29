@@ -15,19 +15,24 @@ use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
     GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
     GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
-    GetContestedResourcesResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
-    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
-    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetIdentitiesContractKeysRequest, GetIdentitiesContractKeysResponse,
-    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceAndRevisionResponse,
-    GetIdentityBalanceRequest, GetIdentityBalanceResponse, GetIdentityByPublicKeyHashRequest,
-    GetIdentityByPublicKeyHashResponse, GetIdentityContractNonceRequest,
-    GetIdentityContractNonceResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
-    GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
-    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
-    GetPrefundedSpecializedBalanceResponse, GetProofsRequest, GetProofsResponse,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse,
+    GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest,
+    GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
+    GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
+    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
+    GetEvonodesProposedEpochBlocksResponse, GetIdentitiesBalancesRequest,
+    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetIdentitiesContractKeysResponse, GetIdentityBalanceAndRevisionRequest,
+    GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
+    GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
+    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
+    GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
+    GetIdentityResponse, GetPathElementsRequest, GetPathElementsResponse,
+    GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
+    GetProofsRequest, GetProofsResponse, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
+    GetTotalCreditsInPlatformRequest, GetTotalCreditsInPlatformResponse,
     GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
@@ -529,6 +534,78 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_prefunded_specialized_balance,
             "get_prefunded_specialized_balance",
+        )
+        .await
+    }
+
+    async fn get_total_credits_in_platform(
+        &self,
+        request: Request<GetTotalCreditsInPlatformRequest>,
+    ) -> Result<Response<GetTotalCreditsInPlatformResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_total_credits_in_platform,
+            "get_total_credits_in_platform",
+        )
+        .await
+    }
+
+    async fn get_identities_balances(
+        &self,
+        request: Request<GetIdentitiesBalancesRequest>,
+    ) -> Result<Response<GetIdentitiesBalancesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities_balances,
+            "get_identities_balances",
+        )
+        .await
+    }
+
+    async fn get_status(
+        &self,
+        request: Request<GetStatusRequest>,
+    ) -> Result<Response<GetStatusResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_partial_status,
+            "query_partial_status",
+        )
+        .await
+    }
+
+    async fn get_evonodes_proposed_epoch_blocks_by_ids(
+        &self,
+        request: Request<GetEvonodesProposedEpochBlocksByIdsRequest>,
+    ) -> Result<Response<GetEvonodesProposedEpochBlocksResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_proposed_block_counts_by_evonode_ids,
+            "query_proposed_block_counts_by_evonode_ids",
+        )
+        .await
+    }
+
+    async fn get_evonodes_proposed_epoch_blocks_by_range(
+        &self,
+        request: Request<GetEvonodesProposedEpochBlocksByRangeRequest>,
+    ) -> Result<Response<GetEvonodesProposedEpochBlocksResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_proposed_block_counts_by_range,
+            "query_proposed_block_counts_by_range",
+        )
+        .await
+    }
+
+    async fn get_current_quorums_info(
+        &self,
+        request: Request<GetCurrentQuorumsInfoRequest>,
+    ) -> Result<Response<GetCurrentQuorumsInfoResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_current_quorums_info,
+            "query_current_quorums_info",
         )
         .await
     }

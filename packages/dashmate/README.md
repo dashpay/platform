@@ -19,6 +19,7 @@ Distribution package for Dash node installation
   - [Restart node](#restart-node)
   - [Show node status](#show-node-status)
   - [Execute Core CLI command](#execute-core-cli-command)
+  - [Doctor](#doctor)
   - [Reset node data](#reset-node-data)
   - [Full node](#full-node)
   - [Node groups](#node-groups)
@@ -275,6 +276,55 @@ Example:
 ```bash
 $ dashmate core cli "getblockcount"
 1337
+```
+
+### Doctor
+
+The `doctor` command analyzes the node configuration and state to provide a list of potential problems and solutions.
+
+```
+Dashmate node diagnostic. Bring your node to the doctor
+
+USAGE
+  $ dashmate doctor [--config <value>] [-v] [-s <value>]
+
+FLAGS
+  -s, --samples=<value>  path to the samples archive
+  -v, --verbose          use verbose mode for output
+      --config=<value>   configuration name to use
+
+DESCRIPTION
+  Dashmate node diagnostic. Bring your node to the doctor
+
+COMMANDS
+  doctor report  Dashmate node diagnostic report
+```
+
+The `doctor report` command collects all useful debugging info into a `.tar.gz` archive in your current working directory.
+
+The archive will include:
+
+- System information
+- The node configuration
+- Service logs, metrics and status
+
+Collected data will not contain any private information which is already not available publicly.
+All sensitive data like private keys or passwords is obfuscated.
+
+```
+Dashmate node diagnostic report
+
+USAGE
+  $ dashmate doctor report [--config <value>] [-v]
+
+FLAGS
+  -v, --verbose         use verbose mode for output
+      --config=<value>  configuration name to use
+
+DESCRIPTION
+  Dashmate node diagnostic report
+
+  The command collects diagnostic information and creates an obfuscated archive for further investigation
 ```
 
 ### Reset node data

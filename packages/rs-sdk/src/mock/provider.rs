@@ -4,7 +4,7 @@ use crate::core_client::CoreClient;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
 use arc_swap::ArcSwapAny;
-use dpp::prelude::{DataContract, Identifier};
+use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
 use pollster::FutureExt;
@@ -211,6 +211,10 @@ impl ContextProvider for GrpcContextProvider {
         }
 
         Ok(data_contract.map(Arc::new))
+    }
+
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        self.core.get_platform_activation_height()
     }
 }
 

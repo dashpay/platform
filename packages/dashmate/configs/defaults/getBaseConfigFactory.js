@@ -14,7 +14,7 @@ const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'pack
  * @param {HomeDir} homeDir
  * @returns {getBaseConfig}
  */
-export default function getBaseConfigFactory(homeDir) {
+export default function getBaseConfigFactory() {
   const prereleaseTag = semver.prerelease(version) === null ? '' : `-${semver.prerelease(version)[0]}`;
   const dockerImageVersion = `${semver.major(version)}${prereleaseTag}`;
 
@@ -134,12 +134,17 @@ export default function getBaseConfigFactory(homeDir) {
           },
         },
         log: {
-          file: {
-            categories: [],
-            path: homeDir.joinPath('logs', 'base', 'core.log'),
+          filePath: null,
+          debug: {
+            enabled: false,
+            ips: false,
+            sourceLocations: false,
+            threadNames: false,
+            timeMicros: false,
+            includeOnly: [],
+            exclude: [],
           },
         },
-        logIps: 0,
         indexes: [],
       },
       platform: {
@@ -178,6 +183,7 @@ export default function getBaseConfigFactory(homeDir) {
               http2: {
                 maxConcurrentStreams: 10,
               },
+              waitForStResultTimeout: '125s',
               host: '0.0.0.0',
               port: 443,
             },
@@ -235,6 +241,7 @@ export default function getBaseConfigFactory(homeDir) {
                 target: 'dapi',
               },
             },
+            waitForStResultTimeout: 120000,
           },
         },
         drive: {
@@ -296,12 +303,15 @@ export default function getBaseConfigFactory(homeDir) {
               host: '127.0.0.1',
               port: 8083,
             },
+            proposer: {
+              txProcessingTimeLimit: null,
+            },
             epochTime: 788400,
           },
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.1.0',
+              image: 'dashpay/tenderdash:1.3',
             },
             p2p: {
               host: '0.0.0.0',
@@ -312,6 +322,8 @@ export default function getBaseConfigFactory(homeDir) {
               maxPacketMsgPayloadSize: 10240,
               sendRate: 5120000,
               recvRate: 5120000,
+              maxConnections: 64,
+              maxOutgoingConnections: 30,
             },
             rpc: {
               host: '127.0.0.1',
@@ -337,6 +349,8 @@ export default function getBaseConfigFactory(homeDir) {
               txSendRateLimit: 10,
               txRecvRateLimit: 12,
               maxConcurrentCheckTx: 250,
+              ttlDuration: '0s',
+              ttlNumBlocks: 0,
             },
             consensus: {
               createEmptyBlocks: true,
@@ -388,15 +402,13 @@ export default function getBaseConfigFactory(homeDir) {
                   app_version: '1',
                 },
                 timeout: {
-                  propose: '40000000000',
+                  propose: '50000000000',
                   propose_delta: '5000000000',
-                  vote: '2000000000',
-                  vote_delta: '500000000',
-                  commit: '1000000000',
-                  bypass_commit_timeout: false,
+                  vote: '10000000000',
+                  vote_delta: '1000000000',
                 },
                 synchrony: {
-                  message_delay: '32000000000',
+                  message_delay: '70000000000',
                   precision: '1000000000',
                 },
                 abci: {

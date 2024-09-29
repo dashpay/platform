@@ -127,6 +127,7 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_identity_nonce: FeatureVersion,
     pub verify_identity_contract_nonce: FeatureVersion,
     pub verify_identities_contract_keys: FeatureVersion,
+    pub verify_identity_revision_for_identity_id: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -144,7 +145,9 @@ pub struct DriveVerifyVoteMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifySystemMethodVersions {
     pub verify_epoch_infos: FeatureVersion,
+    pub verify_epoch_proposers: FeatureVersion,
     pub verify_elements: FeatureVersion,
+    pub verify_total_credits_in_system: FeatureVersion,
     pub verify_upgrade_state: FeatureVersion,
     pub verify_upgrade_vote_status: FeatureVersion,
 }
@@ -318,6 +321,8 @@ pub struct DriveVoteCleanupMethodVersions {
     pub remove_contested_resource_vote_poll_votes_operations: FeatureVersion,
     pub remove_contested_resource_vote_poll_documents_operations: FeatureVersion,
     pub remove_contested_resource_vote_poll_contenders_operations: FeatureVersion,
+    pub remove_contested_resource_top_level_index_operations: FeatureVersion,
+    pub remove_contested_resource_info_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -347,6 +352,9 @@ pub struct DriveDocumentMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
     pub query_documents: FeatureVersion,
+    pub query_contested_documents: FeatureVersion,
+    pub query_contested_documents_vote_state: FeatureVersion,
+    pub query_documents_with_flags: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -495,7 +503,8 @@ pub struct DriveCreditPoolEpochsMethodVersions {
     pub get_epoch_start_block_core_height: FeatureVersion,
     pub get_epoch_start_block_height: FeatureVersion,
     pub get_first_epoch_start_block_info_between_epochs: FeatureVersion,
-    pub get_epoch_proposers: FeatureVersion,
+    pub fetch_epoch_proposers: FeatureVersion,
+    pub prove_epoch_proposers: FeatureVersion,
     pub get_epochs_proposer_block_count: FeatureVersion,
     pub add_update_pending_epoch_refunds_operations: FeatureVersion,
     pub is_epochs_proposers_tree_empty: FeatureVersion,
@@ -582,6 +591,7 @@ pub struct DriveIdentityWithdrawalTransactionQueueMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityContractInfoMethodVersions {
     pub add_potential_contract_info_for_contract_bounded_key: FeatureVersion,
+    pub refresh_potential_contract_info_key_references: FeatureVersion,
     pub merge_identity_contract_nonce: FeatureVersion,
 }
 
@@ -726,6 +736,7 @@ pub struct DriveIdentityUpdateMethodVersions {
     pub add_to_previous_balance: FeatureVersion,
     pub apply_balance_change_from_fee_to_identity: FeatureVersion,
     pub remove_from_identity_balance: FeatureVersion,
+    pub refresh_identity_key_reference_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

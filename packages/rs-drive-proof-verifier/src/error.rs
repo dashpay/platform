@@ -102,6 +102,10 @@ pub enum ContextProviderError {
     /// Provided quorum is invalid
     #[error("invalid quorum: {0}")]
     InvalidQuorum(String),
+
+    /// Core Fork Error
+    #[error("activation fork error: {0}")]
+    ActivationForkError(String),
 }
 
 impl From<drive::error::Error> for Error {

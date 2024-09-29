@@ -19,7 +19,7 @@ describe('DAPIClient', () => {
       dapiClient = new DAPIClient(options);
 
       expect(dapiClient.options).to.deep.equal({
-        network: 'testnet',
+        network: 'mainnet',
         retries: 0,
         newOption: true,
         timeout: 10000,
@@ -48,7 +48,7 @@ describe('DAPIClient', () => {
       expect(dapiClient.options).to.deep.equal({
         retries: 5,
         timeout: 10000,
-        network: 'testnet',
+        network: 'mainnet',
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
         loggerOptions: {
           identifier: '',
@@ -79,7 +79,7 @@ describe('DAPIClient', () => {
       expect(dapiClient.options).to.deep.equal({
         retries: 0,
         dapiAddresses: ['localhost'],
-        network: 'testnet',
+        network: 'mainnet',
         timeout: 10000,
         blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
         loggerOptions: {

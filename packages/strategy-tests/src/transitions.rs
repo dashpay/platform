@@ -22,10 +22,6 @@ use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use dpp::ProtocolError;
 
-use dpp::state_transition::identity_credit_withdrawal_transition::v0::{
-    IdentityCreditWithdrawalTransitionV0, MIN_CORE_FEE_PER_BYTE,
-};
-
 use dpp::native_bls::NativeBlsModule;
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
@@ -40,6 +36,9 @@ use simple_signer::signer::SimpleSigner;
 use crate::KeyMaps;
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
+use dpp::state_transition::identity_credit_withdrawal_transition::MIN_CORE_FEE_PER_BYTE;
+use rand::Rng;
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 
@@ -448,26 +447,32 @@ pub fn create_identity_update_transition_disable_keys(
     Some(state_transition)
 }
 
-/// Creates a state transition for an identity's credit withdrawal.
+/// Creates a state transition for an identity's credit withdrawal, with a potential
+/// output address based on the identity's capabilities.
 ///
-/// This function generates a state transition representing the withdrawal of credits from an identity.
-/// The withdrawal amount is set to 0.001 Dash. The function first bumps the revision
-/// of the identity and then constructs the withdrawal transition. Subsequently, it's signed using the
-/// identity's authentication key for validity and authenticity.
+/// This function generates a state transition representing the withdrawal of credits from
+/// an identity. It first checks if the identity has a suitable withdrawal address. If so,
+/// there is a 50% chance that the withdrawal will be sent to the identity's transfer key.
+/// Otherwise, it will create a withdrawal transition with a random output address.
 ///
 /// # Parameters
 /// - `identity`: A mutable reference to the identity making the withdrawal.
+/// - `identity_nonce_counter`: A mutable reference to a BTreeMap that tracks the nonce for
+///   each identity, ensuring unique transaction identifiers.
 /// - `signer`: A mutable reference to the signer used to create the cryptographic signature for
 ///   the state transition.
-/// - `rng`: A mutable reference to a random number generator, used for generating the random Pay-To-Script-Hash (P2SH).
+/// - `rng`: A mutable reference to a random number generator, used for generating the random
+///   Pay-To-Script-Hash (P2SH) when creating a withdrawal with an output address.
 ///
 /// # Returns
-/// - `StateTransition`: The constructed and signed state transition representing the identity's credit withdrawal.
+/// - `StateTransition`: The constructed state transition representing the identity's credit
+///   withdrawal.
 ///
 /// # Examples
 /// ```ignore
 /// let withdrawal_transition = create_identity_withdrawal_transition(
 ///     &mut identity,
+///     &mut identity_nonce_counter,
 ///     &mut signer,
 ///     &mut rng,
 /// );
@@ -475,9 +480,152 @@ pub fn create_identity_update_transition_disable_keys(
 ///
 /// # Panics
 /// This function may panic under the following conditions:
+/// - If the identity does not have a suitable withdrawal address or key for signing.
+pub fn create_identity_withdrawal_transition(
+    identity: &mut Identity,
+    identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+    signer: &mut SimpleSigner,
+    rng: &mut StdRng,
+) -> StateTransition {
+    let has_withdrawal_address = identity
+        .get_first_public_key_matching(
+            Purpose::TRANSFER,
+            HashSet::from([SecurityLevel::CRITICAL]),
+            HashSet::from([KeyType::ECDSA_HASH160, KeyType::BIP13_SCRIPT_HASH]),
+            false,
+        )
+        .is_some();
+    if has_withdrawal_address && rng.gen_bool(0.5) {
+        // We can send it to the withdrawal address
+        create_identity_withdrawal_transition_sent_to_identity_transfer_key(
+            identity,
+            identity_nonce_counter,
+            signer,
+        )
+    } else {
+        create_identity_withdrawal_transition_with_output_address(
+            identity,
+            identity_nonce_counter,
+            signer,
+            rng,
+        )
+    }
+}
+
+/// Creates a state transition for an identity's credit withdrawal directed to its
+/// transfer key.
+///
+/// This function generates a state transition representing the withdrawal of credits from
+/// an identity. The withdrawal amount is set to 0.001 Dash. It increments the identity's
+/// nonce and constructs the withdrawal transition. The transition is then signed using the
+/// identity's authentication key for validity and authenticity.
+///
+/// # Parameters
+/// - `identity`: A mutable reference to the identity making the withdrawal.
+/// - `identity_nonce_counter`: A mutable reference to a BTreeMap that tracks the nonce for
+///   each identity, ensuring unique transaction identifiers.
+/// - `signer`: A mutable reference to the signer used to create the cryptographic signature for
+///   the state transition.
+///
+/// # Returns
+/// - `StateTransition`: The constructed and signed state transition representing the identity's
+///   credit withdrawal directed to its transfer key.
+///
+/// # Examples
+/// ```ignore
+/// let withdrawal_transition = create_identity_withdrawal_transition_sent_to_identity_transfer_key(
+///     &mut identity,
+///     &mut identity_nonce_counter,
+///     &mut signer,
+/// );
+/// ```
+///
+/// # Panics
+/// This function may panic under the following conditions:
 /// - If the identity does not have a suitable authentication key for signing.
 /// - If there's an error during the signing process.
-pub fn create_identity_withdrawal_transition(
+pub fn create_identity_withdrawal_transition_sent_to_identity_transfer_key(
+    identity: &mut Identity,
+    identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+    signer: &mut SimpleSigner,
+) -> StateTransition {
+    let nonce = identity_nonce_counter.entry(identity.id()).or_default();
+    *nonce += 1;
+    let mut withdrawal: StateTransition = IdentityCreditWithdrawalTransitionV1 {
+        identity_id: identity.id(),
+        amount: 1000000, // 1 duff
+        core_fee_per_byte: MIN_CORE_FEE_PER_BYTE,
+        pooling: Pooling::Never,
+        output_script: None,
+        nonce: *nonce,
+        user_fee_increase: 0,
+        signature_public_key_id: 0,
+        signature: Default::default(),
+    }
+    .into();
+
+    let identity_public_key = identity
+        .get_first_public_key_matching(
+            Purpose::AUTHENTICATION,
+            HashSet::from([SecurityLevel::MASTER]),
+            HashSet::from([
+                KeyType::ECDSA_SECP256K1,
+                KeyType::BLS12_381,
+                KeyType::ECDSA_HASH160,
+                KeyType::BIP13_SCRIPT_HASH,
+                KeyType::EDDSA_25519_HASH160,
+            ]),
+            false,
+        )
+        .expect("expected to get a signing key");
+
+    withdrawal
+        .sign_external(
+            identity_public_key,
+            signer,
+            None::<GetDataContractSecurityLevelRequirementFn>,
+        )
+        .expect("expected to sign withdrawal");
+
+    withdrawal
+}
+
+/// Creates a state transition for an identity's credit withdrawal directed to a specified
+/// output address.
+///
+/// This function generates a state transition representing the withdrawal of credits from
+/// an identity. The withdrawal amount is set to 0.001 Dash. It increments the identity's
+/// nonce and constructs the withdrawal transition, which includes a random P2SH output address.
+/// The transition is then signed using the identity's transfer key for validity and authenticity.
+///
+/// # Parameters
+/// - `identity`: A mutable reference to the identity making the withdrawal.
+/// - `identity_nonce_counter`: A mutable reference to a BTreeMap that tracks the nonce for
+///   each identity, ensuring unique transaction identifiers.
+/// - `signer`: A mutable reference to the signer used to create the cryptographic signature for
+///   the state transition.
+/// - `rng`: A mutable reference to a random number generator, used for generating the random
+///   Pay-To-Script-Hash (P2SH).
+///
+/// # Returns
+/// - `StateTransition`: The constructed and signed state transition representing the identity's
+///   credit withdrawal directed to the specified output address.
+///
+/// # Examples
+/// ```ignore
+/// let withdrawal_transition = create_identity_withdrawal_transition_with_output_address(
+///     &mut identity,
+///     &mut identity_nonce_counter,
+///     &mut signer,
+///     &mut rng,
+/// );
+/// ```
+///
+/// # Panics
+/// This function may panic under the following conditions:
+/// - If the identity does not have a suitable transfer key for signing.
+/// - If there's an error during the signing process.
+pub fn create_identity_withdrawal_transition_with_output_address(
     identity: &mut Identity,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
@@ -485,12 +633,12 @@ pub fn create_identity_withdrawal_transition(
 ) -> StateTransition {
     let nonce = identity_nonce_counter.entry(identity.id()).or_default();
     *nonce += 1;
-    let mut withdrawal: StateTransition = IdentityCreditWithdrawalTransitionV0 {
+    let mut withdrawal: StateTransition = IdentityCreditWithdrawalTransitionV1 {
         identity_id: identity.id(),
         amount: 1000000, // 1 duff
         core_fee_per_byte: MIN_CORE_FEE_PER_BYTE,
         pooling: Pooling::Never,
-        output_script: CoreScript::random_p2sh(rng),
+        output_script: Some(CoreScript::random_p2sh(rng)),
         nonce: *nonce,
         user_fee_increase: 0,
         signature_public_key_id: 0,
@@ -509,6 +657,7 @@ pub fn create_identity_withdrawal_transition(
                 KeyType::BIP13_SCRIPT_HASH,
                 KeyType::EDDSA_25519_HASH160,
             ]),
+            false,
         )
         .expect("expected to get a signing key");
 
@@ -580,6 +729,7 @@ pub fn create_identity_credit_transfer_transition(
             Purpose::TRANSFER,
             HashSet::from([SecurityLevel::CRITICAL]),
             HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+            false,
         )
         .expect("expected to get a signing key");
 

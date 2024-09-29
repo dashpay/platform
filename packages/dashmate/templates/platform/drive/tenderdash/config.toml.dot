@@ -54,7 +54,7 @@ db-dir = "data"
 log-level = "{{=it.platform.drive.tenderdash.log.level}}"
 
 # Path to the log file. This parameter is an additional option to the existing stderr output
-{{? it.platform.drive.tenderdash.log.path }}log-file-path = "/var/log/tenderdash/{{= it.platform.drive.tenderdash.log.path.split('/').pop() }}"{{?}}
+{{? it.platform.drive.tenderdash.log.path }}log-file-path = "/var/log/tenderdash/tenderdash.log"{{?}}
 
 # Output format: 'plain' (colored text) or 'json'
 log-format = "{{=it.platform.drive.tenderdash.log.format}}"
@@ -278,11 +278,11 @@ persistent-peers = "{{~it.platform.drive.tenderdash.p2p.persistentPeers :peer:in
 upnp = false
 
 # Maximum number of connections (inbound and outbound).
-max-connections = 64
+max-connections = {{=it.platform.drive.tenderdash.p2p.maxConnections}}
 
 # Maximum number of connections reserved for outgoing
 # connections. Must be less than max-connections
-max-outgoing-connections = 12
+max-outgoing-connections = {{=it.platform.drive.tenderdash.p2p.maxOutgoingConnections}}
 
 # Rate limits the number of incoming connection attempts per IP address.
 max-incoming-connection-attempts = 100
@@ -395,7 +395,7 @@ max-batch-bytes = 0
 # Note, if ttl-num-blocks is also defined, a transaction will be removed if it
 # has existed in the mempool at least ttl-num-blocks number of blocks or if it's
 # insertion time into the mempool is beyond ttl-duration.
-ttl-duration = "0s"
+ttl-duration = "{{=it.platform.drive.tenderdash.mempool.ttlDuration}}"
 
 # ttl-num-blocks, if non-zero, defines the maximum number of blocks a transaction
 # can exist for in the mempool.
@@ -403,7 +403,7 @@ ttl-duration = "0s"
 # Note, if ttl-duration is also defined, a transaction will be removed if it
 # has existed in the mempool at least ttl-num-blocks number of blocks or if
 # it's insertion time into the mempool is beyond ttl-duration.
-ttl-num-blocks = 0
+ttl-num-blocks = {{=it.platform.drive.tenderdash.mempool.ttlNumBlocks}}
 
 #######################################################
 ###         State Sync Configuration Options        ###

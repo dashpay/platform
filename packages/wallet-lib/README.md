@@ -7,6 +7,11 @@
 
 A pure and extensible JavaScript Wallet Library for Dash
 
+**Warning: This library should only be used in production when connected to trusted nodes. Although
+it provides easy access to wallet functionality without requiring a full node, it does not verify
+synchronized blockchain data (e.g., the masternode list, InstantSend transactions, ChainLocks) or
+check transactions against block headers.**
+
 ## Table of Contents
 - [Install](#install)
 - [Usage](#usage)

@@ -45,24 +45,25 @@ pub trait StateTransitionIdentitySigned: StateTransitionLike {
         &self,
         public_key: &IdentityPublicKey,
     ) -> Result<(), ProtocolError> {
+        if !self.purpose_requirement().contains(&public_key.purpose()) {
+            return Err(ProtocolError::WrongPublicKeyPurposeError(
+                WrongPublicKeyPurposeError::new(public_key.purpose(), self.purpose_requirement()),
+            ));
+        }
+
         // Otherwise, key security level should be less than MASTER but more or equal than required
         if !self
-            .security_level_requirement()
+            .security_level_requirement(public_key.purpose())
             .contains(&public_key.security_level())
         {
             return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
                 InvalidSignaturePublicKeySecurityLevelError::new(
                     public_key.security_level(),
-                    self.security_level_requirement(),
+                    self.security_level_requirement(public_key.purpose()),
                 ),
             ));
         }
 
-        if public_key.purpose() != self.purpose_requirement() {
-            return Err(ProtocolError::WrongPublicKeyPurposeError(
-                WrongPublicKeyPurposeError::new(public_key.purpose(), self.purpose_requirement()),
-            ));
-        }
         Ok(())
     }
 
@@ -85,13 +86,13 @@ pub trait StateTransitionIdentitySigned: StateTransitionLike {
 
     /// Returns minimal key security level that can be used to sign this ST.
     /// Override this method if the ST requires a different security level.
-    fn security_level_requirement(&self) -> Vec<SecurityLevel>;
+    fn security_level_requirement(&self, purpose: Purpose) -> Vec<SecurityLevel>;
 
     /// The purpose requirement for the signing key
     /// The default is authentication
     /// However for Withdrawals and Fund Transfers the requirement is TRANSFER
-    fn purpose_requirement(&self) -> Purpose {
-        Purpose::AUTHENTICATION
+    fn purpose_requirement(&self) -> Vec<Purpose> {
+        vec![Purpose::AUTHENTICATION]
     }
 }
 

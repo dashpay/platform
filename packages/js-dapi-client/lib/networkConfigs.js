@@ -51,4 +51,13 @@ module.exports = {
     dapiAddresses: ['127.0.0.1'],
     network: 'regtest',
   },
+  mainnet: {
+    seeds: [
+      'seed-1.mainnet.networks.dash.org',
+      'seed-2.mainnet.networks.dash.org',
+      'seed-3.mainnet.networks.dash.org',
+      'seed-4.mainnet.networks.dash.org',
+    ],
+    network: 'mainnet',
+  },
 };

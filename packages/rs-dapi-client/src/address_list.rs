@@ -85,7 +85,7 @@ pub enum AddressListError {
 
 /// A structure to manage DAPI addresses to select from
 /// for [DapiRequest](crate::DapiRequest) execution.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AddressList {
     addresses: HashSet<Address>,
     base_ban_period: Duration,
@@ -219,5 +219,14 @@ impl FromIterator<Uri> for AddressList {
         }
 
         address_list
+    }
+}
+
+impl IntoIterator for AddressList {
+    type Item = Address;
+    type IntoIter = std::collections::hash_set::IntoIter<Address>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.addresses.into_iter()
     }
 }

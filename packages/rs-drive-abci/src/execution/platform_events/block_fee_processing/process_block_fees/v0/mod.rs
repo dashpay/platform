@@ -65,7 +65,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             self.add_process_epoch_change_operations(
                 block_execution_context,
                 &block_fees,
-                transaction,
+                Some(transaction),
                 &mut batch,
                 platform_version,
             )?
@@ -268,7 +268,6 @@ mod tests {
             let block_execution_context = BlockExecutionContextV0 {
                 block_state_info: block_info.clone().into(),
                 epoch_info: epoch_info.clone(),
-                hpmn_count: 0,
                 unsigned_withdrawal_transactions: Default::default(),
                 block_platform_state,
                 proposer_results: None,
@@ -363,7 +362,7 @@ mod tests {
                 ..Default::default()
             })
             .build_with_mock_rpc()
-            .set_initial_state_structure();
+            .set_genesis_state_with_activation_info(0, 1);
 
         let transaction = platform.drive.grove.start_transaction();
 

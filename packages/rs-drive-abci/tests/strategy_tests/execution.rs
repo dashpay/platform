@@ -886,6 +886,7 @@ pub(crate) fn start_chain_for_strategy(
             current_votes: Default::default(),
             start_time_ms: GENESIS_TIME_MS,
             current_time_ms: GENESIS_TIME_MS,
+            current_identities: Vec::new(),
         },
         strategy,
         config,
@@ -915,6 +916,7 @@ pub(crate) fn continue_chain_for_strategy(
         start_time_ms,
         mut current_time_ms,
         instant_lock_quorums,
+        mut current_identities,
     } = chain_execution_parameters;
     let mut rng = match seed {
         StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
@@ -922,7 +924,6 @@ pub(crate) fn continue_chain_for_strategy(
     };
     let quorum_size = config.validator_set.quorum_size;
     let first_block_time = start_time_ms;
-    let mut current_identities = vec![];
     let mut signer = strategy.strategy.signer.clone().unwrap_or_default();
     let mut i = 0;
 

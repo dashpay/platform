@@ -18,6 +18,7 @@ const {
     BroadcastStateTransitionRequest,
     WaitForStateTransitionResultRequest,
     GetConsensusParamsRequest,
+    GetStatusRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -25,6 +26,8 @@ const {
       WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
       GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
       GetConsensusParamsResponse: PBJSGetConsensusParamsResponse,
+      GetStatusRequest: PBJSGetStatusRequest,
+      GetStatusResponse: PBJSGetStatusResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -45,6 +48,7 @@ const getConsensusParamsHandlerFactory = require(
 const unimplementedHandlerFactory = require(
   './unimplementedHandlerFactory',
 );
+const getStatusHandlerFactory = require('./getStatusHandlerFactory');
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
 const waitForTransactionToBeProvableFactory = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionToBeProvableFactory');
@@ -104,6 +108,7 @@ function platformHandlersFactory(
     blockchainListener,
     dpp,
     createGrpcErrorFromDriveResponse,
+    parseInt(process.env.WAIT_FOR_ST_RESULT_TIMEOUT, 10),
   );
 
   const wrappedWaitForStateTransitionResult = jsonToProtobufHandlerWrapper(
@@ -117,7 +122,7 @@ function platformHandlersFactory(
     wrapInErrorHandler(waitForStateTransitionResultHandler),
   );
 
-  // get Consensus Params
+  // Get Consensus Params
   const getConsensusParams = getConsensusParamsFactory(rpcClient);
   const getConsensusParamsHandler = getConsensusParamsHandlerFactory(getConsensusParams);
 
@@ -130,6 +135,24 @@ function platformHandlersFactory(
       PBJSGetConsensusParamsResponse,
     ),
     wrapInErrorHandler(getConsensusParamsHandler),
+  );
+
+  // Get Status
+  const getStatusHandler = getStatusHandlerFactory(
+    blockchainListener,
+    driveClient,
+    rpcClient,
+  );
+
+  const wrappedGetStatus = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetStatusRequest,
+      PBJSGetStatusRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetStatusResponse,
+    ),
+    wrapInErrorHandler(getStatusHandler),
   );
 
   return {
@@ -153,6 +176,7 @@ function platformHandlersFactory(
     getProtocolVersionUpgradeState: wrapInErrorHandler(unimplementedHandlerFactory('getProtocolVersionUpgradeState')),
     getIdentityContractNonce: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityContractNonce')),
     getIdentityNonce: wrapInErrorHandler(unimplementedHandlerFactory('getIdentityNonce')),
+    getStatus: wrappedGetStatus,
   };
 }
 

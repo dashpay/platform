@@ -38,8 +38,20 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
-        let balance_query =
-            Self::balances_for_identity_ids_query(identity_ids, &drive_version.grove_version)?;
+        let balance_query = Self::balances_for_identity_ids_query(identity_ids);
+        self.grove_get_proved_path_query(&balance_query, transaction, &mut vec![], drive_version)
+    }
+
+    /// Proves multiple Identity balances from the backing store by range
+    pub fn prove_many_identity_balances_by_range(
+        &self,
+        start_at: Option<([u8; 32], bool)>,
+        ascending: bool,
+        limit: u16,
+        transaction: TransactionArg,
+        drive_version: &DriveVersion,
+    ) -> Result<Vec<u8>, Error> {
+        let balance_query = Self::balances_for_range_query(start_at, ascending, limit);
         self.grove_get_proved_path_query(&balance_query, transaction, &mut vec![], drive_version)
     }
 }
