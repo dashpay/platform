@@ -1295,7 +1295,6 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
         max_transitions_in_documents_batch: 1,
         withdrawal_transactions_per_block_limit: 4,
         max_withdrawal_amount: 50_000_000_000_000, //500 Dash
-        daily_withdrawal_limit: Some(50_000_000_000_000), //500 Dash
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
