@@ -35,7 +35,7 @@ jobs:
         with:
           registry: ghcr.io
           username: dashpay
-          password: ${{ secrets.GITHUB_TOKEN }}π
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Build and push Platform devcontainer
         uses: devcontainers/ci@v0.3
