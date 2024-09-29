@@ -47,6 +47,7 @@ mod tests {
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::query::QueryStrategy;
     use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy};
+    use assert_matches::assert_matches;
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::json::QuorumType;
@@ -80,6 +81,7 @@ mod tests {
     use rand::SeedableRng;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
 
+    use dpp::dash_to_duffs;
     use dpp::data_contract::document_type::v0::random_document_type::{
         FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
     };
@@ -1247,6 +1249,16 @@ mod tests {
 
         let outcome = run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None);
 
+        for tx_results_per_block in outcome.state_transition_results_per_block.values() {
+            for (state_transition, result) in tx_results_per_block {
+                assert_eq!(
+                    result.code, 0,
+                    "state transition got code {} : {:?}",
+                    result.code, state_transition
+                );
+            }
+        }
+
         outcome
             .abci_app
             .platform
@@ -2325,6 +2337,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -2458,6 +2471,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -2581,6 +2595,7 @@ mod tests {
 
         let start_identities = create_state_transitions_for_identities(
             vec![identity1, identity2],
+            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
             &simple_signer,
             &mut rng,
             platform_version,
@@ -2750,6 +2765,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -2915,6 +2931,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -2976,7 +2993,7 @@ mod tests {
             strategy: Strategy {
                 start_contracts: vec![],
                 operations: vec![Operation {
-                    op_type: OperationType::IdentityTopUp,
+                    op_type: OperationType::IdentityTopUp(dash_to_duffs!(1)..=dash_to_duffs!(1)),
                     frequency: Frequency {
                         times_per_block_range: 1..3,
                         chance_per_block: None,
@@ -3233,6 +3250,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -3419,6 +3437,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -3581,6 +3600,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -3906,6 +3926,7 @@ mod tests {
                         [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
                     )]
                     .into(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -3975,6 +3996,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 ..Default::default()

@@ -1209,5 +1209,6 @@ pub(crate) fn continue_chain_for_strategy(
         validator_set_updates,
         state_transition_results_per_block,
         instant_lock_quorums,
+        signer,
     }
 }

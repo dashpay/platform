@@ -326,6 +326,17 @@ where
             platform_version,
         )?;
 
+        // Cleans up the expired locks for withdrawal amounts
+        // This is for example when we make a withdrawal for 30 Dash
+        // But we can only withdraw 1000 Dash a day
+        // after the withdrawal we should only be able to withdraw 970 Dash
+        // But 24 hours later that locked 30 comes back
+        self.clean_up_expired_locks_of_withdrawal_amounts(
+            &block_info,
+            transaction,
+            platform_version,
+        )?;
+
         // Create a new block execution context
 
         let mut block_execution_context: BlockExecutionContext =

@@ -33,6 +33,7 @@ use dpp::withdrawal::Pooling;
 use rand::prelude::{IteratorRandom, StdRng};
 use simple_signer::signer::SimpleSigner;
 
+use crate::operations::AmountRange;
 use crate::KeyMaps;
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
@@ -68,6 +69,24 @@ use std::str::FromStr;
 /// This function may panic if there's an error in generating the underlying transaction or instant lock, typically due to the provided `one_time_private_key` or the hardcoded data within the helper functions.
 pub fn instant_asset_lock_proof_fixture(one_time_private_key: PrivateKey) -> AssetLockProof {
     let transaction = instant_asset_lock_proof_transaction_fixture(one_time_private_key);
+
+    let instant_lock = instant_asset_lock_is_lock_fixture(transaction.txid());
+
+    let is_lock_proof = InstantAssetLockProof::new(instant_lock, transaction, 0);
+
+    AssetLockProof::Instant(is_lock_proof)
+}
+
+pub fn instant_asset_lock_proof_fixture_with_dynamic_range(
+    one_time_private_key: PrivateKey,
+    amount_range: &AmountRange,
+    rng: &mut StdRng,
+) -> AssetLockProof {
+    let transaction = instant_asset_lock_proof_transaction_fixture_with_dynamic_amount(
+        one_time_private_key,
+        amount_range,
+        rng,
+    );
 
     let instant_lock = instant_asset_lock_is_lock_fixture(transaction.txid());
 
@@ -138,6 +157,73 @@ pub fn instant_asset_lock_proof_transaction_fixture(
 
     let burn_output = TxOut {
         value: 100000000, // 1 Dash
+        script_pubkey: ScriptBuf::new_op_return(&[]),
+    };
+
+    let change_output = TxOut {
+        value: 5000,
+        script_pubkey: ScriptBuf::new_p2pkh(&public_key_hash),
+    };
+
+    let payload = TransactionPayload::AssetLockPayloadType(AssetLockPayload {
+        version: 0,
+        credit_outputs: vec![funding_output],
+    });
+
+    Transaction {
+        version: 0,
+        lock_time: 0,
+        input: vec![input],
+        output: vec![burn_output, change_output],
+        special_transaction_payload: Some(payload),
+    }
+}
+
+pub fn instant_asset_lock_proof_transaction_fixture_with_dynamic_amount(
+    one_time_private_key: PrivateKey,
+    amount_range: &AmountRange,
+    rng: &mut StdRng,
+) -> Transaction {
+    let secp = Secp256k1::new();
+
+    let private_key_hex = "cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY";
+    let private_key = PrivateKey::from_str(private_key_hex).unwrap();
+    let public_key = private_key.public_key(&secp);
+    let public_key_hash = public_key.pubkey_hash();
+    //let from_address = Address::p2pkh(&public_key, Network::Testnet);
+    let one_time_public_key = one_time_private_key.public_key(&secp);
+
+    // We are going to fund 1 Dash and
+    // assume that input has 100005000
+    // 5000 will be returned back
+
+    let input_txid =
+        Txid::from_str("a477af6b2667c29670467e4e0728b685ee07b240235771862318e29ddbe58458").unwrap();
+
+    let input_outpoint = OutPoint::new(input_txid, 0);
+
+    let input = TxIn {
+        previous_output: input_outpoint,
+        script_sig: ScriptBuf::new_p2pkh(&public_key_hash),
+        sequence: 0,
+        witness: Default::default(),
+    };
+
+    let one_time_key_hash = one_time_public_key.pubkey_hash();
+
+    let value_amount = if amount_range.start() == amount_range.end() {
+        *amount_range.start() //avoid using rng if possible
+    } else {
+        rng.gen_range(amount_range.clone())
+    };
+
+    let funding_output = TxOut {
+        value: value_amount,
+        script_pubkey: ScriptBuf::new_p2pkh(&one_time_key_hash),
+    };
+
+    let burn_output = TxOut {
+        value: value_amount,
         script_pubkey: ScriptBuf::new_op_return(&[]),
     };
 
@@ -483,6 +569,7 @@ pub fn create_identity_update_transition_disable_keys(
 /// - If the identity does not have a suitable withdrawal address or key for signing.
 pub fn create_identity_withdrawal_transition(
     identity: &mut Identity,
+    amount_range: AmountRange,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
@@ -499,12 +586,15 @@ pub fn create_identity_withdrawal_transition(
         // We can send it to the withdrawal address
         create_identity_withdrawal_transition_sent_to_identity_transfer_key(
             identity,
+            amount_range,
             identity_nonce_counter,
             signer,
+            rng,
         )
     } else {
         create_identity_withdrawal_transition_with_output_address(
             identity,
+            amount_range,
             identity_nonce_counter,
             signer,
             rng,
@@ -546,14 +636,16 @@ pub fn create_identity_withdrawal_transition(
 /// - If there's an error during the signing process.
 pub fn create_identity_withdrawal_transition_sent_to_identity_transfer_key(
     identity: &mut Identity,
+    amount_range: AmountRange,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
+    rng: &mut StdRng,
 ) -> StateTransition {
     let nonce = identity_nonce_counter.entry(identity.id()).or_default();
     *nonce += 1;
     let mut withdrawal: StateTransition = IdentityCreditWithdrawalTransitionV1 {
         identity_id: identity.id(),
-        amount: 1000000, // 1 duff
+        amount: rng.gen_range(amount_range),
         core_fee_per_byte: MIN_CORE_FEE_PER_BYTE,
         pooling: Pooling::Never,
         output_script: None,
@@ -627,6 +719,7 @@ pub fn create_identity_withdrawal_transition_sent_to_identity_transfer_key(
 /// - If there's an error during the signing process.
 pub fn create_identity_withdrawal_transition_with_output_address(
     identity: &mut Identity,
+    amount_range: AmountRange,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
@@ -635,10 +728,14 @@ pub fn create_identity_withdrawal_transition_with_output_address(
     *nonce += 1;
     let mut withdrawal: StateTransition = IdentityCreditWithdrawalTransitionV1 {
         identity_id: identity.id(),
-        amount: 1000000, // 1 duff
+        amount: rng.gen_range(amount_range),
         core_fee_per_byte: MIN_CORE_FEE_PER_BYTE,
         pooling: Pooling::Never,
-        output_script: Some(CoreScript::random_p2sh(rng)),
+        output_script: if rng.gen_bool(0.5) {
+            Some(CoreScript::random_p2pkh(rng))
+        } else {
+            Some(CoreScript::random_p2sh(rng))
+        },
         nonce: *nonce,
         user_fee_increase: 0,
         signature_public_key_id: 0,
@@ -923,6 +1020,7 @@ pub fn create_identities_state_transitions(
 /// - Conversion and encoding errors related to the cryptographic data.
 pub fn create_state_transitions_for_identities(
     identities: Vec<Identity>,
+    amount_range: &AmountRange,
     signer: &SimpleSigner,
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
@@ -935,8 +1033,11 @@ pub fn create_state_transitions_for_identities(
                 .unwrap();
             let sk: [u8; 32] = pk.try_into().unwrap();
             let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
-            let asset_lock_proof =
-                instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
+            let asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
+                PrivateKey::new(secret_key, Network::Dash),
+                amount_range,
+                rng,
+            );
             let identity_create_transition =
                 IdentityCreateTransition::try_from_identity_with_signer(
                     &identity.clone(),

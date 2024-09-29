@@ -431,6 +431,7 @@ pub struct DriveGroveBasicMethodVersions {
     pub grove_insert_empty_tree: FeatureVersion,
     pub grove_insert_empty_sum_tree: FeatureVersion,
     pub grove_insert_if_not_exists: FeatureVersion,
+    pub grove_insert_if_not_exists_return_existing_element: FeatureVersion,
     pub grove_clear: FeatureVersion,
     pub grove_delete: FeatureVersion,
     pub grove_get_raw: FeatureVersion,
@@ -454,11 +455,13 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_insert_empty_tree: FeatureVersion,
     pub batch_insert_empty_tree_if_not_exists: FeatureVersion,
     pub batch_insert_empty_tree_if_not_exists_check_existing_operations: FeatureVersion,
+    pub batch_insert_sum_item_or_add_to_if_already_exists: FeatureVersion,
     pub batch_insert: FeatureVersion,
     pub batch_insert_if_not_exists: FeatureVersion,
     pub batch_insert_if_changed_value: FeatureVersion,
     pub batch_replace: FeatureVersion,
     pub batch_delete: FeatureVersion,
+    pub batch_delete_items_in_path_query: FeatureVersion,
     pub batch_remove_raw: FeatureVersion,
     pub batch_delete_up_tree_while_empty: FeatureVersion,
     pub batch_refresh_reference: FeatureVersion,
@@ -562,12 +565,13 @@ pub struct DriveIdentityMethodVersions {
 pub struct DriveIdentityWithdrawalMethodVersions {
     pub document: DriveIdentityWithdrawalDocumentMethodVersions,
     pub transaction: DriveIdentityWithdrawalTransactionMethodVersions,
+    pub calculate_current_withdrawal_limit: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityWithdrawalDocumentMethodVersions {
     pub fetch_oldest_withdrawal_documents_by_status: FeatureVersion,
-    pub find_up_to_100_withdrawal_documents_by_status_and_transaction_indices: FeatureVersion,
+    pub find_withdrawal_documents_by_status_and_transaction_indices: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

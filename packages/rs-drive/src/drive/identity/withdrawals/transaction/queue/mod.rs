@@ -37,6 +37,7 @@ mod tests {
         drive
             .add_enqueue_untied_withdrawal_transaction_operations(
                 withdrawals,
+                100,
                 &mut drive_operations,
                 platform_version,
             )

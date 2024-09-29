@@ -170,7 +170,7 @@ impl Drive {
         )?;
 
         // In Withdrawals
-        Drive::add_initial_withdrawal_state_structure_operations(&mut batch);
+        Drive::add_initial_withdrawal_state_structure_operations(&mut batch, platform_version);
 
         // For Versioning via forks
         Drive::add_initial_fork_update_structure_operations(&mut batch);

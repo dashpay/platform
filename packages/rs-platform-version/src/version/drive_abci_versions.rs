@@ -5,6 +5,7 @@ pub struct DriveAbciVersion {
     pub structs: DriveAbciStructureVersions,
     pub methods: DriveAbciMethodVersions,
     pub validation_and_processing: DriveAbciValidationVersions,
+    pub withdrawal_constants: DriveAbciWithdrawalConstants,
     pub query: DriveAbciQueryVersions,
 }
 
@@ -110,6 +111,12 @@ pub struct DriveAbciValidationVersions {
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,
     pub penalties: PenaltyAmounts,
     pub event_constants: DriveAbciValidationConstants,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciWithdrawalConstants {
+    pub core_expiration_blocks: u32,
+    pub cleanup_expired_locks_of_withdrawal_amounts_limit: u16,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -332,12 +339,14 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     pub pool_withdrawals_into_transactions_queue: FeatureVersion,
     pub update_broadcasted_withdrawal_statuses: FeatureVersion,
     pub append_signatures_and_broadcast_withdrawal_transactions: FeatureVersion,
+    pub cleanup_expired_locks_of_withdrawal_amounts: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciProtocolUpgradeMethodVersions {
     pub check_for_desired_protocol_upgrade: FeatureVersion,
     pub upgrade_protocol_version_on_epoch_change: FeatureVersion,
+    pub perform_events_on_first_block_of_protocol_change: OptionalFeatureVersion,
     pub protocol_version_upgrade_percentage_needed: u64,
 }
 

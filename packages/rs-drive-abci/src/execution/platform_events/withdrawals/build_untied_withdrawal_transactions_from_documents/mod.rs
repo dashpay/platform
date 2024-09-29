@@ -4,6 +4,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::document::Document;
+use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 
@@ -35,7 +36,7 @@ where
         start_index: WithdrawalTransactionIndex,
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<WithdrawalTransactionIndexAndBytes>, Error> {
+    ) -> Result<(Vec<WithdrawalTransactionIndexAndBytes>, Credits), Error> {
         match platform_version
             .drive_abci
             .methods

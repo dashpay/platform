@@ -13,7 +13,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set::ValidatorSetExt;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
-use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
+use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::FromMilis;
 

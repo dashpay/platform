@@ -32,7 +32,7 @@ use crate::version::drive_abci_versions::{
     DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
     DriveAbciValidationConstants, DriveAbciValidationDataTriggerAndBindingVersions,
     DriveAbciValidationDataTriggerVersions, DriveAbciValidationVersions, DriveAbciVersion,
-    DriveAbciVotingMethodVersions, PenaltyAmounts,
+    DriveAbciVotingMethodVersions, DriveAbciWithdrawalConstants, PenaltyAmounts,
 };
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
@@ -466,7 +466,7 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
                 withdrawals: DriveIdentityWithdrawalMethodVersions {
                     document: DriveIdentityWithdrawalDocumentMethodVersions {
                         fetch_oldest_withdrawal_documents_by_status: 0,
-                        find_up_to_100_withdrawal_documents_by_status_and_transaction_indices: 0,
+                        find_withdrawal_documents_by_status_and_transaction_indices: 0,
                     },
                     transaction: DriveIdentityWithdrawalTransactionMethodVersions {
                         index: DriveIdentityWithdrawalTransactionIndexMethodVersions {
@@ -478,6 +478,7 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
                             dequeue_untied_withdrawal_transactions: 0,
                         },
                     },
+                    calculate_current_withdrawal_limit: 0,
                 },
             },
             platform_system: DrivePlatformSystemMethodVersions {
@@ -548,6 +549,7 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
                 grove_insert_empty_tree: 0,
                 grove_insert_empty_sum_tree: 0,
                 grove_insert_if_not_exists: 0,
+                grove_insert_if_not_exists_return_existing_element: 0,
                 grove_clear: 0,
                 grove_delete: 0,
                 grove_get_raw: 0,
@@ -569,11 +571,13 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
                 batch_insert_empty_tree: 0,
                 batch_insert_empty_tree_if_not_exists: 0,
                 batch_insert_empty_tree_if_not_exists_check_existing_operations: 0,
+                batch_insert_sum_item_or_add_to_if_already_exists: 0,
                 batch_insert: 0,
                 batch_insert_if_not_exists: 0,
                 batch_insert_if_changed_value: 0,
                 batch_replace: 0,
                 batch_delete: 0,
+                batch_delete_items_in_path_query: 0,
                 batch_remove_raw: 0,
                 batch_delete_up_tree_while_empty: 0,
                 batch_refresh_reference: 0,
@@ -637,6 +641,7 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
             protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
                 check_for_desired_protocol_upgrade: 1,
                 upgrade_protocol_version_on_epoch_change: 0,
+                perform_events_on_first_block_of_protocol_change: Some(4),
                 protocol_version_upgrade_percentage_needed: 67,
             },
             block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
@@ -671,6 +676,7 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
                 pool_withdrawals_into_transactions_queue: 0,
                 update_broadcasted_withdrawal_statuses: 0,
                 append_signatures_and_broadcast_withdrawal_transactions: 0,
+                cleanup_expired_locks_of_withdrawal_amounts: 0,
             },
             voting: DriveAbciVotingMethodVersions {
                 keep_record_of_finished_contested_resource_vote_poll: 0,
@@ -843,6 +849,10 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
                 maximum_vote_polls_to_process: 2,
                 maximum_contenders_to_consider: 100,
             },
+        },
+        withdrawal_constants: DriveAbciWithdrawalConstants {
+            core_expiration_blocks: 24,
+            cleanup_expired_locks_of_withdrawal_amounts_limit: 64,
         },
         query: DriveAbciQueryVersions {
             max_returned_elements: 100,
@@ -1267,6 +1277,7 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
         },
         methods: DPPMethodVersions {
             epoch_core_reward_credits_for_distribution: 0,
+            daily_withdrawal_limit: 0,
         },
     },
     system_data_contracts: SystemDataContractVersions {
@@ -1283,6 +1294,7 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
         max_state_transition_size: 20480, //20 KiB
         max_transitions_in_documents_batch: 1,
         withdrawal_transactions_per_block_limit: 4,
+        max_withdrawal_amount: 50_000_000_000_000, //500 Dash
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,

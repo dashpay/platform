@@ -25,7 +25,7 @@ impl Drive {
             .identity
             .withdrawals
             .document
-            .find_up_to_100_withdrawal_documents_by_status_and_transaction_indices
+            .find_withdrawal_documents_by_status_and_transaction_indices
         {
             0 => self.find_withdrawal_documents_by_status_and_transaction_indices_v0(
                 status,
@@ -35,8 +35,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "find_up_to_100_withdrawal_documents_by_status_and_transaction_indices"
-                    .to_string(),
+                method: "find_withdrawal_documents_by_status_and_transaction_indices".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

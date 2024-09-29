@@ -16,7 +16,7 @@ use dpp::document::{Document, DocumentV0};
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::IdentityPublicKey;
+use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::platform_value;
 use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
@@ -131,19 +131,27 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
                     ));
                 }
             }
-            if !key.key_type().is_core_address_key_type() {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    ConsensusError::StateError(
-                        StateError::NoTransferKeyForCoreWithdrawalAvailableError(
-                            NoTransferKeyForCoreWithdrawalAvailableError::new(
-                                identity_credit_withdrawal.identity_id,
+            match key.key_type() {
+                KeyType::ECDSA_HASH160 => {
+                    // We should get the withdrawal address
+                    CoreScript::new_p2pkh(key.public_key_hash()?).to_bytes()
+                }
+                KeyType::BIP13_SCRIPT_HASH => {
+                    // We should get the withdrawal address
+                    CoreScript::new_p2sh(key.public_key_hash()?).to_bytes()
+                }
+                _ => {
+                    return Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(
+                            StateError::NoTransferKeyForCoreWithdrawalAvailableError(
+                                NoTransferKeyForCoreWithdrawalAvailableError::new(
+                                    identity_credit_withdrawal.identity_id,
+                                ),
                             ),
                         ),
-                    ),
-                ));
+                    ));
+                }
             }
-            // We should get the withdrawal address
-            CoreScript::new_p2pkh(key.public_key_hash()?).to_bytes()
         };
 
         let mut entropy = Vec::new();

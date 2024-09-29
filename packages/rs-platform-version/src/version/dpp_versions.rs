@@ -271,4 +271,5 @@ pub struct DocumentMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DPPMethodVersions {
     pub epoch_core_reward_credits_for_distribution: FeatureVersion,
+    pub daily_withdrawal_limit: FeatureVersion,
 }

@@ -1,13 +1,13 @@
 use dpp::block::block_info::BlockInfo;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-
+use dpp::document::DocumentV0Getters;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-use drive::config::DEFAULT_QUERY_LIMIT;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
@@ -44,9 +44,11 @@ where
             );
             return Ok(());
         }
-        let mut documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
+        let documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
-            DEFAULT_QUERY_LIMIT,
+            platform_version
+                .system_limits
+                .withdrawal_transactions_per_block_limit,
             transaction,
             platform_version,
         )?;
@@ -55,16 +57,56 @@ where
             return Ok(());
         }
 
+        // Only take documents up to the withdrawal amount
+        let current_withdrawal_limit = self
+            .drive
+            .calculate_current_withdrawal_limit(transaction, platform_version)?;
+
+        // Only process documents up to the current withdrawal limit.
+        let mut total_withdrawal_amount = 0u64;
+
+        // Iterate over the documents and accumulate their withdrawal amounts.
+        let mut documents_to_process = vec![];
+        for document in documents {
+            // Get the withdrawal amount from the document properties.
+            let amount: u64 = document
+                .properties()
+                .get_integer(withdrawal::properties::AMOUNT)?;
+
+            // Check if adding this amount would exceed the current withdrawal limit.
+            let potential_total_withdrawal_amount =
+                total_withdrawal_amount.checked_add(amount).ok_or_else(|| {
+                    Error::Execution(ExecutionError::Overflow(
+                        "overflow in total withdrawal amount",
+                    ))
+                })?;
+
+            if potential_total_withdrawal_amount > current_withdrawal_limit {
+                // If adding this withdrawal would exceed the limit, stop processing further.
+                break;
+            }
+
+            total_withdrawal_amount = potential_total_withdrawal_amount;
+
+            // Add this document to the list of documents to be processed.
+            documents_to_process.push(document);
+        }
+
+        if documents_to_process.is_empty() {
+            return Ok(());
+        }
+
         let start_transaction_index = self
             .drive
             .fetch_next_withdrawal_transaction_index(transaction, platform_version)?;
 
-        let withdrawal_transactions = self.build_untied_withdrawal_transactions_from_documents(
-            &mut documents,
-            start_transaction_index,
-            block_info,
-            platform_version,
-        )?;
+        let (withdrawal_transactions, total_amount) = self
+            .build_untied_withdrawal_transactions_from_documents(
+                &mut documents_to_process,
+                start_transaction_index,
+                block_info,
+                platform_version,
+            )?;
 
         let withdrawal_transactions_count = withdrawal_transactions.len();
 
@@ -73,6 +115,7 @@ where
         self.drive
             .add_enqueue_untied_withdrawal_transaction_operations(
                 withdrawal_transactions,
+                total_amount,
                 &mut drive_operations,
                 platform_version,
             )?;
@@ -88,7 +131,7 @@ where
 
         tracing::debug!(
             "Pooled {} withdrawal documents into {} transactions with indices from {} to {}",
-            documents.len(),
+            documents_to_process.len(),
             withdrawal_transactions_count,
             start_transaction_index,
             end_transaction_index,
@@ -97,7 +140,7 @@ where
         let withdrawals_contract = self.drive.cache.system_data_contracts.load_withdrawals();
 
         self.drive.add_update_multiple_documents_operations(
-            &documents,
+            &documents_to_process,
             &withdrawals_contract,
             withdrawals_contract
                 .document_type_for_name(withdrawal::NAME)
@@ -142,6 +185,7 @@ mod tests {
     use dpp::platform_value::platform_value;
     use dpp::system_data_contracts::load_system_data_contract;
     use dpp::version::PlatformVersion;
+    use drive::config::DEFAULT_QUERY_LIMIT;
 
     #[test]
     fn test_pooling() {

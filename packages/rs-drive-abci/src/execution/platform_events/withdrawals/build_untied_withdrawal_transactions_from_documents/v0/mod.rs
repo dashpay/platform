@@ -3,7 +3,9 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::{Document, DocumentV0Setters};
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+use dpp::fee::Credits;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 
 use crate::{
@@ -24,20 +26,35 @@ where
         start_index: WithdrawalTransactionIndex,
         block_info: &BlockInfo,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<WithdrawalTransactionIndexAndBytes>, Error> {
-        documents
-            .iter_mut()
-            .enumerate()
-            .map(|(i, document)| {
+    ) -> Result<(Vec<WithdrawalTransactionIndexAndBytes>, Credits), Error> {
+        documents.iter_mut().enumerate().try_fold(
+            (Vec::new(), 0u64), // Start with an empty vector for transactions and 0 for total amount.
+            |(mut transactions, mut total_amount), (i, document)| {
+                // Calculate the transaction index.
                 let transaction_index = start_index + i as WithdrawalTransactionIndex;
 
+                // Convert the document into the withdrawal transaction information.
                 let withdrawal_transaction = document.try_into_asset_unlock_base_transaction_info(
                     transaction_index,
                     platform_version,
                 )?;
 
+                // Create a buffer to hold the encoded transaction.
                 let mut transaction_buffer: Vec<u8> = vec![];
 
+                // Get the withdrawal amount from the document properties.
+                let amount: u64 = document
+                    .properties()
+                    .get_integer(withdrawal::properties::AMOUNT)?;
+
+                // Add the amount to the total, checking for overflow.
+                total_amount = total_amount.checked_add(amount).ok_or_else(|| {
+                    Error::Execution(ExecutionError::Overflow(
+                        "Overflow while calculating total amount",
+                    ))
+                })?;
+
+                // Consensus encode the withdrawal transaction into the buffer.
                 withdrawal_transaction
                     .consensus_encode(&mut transaction_buffer)
                     .map_err(|_| {
@@ -46,24 +63,28 @@ where
                         ))
                     })?;
 
+                // Update the document properties.
                 document.set_u64(withdrawal::properties::TRANSACTION_INDEX, transaction_index);
-
                 document.set_u8(
                     withdrawal::properties::STATUS,
                     withdrawals_contract::WithdrawalStatus::POOLED as u8,
                 );
-
                 document.set_updated_at(Some(block_info.time_ms));
 
+                // Increment the document revision, handle error if it fails.
                 document.increment_revision().map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Could not increment document revision",
+                    Error::Execution(ExecutionError::Overflow(
+                        "Overflow when adding to document revision for withdrawals",
                     ))
                 })?;
 
-                Ok((transaction_index, transaction_buffer))
-            })
-            .collect()
+                // Add the transaction index and encoded transaction to the result.
+                transactions.push((transaction_index, transaction_buffer));
+
+                // Return the updated accumulator.
+                Ok((transactions, total_amount))
+            },
+        )
     }
 }
 
@@ -160,7 +181,7 @@ mod tests {
 
             let block_info = BlockInfo::default_with_time(50);
 
-            let transactions = platform
+            let (transactions, credits) = platform
                 .build_untied_withdrawal_transactions_from_documents_v0(
                     &mut documents,
                     50,
@@ -190,6 +211,8 @@ mod tests {
                     ),
                 ]
             );
+
+            assert_eq!(credits, 2000);
         }
     }
 }

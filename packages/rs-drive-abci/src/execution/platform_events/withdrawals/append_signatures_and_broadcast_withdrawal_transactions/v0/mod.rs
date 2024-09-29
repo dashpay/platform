@@ -10,7 +10,7 @@ use dashcore_rpc::Error as CoreRPCError;
 use dpp::dashcore::bls_sig_utils::BLSSignature;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
 use dpp::dashcore::{consensus, Transaction, Txid};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use std::fs::{self, File};
 use std::io::Write;
