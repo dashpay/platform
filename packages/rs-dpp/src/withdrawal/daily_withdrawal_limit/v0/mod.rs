@@ -21,9 +21,10 @@ use crate::fee::Credits;
 ///
 pub fn daily_withdrawal_limit_v0(total_credits_in_platform: Credits) -> Credits {
     if total_credits_in_platform >= 100_000_000_000_000 {
-        //1000 Dash
+        // 1000 Dash
         total_credits_in_platform / 10
     } else if total_credits_in_platform >= 10_000_000_000_000 {
+        // 100 Dash
         10_000_000_000_000
     } else {
         total_credits_in_platform
@@ -33,11 +34,21 @@ pub fn daily_withdrawal_limit_v0(total_credits_in_platform: Credits) -> Credits 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dash_to_credits;
 
     #[test]
     fn test_daily_withdrawal_limit() {
-        assert_eq!(daily_withdrawal_limit_v0(2000), 200);
-        assert_eq!(daily_withdrawal_limit_v0(500), 100);
-        assert_eq!(daily_withdrawal_limit_v0(50), 50);
+        assert_eq!(
+            daily_withdrawal_limit_v0(dash_to_credits!(2000)),
+            dash_to_credits!(200)
+        );
+        assert_eq!(
+            daily_withdrawal_limit_v0(dash_to_credits!(500)),
+            dash_to_credits!(100)
+        );
+        assert_eq!(
+            daily_withdrawal_limit_v0(dash_to_credits!(50)),
+            dash_to_credits!(50)
+        );
     }
 }
