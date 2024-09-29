@@ -27,7 +27,7 @@ use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::prelude::StdRng;
 use std::collections::BTreeMap;
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub enum DocumentAction {
@@ -495,7 +495,7 @@ impl VoteAction {
     }
 }
 
-pub type AmountRange = Range<Credits>;
+pub type AmountRange = RangeInclusive<Credits>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum OperationType {

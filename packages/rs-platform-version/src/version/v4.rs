@@ -32,7 +32,7 @@ use crate::version::drive_abci_versions::{
     DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
     DriveAbciValidationConstants, DriveAbciValidationDataTriggerAndBindingVersions,
     DriveAbciValidationDataTriggerVersions, DriveAbciValidationVersions, DriveAbciVersion,
-    DriveAbciVotingMethodVersions, PenaltyAmounts,
+    DriveAbciVotingMethodVersions, DriveAbciWithdrawalConstants, PenaltyAmounts,
 };
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
@@ -848,6 +848,9 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
                 maximum_vote_polls_to_process: 2,
                 maximum_contenders_to_consider: 100,
             },
+        },
+        withdrawal_constants: DriveAbciWithdrawalConstants {
+            core_expiration_blocks: 24,
         },
         query: DriveAbciQueryVersions {
             max_returned_elements: 100,

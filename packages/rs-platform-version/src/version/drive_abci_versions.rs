@@ -5,6 +5,7 @@ pub struct DriveAbciVersion {
     pub structs: DriveAbciStructureVersions,
     pub methods: DriveAbciMethodVersions,
     pub validation_and_processing: DriveAbciValidationVersions,
+    pub withdrawal_constants: DriveAbciWithdrawalConstants,
     pub query: DriveAbciQueryVersions,
 }
 
@@ -110,6 +111,11 @@ pub struct DriveAbciValidationVersions {
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,
     pub penalties: PenaltyAmounts,
     pub event_constants: DriveAbciValidationConstants,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciWithdrawalConstants {
+    pub core_expiration_blocks: u32,
 }
 
 #[derive(Clone, Debug, Default)]

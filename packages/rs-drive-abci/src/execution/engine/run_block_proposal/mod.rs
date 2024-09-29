@@ -99,7 +99,6 @@ Your software version: {}, latest supported protocol version: {}."#,
                     .set_current_protocol_version_in_consensus(next_protocol_version);
                 // This is for events like adding stuff to the root tree, or making structural changes/fixes
                 self.perform_events_on_first_block_of_protocol_change(
-                    &epoch_info,
                     transaction,
                     old_protocol_version,
                     next_platform_version,

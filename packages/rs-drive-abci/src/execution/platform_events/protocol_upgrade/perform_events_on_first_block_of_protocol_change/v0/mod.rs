@@ -1,12 +1,10 @@
 use crate::error::Error;
-use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use drive::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
-use drive::drive::RootTree;
 use drive::grovedb::{Element, Transaction};
 
 impl<C> Platform<C> {
@@ -60,7 +58,7 @@ impl<C> Platform<C> {
         &self,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) {
+    ) -> Result<(), Error> {
         let path = get_withdrawal_root_path();
         self.drive.grove_insert_if_not_exists(
             (&path).into(),
@@ -70,5 +68,6 @@ impl<C> Platform<C> {
             None,
             &platform_version.drive,
         )?;
+        Ok(())
     }
 }

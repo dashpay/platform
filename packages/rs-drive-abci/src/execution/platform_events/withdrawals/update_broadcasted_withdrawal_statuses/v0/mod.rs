@@ -22,8 +22,6 @@ use crate::{
     rpc::core::CoreRPCLike,
 };
 
-const NUMBER_OF_BLOCKS_BEFORE_EXPIRED: u32 = 48;
-
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
@@ -109,7 +107,12 @@ where
                 );
 
                 WithdrawalStatus::COMPLETE
-            } else if block_height_difference > NUMBER_OF_BLOCKS_BEFORE_EXPIRED {
+            } else if block_height_difference
+                > platform_version
+                    .drive_abci
+                    .withdrawal_constants
+                    .core_expiration_blocks
+            {
                 tracing::debug!(
                     transaction_sign_height,
                     "Withdrawal with transaction index {} is marked as expired",

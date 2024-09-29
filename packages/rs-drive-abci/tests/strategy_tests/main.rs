@@ -85,6 +85,7 @@ mod tests {
     };
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::state_transition::StateTransition;
+    use dpp::{dash_to_credits, dash_to_duffs};
     use platform_version::version::PlatformVersion;
     use simple_signer::signer::SimpleSigner;
     use strategy_tests::transitions::create_state_transitions_for_identities;
@@ -2976,7 +2977,7 @@ mod tests {
             strategy: Strategy {
                 start_contracts: vec![],
                 operations: vec![Operation {
-                    op_type: OperationType::IdentityTopUp,
+                    op_type: OperationType::IdentityTopUp(dash_to_duffs!(1)..=dash_to_duffs!(1)),
                     frequency: Frequency {
                         times_per_block_range: 1..3,
                         chance_per_block: None,

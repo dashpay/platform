@@ -77,6 +77,24 @@ pub fn instant_asset_lock_proof_fixture(one_time_private_key: PrivateKey) -> Ass
     AssetLockProof::Instant(is_lock_proof)
 }
 
+pub fn instant_asset_lock_proof_fixture_with_dynamic_range(
+    one_time_private_key: PrivateKey,
+    amount_range: AmountRange,
+    rng: &mut StdRng,
+) -> AssetLockProof {
+    let transaction = instant_asset_lock_proof_transaction_fixture_with_dynamic_amount(
+        one_time_private_key,
+        amount_range,
+        rng,
+    );
+
+    let instant_lock = instant_asset_lock_is_lock_fixture(transaction.txid());
+
+    let is_lock_proof = InstantAssetLockProof::new(instant_lock, transaction, 0);
+
+    AssetLockProof::Instant(is_lock_proof)
+}
+
 /// Constructs a fixture of a `Transaction` representing an instant asset lock proof.
 ///
 /// The `Transaction` structure is a basic unit of data in a blockchain, recording the transfer of assets between parties.
@@ -139,6 +157,67 @@ pub fn instant_asset_lock_proof_transaction_fixture(
 
     let burn_output = TxOut {
         value: 100000000, // 1 Dash
+        script_pubkey: ScriptBuf::new_op_return(&[]),
+    };
+
+    let change_output = TxOut {
+        value: 5000,
+        script_pubkey: ScriptBuf::new_p2pkh(&public_key_hash),
+    };
+
+    let payload = TransactionPayload::AssetLockPayloadType(AssetLockPayload {
+        version: 0,
+        credit_outputs: vec![funding_output],
+    });
+
+    Transaction {
+        version: 0,
+        lock_time: 0,
+        input: vec![input],
+        output: vec![burn_output, change_output],
+        special_transaction_payload: Some(payload),
+    }
+}
+
+pub fn instant_asset_lock_proof_transaction_fixture_with_dynamic_amount(
+    one_time_private_key: PrivateKey,
+    amount_range: AmountRange,
+    rng: &mut StdRng,
+) -> Transaction {
+    let secp = Secp256k1::new();
+
+    let private_key_hex = "cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY";
+    let private_key = PrivateKey::from_str(private_key_hex).unwrap();
+    let public_key = private_key.public_key(&secp);
+    let public_key_hash = public_key.pubkey_hash();
+    //let from_address = Address::p2pkh(&public_key, Network::Testnet);
+    let one_time_public_key = one_time_private_key.public_key(&secp);
+
+    // We are going to fund 1 Dash and
+    // assume that input has 100005000
+    // 5000 will be returned back
+
+    let input_txid =
+        Txid::from_str("a477af6b2667c29670467e4e0728b685ee07b240235771862318e29ddbe58458").unwrap();
+
+    let input_outpoint = OutPoint::new(input_txid, 0);
+
+    let input = TxIn {
+        previous_output: input_outpoint,
+        script_sig: ScriptBuf::new_p2pkh(&public_key_hash),
+        sequence: 0,
+        witness: Default::default(),
+    };
+
+    let one_time_key_hash = one_time_public_key.pubkey_hash();
+
+    let funding_output = TxOut {
+        value: 100000000, // 1 Dash
+        script_pubkey: ScriptBuf::new_p2pkh(&one_time_key_hash),
+    };
+
+    let burn_output = TxOut {
+        value: rng.gen_range(amount_range),
         script_pubkey: ScriptBuf::new_op_return(&[]),
     };
 
