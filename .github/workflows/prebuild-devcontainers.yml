@@ -27,6 +27,11 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Set up skopeo
+        uses: warjiang/setup-skopeo@0
+        with:
+          version: latest
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
