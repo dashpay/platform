@@ -25,7 +25,9 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
-    /// * `Err(DriveError::CorruptedCodeExecution)` if the operation is not supported.
+    /// * `Err(DriveError::CorruptedCodeExecution)` (rare) if the operation is not supported.
+    /// * `Err(DriveError::CorruptedElementType)` (rare) if drive is in a corrupted state and
+    ///     gives back an incorrect element type.
     pub fn batch_insert_sum_item_or_add_to_if_already_exists<const N: usize>(
         &self,
         path_key_element_info: PathKeyElementInfo<N>,
