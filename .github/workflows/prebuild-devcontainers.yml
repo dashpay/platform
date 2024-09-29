@@ -54,5 +54,5 @@ jobs:
           imageTag: 0.1.0
           platform: linux/amd64,linux/arm64
           configFile: .devcontainer/devcontainer-build.json
-          push: true
+          push: always
           cacheFrom: ghcr.io/dashpay/platform/devcontainer
