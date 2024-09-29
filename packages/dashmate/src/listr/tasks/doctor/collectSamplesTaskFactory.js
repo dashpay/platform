@@ -166,7 +166,7 @@ export default function collectSamplesTaskFactory(
                 title: 'Core P2P port',
                 task: async () => {
                   const port = config.get('core.p2p.port');
-                  const response = await providers.mnowatch.checkPortStatus(port);
+                  const response = await providers.mnowatch.checkPortStatus(port, config.get('externalIp'));
 
                   ctx.samples.setServiceInfo('core', 'p2pPort', response);
                 },
@@ -176,7 +176,7 @@ export default function collectSamplesTaskFactory(
                 enabled: () => config.get('platform.enable'),
                 task: async () => {
                   const port = config.get('platform.gateway.listeners.dapiAndDrive.port');
-                  const response = await providers.mnowatch.checkPortStatus(port);
+                  const response = await providers.mnowatch.checkPortStatus(port, config.get('externalIp'));
 
                   ctx.samples.setServiceInfo('gateway', 'httpPort', response);
                 },
@@ -185,7 +185,7 @@ export default function collectSamplesTaskFactory(
                 title: 'Tenderdash P2P port',
                 task: async () => {
                   const port = config.get('platform.drive.tenderdash.p2p.port');
-                  const response = await providers.mnowatch.checkPortStatus(port);
+                  const response = await providers.mnowatch.checkPortStatus(port, config.get('externalIp'));
 
                   ctx.samples.setServiceInfo('drive_tenderdash', 'p2pPort', response);
                 },

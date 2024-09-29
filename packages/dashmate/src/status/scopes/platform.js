@@ -89,8 +89,8 @@ export default function getPlatformScopeFactory(
     // Collecting platform data fails if Tenderdash is waiting for core to sync
     if (info.serviceStatus === ServiceStatusEnum.up) {
       const portStatusResult = await Promise.allSettled([
-        providers.mnowatch.checkPortStatus(config.get('platform.gateway.listeners.dapiAndDrive.port')),
-        providers.mnowatch.checkPortStatus(config.get('platform.drive.tenderdash.p2p.port')),
+        providers.mnowatch.checkPortStatus(config.get('platform.gateway.listeners.dapiAndDrive.port'), config.get('externalIp')),
+        providers.mnowatch.checkPortStatus(config.get('platform.drive.tenderdash.p2p.port'), config.get('externalIp')),
       ]);
       const [httpPortState, p2pPortState] = portStatusResult.map((result) => (result.status === 'fulfilled' ? result.value : null));
 
