@@ -16,7 +16,7 @@ concurrency:
 jobs:
   build:
     name: Build and push devcontainer
-    runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
+    runs-on: ["self-hosted", "linux", "x64", "ubuntu-platform"]
     timeout-minutes: 60
     steps:
       - name: Checkout repo
@@ -27,8 +27,10 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Set up skopeo
-        uses: warjiang/setup-skopeo@v0.1.3
+      - name: Install skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
