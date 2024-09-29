@@ -81,12 +81,12 @@ mod tests {
     use rand::SeedableRng;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
 
+    use dpp::dash_to_duffs;
     use dpp::data_contract::document_type::v0::random_document_type::{
         FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
     };
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::state_transition::StateTransition;
-    use dpp::{dash_to_credits, dash_to_duffs};
     use platform_version::version::PlatformVersion;
     use simple_signer::signer::SimpleSigner;
     use strategy_tests::transitions::create_state_transitions_for_identities;
