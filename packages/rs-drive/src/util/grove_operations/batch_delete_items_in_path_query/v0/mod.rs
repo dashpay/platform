@@ -8,7 +8,7 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::operations::delete::DeleteOptions;
 use grovedb::query_result_type::QueryResultType;
-use grovedb::{Element, GroveDb, PathQuery, TransactionArg};
+use grovedb::{GroveDb, PathQuery, TransactionArg};
 use grovedb_storage::rocksdb_storage::RocksDbStorage;
 use platform_version::version::drive_versions::DriveVersion;
 

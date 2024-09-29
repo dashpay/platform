@@ -8,7 +8,6 @@ use drive::grovedb::TransactionArg;
 
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-use drive::config::DEFAULT_QUERY_LIMIT;
 
 use crate::{
     error::{execution::ExecutionError, Error},
@@ -168,6 +167,7 @@ mod tests {
     use dpp::platform_value::platform_value;
     use dpp::system_data_contracts::load_system_data_contract;
     use dpp::version::PlatformVersion;
+    use drive::config::DEFAULT_QUERY_LIMIT;
 
     #[test]
     fn test_pooling() {

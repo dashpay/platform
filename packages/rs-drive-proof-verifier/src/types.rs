@@ -29,7 +29,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use dpp::block::block_info::BlockInfo;
 use dpp::core_types::validator_set::ValidatorSet;
-use dpp::dashcore::QuorumHash;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use drive::grovedb::query_result_type::Path;
 #[cfg(feature = "mocks")]

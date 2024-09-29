@@ -1809,153 +1809,138 @@ mod tests {
             outcome
         };
 
-        let ChainExecutionOutcome {
+        let outcome = continue_chain_for_strategy(
             abci_app,
-            proposers,
-            validator_quorums: quorums,
-            current_validator_quorum_hash: current_quorum_hash,
-            current_proposer_versions,
-            end_time_ms,
-            identity_nonce_counter,
-            identity_contract_nonce_counter,
-            instant_lock_quorums,
-            identities,
-            ..
-        } = {
-            let outcome = continue_chain_for_strategy(
-                abci_app,
-                ChainExecutionParameters {
-                    block_start: 71,
-                    core_height_start: 1,
-                    block_count: 250,
-                    proposers,
-                    validator_quorums: quorums,
-                    current_validator_quorum_hash: current_quorum_hash,
-                    current_proposer_versions: Some(current_proposer_versions),
-                    current_identity_nonce_counter: identity_nonce_counter,
-                    current_identity_contract_nonce_counter: identity_contract_nonce_counter,
-                    current_votes: BTreeMap::default(),
-                    start_time_ms: GENESIS_TIME_MS,
-                    current_time_ms: end_time_ms + 1000,
-                    instant_lock_quorums,
-                    current_identities: identities,
-                },
-                continue_strategy_no_operations.clone(),
-                PlatformConfig {
-                    validator_set: ValidatorSetConfig::default_100_67(),
-                    chain_lock: ChainLockConfig::default_100_67(),
-                    instant_lock: InstantLockConfig::default_100_67(),
-                    execution: ExecutionConfig {
-                        verify_sum_trees: true,
+            ChainExecutionParameters {
+                block_start: 71,
+                core_height_start: 1,
+                block_count: 250,
+                proposers,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: GENESIS_TIME_MS,
+                current_time_ms: end_time_ms + 1000,
+                instant_lock_quorums,
+                current_identities: identities,
+            },
+            continue_strategy_no_operations.clone(),
+            PlatformConfig {
+                validator_set: ValidatorSetConfig::default_100_67(),
+                chain_lock: ChainLockConfig::default_100_67(),
+                instant_lock: InstantLockConfig::default_100_67(),
+                execution: ExecutionConfig {
+                    verify_sum_trees: true,
 
-                        ..Default::default()
-                    },
-                    block_spacing_ms: hour_in_ms,
-                    initial_protocol_version: TEST_PLATFORM_V3.protocol_version,
-                    testing_configs: PlatformTestConfig::default_minimal_verifications(),
                     ..Default::default()
                 },
-                StrategyRandomness::SeedEntropy(9),
-            );
+                block_spacing_ms: hour_in_ms,
+                initial_protocol_version: TEST_PLATFORM_V3.protocol_version,
+                testing_configs: PlatformTestConfig::default_minimal_verifications(),
+                ..Default::default()
+            },
+            StrategyRandomness::SeedEntropy(9),
+        );
 
-            // We should have unlocked the amounts by now
-            let locked_amount = outcome
-                .abci_app
-                .platform
-                .drive
-                .grove_get_sum_tree_total_value(
-                    (&get_withdrawal_root_path()).into(),
-                    &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
-                    DirectQueryType::StatefulDirectQuery,
-                    None,
-                    &mut vec![],
-                    &platform_version.drive,
-                )
-                .expect("expected to get locked amount");
+        // We should have unlocked the amounts by now
+        let locked_amount = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove_get_sum_tree_total_value(
+                (&get_withdrawal_root_path()).into(),
+                &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to get locked amount");
 
-            // We have nothing locked left
-            assert_eq!(locked_amount, 0);
+        // We have nothing locked left
+        assert_eq!(locked_amount, 0);
 
-            // Withdrawal documents with pooled status should not exist.
-            let withdrawal_documents_pooled = outcome
-                .abci_app
-                .platform
-                .drive
-                .fetch_oldest_withdrawal_documents_by_status(
-                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
-                    DEFAULT_QUERY_LIMIT,
-                    None,
-                    platform_version,
-                )
-                .unwrap();
+        // Withdrawal documents with pooled status should not exist.
+        let withdrawal_documents_pooled = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                platform_version,
+            )
+            .unwrap();
 
-            // None are currently pooled since we have no more room
-            assert!(withdrawal_documents_pooled.is_empty());
+        // None are currently pooled since we have no more room
+        assert!(withdrawal_documents_pooled.is_empty());
 
-            // Withdrawal documents with queued status should exist.
-            let withdrawal_documents_queued = outcome
-                .abci_app
-                .platform
-                .drive
-                .fetch_oldest_withdrawal_documents_by_status(
-                    withdrawals_contract::WithdrawalStatus::QUEUED.into(),
-                    DEFAULT_QUERY_LIMIT,
-                    None,
-                    platform_version,
-                )
-                .unwrap();
+        // Withdrawal documents with queued status should exist.
+        let withdrawal_documents_queued = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::QUEUED.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                platform_version,
+            )
+            .unwrap();
 
-            // Nothing is left in the queue
-            assert_eq!(withdrawal_documents_queued.len(), 0);
+        // Nothing is left in the queue
+        assert_eq!(withdrawal_documents_queued.len(), 0);
 
-            // Withdrawal documents with queued status should exist.
-            let withdrawal_documents_completed = outcome
-                .abci_app
-                .platform
-                .drive
-                .fetch_oldest_withdrawal_documents_by_status(
-                    withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
-                    DEFAULT_QUERY_LIMIT,
-                    None,
-                    platform_version,
-                )
-                .unwrap();
+        // Withdrawal documents with queued status should exist.
+        let withdrawal_documents_completed = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                platform_version,
+            )
+            .unwrap();
 
-            // None have completed because core didn't acknowledge them
-            assert_eq!(withdrawal_documents_completed.len(), 0);
+        // None have completed because core didn't acknowledge them
+        assert_eq!(withdrawal_documents_completed.len(), 0);
 
-            // Withdrawal documents with EXPIRED status should not exist yet.
-            let withdrawal_documents_expired = outcome
-                .abci_app
-                .platform
-                .drive
-                .fetch_oldest_withdrawal_documents_by_status(
-                    withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
-                    DEFAULT_QUERY_LIMIT,
-                    None,
-                    platform_version,
-                )
-                .unwrap();
+        // Withdrawal documents with EXPIRED status should not exist yet.
+        let withdrawal_documents_expired = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                platform_version,
+            )
+            .unwrap();
 
-            // We have none expired yet, because the core height never went up
-            assert_eq!(withdrawal_documents_expired.len(), 0);
+        // We have none expired yet, because the core height never went up
+        assert_eq!(withdrawal_documents_expired.len(), 0);
 
-            // Withdrawal documents with broadcasted status should exist.
-            let withdrawal_documents_broadcasted = outcome
-                .abci_app
-                .platform
-                .drive
-                .fetch_oldest_withdrawal_documents_by_status(
-                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
-                    DEFAULT_QUERY_LIMIT,
-                    None,
-                    platform_version,
-                )
-                .unwrap();
+        // Withdrawal documents with broadcasted status should exist.
+        let withdrawal_documents_broadcasted = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                platform_version,
+            )
+            .unwrap();
 
-            assert_eq!(withdrawal_documents_broadcasted.len(), 80);
-            outcome
-        };
+        assert_eq!(withdrawal_documents_broadcasted.len(), 80);
     }
 
     #[test]

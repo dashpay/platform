@@ -9,7 +9,6 @@ use crate::util::grove_operations::BatchDeleteApplyType;
 use dpp::version::drive_versions::DriveVersion;
 
 use grovedb::{PathQuery, TransactionArg};
-use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Pushes multiple "delete element" operations for items in a given path based on a `PathQuery` to `drive_operations`.

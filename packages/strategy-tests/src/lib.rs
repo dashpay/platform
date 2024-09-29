@@ -45,7 +45,7 @@ use rand::prelude::StdRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeInclusive;
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
@@ -53,7 +53,7 @@ use dpp::data_contract::document_type::DocumentType;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::{BinaryData, Bytes32, Value};
-use dpp::ProtocolError;
+use dpp::{dash_to_duffs, ProtocolError};
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use dpp::state_transition::documents_batch_transition::document_create_transition::{DocumentCreateTransition, DocumentCreateTransitionV0};
@@ -164,7 +164,7 @@ impl Default for IdentityInsertInfo {
             frequency: Default::default(),
             start_keys: 5,
             extra_keys: Default::default(),
-            start_balance_range: 100..=100,
+            start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
         }
     }
 }
@@ -1863,6 +1863,7 @@ mod tests {
     use crate::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use crate::transitions::create_state_transitions_for_identities;
     use crate::{StartIdentities, Strategy};
+    use dpp::dash_to_duffs;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
@@ -1912,6 +1913,7 @@ mod tests {
 
         let start_identities = create_state_transitions_for_identities(
             vec![identity1, identity2],
+            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
             &mut simple_signer,
             &mut rng,
             platform_version,
