@@ -28,7 +28,7 @@ jobs:
           node-version: "20"
 
       - name: Set up skopeo
-        uses: warjiang/setup-skopeo@0
+        uses: warjiang/setup-skopeo@latestπ
         with:
           version: latest
 
