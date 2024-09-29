@@ -2588,7 +2588,6 @@ mod tests {
             &simple_signer,
             &mut rng,
             platform_version,
-            
         );
 
         let strategy = NetworkStrategy {

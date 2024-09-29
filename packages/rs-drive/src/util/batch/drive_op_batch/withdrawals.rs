@@ -15,8 +15,8 @@ use dpp::fee::{Credits, SignedCredits};
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
+use grovedb::Element;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
-use grovedb::{Element};
 
 /// Operations for Withdrawals
 #[derive(Clone, Debug)]

@@ -1542,7 +1542,13 @@ impl NetworkStrategy {
                 platform_version,
             )
         } else {
-            create_state_transitions_for_identities(identities, balance_range, signer, rng, platform_version)
+            create_state_transitions_for_identities(
+                identities,
+                balance_range,
+                signer,
+                rng,
+                platform_version,
+            )
         }
     }
 
@@ -1703,7 +1709,11 @@ fn create_signed_instant_asset_lock_proofs_for_identities(
             let secret_key = SecretKey::from_str(hex::encode(pk_fixed).as_str()).unwrap();
             let private_key = PrivateKey::new(secret_key, Network::Dash);
 
-            let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(private_key, balance_range, rng);
+            let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
+                private_key,
+                balance_range,
+                rng,
+            );
 
             // Sign transaction and update instant lock
             let AssetLockProof::Instant(InstantAssetLockProof { instant_lock, .. }) =

@@ -14,9 +14,11 @@ mod tests {
     use dpp::withdrawal::WithdrawalTransactionIndex;
     use dpp::{dash_to_credits, dash_to_duffs};
     use drive::config::DEFAULT_QUERY_LIMIT;
+    use drive::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
     use drive::drive::identity::withdrawals::paths::{
         get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
     };
+    use drive::drive::system::misc_path;
     use drive::util::grove_operations::DirectQueryType;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
@@ -27,8 +29,6 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
-    use drive::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
-    use drive::drive::system::misc_path;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{Operation, OperationType};
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
@@ -1251,7 +1251,7 @@ mod tests {
                         Purpose::TRANSFER,
                         [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
                     )]
-                        .into(),
+                    .into(),
                     start_balance_range: dash_to_duffs!(200)..=dash_to_duffs!(200),
                 },
                 identity_contract_nonce_gaps: None,
@@ -1412,11 +1412,22 @@ mod tests {
 
             assert_eq!(pooled_withdrawals, 0);
 
-            let total_credits_balance = outcome.abci_app.platform.drive.calculate_total_credits_balance(None, &platform_version.drive).expect("expected to get total credits balance");
+            let total_credits_balance = outcome
+                .abci_app
+                .platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("expected to get total credits balance");
 
-            assert_eq!(total_credits_balance.total_identity_balances, 409997575280380); // Around 4100 Dash.
+            assert_eq!(
+                total_credits_balance.total_identity_balances,
+                409997575280380
+            ); // Around 4100 Dash.
 
-            assert_eq!(total_credits_balance.total_in_trees().unwrap(), 410000000000000); // Around 4100 Dash.
+            assert_eq!(
+                total_credits_balance.total_in_trees().unwrap(),
+                410000000000000
+            ); // Around 4100 Dash.
 
             let total_credits_in_platform = outcome
                 .abci_app
@@ -1429,7 +1440,8 @@ mod tests {
                     None,
                     &mut vec![],
                     &platform_version.drive,
-                ).expect("expected to get total credits in platform");
+                )
+                .expect("expected to get total credits in platform");
 
             assert_eq!(total_credits_in_platform, Some(410000000000000));
 
@@ -1491,20 +1503,19 @@ mod tests {
         };
 
         // Run Block 3 onwards: initiates withdrawals
-        let
-            ChainExecutionOutcome {
-                abci_app,
-                proposers,
-                validator_quorums: quorums,
-                current_validator_quorum_hash: current_quorum_hash,
-                current_proposer_versions,
-                end_time_ms,
-                identity_nonce_counter,
-                identity_contract_nonce_counter,
-                instant_lock_quorums,
-                identities,
-                ..
-            } = {
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            ..
+        } = {
             let outcome = continue_chain_for_strategy(
                 abci_app,
                 ChainExecutionParameters {
@@ -1650,20 +1661,19 @@ mod tests {
 
         let hour_in_ms = 1000 * 60 * 60;
 
-        let
-            ChainExecutionOutcome {
-                abci_app,
-                proposers,
-                validator_quorums: quorums,
-                current_validator_quorum_hash: current_quorum_hash,
-                current_proposer_versions,
-                end_time_ms,
-                identity_nonce_counter,
-                identity_contract_nonce_counter,
-                instant_lock_quorums,
-                identities,
-                ..
-            } = {
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            ..
+        } = {
             let outcome = continue_chain_for_strategy(
                 abci_app,
                 ChainExecutionParameters {
@@ -1799,21 +1809,19 @@ mod tests {
             outcome
         };
 
-
-        let
-            ChainExecutionOutcome {
-                abci_app,
-                proposers,
-                validator_quorums: quorums,
-                current_validator_quorum_hash: current_quorum_hash,
-                current_proposer_versions,
-                end_time_ms,
-                identity_nonce_counter,
-                identity_contract_nonce_counter,
-                instant_lock_quorums,
-                identities,
-                ..
-            } = {
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            ..
+        } = {
             let outcome = continue_chain_for_strategy(
                 abci_app,
                 ChainExecutionParameters {

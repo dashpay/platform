@@ -325,7 +325,7 @@ where
             Some(transaction),
             platform_version,
         )?;
-        
+
         // Cleans up the expired locks for withdrawal amounts
         // This is for example when we make a withdrawal for 30 Dash
         // But we can only withdraw 1000 Dash a day

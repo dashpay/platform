@@ -19,7 +19,12 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        if platform_version.drive_abci.withdrawal_constants.cleanup_expired_locks_of_withdrawal_amounts_limit == 0 {
+        if platform_version
+            .drive_abci
+            .withdrawal_constants
+            .cleanup_expired_locks_of_withdrawal_amounts_limit
+            == 0
+        {
             // No clean up
             return Ok(());
         }
@@ -31,8 +36,13 @@ where
             sum_path,
             QueryItem::RangeTo(..block_info.time_ms.to_be_bytes().to_vec()),
         );
-        
-        path_query.query.limit = Some(platform_version.drive_abci.withdrawal_constants.cleanup_expired_locks_of_withdrawal_amounts_limit);
+
+        path_query.query.limit = Some(
+            platform_version
+                .drive_abci
+                .withdrawal_constants
+                .cleanup_expired_locks_of_withdrawal_amounts_limit,
+        );
 
         self.drive.batch_delete_items_in_path_query(
             &path_query,
@@ -53,7 +63,7 @@ where
             &mut vec![],
             &platform_version.drive,
         )?;
-        
+
         Ok(())
     }
 }

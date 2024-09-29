@@ -1033,8 +1033,11 @@ pub fn create_state_transitions_for_identities(
                 .unwrap();
             let sk: [u8; 32] = pk.try_into().unwrap();
             let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
-            let asset_lock_proof =
-                instant_asset_lock_proof_fixture_with_dynamic_range(PrivateKey::new(secret_key, Network::Dash), amount_range, rng);
+            let asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
+                PrivateKey::new(secret_key, Network::Dash),
+                amount_range,
+                rng,
+            );
             let identity_create_transition =
                 IdentityCreateTransition::try_from_identity_with_signer(
                     &identity.clone(),
