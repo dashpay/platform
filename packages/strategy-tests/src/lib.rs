@@ -45,10 +45,12 @@ use rand::prelude::StdRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::ops::{Range, RangeInclusive};
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::data_contract::document_type::DocumentType;
+use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::{BinaryData, Bytes32, Value};
 use dpp::ProtocolError;
@@ -153,6 +155,7 @@ pub struct IdentityInsertInfo {
     pub frequency: Frequency,
     pub start_keys: u8,
     pub extra_keys: KeyMaps,
+    pub start_balance_range: RangeInclusive<Credits>,
 }
 
 impl Default for IdentityInsertInfo {
@@ -161,6 +164,7 @@ impl Default for IdentityInsertInfo {
             frequency: Default::default(),
             start_keys: 5,
             extra_keys: Default::default(),
+            start_balance_range: 100..=100,
         }
     }
 }

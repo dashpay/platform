@@ -16,7 +16,7 @@ use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
-use grovedb::{Element, PathQuery, QueryItem};
+use grovedb::{Element};
 
 /// Operations for Withdrawals
 #[derive(Clone, Debug)]
@@ -42,11 +42,6 @@ pub enum WithdrawalOperationType {
         amount: Credits,
         /// expiration date
         expiration_after: TimestampMillis,
-    },
-    /// Free up reserved sum of withdrawal transaction
-    FreeUpReservedWithdrawalAmountsForTime {
-        /// current block time
-        block_time: TimestampMillis,
     },
 }
 
@@ -117,30 +112,6 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
                         Element::SumItem(amount as SignedCredits, None),
                     )),
                     BatchInsertApplyType::StatefulBatchInsert,
-                    transaction,
-                    &mut drive_operations,
-                    &platform_version.drive,
-                )?;
-
-                Ok(drive_operations)
-            }
-            WithdrawalOperationType::FreeUpReservedWithdrawalAmountsForTime { block_time } => {
-                let mut drive_operations = vec![];
-
-                let sum_path = get_withdrawal_transactions_sum_tree_path_vec();
-
-                let path_query = PathQuery::new_single_query_item(
-                    sum_path,
-                    QueryItem::RangeTo(..block_time.to_be_bytes().to_vec()),
-                );
-
-                drive.batch_delete_items_in_path_query(
-                    &path_query,
-                    true,
-                    // we know that we are not deleting a subtree
-                    BatchDeleteApplyType::StatefulBatchDelete {
-                        is_known_to_be_subtree_with_sum: Some((false, false)),
-                    },
                     transaction,
                     &mut drive_operations,
                     &platform_version.drive,

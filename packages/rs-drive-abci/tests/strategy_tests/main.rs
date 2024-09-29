@@ -2326,6 +2326,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -2459,6 +2460,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -2582,9 +2584,11 @@ mod tests {
 
         let start_identities = create_state_transitions_for_identities(
             vec![identity1, identity2],
+            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
             &simple_signer,
             &mut rng,
             platform_version,
+            
         );
 
         let strategy = NetworkStrategy {
@@ -2751,6 +2755,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -2916,6 +2921,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -3234,6 +3240,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -3420,6 +3427,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -3582,6 +3590,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -3907,6 +3916,7 @@ mod tests {
                         [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
                     )]
                     .into(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 identity_contract_nonce_gaps: None,
@@ -3976,6 +3986,7 @@ mod tests {
                     },
                     start_keys: 5,
                     extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
 
                 ..Default::default()

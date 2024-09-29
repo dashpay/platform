@@ -675,6 +675,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 pool_withdrawals_into_transactions_queue: 1,
                 update_broadcasted_withdrawal_statuses: 0,
                 append_signatures_and_broadcast_withdrawal_transactions: 0,
+                cleanup_expired_locks_of_withdrawal_amounts: 0,
             },
             voting: DriveAbciVotingMethodVersions {
                 keep_record_of_finished_contested_resource_vote_poll: 0,
@@ -850,6 +851,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
         },
         withdrawal_constants: DriveAbciWithdrawalConstants {
             core_expiration_blocks: 24,
+            cleanup_expired_locks_of_withdrawal_amounts_limit: 64,
         },
         query: DriveAbciQueryVersions {
             max_returned_elements: 100,

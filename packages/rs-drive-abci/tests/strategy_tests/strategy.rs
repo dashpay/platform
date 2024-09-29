@@ -44,6 +44,7 @@ use strategy_tests::Strategy;
 use strategy_tests::transitions::{create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs, instant_asset_lock_proof_fixture, instant_asset_lock_proof_fixture_with_dynamic_range};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ops::RangeInclusive;
 use std::str::FromStr;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use dpp::dashcore::hashes::Hash;
@@ -1131,7 +1132,7 @@ impl NetworkStrategy {
                             operations.push(self.create_identity_top_up_transition(
                                 rng,
                                 random_identity,
-                                amount.clone(),
+                                amount,
                                 instant_lock_quorums,
                                 &platform.config,
                                 platform_version,
@@ -1494,6 +1495,7 @@ impl NetworkStrategy {
     ) -> Vec<(Identity, StateTransition)> {
         let key_count = self.strategy.identity_inserts.start_keys as KeyID;
         let extra_keys = &self.strategy.identity_inserts.extra_keys;
+        let balance_range = &self.strategy.identity_inserts.start_balance_range;
 
         let (mut identities, mut keys) = Identity::random_identities_with_private_keys_with_rng::<
             Vec<_>,
@@ -1527,6 +1529,7 @@ impl NetworkStrategy {
         if self.sign_instant_locks {
             let identities_with_proofs = create_signed_instant_asset_lock_proofs_for_identities(
                 identities,
+                balance_range,
                 rng,
                 instant_lock_quorums,
                 platform_config,
@@ -1539,7 +1542,7 @@ impl NetworkStrategy {
                 platform_version,
             )
         } else {
-            create_state_transitions_for_identities(identities, signer, rng, platform_version)
+            create_state_transitions_for_identities(identities, balance_range, signer, rng, platform_version)
         }
     }
 
@@ -1548,7 +1551,7 @@ impl NetworkStrategy {
         &self,
         rng: &mut StdRng,
         identity: &Identity,
-        amount_range: AmountRange,
+        amount_range: &AmountRange,
         instant_lock_quorums: &Quorums<SigningQuorum>,
         platform_config: &PlatformConfig,
         platform_version: &PlatformVersion,
@@ -1675,6 +1678,7 @@ pub struct ChainExecutionParameters {
 
 fn create_signed_instant_asset_lock_proofs_for_identities(
     identities: Vec<Identity>,
+    balance_range: &RangeInclusive<Credits>,
     rng: &mut StdRng,
     instant_lock_quorums: &Quorums<SigningQuorum>,
     platform_config: &PlatformConfig,
@@ -1699,7 +1703,7 @@ fn create_signed_instant_asset_lock_proofs_for_identities(
             let secret_key = SecretKey::from_str(hex::encode(pk_fixed).as_str()).unwrap();
             let private_key = PrivateKey::new(secret_key, Network::Dash);
 
-            let mut asset_lock_proof = instant_asset_lock_proof_fixture(private_key);
+            let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(private_key, balance_range, rng);
 
             // Sign transaction and update instant lock
             let AssetLockProof::Instant(InstantAssetLockProof { instant_lock, .. }) =

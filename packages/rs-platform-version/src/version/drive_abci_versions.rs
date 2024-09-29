@@ -116,6 +116,7 @@ pub struct DriveAbciValidationVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciWithdrawalConstants {
     pub core_expiration_blocks: u32,
+    pub cleanup_expired_locks_of_withdrawal_amounts_limit: u16,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -338,6 +339,7 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     pub pool_withdrawals_into_transactions_queue: FeatureVersion,
     pub update_broadcasted_withdrawal_statuses: FeatureVersion,
     pub append_signatures_and_broadcast_withdrawal_transactions: FeatureVersion,
+    pub cleanup_expired_locks_of_withdrawal_amounts: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

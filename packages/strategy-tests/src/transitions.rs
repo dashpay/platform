@@ -79,7 +79,7 @@ pub fn instant_asset_lock_proof_fixture(one_time_private_key: PrivateKey) -> Ass
 
 pub fn instant_asset_lock_proof_fixture_with_dynamic_range(
     one_time_private_key: PrivateKey,
-    amount_range: AmountRange,
+    amount_range: &AmountRange,
     rng: &mut StdRng,
 ) -> AssetLockProof {
     let transaction = instant_asset_lock_proof_transaction_fixture_with_dynamic_amount(
@@ -181,7 +181,7 @@ pub fn instant_asset_lock_proof_transaction_fixture(
 
 pub fn instant_asset_lock_proof_transaction_fixture_with_dynamic_amount(
     one_time_private_key: PrivateKey,
-    amount_range: AmountRange,
+    amount_range: &AmountRange,
     rng: &mut StdRng,
 ) -> Transaction {
     let secp = Secp256k1::new();
@@ -211,13 +211,19 @@ pub fn instant_asset_lock_proof_transaction_fixture_with_dynamic_amount(
 
     let one_time_key_hash = one_time_public_key.pubkey_hash();
 
+    let value_amount = if amount_range.start() == amount_range.end() {
+        *amount_range.start() //avoid using rng if possible
+    } else {
+        rng.gen_range(amount_range.clone())
+    };
+
     let funding_output = TxOut {
-        value: 100000000, // 1 Dash
+        value: value_amount,
         script_pubkey: ScriptBuf::new_p2pkh(&one_time_key_hash),
     };
 
     let burn_output = TxOut {
-        value: rng.gen_range(amount_range),
+        value: value_amount,
         script_pubkey: ScriptBuf::new_op_return(&[]),
     };
 
@@ -1014,6 +1020,7 @@ pub fn create_identities_state_transitions(
 /// - Conversion and encoding errors related to the cryptographic data.
 pub fn create_state_transitions_for_identities(
     identities: Vec<Identity>,
+    amount_range: &AmountRange,
     signer: &SimpleSigner,
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
@@ -1027,7 +1034,7 @@ pub fn create_state_transitions_for_identities(
             let sk: [u8; 32] = pk.try_into().unwrap();
             let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
             let asset_lock_proof =
-                instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
+                instant_asset_lock_proof_fixture_with_dynamic_range(PrivateKey::new(secret_key, Network::Dash), amount_range, rng);
             let identity_create_transition =
                 IdentityCreateTransition::try_from_identity_with_signer(
                     &identity.clone(),
