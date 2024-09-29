@@ -2,6 +2,7 @@
 //!
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from Platform.
 use super::types::epoch::EpochQuery;
+use super::types::evonode::EvoNode;
 use crate::{error::Error, platform::document_query::DocumentQuery};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
@@ -9,6 +10,7 @@ use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request:
 use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::GetEvonodesProposedEpochBlocksByRangeRequestV0;
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
+use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
@@ -20,8 +22,8 @@ use dapi_grpc::platform::v0::{
     GetTotalCreditsInPlatformRequest, KeyRequestType,
 };
 use dapi_grpc::platform::v0::{
-    GetContestedResourceIdentityVotesRequest, GetPrefundedSpecializedBalanceRequest,
-    GetVotePollsByEndDateRequest,
+    get_status_request, GetContestedResourceIdentityVotesRequest,
+    GetPrefundedSpecializedBalanceRequest, GetStatusRequest, GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::version::PlatformVersionError;
@@ -98,7 +100,7 @@ where
 {
     fn query(self, prove: bool) -> Result<T, Error> {
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            tracing::warn!(request= ?self, "sending query without proof, ensure data is trusted");
         }
         Ok(self)
     }
@@ -643,5 +645,17 @@ impl Query<GetEvonodesProposedEpochBlocksByRangeRequest> for LimitQuery<Option<E
                 },
             )),
         })
+    }
+}
+
+impl Query<GetStatusRequest> for EvoNode {
+    fn query(self, _prove: bool) -> Result<GetStatusRequest, Error> {
+        // ignore proof
+
+        let request: GetStatusRequest = GetStatusRequest {
+            version: Some(get_status_request::Version::V0(GetStatusRequestV0 {})),
+        };
+
+        Ok(request)
     }
 }

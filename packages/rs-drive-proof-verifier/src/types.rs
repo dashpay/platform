@@ -5,6 +5,10 @@
 //! In this case, the [FromProof](crate::FromProof) trait is implemented for dedicated object type
 //! defined in this module.
 
+mod evonode_status;
+
+use dpp::block::block_info::BlockInfo;
+use dpp::core_types::validator_set::ValidatorSet;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
@@ -13,6 +17,7 @@ use dpp::version::PlatformVersion;
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::contender_structs::{Contender, ContenderWithSerializedDocument};
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::ResourceVote;
@@ -24,13 +29,10 @@ use dpp::{
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
 };
+use drive::grovedb::query_result_type::Path;
 use drive::grovedb::Element;
 use std::collections::{BTreeMap, BTreeSet};
 
-use dpp::block::block_info::BlockInfo;
-use dpp::core_types::validator_set::ValidatorSet;
-use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
-use drive::grovedb::query_result_type::Path;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
@@ -38,6 +40,8 @@ use {
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
+
+pub use evonode_status::*;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///

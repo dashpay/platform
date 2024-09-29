@@ -64,6 +64,9 @@ export default function obtainZeroSSLCertificateTaskFactory(
             case ERRORS.CERTIFICATE_ID_IS_NOT_SET:
               // eslint-disable-next-line no-param-reassign
               task.output = 'Certificate is not configured yet, creating a new one';
+
+              // We need to create a new certificate
+              ctx.certificate = null;
               break;
             case ERRORS.PRIVATE_KEY_IS_NOT_PRESENT:
               // If certificate exists but private key does not, then we can't set up TLS connection
@@ -85,6 +88,9 @@ export default function obtainZeroSSLCertificateTaskFactory(
             case ERRORS.CERTIFICATE_EXPIRES_SOON:
               // eslint-disable-next-line no-param-reassign
               task.output = `Certificate exists but expires in less than ${ctx.expirationDays} days at ${ctx.certificate.expires}. Obtain a new one`;
+
+              // We need to create a new certificate
+              ctx.certificate = null;
               break;
             case ERRORS.CERTIFICATE_IS_NOT_VALIDATED:
               // eslint-disable-next-line no-param-reassign
@@ -93,7 +99,12 @@ export default function obtainZeroSSLCertificateTaskFactory(
             case ERRORS.CERTIFICATE_IS_NOT_VALID:
               // eslint-disable-next-line no-param-reassign
               task.output = 'Certificate is not valid. Create a new one';
+
+              // We need to create a new certificate
+              ctx.certificate = null;
               break;
+            case ERRORS.ZERO_SSL_API_ERROR:
+              throw ctx.error;
             default:
               throw new Error(`Unknown error: ${error}`);
           }

@@ -15,9 +15,10 @@ use dpp::{
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
 use drive_proof_verifier::types::{
-    Contenders, ContestedResources, ElementFetchRequestItem, IdentityBalanceAndRevision,
-    MasternodeProtocolVote, PrefundedSpecializedBalance, ProposerBlockCounts,
-    RetrievedIntegerValue, TotalCreditsInPlatform, VotePollsGroupedByTimestamp, Voters,
+    Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem, EvoNodeStatus,
+    IdentityBalanceAndRevision, MasternodeProtocolVote, PrefundedSpecializedBalance,
+    ProposerBlockCounts, RetrievedIntegerValue, TotalCreditsInPlatform,
+    VotePollsGroupedByTimestamp, Voters,
 };
 use std::collections::BTreeMap;
 
@@ -243,3 +244,5 @@ impl_mock_response!(VotePollsGroupedByTimestamp);
 impl_mock_response!(PrefundedSpecializedBalance);
 impl_mock_response!(TotalCreditsInPlatform);
 impl_mock_response!(ElementFetchRequestItem);
+impl_mock_response!(EvoNodeStatus);
+impl_mock_response!(CurrentQuorumsInfo);

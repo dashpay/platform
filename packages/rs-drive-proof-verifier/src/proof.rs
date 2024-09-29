@@ -2,13 +2,16 @@ use crate::from_request::TryFromRequest;
 use crate::provider::DataContractProvider;
 use crate::verify::verify_tenderdash_proof;
 use crate::{types, types::*, ContextProvider, Error};
+use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
 };
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
-use dapi_grpc::platform::v0::{get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata};
+use dapi_grpc::platform::v0::{
+    get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata
+};
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
@@ -35,6 +38,7 @@ use drive::drive::identity::key::fetch::{
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
+use drive::query::proposer_block_count_query::ProposerQueryType;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
@@ -42,8 +46,6 @@ use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
-use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
-use drive::query::proposer_block_count_query::ProposerQueryType;
 
 /// Parse and verify the received proof and retrieve the requested object, if any.
 ///
@@ -78,7 +80,7 @@ pub trait FromProof<Req> {
     ///
     /// * `Ok(Some(object, metadata))` when the requested object was found in the proof.
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
-    /// For collections, returns Ok(None) if none of the requested objects were found.
+    ///    For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -108,7 +110,7 @@ pub trait FromProof<Req> {
     ///
     /// * `Ok(Some((object, metadata)))` when the requested object was found in the proof.
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
-    /// For collections, returns Ok(None) if none of the requested objects were found.
+    ///    For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -1714,7 +1716,6 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
         ))
     }
 }
-
 impl FromProof<platform::GetEvonodesProposedEpochBlocksByIdsRequest> for ProposerBlockCounts {
     type Request = platform::GetEvonodesProposedEpochBlocksByIdsRequest;
     type Response = platform::GetEvonodesProposedEpochBlocksResponse;
