@@ -2,6 +2,7 @@ import fs from 'fs';
 import { Listr } from 'listr2';
 import path from 'path';
 import process from 'process';
+import si from 'systeminformation';
 import obfuscateConfig from '../../../config/obfuscateConfig.js';
 import { DASHMATE_VERSION } from '../../../constants.js';
 import Certificate from '../../../ssl/zerossl/Certificate.js';
@@ -312,12 +313,9 @@ export default function collectSamplesTaskFactory(
           },
         },
         {
-          title: 'Logs',
-          task: async (ctx, task) => {
+          title: 'Docker containers info',
+          task: async (ctx) => {
             const services = await getServiceList(config);
-
-            // eslint-disable-next-line no-param-reassign
-            task.output = `Pulling logs from ${services.map((e) => e.name)}`;
 
             await Promise.all(
               services.map(async (service) => {
@@ -325,6 +323,12 @@ export default function collectSamplesTaskFactory(
                   dockerCompose.inspectService(config, service.name),
                   dockerCompose.logs(config, [service.name], { tail: 300000 }),
                 ])).map((e) => e.value || e.reason);
+
+                const containerId = inspect?.Id;
+                let dockerStats;
+                if (containerId) {
+                  dockerStats = await si.dockerContainerStats(containerId);
+                }
 
                 if (logs?.out) {
                   // Hide username & external ip from logs
@@ -354,6 +358,7 @@ export default function collectSamplesTaskFactory(
                 ctx.samples.setServiceInfo(service.name, 'stdOut', logs?.out);
                 ctx.samples.setServiceInfo(service.name, 'stdErr', logs?.err);
                 ctx.samples.setServiceInfo(service.name, 'dockerInspect', inspect);
+                ctx.samples.setServiceInfo(service.name, 'dockerStats', dockerStats);
               }),
             );
           },
