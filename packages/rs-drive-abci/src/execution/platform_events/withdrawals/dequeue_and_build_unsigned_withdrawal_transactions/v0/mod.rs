@@ -42,7 +42,7 @@ where
     ) -> Result<UnsignedWithdrawalTxs, Error> {
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
-        // Get withdrawal_transactions_per_block_limit (normally 16) latest withdrawal transactions from the queue
+        // Get withdrawal_transactions_per_block_limit (normally 4) latest withdrawal transactions from the queue
         let untied_withdrawal_transactions = self.drive.dequeue_untied_withdrawal_transactions(
             platform_version
                 .system_limits

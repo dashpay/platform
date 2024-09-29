@@ -465,7 +465,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 withdrawals: DriveIdentityWithdrawalMethodVersions {
                     document: DriveIdentityWithdrawalDocumentMethodVersions {
                         fetch_oldest_withdrawal_documents_by_status: 0,
-                        find_up_to_100_withdrawal_documents_by_status_and_transaction_indices: 0,
+                        find_withdrawal_documents_by_status_and_transaction_indices: 0,
                     },
                     transaction: DriveIdentityWithdrawalTransactionMethodVersions {
                         index: DriveIdentityWithdrawalTransactionIndexMethodVersions {

@@ -16,6 +16,7 @@ use std::collections::BTreeMap;
 impl Drive {
     // TODO(withdrawals): Currently it queries only up to 100 documents.
     //  It works while we don't have pooling
+    // This should be a pathquery directly instead of a drive query for efficiency
 
     pub(super) fn find_withdrawal_documents_by_status_and_transaction_indices_v0(
         &self,

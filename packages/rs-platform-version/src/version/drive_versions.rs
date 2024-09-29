@@ -571,7 +571,7 @@ pub struct DriveIdentityWithdrawalMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityWithdrawalDocumentMethodVersions {
     pub fetch_oldest_withdrawal_documents_by_status: FeatureVersion,
-    pub find_up_to_100_withdrawal_documents_by_status_and_transaction_indices: FeatureVersion,
+    pub find_withdrawal_documents_by_status_and_transaction_indices: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

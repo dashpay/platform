@@ -1957,4 +1957,564 @@ mod tests {
             outcome
         };
     }
+
+    #[test]
+    fn run_chain_withdraw_from_identities_many_small_withdrawals() {
+        // TEST_PLATFORM_V3 is like v4, but without the single quorum can sign withdrawals restriction
+        let platform_version = PlatformVersion::get(TEST_PLATFORM_V3.protocol_version)
+            .expect("expected to get platform version");
+        let start_strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::IdentityTopUp(dash_to_duffs!(10)..=dash_to_duffs!(10)),
+                    frequency: Frequency {
+                        times_per_block_range: 10..11,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 10..11,
+                        chance_per_block: None,
+                    },
+                    start_keys: 3,
+                    extra_keys: [(
+                        Purpose::TRANSFER,
+                        [(SecurityLevel::CRITICAL, vec![KeyType::ECDSA_SECP256K1])].into(),
+                    )]
+                    .into(),
+                    start_balance_range: dash_to_duffs!(200)..=dash_to_duffs!(200),
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let minute_in_ms = 1000 * 60;
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                ..Default::default()
+            },
+            block_spacing_ms: minute_in_ms,
+            initial_protocol_version: TEST_PLATFORM_V3.protocol_version,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_send_raw_transaction()
+            .returning(move |_| Ok(Txid::all_zeros()));
+
+        let chain_locked_height = 1;
+
+        // Have to go with a complicated shared object for the core state because we need to change
+        // rpc response along the way but we can't mutate `platform.core_rpc` later
+        // because platform reference is moved into the AbciApplication.
+        let shared_core_state = Arc::new(Mutex::new(CoreState {
+            asset_unlock_statuses: BTreeMap::new(),
+            chain_lock: ChainLock {
+                block_height: chain_locked_height,
+                block_hash: BlockHash::from_byte_array([1; 32]),
+                signature: BLSSignature::from([2; 96]),
+            },
+        }));
+
+        // Set up Core RPC responses
+        {
+            let core_state = shared_core_state.clone();
+
+            platform
+                .core_rpc
+                .expect_get_asset_unlock_statuses()
+                .returning(move |indices, _| {
+                    Ok(indices
+                        .iter()
+                        .map(|index| {
+                            core_state
+                                .lock()
+                                .unwrap()
+                                .asset_unlock_statuses
+                                .get(index)
+                                .cloned()
+                                .unwrap()
+                        })
+                        .collect())
+                });
+
+            let core_state = shared_core_state.clone();
+            platform
+                .core_rpc
+                .expect_get_best_chain_lock()
+                .returning(move || Ok(core_state.lock().unwrap().chain_lock.clone()));
+        }
+
+        // Run first two blocks:
+        // - Block 1: creates identity
+        // - Block 2: tops up identity
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            signer,
+            ..
+        } = {
+            let outcome = run_chain_for_strategy(
+                &mut platform,
+                2,
+                start_strategy,
+                config.clone(),
+                1,
+                &mut None,
+            );
+
+            for tx_results_per_block in outcome.state_transition_results_per_block.values() {
+                for (state_transition, result) in tx_results_per_block {
+                    assert_eq!(
+                        result.code, 0,
+                        "state transition got code {} : {:?}",
+                        result.code, state_transition
+                    );
+                }
+            }
+
+            // Withdrawal transactions are not populated to block execution context yet
+            assert_eq!(outcome.withdrawals.len(), 0);
+
+            // Withdrawal documents with pooled status should exist.
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+            assert!(withdrawal_documents_pooled.is_empty());
+
+            let locked_amount = outcome
+                .abci_app
+                .platform
+                .drive
+                .grove_get_sum_tree_total_value(
+                    (&get_withdrawal_root_path()).into(),
+                    &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+                    DirectQueryType::StatefulDirectQuery,
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to get locked amount");
+
+            assert_eq!(locked_amount, 0);
+
+            let pooled_withdrawals = withdrawal_documents_pooled.len();
+
+            assert_eq!(pooled_withdrawals, 0);
+
+            let total_credits_balance = outcome
+                .abci_app
+                .platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("expected to get total credits balance");
+
+            assert_eq!(
+                total_credits_balance.total_identity_balances,
+                409997575280380
+            ); // Around 4100 Dash.
+
+            assert_eq!(
+                total_credits_balance.total_in_trees().unwrap(),
+                410000000000000
+            ); // Around 4100 Dash.
+
+            let total_credits_in_platform = outcome
+                .abci_app
+                .platform
+                .drive
+                .grove_get_raw_value_u64_from_encoded_var_vec(
+                    (&misc_path()).into(),
+                    TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
+                    DirectQueryType::StatefulDirectQuery,
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to get total credits in platform");
+
+            assert_eq!(total_credits_in_platform, Some(410000000000000));
+
+            outcome
+        };
+
+        let continue_strategy_only_withdrawal = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::IdentityWithdrawal(
+                        dash_to_credits!(0.0025)..=dash_to_credits!(0.0025),
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 40..41, // 0.0025 Dash x 40 Withdrawals = 0.1 Dash
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+                identity_contract_nonce_gaps: None,
+                signer: Some(signer.clone()),
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let continue_strategy_no_operations = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+                identity_contract_nonce_gaps: None,
+                signer: Some(signer),
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        // Run Block 3-23 onwards: initiates withdrawals
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            ..
+        } = {
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 3,
+                    core_height_start: 1,
+                    block_count: 20,
+                    proposers,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    current_identity_nonce_counter: identity_nonce_counter,
+                    current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms,
+                    instant_lock_quorums,
+                    current_identities: identities,
+                },
+                continue_strategy_only_withdrawal.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(2),
+            );
+
+            for tx_results_per_block in outcome.state_transition_results_per_block.values() {
+                assert_eq!(tx_results_per_block.len(), 20);
+                for (state_transition, result) in tx_results_per_block {
+                    assert_eq!(
+                        result.code, 0,
+                        "state transition got code {} : {:?}",
+                        result.code, state_transition
+                    );
+                }
+            }
+
+            // Withdrawal documents with pooled status should not exist.
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // We should have 4 pooled, which is the limit per block
+            assert_eq!(withdrawal_documents_pooled.len(), 4);
+
+            // Withdrawal documents with queued status should exist.
+            let withdrawal_documents_queued = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::QUEUED.into(),
+                    10000,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // We have 320 queued
+            assert_eq!(withdrawal_documents_queued.len(), 320);
+
+            // Withdrawal documents with queued status should exist.
+            let withdrawal_documents_completed = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // None have completed because core didn't acknowledge them
+            assert_eq!(withdrawal_documents_completed.len(), 0);
+
+            // Withdrawal documents with EXPIRED status should not exist yet.
+            let withdrawal_documents_expired = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // We have none expired yet
+            assert_eq!(withdrawal_documents_expired.len(), 0);
+
+            // Withdrawal documents with broadcasted status should exist.
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            // We have 76 broadcasted (4 pooled + 76 broadcasted = 80 total for 4 per block in 20 blocks)
+            assert_eq!(withdrawal_documents_broadcasted.len(), 76);
+
+            let locked_amount = outcome
+                .abci_app
+                .platform
+                .drive
+                .grove_get_sum_tree_total_value(
+                    (&get_withdrawal_root_path()).into(),
+                    &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+                    DirectQueryType::StatefulDirectQuery,
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to get locked amount");
+
+            // 0.2 is 0.0025 amount * 80 withdrawals
+            assert_eq!(locked_amount, dash_to_credits!(0.2) as i64);
+
+            outcome
+        };
+
+        let hour_in_ms = 1000 * 60 * 60;
+
+        let outcome = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start: 23,
+                core_height_start: 1,
+                block_count: 88,
+                proposers,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: GENESIS_TIME_MS,
+                current_time_ms: end_time_ms + 1000,
+                instant_lock_quorums,
+                current_identities: identities,
+            },
+            continue_strategy_no_operations.clone(),
+            PlatformConfig {
+                validator_set: ValidatorSetConfig::default_100_67(),
+                chain_lock: ChainLockConfig::default_100_67(),
+                instant_lock: InstantLockConfig::default_100_67(),
+                execution: ExecutionConfig {
+                    verify_sum_trees: true,
+
+                    ..Default::default()
+                },
+                block_spacing_ms: hour_in_ms,
+                initial_protocol_version: TEST_PLATFORM_V3.protocol_version,
+                testing_configs: PlatformTestConfig::default_minimal_verifications(),
+                ..Default::default()
+            },
+            StrategyRandomness::SeedEntropy(9),
+        );
+
+        // We should have unlocked the amounts by now
+        let locked_amount = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove_get_sum_tree_total_value(
+                (&get_withdrawal_root_path()).into(),
+                &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to get locked amount");
+
+        assert_eq!(locked_amount, 18000000000);
+
+        // Withdrawal documents with pooled status should not exist.
+        let withdrawal_documents_pooled = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                platform_version,
+            )
+            .unwrap();
+
+        // None are currently pooled since we finished the queue
+        assert!(withdrawal_documents_pooled.is_empty());
+
+        // Withdrawal documents with queued status should exist.
+        let withdrawal_documents_queued = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::QUEUED.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                platform_version,
+            )
+            .unwrap();
+
+        // Queue has been finished
+        assert_eq!(withdrawal_documents_queued.len(), 0);
+
+        // Withdrawal documents with queued status should exist.
+        let withdrawal_documents_completed = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                platform_version,
+            )
+            .unwrap();
+
+        // None have completed because core didn't acknowledge them
+        assert_eq!(withdrawal_documents_completed.len(), 0);
+
+        // Withdrawal documents with EXPIRED status should not exist yet.
+        let withdrawal_documents_expired = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                platform_version,
+            )
+            .unwrap();
+
+        // We have none expired yet, because the core height never went up
+        assert_eq!(withdrawal_documents_expired.len(), 0);
+
+        // Withdrawal documents with broadcasted status should exist.
+        let withdrawal_documents_broadcasted = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                1000,
+                None,
+                platform_version,
+            )
+            .unwrap();
+
+        assert_eq!(withdrawal_documents_broadcasted.len(), 400);
+    }
 }

@@ -47,7 +47,9 @@ where
         }
         let documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
-            DEFAULT_QUERY_LIMIT,
+            platform_version
+                .system_limits
+                .withdrawal_transactions_per_block_limit,
             transaction,
             platform_version,
         )?;
