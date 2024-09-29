@@ -2,7 +2,10 @@
 //!
 //! See [MockDashPlatformSdk] for more details.
 use crate::{
-    platform::{types::identity::IdentityRequest, DocumentQuery, Fetch, FetchMany, Query},
+    platform::{
+        types::{evonode::EvoNode, identity::IdentityRequest},
+        DocumentQuery, Fetch, FetchMany, Query,
+    },
     Error, Sdk,
 };
 use arc_swap::ArcSwapOption;
@@ -201,9 +204,10 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetTotalCreditsInPlatformRequest>(filename)
                         .await?
                 }
+                "EvoNode" => self.load_expectation::<EvoNode>(filename).await?,
                 _ => {
                     return Err(Error::Config(format!(
-                        "unknown request type {} in {}",
+                        "unknown request type {} in {}, missing match arm in load_expectations?",
                         request_type,
                         filename.display()
                     )))

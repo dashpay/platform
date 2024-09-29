@@ -32,8 +32,8 @@
 //!
 //! 1. [`Identifier`](crate::platform::Identifier) - fetches an object by its identifier
 //! 2. [`DocumentQuery`](crate::platform::DocumentQuery) - fetches documents based on search conditions; see
-//! [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
-//! for more details.
+//!    [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
+//!    for more details.
 //! 3. [`DriveQuery`](crate::platform::DriveDocumentQuery) - can be used to build more complex queries
 //!
 //! ## Testability

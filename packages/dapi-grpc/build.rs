@@ -47,7 +47,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 29] = [
+    const VERSIONED_REQUESTS: [&str; 30] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -77,9 +77,13 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetTotalCreditsInPlatformRequest",
         "GetEvonodesProposedEpochBlocksByIdsRequest",
         "GetEvonodesProposedEpochBlocksByRangeRequest",
+        "GetStatusRequest",
     ];
 
-    //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
+    // The following responses are excluded as they don't support proofs:
+    // - "GetConsensusParamsResponse"
+    // - "GetStatusResponse"
+    //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
     const VERSIONED_RESPONSES: [&str; 29] = [
         "GetDataContractHistoryResponse",
@@ -213,6 +217,7 @@ impl MappingConfig {
     ///
     /// * `protobuf_file` - Path to the protobuf file to use as input.
     /// * `out_dir` - Output directory where subdirectories for generated files will be created.
+    ///
     /// Depending on the features, either `client`, `server` or `client_server` subdirectory
     /// will be created inside `out_dir`.
     fn new(protobuf_file: PathBuf, out_dir: PathBuf) -> Self {

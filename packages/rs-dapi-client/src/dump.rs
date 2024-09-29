@@ -189,7 +189,6 @@ impl DapiClient {
         response: &MockResult<R>,
         dump_dir: Option<PathBuf>,
     ) where
-        R: Mockable,
         <R as TransportRequest>::Response: Mockable,
     {
         let path = match dump_dir {
