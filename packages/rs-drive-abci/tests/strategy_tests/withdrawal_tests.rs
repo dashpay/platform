@@ -1122,10 +1122,7 @@ mod tests {
             // Simulate transactions being added to the core mempool
             let mut core_state = shared_core_state.lock().unwrap();
 
-            let number_of_blocks_before_expiration: u32 = 48;
-            chain_locked_height += number_of_blocks_before_expiration;
-
-            core_state.chain_lock.block_height = chain_locked_height;
+            core_state.chain_lock.block_height = 50;
 
             last_block_withdrawals.iter().for_each(|tx| {
                 let index = asset_unlock_index(tx);
@@ -1142,12 +1139,25 @@ mod tests {
 
         // Run block 5
         // Tests withdrawal expiration
-        let ChainExecutionOutcome { .. } = {
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            withdrawals: last_block_withdrawals,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            ..
+        } = {
             let outcome = continue_chain_for_strategy(
                 abci_app,
                 ChainExecutionParameters {
                     block_start: 5,
-                    core_height_start: 2,
+                    core_height_start: 50,
                     block_count: 1,
                     proposers,
                     validator_quorums: quorums,
@@ -1223,6 +1233,197 @@ mod tests {
 
             outcome
         };
+
+        // Run block 6
+        // Should broadcast previously expired transaction
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            ..
+        } = {
+            let outcome = continue_chain_for_strategy(
+                abci_app,
+                ChainExecutionParameters {
+                    block_start: 6,
+                    core_height_start: 50,
+                    block_count: 1,
+                    proposers,
+                    validator_quorums: quorums,
+                    current_validator_quorum_hash: current_quorum_hash,
+                    current_proposer_versions: Some(current_proposer_versions),
+                    current_identity_nonce_counter: identity_nonce_counter,
+                    current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                    current_votes: BTreeMap::default(),
+                    start_time_ms: GENESIS_TIME_MS,
+                    current_time_ms: end_time_ms,
+                    instant_lock_quorums,
+                    current_identities: identities,
+                },
+                continue_strategy_no_operations.clone(),
+                config.clone(),
+                StrategyRandomness::SeedEntropy(2),
+            );
+
+            let withdrawal_documents_pooled = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_broadcasted = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_completed = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            let withdrawal_documents_expired = outcome
+                .abci_app
+                .platform
+                .drive
+                .fetch_oldest_withdrawal_documents_by_status(
+                    withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
+                    DEFAULT_QUERY_LIMIT,
+                    None,
+                    platform_version,
+                )
+                .unwrap();
+
+            assert!(withdrawal_documents_pooled.is_empty());
+            assert!(withdrawal_documents_completed.is_empty());
+
+            assert_eq!(withdrawal_documents_broadcasted.len(), 1);
+
+            assert!(withdrawal_documents_expired.is_empty());
+
+            outcome
+        };
+
+        // Update core state saying transaction is chainlocked
+        {
+            let mut core_state = shared_core_state.lock().unwrap();
+
+            // First, set all previously broadcasted transactions to Chainlocked
+            core_state
+                .asset_unlock_statuses
+                .iter_mut()
+                .for_each(|(index, status_result)| {
+                    // Do not settle yet transactions that were broadcasted in the last block
+                    status_result.index = *index;
+                    status_result.status = AssetUnlockStatus::Chainlocked;
+                });
+
+            core_state.chain_lock.block_height = 51;
+
+            drop(core_state);
+        }
+
+        let outcome = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start: 7,
+                core_height_start: 51,
+                block_count: 1,
+                proposers,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: GENESIS_TIME_MS,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: identities,
+            },
+            continue_strategy_no_operations.clone(),
+            config.clone(),
+            StrategyRandomness::SeedEntropy(2),
+        );
+
+        let withdrawal_documents_pooled = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                platform_version,
+            )
+            .unwrap();
+
+        let withdrawal_documents_broadcasted = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                platform_version,
+            )
+            .unwrap();
+
+        let withdrawal_documents_completed = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                platform_version,
+            )
+            .unwrap();
+
+        let withdrawal_documents_expired = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
+                DEFAULT_QUERY_LIMIT,
+                None,
+                platform_version,
+            )
+            .unwrap();
+
+        assert_eq!(withdrawal_documents_completed.len(), 1);
+        assert!(withdrawal_documents_pooled.is_empty());
+        assert!(withdrawal_documents_broadcasted.is_empty());
+        assert!(withdrawal_documents_expired.is_empty());
     }
 
     #[test]

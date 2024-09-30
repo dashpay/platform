@@ -590,6 +590,8 @@ pub struct DriveIdentityWithdrawalTransactionIndexMethodVersions {
 pub struct DriveIdentityWithdrawalTransactionQueueMethodVersions {
     pub add_enqueue_untied_withdrawal_transaction_operations: FeatureVersion,
     pub dequeue_untied_withdrawal_transactions: FeatureVersion,
+    pub remove_broadcasted_withdrawal_transactions_after_completion_operations: FeatureVersion,
+    pub move_broadcasted_withdrawal_transactions_back_to_queue_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

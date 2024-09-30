@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_documents() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_contact_request_with_fee() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_profile_with_fee() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -380,7 +380,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_profile_average_case_cost_fee() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -445,7 +445,7 @@ mod tests {
 
     #[test]
     fn test_unknown_state_cost_dashpay_fee_for_add_documents() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -521,7 +521,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_fee_for_documents_detail() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -614,7 +614,7 @@ mod tests {
 
     #[test]
     fn test_add_dpns_document_with_fee() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 

@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_add_and_remove_family_one_document() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -322,7 +322,7 @@ mod tests {
 
     #[test]
     fn test_add_and_remove_family_documents() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -506,7 +506,7 @@ mod tests {
 
     #[test]
     fn test_add_and_remove_family_documents_with_empty_fields() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -781,7 +781,7 @@ mod tests {
 
     #[test]
     fn test_delete_dashpay_documents() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -881,7 +881,7 @@ mod tests {
 
     #[test]
     fn test_delete_dashpay_documents_without_apply() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 

@@ -2038,7 +2038,7 @@ mod tests {
     }
 
     fn setup_family_birthday_contract() -> (Drive, DataContract) {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 

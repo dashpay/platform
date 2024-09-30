@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn test_initial_state_structure_proper_heights() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
