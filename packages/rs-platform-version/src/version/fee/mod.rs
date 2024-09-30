@@ -72,8 +72,9 @@ mod tests {
                 fetch_identity_balance_and_revision_processing_cost: 3,
                 fetch_identity_cost_per_look_up_key_by_id: 4,
                 fetch_single_identity_key_processing_cost: 5,
-                validate_key_structure: 6,
-                fetch_prefunded_specialized_balance_processing_cost: 7,
+                perform_network_threshold_signing: 6,
+                validate_key_structure: 7,
+                fetch_prefunded_specialized_balance_processing_cost: 8,
             },
             data_contract: FeeDataContractValidationVersion {
                 document_type_base_fee: 1,
@@ -129,8 +130,9 @@ mod tests {
                 fetch_identity_balance_and_revision_processing_cost: 3,
                 fetch_identity_cost_per_look_up_key_by_id: 4,
                 fetch_single_identity_key_processing_cost: 5,
-                validate_key_structure: 6,
-                fetch_prefunded_specialized_balance_processing_cost: 7,
+                perform_network_threshold_signing: 6,
+                validate_key_structure: 7,
+                fetch_prefunded_specialized_balance_processing_cost: 8,
             },
             data_contract: FeeDataContractValidationVersion {
                 document_type_base_fee: 1,
