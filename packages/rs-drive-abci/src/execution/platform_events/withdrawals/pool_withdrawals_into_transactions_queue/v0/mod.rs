@@ -1,21 +1,10 @@
 use dpp::block::block_info::BlockInfo;
-
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::document::DocumentV0Getters;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
-use dpp::system_data_contracts::withdrawals_contract;
-use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
-use crate::{
-    error::{execution::ExecutionError, Error},
-    platform_types::platform::Platform,
-    rpc::core::CoreRPCLike,
-};
+use crate::{error::Error, platform_types::platform::Platform, rpc::core::CoreRPCLike};
 
 impl<C> Platform<C>
 where
