@@ -462,6 +462,7 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_replace: FeatureVersion,
     pub batch_delete: FeatureVersion,
     pub batch_delete_items_in_path_query: FeatureVersion,
+    pub batch_move_items_in_path_query: FeatureVersion,
     pub batch_remove_raw: FeatureVersion,
     pub batch_delete_up_tree_while_empty: FeatureVersion,
     pub batch_refresh_reference: FeatureVersion,

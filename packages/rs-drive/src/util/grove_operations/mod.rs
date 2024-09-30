@@ -180,7 +180,7 @@ pub enum BatchDeleteApplyType {
     StatelessBatchDelete {
         /// Are we deleting in a sum tree
         is_sum_tree: bool,
-        /// What is the estimated value size
+        /// What is the estimated key size
         estimated_key_size: u32,
         /// What is the estimated value size
         estimated_value_size: u32,
@@ -197,11 +197,11 @@ pub enum BatchDeleteApplyType {
 pub enum BatchMoveApplyType {
     /// Stateless batch move
     StatelessBatchMove {
-        /// Does this tree use sums?
+        /// Are we moving from inside a sum tree
         in_tree_using_sums: bool,
-        /// Are we deleting in a sum tree
+        /// Are we moving a sum tree
         is_sum_tree: bool,
-        /// What is the estimated value size
+        /// What is the estimated key size
         estimated_key_size: u32,
         /// What is the estimated value size
         estimated_value_size: u32,

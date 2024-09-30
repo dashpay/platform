@@ -10,6 +10,11 @@ impl Drive {
         drive_operation_types: &mut Vec<DriveOperation>,
     ) {
         if !indexes.is_empty() {
+            tracing::trace!(
+                "Moving {} broadcasted withdrawal transactions back to the queue for resigning: {:?}",
+                indexes.len(),
+                indexes
+            );
             drive_operation_types.push(DriveOperation::WithdrawalOperation(
                 WithdrawalOperationType::MoveBroadcastedWithdrawalTransactionsBackToQueueForResigning {
                     indexes,

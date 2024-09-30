@@ -39,9 +39,9 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         if path_query.query.limit == None {
-            Error::Drive(DriveError::NotSupported(
+            return Err(Error::Drive(DriveError::NotSupported(
                 "Limits are required for path_query",
-            ));
+            )));
         }
         let query_result = if path_query
             .query

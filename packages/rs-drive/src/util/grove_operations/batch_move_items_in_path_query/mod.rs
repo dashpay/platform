@@ -4,7 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::grove_operations::{BatchDeleteApplyType, BatchMoveApplyType};
+use crate::util::grove_operations::BatchMoveApplyType;
 
 use dpp::version::drive_versions::DriveVersion;
 
@@ -37,7 +37,7 @@ impl Drive {
         match drive_version
             .grove_methods
             .batch
-            .batch_delete_items_in_path_query
+            .batch_move_items_in_path_query
         {
             0 => self.batch_move_items_in_path_query_v0(
                 path_query,

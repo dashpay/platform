@@ -790,15 +790,13 @@ mod tests {
             .expect_send_raw_transaction()
             .returning(move |_| Ok(Txid::all_zeros()));
 
-        let mut chain_locked_height = 1;
-
         // Have to go with a complicated shared object for the core state because we need to change
         // rpc response along the way but we can't mutate `platform.core_rpc` later
         // because platform reference is moved into the AbciApplication.
         let shared_core_state = Arc::new(Mutex::new(CoreState {
             asset_unlock_statuses: BTreeMap::new(),
             chain_lock: ChainLock {
-                block_height: chain_locked_height,
+                block_height: 1,
                 block_hash: BlockHash::from_byte_array([1; 32]),
                 signature: BLSSignature::from([2; 96]),
             },
