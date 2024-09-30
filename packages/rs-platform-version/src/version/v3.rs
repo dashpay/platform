@@ -585,6 +585,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                 batch_replace: 0,
                 batch_delete: 0,
                 batch_delete_items_in_path_query: 0,
+                batch_move_items_in_path_query: 0,
                 batch_remove_raw: 0,
                 batch_delete_up_tree_while_empty: 0,
                 batch_refresh_reference: 0,
