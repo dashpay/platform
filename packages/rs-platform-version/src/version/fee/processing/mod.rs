@@ -10,6 +10,7 @@ pub struct FeeProcessingVersion {
     pub fetch_identity_cost_per_look_up_key_by_id: u64,
     pub fetch_prefunded_specialized_balance_processing_cost: u64,
     pub fetch_single_identity_key_processing_cost: u64,
+    pub perform_network_threshold_signing: u64,
     pub validate_key_structure: u64,
 }
 
@@ -26,8 +27,9 @@ mod tests {
             fetch_identity_balance_and_revision_processing_cost: 3,
             fetch_identity_cost_per_look_up_key_by_id: 4,
             fetch_single_identity_key_processing_cost: 5,
-            validate_key_structure: 6,
-            fetch_prefunded_specialized_balance_processing_cost: 7,
+            perform_network_threshold_signing: 6,
+            validate_key_structure: 7,
+            fetch_prefunded_specialized_balance_processing_cost: 8,
         };
 
         let version2 = FeeProcessingVersion {
@@ -36,8 +38,9 @@ mod tests {
             fetch_identity_balance_and_revision_processing_cost: 3,
             fetch_identity_cost_per_look_up_key_by_id: 4,
             fetch_single_identity_key_processing_cost: 5,
-            validate_key_structure: 6,
-            fetch_prefunded_specialized_balance_processing_cost: 7,
+            perform_network_threshold_signing: 6,
+            validate_key_structure: 7,
+            fetch_prefunded_specialized_balance_processing_cost: 8,
         };
 
         // This assertion will check if all fields are considered in the equality comparison

@@ -33,7 +33,7 @@ impl StateTransitionActionTransformerV0 for IdentityCreditWithdrawalTransition {
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
         _validation_mode: ValidationMode,
-        _execution_context: &mut StateTransitionExecutionContext,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -45,7 +45,13 @@ impl StateTransitionActionTransformerV0 for IdentityCreditWithdrawalTransition {
             .identity_credit_withdrawal_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform, block_info, tx, platform_version),
+            0 => self.transform_into_action_v0(
+                platform,
+                block_info,
+                execution_context,
+                tx,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit withdrawal transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -94,7 +100,7 @@ impl StateTransitionStateValidationV0 for IdentityCreditWithdrawalTransition {
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
         block_info: &BlockInfo,
-        _execution_context: &mut StateTransitionExecutionContext,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -106,7 +112,13 @@ impl StateTransitionStateValidationV0 for IdentityCreditWithdrawalTransition {
             .identity_credit_withdrawal_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, block_info, tx, platform_version),
+            0 => self.validate_state_v0(
+                platform,
+                block_info,
+                execution_context,
+                tx,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit withdrawal transition: validate_state".to_string(),
                 known_versions: vec![0],

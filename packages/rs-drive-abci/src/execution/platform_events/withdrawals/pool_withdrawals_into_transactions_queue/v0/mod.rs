@@ -1,21 +1,10 @@
 use dpp::block::block_info::BlockInfo;
-
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::document::DocumentV0Getters;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
-use dpp::system_data_contracts::withdrawals_contract;
-use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
-use crate::{
-    error::{execution::ExecutionError, Error},
-    platform_types::platform::Platform,
-    rpc::core::CoreRPCLike,
-};
+use crate::{error::Error, platform_types::platform::Platform, rpc::core::CoreRPCLike};
 
 impl<C> Platform<C>
 where
@@ -53,20 +42,21 @@ where
 mod tests {
     use super::*;
     use dpp::block::epoch::Epoch;
-    use itertools::Itertools;
-
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;
     use dpp::identity::core_script::CoreScript;
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
     use dpp::withdrawal::Pooling;
     use drive::util::test_helpers::setup::{setup_document, setup_system_data_contract};
+    use itertools::Itertools;
 
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::document::DocumentV0Getters;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
-    use dpp::system_data_contracts::load_system_data_contract;
+    use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
+    use dpp::system_data_contracts::{load_system_data_contract, withdrawals_contract};
     use dpp::version::PlatformVersion;
     use drive::config::DEFAULT_QUERY_LIMIT;
 

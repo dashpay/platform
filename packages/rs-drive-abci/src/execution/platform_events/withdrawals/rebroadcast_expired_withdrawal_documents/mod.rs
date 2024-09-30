@@ -24,6 +24,7 @@ where
     ///
     /// # Parameters
     /// - `block_info`: Information about the current block (e.g., timestamp).
+    /// - `last_committed_platform_state`: The last committed platform state needed to check active validator set.
     /// - `transaction`: The transaction within which the rebroadcast should be executed.
     /// - `platform_version`: The version of the platform, used to determine the correct method implementation.
     ///
