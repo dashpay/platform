@@ -42,20 +42,21 @@ where
 mod tests {
     use super::*;
     use dpp::block::epoch::Epoch;
-    use itertools::Itertools;
-
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;
     use dpp::identity::core_script::CoreScript;
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
     use dpp::withdrawal::Pooling;
     use drive::util::test_helpers::setup::{setup_document, setup_system_data_contract};
+    use itertools::Itertools;
 
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::document::DocumentV0Getters;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
-    use dpp::system_data_contracts::load_system_data_contract;
+    use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
+    use dpp::system_data_contracts::{load_system_data_contract, withdrawals_contract};
     use dpp::version::PlatformVersion;
     use drive::config::DEFAULT_QUERY_LIMIT;
 
