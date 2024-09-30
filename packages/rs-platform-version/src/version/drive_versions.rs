@@ -462,6 +462,7 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_replace: FeatureVersion,
     pub batch_delete: FeatureVersion,
     pub batch_delete_items_in_path_query: FeatureVersion,
+    pub batch_move_items_in_path_query: FeatureVersion,
     pub batch_remove_raw: FeatureVersion,
     pub batch_delete_up_tree_while_empty: FeatureVersion,
     pub batch_refresh_reference: FeatureVersion,
@@ -590,6 +591,8 @@ pub struct DriveIdentityWithdrawalTransactionIndexMethodVersions {
 pub struct DriveIdentityWithdrawalTransactionQueueMethodVersions {
     pub add_enqueue_untied_withdrawal_transaction_operations: FeatureVersion,
     pub dequeue_untied_withdrawal_transactions: FeatureVersion,
+    pub remove_broadcasted_withdrawal_transactions_after_completion_operations: FeatureVersion,
+    pub move_broadcasted_withdrawal_transactions_back_to_queue_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

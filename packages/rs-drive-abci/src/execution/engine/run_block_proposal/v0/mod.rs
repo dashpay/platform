@@ -269,6 +269,14 @@ where
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
 
+        // Rebroadcast expired withdrawals if they exist
+        self.rebroadcast_expired_withdrawal_documents(
+            &block_info,
+            &last_committed_platform_state,
+            transaction,
+            platform_version,
+        )?;
+
         // Mark all previously broadcasted and chainlocked withdrawals as complete
         // only when we are on a new core height
         if block_state_info.core_chain_locked_height() != last_block_core_height {

@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn test_find_pooled_withdrawal_documents_by_transaction_index() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let transaction = drive.grove.start_transaction();
 

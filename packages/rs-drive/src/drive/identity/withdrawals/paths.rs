@@ -10,6 +10,8 @@ pub const WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY: [u8; 1] = [0];
 pub const WITHDRAWAL_TRANSACTIONS_QUEUE_KEY: [u8; 1] = [1];
 /// constant id for subtree containing the sum of withdrawals
 pub const WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY: [u8; 1] = [2];
+/// constant id for subtree containing the untied withdrawal transactions after they were broadcasted
+pub const WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY: [u8; 1] = [3];
 
 impl Drive {
     /// Add operations for creating initial withdrawal state structure
@@ -32,6 +34,10 @@ impl Drive {
             batch.add_insert_empty_sum_tree(
                 vec![vec![RootTree::WithdrawalTransactions as u8]],
                 WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY.to_vec(),
+            );
+            batch.add_insert_empty_sum_tree(
+                vec![vec![RootTree::WithdrawalTransactions as u8]],
+                WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY.to_vec(),
             );
         }
     }
@@ -76,5 +82,21 @@ pub fn get_withdrawal_transactions_sum_tree_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
         &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+    ]
+}
+
+/// Helper function to get the withdrawal transactions broadcasted path as Vec
+pub fn get_withdrawal_transactions_broadcasted_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::WithdrawalTransactions as u8],
+        WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY.to_vec(),
+    ]
+}
+
+/// Helper function to get the withdrawal transactions broadcasted path as [u8]
+pub fn get_withdrawal_transactions_broadcasted_path() -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions),
+        &WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
     ]
 }

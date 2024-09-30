@@ -4804,7 +4804,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 #[cfg(feature = "server")]
 #[test]
 fn test_query_a_b_c_d_e_contract() {
-    let drive: Drive = setup_drive_with_initial_state_structure();
+    let drive: Drive = setup_drive_with_initial_state_structure(None);
 
     let platform_version = PlatformVersion::latest();
 
@@ -4919,7 +4919,7 @@ fn test_query_a_b_c_d_e_contract() {
 #[cfg(feature = "server")]
 #[test]
 fn test_query_documents_by_created_at() {
-    let drive = setup_drive_with_initial_state_structure();
+    let drive = setup_drive_with_initial_state_structure(None);
 
     let platform_version = PlatformVersion::latest();
 

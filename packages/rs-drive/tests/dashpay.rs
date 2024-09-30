@@ -11,7 +11,7 @@ mod contact_request {
 
     #[test]
     fn test_user_id_query() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -47,7 +47,7 @@ mod contact_request {
 
     #[test]
     fn test_user_id_by_created_at_query() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -83,7 +83,7 @@ mod contact_request {
 
     #[test]
     fn test_owner_id_query() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -119,7 +119,7 @@ mod contact_request {
 
     #[test]
     fn test_owner_id_by_created_at_query() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -155,7 +155,7 @@ mod contact_request {
 
     #[test]
     fn test_owner_id_and_to_user_id_query() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 

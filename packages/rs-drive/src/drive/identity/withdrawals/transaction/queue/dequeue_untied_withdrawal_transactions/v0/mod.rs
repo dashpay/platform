@@ -69,12 +69,14 @@ impl Drive {
             })
             .collect::<Result<Vec<WithdrawalTransactionIndexAndBytes>, Error>>()?;
 
-        if !withdrawal_transactions.is_empty() {
-            for (index, _) in withdrawal_transactions.iter() {
-                drive_operation_types.push(DriveOperation::WithdrawalOperation(
-                    WithdrawalOperationType::DeleteWithdrawalTransaction { index: *index },
-                ));
-            }
+        let indexes: Vec<WithdrawalTransactionIndex> = withdrawal_transactions
+            .iter()
+            .map(|(index, _)| *index)
+            .collect();
+        if !indexes.is_empty() {
+            drive_operation_types.push(DriveOperation::WithdrawalOperation(
+                WithdrawalOperationType::MoveWithdrawalTransactionsToBroadcasted { indexes },
+            ));
         }
 
         Ok(withdrawal_transactions)

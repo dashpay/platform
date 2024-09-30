@@ -474,6 +474,8 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                         queue: DriveIdentityWithdrawalTransactionQueueMethodVersions {
                             add_enqueue_untied_withdrawal_transaction_operations: 0,
                             dequeue_untied_withdrawal_transactions: 0,
+                            remove_broadcasted_withdrawal_transactions_after_completion_operations: 0,
+                            move_broadcasted_withdrawal_transactions_back_to_queue_operations: 0,
                         },
                     },
                     calculate_current_withdrawal_limit: 0,
@@ -576,6 +578,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                 batch_replace: 0,
                 batch_delete: 0,
                 batch_delete_items_in_path_query: 0,
+                batch_move_items_in_path_query: 0,
                 batch_remove_raw: 0,
                 batch_delete_up_tree_while_empty: 0,
                 batch_refresh_reference: 0,
@@ -673,6 +676,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
                 fetch_transactions_block_inclusion_status: 0,
                 pool_withdrawals_into_transactions_queue: 0,
                 update_broadcasted_withdrawal_statuses: 0,
+                rebroadcast_expired_withdrawal_documents: 0,
                 append_signatures_and_broadcast_withdrawal_transactions: 0,
                 cleanup_expired_locks_of_withdrawal_amounts: 0,
             },
@@ -849,7 +853,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
             },
         },
         withdrawal_constants: DriveAbciWithdrawalConstants {
-            core_expiration_blocks: 24,
+            core_expiration_blocks: 48,
             cleanup_expired_locks_of_withdrawal_amounts_limit: 0,
         },
         query: DriveAbciQueryVersions {
@@ -1292,6 +1296,7 @@ pub const PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_state_transition_size: 20480, //20 KiB
         max_transitions_in_documents_batch: 1,
         withdrawal_transactions_per_block_limit: 4,
+        retry_signing_expired_withdrawal_documents_per_block_limit: 1,
         max_withdrawal_amount: 50_000_000_000_000,
     },
     consensus: ConsensusVersions {

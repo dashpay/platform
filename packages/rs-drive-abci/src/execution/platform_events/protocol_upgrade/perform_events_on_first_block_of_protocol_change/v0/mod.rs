@@ -3,7 +3,8 @@ use crate::platform_types::platform::Platform;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use drive::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+    get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
+    WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::grovedb::{Element, Transaction};
 
@@ -64,6 +65,14 @@ impl<C> Platform<C> {
             (&path).into(),
             &WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
             Element::empty_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
+            Element::empty_tree(),
             Some(transaction),
             None,
             &platform_version.drive,

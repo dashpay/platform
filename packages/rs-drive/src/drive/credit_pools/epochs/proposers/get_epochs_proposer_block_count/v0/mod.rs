@@ -63,7 +63,7 @@ mod tests {
 
     #[test]
     fn test_error_if_value_has_invalid_length_v0() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn test_error_if_epoch_tree_is_not_initiated_v0() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 

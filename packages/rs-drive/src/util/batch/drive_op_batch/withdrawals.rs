@@ -1,22 +1,26 @@
 use std::collections::HashMap;
 
 use crate::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path_vec, get_withdrawal_transactions_queue_path,
+    get_withdrawal_root_path_vec, get_withdrawal_transactions_broadcasted_path,
+    get_withdrawal_transactions_broadcasted_path_vec, get_withdrawal_transactions_queue_path,
     get_withdrawal_transactions_queue_path_vec, get_withdrawal_transactions_sum_tree_path_vec,
     WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
 };
-use crate::util::grove_operations::{BatchDeleteApplyType, BatchInsertApplyType};
+use crate::util::grove_operations::{
+    BatchDeleteApplyType, BatchInsertApplyType, BatchMoveApplyType,
+};
 use crate::util::object_size_info::PathKeyElementInfo;
 use crate::{drive::Drive, error::Error, fees::op::LowLevelDriveOperation};
 use dpp::block::block_info::BlockInfo;
 
 use super::DriveLowLevelOperationConverter;
+use crate::query::Query;
 use dpp::fee::{Credits, SignedCredits};
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
-use grovedb::Element;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, PathQuery, SizedQuery};
 
 /// Operations for Withdrawals
 #[derive(Clone, Debug)]
@@ -31,10 +35,20 @@ pub enum WithdrawalOperationType {
         /// transaction id bytes
         withdrawal_transactions: Vec<WithdrawalTransactionIndexAndBytes>,
     },
-    /// Delete withdrawal
-    DeleteWithdrawalTransaction {
-        /// withdrawal transaction tuple with id and bytes
-        index: WithdrawalTransactionIndex,
+    /// Deletes the withdrawal transactions from the main queue and adds them to the broadcasted queue
+    MoveWithdrawalTransactionsToBroadcasted {
+        /// A vector of the indexes to be moved
+        indexes: Vec<WithdrawalTransactionIndex>,
+    },
+    /// Deletes the withdrawal transactions from the main queue and adds them to the broadcasted queue
+    MoveBroadcastedWithdrawalTransactionsBackToQueueForResigning {
+        /// A vector of the indexes to be moved
+        indexes: Vec<WithdrawalTransactionIndex>,
+    },
+    /// Deletes the withdrawal transactions from the broadcasted queue
+    DeleteCompletedBroadcastedWithdrawalTransactions {
+        /// A vector of the indexes to be deleted
+        indexes: Vec<WithdrawalTransactionIndex>,
     },
     /// Reserve an amount in the system for withdrawals, the reservation will expire at the date given
     ReserveWithdrawalAmount {
@@ -119,14 +133,116 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
 
                 Ok(drive_operations)
             }
-            WithdrawalOperationType::DeleteWithdrawalTransaction { index } => {
+            WithdrawalOperationType::MoveWithdrawalTransactionsToBroadcasted { indexes } => {
                 let mut drive_operations = vec![];
 
-                let path = get_withdrawal_transactions_queue_path();
+                if indexes.is_empty() {
+                    return Ok(drive_operations);
+                }
 
-                drive.batch_delete(
-                    (&path).into(),
-                    &index.to_be_bytes(),
+                let original_path = get_withdrawal_transactions_queue_path_vec();
+                let new_path = get_withdrawal_transactions_broadcasted_path_vec();
+
+                let mut query = Query::new();
+
+                let len = indexes.len();
+
+                query.insert_keys(
+                    indexes
+                        .into_iter()
+                        .map(|index| index.to_be_bytes().to_vec())
+                        .collect(),
+                );
+
+                let path_query = PathQuery::new(
+                    original_path,
+                    SizedQuery::new(query, Some(len as u16), None),
+                );
+
+                drive.batch_move_items_in_path_query(
+                    &path_query,
+                    new_path,
+                    true,
+                    // we know that we are not deleting a subtree
+                    BatchMoveApplyType::StatefulBatchMove {
+                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                    },
+                    transaction,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )?;
+
+                Ok(drive_operations)
+            }
+            WithdrawalOperationType::MoveBroadcastedWithdrawalTransactionsBackToQueueForResigning { indexes } => {
+                let mut drive_operations = vec![];
+
+                if indexes.is_empty() {
+                    return Ok(drive_operations);
+                }
+
+                let original_path = get_withdrawal_transactions_broadcasted_path_vec();
+                let new_path = get_withdrawal_transactions_queue_path_vec();
+
+                let mut query = Query::new();
+
+                let len = indexes.len();
+
+                query.insert_keys(
+                    indexes
+                        .into_iter()
+                        .map(|index| index.to_be_bytes().to_vec())
+                        .collect(),
+                );
+
+                let path_query = PathQuery::new(
+                    original_path,
+                    SizedQuery::new(query, Some(len as u16), None),
+                );
+
+                drive.batch_move_items_in_path_query(
+                    &path_query,
+                    new_path,
+                    true,
+                    // we know that we are not deleting a subtree
+                    BatchMoveApplyType::StatefulBatchMove {
+                        is_known_to_be_subtree_with_sum: Some((false, false)),
+                    },
+                    transaction,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )?;
+
+                Ok(drive_operations)
+            }
+            WithdrawalOperationType::DeleteCompletedBroadcastedWithdrawalTransactions { indexes } => {
+                let mut drive_operations = vec![];
+
+                if indexes.is_empty() {
+                    return Ok(drive_operations);
+                }
+
+                let path = get_withdrawal_transactions_broadcasted_path_vec();
+
+                let mut query = Query::new();
+
+                let len = indexes.len();
+
+                query.insert_keys(
+                    indexes
+                        .into_iter()
+                        .map(|index| index.to_be_bytes().to_vec())
+                        .collect(),
+                );
+
+                let path_query = PathQuery::new(
+                    path,
+                    SizedQuery::new(query, Some(len as u16), None),
+                );
+
+                drive.batch_delete_items_in_path_query(
+                    &path_query,
+                    true,
                     // we know that we are not deleting a subtree
                     BatchDeleteApplyType::StatefulBatchDelete {
                         is_known_to_be_subtree_with_sum: Some((false, false)),
