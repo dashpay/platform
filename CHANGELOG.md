@@ -1,3 +1,31 @@
+## [1.4.0-dev.2](https://github.com/dashpay/platform/compare/v1.4.0-dev.1...v1.4.0-dev.2) (2024-09-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** matched withdrawal fees to actual processing cost (#2186)
+* **platform:** withdrawal automatic retries after core rejection (#2185)
+* **platform:** withdrawal limits (#2182)
+
+### Features
+
+* **dashmate:** collect docker stats in the doctor command ([#2180](https://github.com/dashpay/platform/issues/2180))
+* **dashmate:** validate external IP ([#2183](https://github.com/dashpay/platform/issues/2183))
+* **platform:** matched withdrawal fees to actual processing cost ([#2186](https://github.com/dashpay/platform/issues/2186))
+* **platform:** withdrawal automatic retries after core rejection ([#2185](https://github.com/dashpay/platform/issues/2185))
+* **platform:** withdrawal limits ([#2182](https://github.com/dashpay/platform/issues/2182))
+* **sdk:** get node status ([#2139](https://github.com/dashpay/platform/issues/2139))
+
+
+### Build System
+
+* devcontainer support ([#2179](https://github.com/dashpay/platform/issues/2179))
+
+
+### Continuous Integration
+
+* prebuild dev containers ([#2184](https://github.com/dashpay/platform/issues/2184))
+
 ## [1.4.0-dev.1](https://github.com/dashpay/platform/compare/v1.3.0...v1.4.0-dev.1) (2024-09-27)
 
 
