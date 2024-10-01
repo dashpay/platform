@@ -8,6 +8,7 @@ use platform_version::version::PlatformVersion;
 mod v0;
 
 /// Daily withdrawal limit information
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WithdrawalLimitInfo {
     /// The total maximum withdrawal amount allowed in a 24-hour period.
     pub daily_maximum: Credits,
