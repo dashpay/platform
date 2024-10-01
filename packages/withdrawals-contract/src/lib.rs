@@ -1,10 +1,10 @@
-use std::fmt;
 pub use crate::error::Error;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use platform_value::{Identifier, IdentifierBytes32};
 use platform_version::version::PlatformVersion;
 use serde_json::Value;
 use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::fmt;
 
 mod error;
 pub mod v1;
