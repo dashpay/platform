@@ -10,10 +10,12 @@ use bincode::error::EncodeError;
 use bincode::{BorrowDecode, Decode, Encode};
 use dashcore::hashes::Hash;
 use dashcore::{ProTxHash, QuorumHash};
+use itertools::Itertools;
 #[cfg(feature = "core-types-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::fmt::{Debug, Formatter};
+use std::fmt;
+use std::fmt::{Debug, Display, Formatter};
 
 /// The validator set is only slightly different from a quorum as it does not contain non valid
 /// members
@@ -33,6 +35,35 @@ pub struct ValidatorSetV0 {
     pub members: BTreeMap<ProTxHash, ValidatorV0>,
     /// The threshold quorum public key
     pub threshold_public_key: BlsPublicKey,
+}
+
+impl Display for ValidatorSetV0 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "ValidatorSet {{
+    quorum_hash: {},
+    quorum_index: {},
+    core_height: {},
+    members: [{}],
+    threshold_public_key: {}
+}}",
+            hex::encode(self.quorum_hash), // Assuming QuorumHash is a byte array and should be in hex format
+            match self.quorum_index {
+                Some(index) => index.to_string(),
+                None => "None".to_string(),
+            },
+            self.core_height,
+            self.members
+                .iter()
+                .map(|(pro_tx_hash, validator)| format!(
+                    "{{{}: {}}}",
+                    pro_tx_hash, validator.node_ip
+                ))
+                .join(", "),
+            hex::encode(self.threshold_public_key.to_bytes().as_slice()) // Assuming BlsPublicKey is a byte array
+        )
+    }
 }
 
 #[cfg(feature = "core-types-serialization")]

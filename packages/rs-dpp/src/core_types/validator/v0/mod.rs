@@ -1,5 +1,6 @@
 use dashcore::{ProTxHash, PubkeyHash};
-use std::fmt::{Debug, Formatter};
+use std::fmt;
+use std::fmt::{Debug, Display, Formatter};
 
 use crate::bls_signatures::PublicKey as BlsPublicKey;
 #[cfg(feature = "core-types-serde-conversion")]
