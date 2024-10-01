@@ -89,9 +89,11 @@ mod tests {
     use dpp::identity::core_script::CoreScript;
     use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
     use platform_version::version::v1::PLATFORM_V1;
+    use rand::SeedableRng;
 
     mod validate_basic_structure_v1 {
         use super::*;
+        use rand::prelude::StdRng;
 
         #[test]
         fn should_return_invalid_result_if_amount_too_low() {
@@ -258,13 +260,15 @@ mod tests {
 
         #[test]
         fn should_return_valid_result_if_output_script_is_p2pkh() {
+            let rng = &mut StdRng::from_entropy();
+
             let transition =
                 IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {
                     identity_id: Default::default(),
                     amount: 200000,
                     core_fee_per_byte: 1,
                     pooling: Pooling::Never,
-                    output_script: None,
+                    output_script: Some(CoreScript::random_p2pkh(rng)),
                     nonce: 0,
                     user_fee_increase: 0,
                     signature_public_key_id: 0,
@@ -282,6 +286,32 @@ mod tests {
 
         #[test]
         fn should_return_valid_result_if_output_script_is_p2sh() {
+            let rng = &mut StdRng::from_entropy();
+
+            let transition =
+                IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {
+                    identity_id: Default::default(),
+                    amount: 200000,
+                    core_fee_per_byte: 1,
+                    pooling: Pooling::Never,
+                    output_script: Some(CoreScript::random_p2sh(rng)),
+                    nonce: 0,
+                    user_fee_increase: 0,
+                    signature_public_key_id: 0,
+                    signature: Default::default(),
+                });
+
+            let platform_version = &PLATFORM_V1;
+
+            let result = transition
+                .validate_basic_structure_v1(platform_version)
+                .expect("failed to validate basic structure");
+
+            assert!(result.is_valid());
+        }
+
+        #[test]
+        fn should_return_valid_result_without_output_script() {
             let transition =
                 IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {
                     identity_id: Default::default(),
