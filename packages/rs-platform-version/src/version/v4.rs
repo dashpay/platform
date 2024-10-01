@@ -644,7 +644,7 @@ pub const PLATFORM_V4: PlatformVersion = PlatformVersion {
             protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
                 check_for_desired_protocol_upgrade: 1,
                 upgrade_protocol_version_on_epoch_change: 0,
-                perform_events_on_first_block_of_protocol_change: Some(4),
+                perform_events_on_first_block_of_protocol_change: Some(0),
                 protocol_version_upgrade_percentage_needed: 67,
             },
             block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
