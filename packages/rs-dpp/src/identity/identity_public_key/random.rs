@@ -615,15 +615,15 @@ impl IdentityPublicKey {
         used_key_matrix[4] = true; //also a master key
         used_key_matrix[8] = true; //also a master key
         used_key_matrix[12] = true; //also a master key
-        main_keys.extend((3..key_count).map(|i| {
-            Self::random_authentication_key_with_private_key_with_rng(
+        for i in 3..key_count {
+            let privkey = Self::random_authentication_key_with_private_key_with_rng(
                 i,
                 rng,
                 Some((i, &mut used_key_matrix)),
                 platform_version,
-            )
-            .unwrap()
-        }));
+            )?;
+            main_keys.push(privkey);
+        }
         Ok(main_keys)
     }
 

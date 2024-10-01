@@ -69,15 +69,16 @@ impl IdentityPublicKeyV0 {
         used_key_matrix: Option<(KeyCount, &mut UsedKeyMatrix)>,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        const MAX_KEYS: u8 = 16;
         // we have 16 different permutations possible
-        let mut binding = [false; 16].to_vec();
+        let mut binding = [false; MAX_KEYS as usize].to_vec();
         let (key_count, key_matrix) = used_key_matrix.unwrap_or((0, &mut binding));
-        if key_count > 16 {
+        if key_count > MAX_KEYS as u32 {
             return Err(ProtocolError::PublicKeyGenerationError(
                 "too many keys already created".to_string(),
             ));
         }
-        let key_number = rng.gen_range(0..(12 - key_count as u8));
+        let key_number = rng.gen_range(0..(MAX_KEYS - key_count as u8));
         // now we need to find the first bool that isn't set to true
         let mut needed_pos = None;
         let mut counter = 0;
