@@ -49,29 +49,6 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let maybe_existing_identity_balance = platform.drive.fetch_identity_balance(
-            self.identity_id().to_buffer(),
-            tx,
-            platform_version,
-        )?;
-
-        let Some(existing_identity_balance) = maybe_existing_identity_balance else {
-            return Ok(ConsensusValidationResult::new_with_error(
-                IdentityNotFoundError::new(self.identity_id()).into(),
-            ));
-        };
-
-        if existing_identity_balance < self.amount() {
-            return Ok(ConsensusValidationResult::new_with_error(
-                IdentityInsufficientBalanceError::new(
-                    self.identity_id(),
-                    existing_identity_balance,
-                    self.amount(),
-                )
-                .into(),
-            ));
-        }
-
         self.transform_into_action_v0(
             platform,
             block_info,
@@ -91,7 +68,7 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let consensus_validation_result =
             IdentityCreditWithdrawalTransitionAction::try_from_identity_credit_withdrawal(
-                &platform.drive,
+                platform.drive,
                 tx,
                 self,
                 block_info,
