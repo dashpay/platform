@@ -12,7 +12,7 @@ use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
-use dapi_grpc::platform::v0::{self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0, get_path_elements_request, get_total_credits_in_platform_request, AllKeys, GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentityKeysRequest, GetPathElementsRequest, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest, GetTotalCreditsInPlatformRequest, KeyRequestType, GetCurrentQuorumsInfoRequest};
+use dapi_grpc::platform::v0::{self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0, get_path_elements_request, get_total_credits_in_platform_request, AllKeys, GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentityKeysRequest, GetPathElementsRequest, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest, GetTotalCreditsInPlatformRequest, KeyRequestType, GetCurrentQuorumsInfoRequest, get_current_quorums_info_request};
 use dapi_grpc::platform::v0::{
     get_status_request, GetContestedResourceIdentityVotesRequest,
     GetPrefundedSpecializedBalanceRequest, GetStatusRequest, GetVotePollsByEndDateRequest,
@@ -29,6 +29,7 @@ use drive_proof_verifier::from_request::TryFromRequest;
 use drive_proof_verifier::types::{KeysInPath, NoParamQuery};
 use rs_dapi_client::transport::TransportRequest;
 use std::fmt::Debug;
+use dapi_grpc::platform::v0::get_current_quorums_info_request::GetCurrentQuorumsInfoRequestV0;
 
 /// Default limit of epoch records returned by Platform.
 pub const DEFAULT_EPOCH_QUERY_LIMIT: u32 = 100;
@@ -619,9 +620,9 @@ impl Query<GetCurrentQuorumsInfoRequest> for NoParamQuery {
             unimplemented!("query with proof are not supported yet for GetCurrentQuorumsInfoRequest");
         }
 
-        let request: GetCurrentQuorumsInfoRequest = GetTotalCreditsInPlatformRequest {
-            version: Some(get_total_credits_in_platform_request::Version::V0(
-                GetTotalCreditsInPlatformRequestV0 { prove },
+        let request: GetCurrentQuorumsInfoRequest = GetCurrentQuorumsInfoRequest {
+            version: Some(get_current_quorums_info_request::Version::V0(
+                GetCurrentQuorumsInfoRequestV0 { },
             )),
         };
 
