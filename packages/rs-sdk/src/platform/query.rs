@@ -12,15 +12,7 @@ use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
-use dapi_grpc::platform::v0::{
-    self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
-    get_path_elements_request, get_total_credits_in_platform_request, AllKeys,
-    GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
-    GetContestedResourcesRequest, GetEpochsInfoRequest,
-    GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentityKeysRequest, GetPathElementsRequest,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetTotalCreditsInPlatformRequest, KeyRequestType,
-};
+use dapi_grpc::platform::v0::{self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0, get_path_elements_request, get_total_credits_in_platform_request, AllKeys, GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentityKeysRequest, GetPathElementsRequest, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest, GetTotalCreditsInPlatformRequest, KeyRequestType, GetCurrentQuorumsInfoRequest};
 use dapi_grpc::platform::v0::{
     get_status_request, GetContestedResourceIdentityVotesRequest,
     GetPrefundedSpecializedBalanceRequest, GetStatusRequest, GetVotePollsByEndDateRequest,
@@ -612,6 +604,22 @@ impl Query<GetTotalCreditsInPlatformRequest> for NoParamQuery {
         }
 
         let request: GetTotalCreditsInPlatformRequest = GetTotalCreditsInPlatformRequest {
+            version: Some(get_total_credits_in_platform_request::Version::V0(
+                GetTotalCreditsInPlatformRequestV0 { prove },
+            )),
+        };
+
+        Ok(request)
+    }
+}
+
+impl Query<GetCurrentQuorumsInfoRequest> for NoParamQuery {
+    fn query(self, prove: bool) -> Result<GetCurrentQuorumsInfoRequest, Error> {
+        if prove {
+            unimplemented!("query with proof are not supported yet for GetCurrentQuorumsInfoRequest");
+        }
+
+        let request: GetCurrentQuorumsInfoRequest = GetTotalCreditsInPlatformRequest {
             version: Some(get_total_credits_in_platform_request::Version::V0(
                 GetTotalCreditsInPlatformRequestV0 { prove },
             )),
