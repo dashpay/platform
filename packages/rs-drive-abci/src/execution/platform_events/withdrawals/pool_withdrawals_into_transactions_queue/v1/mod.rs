@@ -32,7 +32,7 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        // TODO: It will ne more efficient to query documents less than the current limit
+        // TODO: It will be more efficient to query documents less than the current limit
         //  in this case we won't fetch documents if we aren't going to process and
         //  documents with big amounts created earlier won't block processing of withdrawals with smaller
         //  amounts (more precise limiting)
@@ -81,7 +81,7 @@ where
 
             // If adding this withdrawal would exceed the limit, stop processing further.
             if potential_total_withdrawal_amount > current_withdrawal_limit {
-                tracing::warn!(
+                tracing::debug!(
                     "Pooling is limited due to daily withdrawals limit. {} credits left",
                     current_withdrawal_limit
                 );
