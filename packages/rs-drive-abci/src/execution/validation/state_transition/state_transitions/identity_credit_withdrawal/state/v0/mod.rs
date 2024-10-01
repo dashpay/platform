@@ -3,10 +3,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 
-use dpp::consensus::signature::IdentityNotFoundError;
-use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
 use crate::execution::types::execution_operation::ValidationOperation;
