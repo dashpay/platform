@@ -35,7 +35,7 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         if previous_protocol_version < 4 && platform_version.protocol_version >= 4 {
-            self.transition_to_version_4(transaction, platform_version);
+            self.transition_to_version_4(transaction, platform_version)?;
         }
 
         Ok(())
