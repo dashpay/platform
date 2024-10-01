@@ -7,6 +7,21 @@ use platform_version::version::PlatformVersion;
 
 mod v0;
 
+/// Daily withdrawal limit information
+pub struct WithdrawalLimitInfo {
+    /// The total maximum withdrawal amount allowed in a 24-hour period.
+    pub daily_maximum: Credits,
+    /// The amount already withdrawn in the last 24 hours.
+    pub withdrawals_amount: Credits,
+}
+
+impl WithdrawalLimitInfo {
+    /// Calculates the available credits to withdraw
+    pub fn available(&self) -> Credits {
+        self.daily_maximum.saturating_sub(self.withdrawals_amount)
+    }
+}
+
 impl Drive {
     /// Calculates the current withdrawal limit based on the total credits available in the platform
     /// and the amount already withdrawn in the last 24 hours, using the appropriate version-specific logic.
@@ -34,7 +49,7 @@ impl Drive {
         &self,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Credits, Error> {
+    ) -> Result<WithdrawalLimitInfo, Error> {
         match platform_version
             .drive
             .methods

@@ -9,7 +9,8 @@ use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
-    /// Get specified amount of withdrawal transactions from the DB
+    /// Deque specified amount of untiled withdrawal transactions
+    /// and move them to broadcasted queue
     pub fn dequeue_untied_withdrawal_transactions(
         &self,
         limit: u16,

@@ -293,6 +293,8 @@ where
         // required for signature verification (core height and quorum hash)
         // Then we save unsigned transaction bytes to block execution context
         // to be signed (on extend_vote), verified (on verify_vote) and broadcasted (on finalize_block)
+        // Also, the dequeued untiled transaction added to the broadcasted transaction queue to for further
+        // resigning in case of failures.
         let unsigned_withdrawal_transaction_bytes = self
             .dequeue_and_build_unsigned_withdrawal_transactions(
                 validator_set_quorum_hash,
@@ -329,12 +331,13 @@ where
         // Corresponding withdrawal documents are changed from queued to pooled
         self.pool_withdrawals_into_transactions_queue(
             &block_info,
-            &last_committed_platform_state,
+            last_committed_platform_state,
             Some(transaction),
             platform_version,
         )?;
 
         // Cleans up the expired locks for withdrawal amounts
+        // to update daily withdrawal limit
         // This is for example when we make a withdrawal for 30 Dash
         // But we can only withdraw 1000 Dash a day
         // after the withdrawal we should only be able to withdraw 970 Dash
@@ -350,7 +353,7 @@ where
         let mut block_execution_context: BlockExecutionContext =
             block_execution_context::v0::BlockExecutionContextV0 {
                 block_state_info: block_state_info.into(),
-                epoch_info: epoch_info.clone(),
+                epoch_info,
                 unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
                 block_platform_state,
                 proposer_results: None,

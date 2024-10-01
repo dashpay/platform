@@ -1,4 +1,5 @@
 use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
+use crate::drive::identity::withdrawals::calculate_current_withdrawal_limit::WithdrawalLimitInfo;
 use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
@@ -7,7 +8,6 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
-use dpp::fee::Credits;
 use dpp::withdrawal::daily_withdrawal_limit::daily_withdrawal_limit;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
@@ -42,7 +42,7 @@ impl Drive {
         &self,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Credits, Error> {
+    ) -> Result<WithdrawalLimitInfo, Error> {
         // The current withdrawal limit has two components
         // 1. The total maximum that we are allowed to do in 24 hours
         // 2. The amount that we have already withdrawn in the last 24 hours
@@ -81,6 +81,9 @@ impl Drive {
                 ))
             })?;
 
-        Ok(daily_maximum.saturating_sub(withdrawal_amount_in_last_day))
+        Ok(WithdrawalLimitInfo {
+            daily_maximum,
+            withdrawals_amount: withdrawal_amount_in_last_day,
+        })
     }
 }

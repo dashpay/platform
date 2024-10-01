@@ -19,18 +19,21 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         // Currently Core only supports using the first 2 quorums (out of 24 for mainnet).
-        // For us, we just use the latest quorum to be extra safe.
+        // For extra safety, we use only the first quorum because our quorum info based
+        // on core chain locked height which is always late comparing with Core.
         let Some(position_of_current_quorum) =
             last_committed_platform_state.current_validator_set_position_in_list_by_most_recent()
         else {
-            tracing::warn!("Current quorum not in current validator set, not making withdrawals");
+            tracing::warn!("Current quorum not in current validator set, do not pool withdrawals");
+
             return Ok(());
         };
         if position_of_current_quorum != 0 {
             tracing::debug!(
-                "Current quorum is not most recent, it is in position {}, not making withdrawals",
+                "Current quorum is not most recent, it is in position {}, do not pool withdrawals",
                 position_of_current_quorum
             );
+
             return Ok(());
         }
         // Just use the v1 as to not duplicate code
