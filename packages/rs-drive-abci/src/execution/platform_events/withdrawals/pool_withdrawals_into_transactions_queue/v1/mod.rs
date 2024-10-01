@@ -32,10 +32,6 @@ where
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        // TODO: It will be more efficient to query documents less than the current limit
-        //  in this case we won't fetch documents if we aren't going to process and
-        //  documents with big amounts created earlier won't block processing of withdrawals with smaller
-        //  amounts (more precise limiting)
         let documents = self.drive.fetch_oldest_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
             platform_version
