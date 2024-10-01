@@ -1,3 +1,4 @@
+use std::fmt;
 pub use crate::error::Error;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use platform_value::{Identifier, IdentifierBytes32};
@@ -42,6 +43,19 @@ pub enum WithdrawalStatus {
     COMPLETE = 3,
     /// We broadcasted the transaction but core never saw it or rejected it.
     EXPIRED = 4,
+}
+
+impl fmt::Display for WithdrawalStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let status_str = match self {
+            WithdrawalStatus::QUEUED => "Queued",
+            WithdrawalStatus::POOLED => "Pooled",
+            WithdrawalStatus::BROADCASTED => "Broadcasted",
+            WithdrawalStatus::COMPLETE => "Complete",
+            WithdrawalStatus::EXPIRED => "Expired",
+        };
+        write!(f, "{}", status_str)
+    }
 }
 
 pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Value>, Error> {
