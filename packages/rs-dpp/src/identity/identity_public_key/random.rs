@@ -583,6 +583,14 @@ impl IdentityPublicKey {
                 "at least 2 keys must be created".to_string(),
             ));
         }
+
+        if key_count > 16 {
+            return Err(ProtocolError::PublicKeyGenerationError(format!(
+                "too many keys requested: {}, max is 16",
+                key_count
+            )));
+        }
+
         //create a master and a high level key
         let mut main_keys = if key_count == 2 {
             vec![
