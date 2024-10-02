@@ -42,7 +42,7 @@ impl IdentityCreditWithdrawalStateTransitionStructureValidationV1
             ));
         }
 
-        // Now, we do not support pooling, so we must validate that pooling is `Never`
+        // currently we do not support pooling, so we must validate that pooling is `Never`
 
         if self.pooling() != Pooling::Never {
             result.add_error(
