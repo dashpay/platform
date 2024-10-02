@@ -1,4 +1,5 @@
 use crate::identity::contract_bounds::ContractBounds;
+use crate::identity::identity_public_key::random::MAX_RANDOM_KEYS;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType::{ECDSA_HASH160, ECDSA_SECP256K1};
 use crate::identity::Purpose::{AUTHENTICATION, VOTING};
@@ -70,9 +71,8 @@ impl IdentityPublicKeyV0 {
         platform_version: &PlatformVersion,
     ) -> Result<(Self, Vec<u8>), ProtocolError> {
         // we have 16 different permutations possible
-        const MAX_KEYS: KeyCount = 16;
 
-        let mut binding = [false; MAX_KEYS as usize].to_vec();
+        let mut binding = [false; MAX_RANDOM_KEYS].to_vec();
         let (key_count, key_matrix) = used_key_matrix.unwrap_or((0, &mut binding));
 
         // input validation
@@ -83,14 +83,14 @@ impl IdentityPublicKeyV0 {
         }
 
         // we need space for at least one additional key
-        if key_count > MAX_KEYS - 1 {
+        if key_count > MAX_RANDOM_KEYS as u32 - 1 {
             return Err(ProtocolError::PublicKeyGenerationError(
                 "too many keys already created".to_string(),
             ));
         }
 
         // max_key_number is the number of keys that can be created
-        let max_key_number = MAX_KEYS - key_count;
+        let max_key_number = MAX_RANDOM_KEYS as u32 - key_count;
         let key_number = rng.gen_range(0..max_key_number);
         // now we need to find n'th not used key of this key_matrix (where `n = key_number`),
         // that is: the first bool that isn't set to true
