@@ -1,4 +1,5 @@
 use dpp::block::block_info::BlockInfo;
+use metrics::gauge;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::DocumentV0Getters;
@@ -9,6 +10,9 @@ use drive::grovedb::TransactionArg;
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 
+use crate::metrics::{
+    GAUGE_CREDIT_WITHDRAWAL_LIMIT_AVAILABLE, GAUGE_CREDIT_WITHDRAWAL_LIMIT_TOTAL,
+};
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
@@ -42,9 +46,15 @@ where
         }
 
         // Only take documents up to the withdrawal amount
-        let current_withdrawal_limit = self
+        let withdrawals_info = self
             .drive
             .calculate_current_withdrawal_limit(transaction, platform_version)?;
+
+        let current_withdrawal_limit = withdrawals_info.available();
+
+        // Store prometheus metrics
+        gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_AVAILABLE).set(current_withdrawal_limit as f64);
+        gauge!(GAUGE_CREDIT_WITHDRAWAL_LIMIT_TOTAL).set(withdrawals_info.daily_maximum as f64);
 
         // Only process documents up to the current withdrawal limit.
         let mut total_withdrawal_amount = 0u64;
@@ -65,8 +75,12 @@ where
                     ))
                 })?;
 
+            // If adding this withdrawal would exceed the limit, stop processing further.
             if potential_total_withdrawal_amount > current_withdrawal_limit {
-                // If adding this withdrawal would exceed the limit, stop processing further.
+                tracing::debug!(
+                    "Pooling is limited due to daily withdrawals limit. {} credits left",
+                    current_withdrawal_limit
+                );
                 break;
             }
 
