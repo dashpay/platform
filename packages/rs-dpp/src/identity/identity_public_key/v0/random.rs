@@ -69,19 +69,34 @@ impl IdentityPublicKeyV0 {
         used_key_matrix: Option<(KeyCount, &mut UsedKeyMatrix)>,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, Vec<u8>), ProtocolError> {
-        const MAX_KEYS: u8 = 16;
         // we have 16 different permutations possible
+        const MAX_KEYS: KeyCount = 16;
+
         let mut binding = [false; MAX_KEYS as usize].to_vec();
         let (key_count, key_matrix) = used_key_matrix.unwrap_or((0, &mut binding));
-        if key_count > MAX_KEYS as u32 {
+
+        // input validation
+        if key_count != key_matrix.iter().filter(|x| **x).count() as u32 {
+            return Err(ProtocolError::PublicKeyGenerationError(
+                "invalid argument: key count in used_key_matrix.0 doesn't match actual number of used keys".to_string(),
+            ));
+        }
+
+        // we need space for at least one additional key
+        if key_count > MAX_KEYS - 1 {
             return Err(ProtocolError::PublicKeyGenerationError(
                 "too many keys already created".to_string(),
             ));
         }
-        let key_number = rng.gen_range(0..(MAX_KEYS - key_count as u8));
-        // now we need to find the first bool that isn't set to true
+
+        // max_key_number is the number of keys that can be created
+        let max_key_number = MAX_KEYS - key_count;
+        let key_number = rng.gen_range(0..max_key_number);
+        // now we need to find n'th not used key of this key_matrix (where `n = key_number`),
+        // that is: the first bool that isn't set to true
         let mut needed_pos = None;
         let mut counter = 0;
+        let mut used = 0;
         key_matrix.iter_mut().enumerate().for_each(|(pos, is_set)| {
             if !*is_set {
                 if counter == key_number {
@@ -89,11 +104,20 @@ impl IdentityPublicKeyV0 {
                     *is_set = true;
                 }
                 counter += 1;
+            } else {
+                used += 1; // for debugging purposes
             }
         });
-        let needed_pos = needed_pos.ok_or(ProtocolError::PublicKeyGenerationError(
-            "too many keys already created".to_string(),
-        ))?;
+        // should never happen, as we have input validation above
+        assert_eq!(
+            used, key_count,
+            "incorrect number of used keys in key_matrix {:?}",
+            key_matrix,
+        );
+        let needed_pos = needed_pos.ok_or(ProtocolError::PublicKeyGenerationError(format!(
+            "too many keys already created: , key_count: {}, random key number: {}, unused key counter: {}, used key counter: {}",
+            key_count, key_number, counter, used,
+        )))?;
         let key_type = needed_pos.div(&4);
         let security_level = needed_pos.rem(&4);
         let security_level = SecurityLevel::try_from(security_level).unwrap();

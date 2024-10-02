@@ -615,7 +615,7 @@ impl IdentityPublicKey {
         used_key_matrix[4] = true; //also a master key
         used_key_matrix[8] = true; //also a master key
         used_key_matrix[12] = true; //also a master key
-        for i in 3..key_count {
+        for i in 6..key_count {
             let privkey = Self::random_authentication_key_with_private_key_with_rng(
                 i,
                 rng,

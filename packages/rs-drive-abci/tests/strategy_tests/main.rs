@@ -47,7 +47,6 @@ mod tests {
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::query::QueryStrategy;
     use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy};
-    use assert_matches::assert_matches;
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::json::QuorumType;
