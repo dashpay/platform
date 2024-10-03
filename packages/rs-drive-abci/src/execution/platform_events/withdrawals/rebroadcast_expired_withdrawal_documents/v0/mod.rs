@@ -22,12 +22,12 @@ where
         let Some(position_of_current_quorum) =
             last_committed_platform_state.current_validator_set_position_in_list_by_most_recent()
         else {
-            tracing::warn!("Current quorum not in current validator set, not making withdrawals");
+            tracing::warn!("Current quorum not in current validator set, do not re-broadcast expired withdrawals");
             return Ok(());
         };
         if position_of_current_quorum != 0 {
             tracing::debug!(
-                "Current quorum is not most recent, it is in position {}, not making withdrawals",
+                "Current quorum is not most recent, it is in position {}, do not re-broadcast expired withdrawals",
                 position_of_current_quorum
             );
             return Ok(());
