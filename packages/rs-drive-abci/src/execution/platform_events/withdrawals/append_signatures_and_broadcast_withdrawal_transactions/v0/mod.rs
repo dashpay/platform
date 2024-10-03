@@ -95,6 +95,7 @@ where
                     tracing::debug!(
                         tx_id = transaction.txid().to_string(),
                         tx_index,
+                        error = ?e,
                         "Asset unlock transaction is expired or has no active quorum: {}",
                         e.message
                     );
