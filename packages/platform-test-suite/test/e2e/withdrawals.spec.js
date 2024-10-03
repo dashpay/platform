@@ -8,11 +8,11 @@ const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
 // TODO: temporary disabled due to flakiness. These tests aren't important for now, since we are
 //  going to release v1.0.0 with withdrawals disabled.
-describe.skip('Withdrawals', function withdrawalsTest() {
+describe('Withdrawals', function withdrawalsTest() {
   this.bail(true);
 
   let client;
-  let identity;
+  let identity;``
 
   before(async function createClients() {
     // TODO: temporarily disabled on browser because of header stream is not syncing
@@ -57,7 +57,9 @@ describe.skip('Withdrawals', function withdrawalsTest() {
       await client.platform.identities.withdrawCredits(
         identity,
         BigInt(amountToWithdraw),
-        withdrawTo.address,
+        {
+          toAddress: withdrawTo.address,
+        },
       );
 
       // Re-fetch identity to obtain latest core chain lock height
@@ -125,7 +127,9 @@ describe.skip('Withdrawals', function withdrawalsTest() {
       const { height: withdrawalHeight } = await client.platform.identities.withdrawCredits(
         identity,
         BigInt(amountToWithdraw),
-        withdrawTo.address,
+        {
+          toAddress: withdrawTo.address,
+        },
       );
 
       let withdrawalBroadcasted = false;
@@ -173,7 +177,9 @@ describe.skip('Withdrawals', function withdrawalsTest() {
       await expect(client.platform.identities.withdrawCredits(
         identity,
         BigInt(amountToWithdraw),
-        withdrawTo.address,
+        {
+          toAddress: withdrawTo.address,
+        },
       )).to.be.rejectedWith(`Withdrawal amount "${amountToWithdraw}" is bigger that identity balance "${identityBalanceBefore}"`);
     });
 
@@ -186,8 +192,8 @@ describe.skip('Withdrawals', function withdrawalsTest() {
       await expect(client.platform.identities.withdrawCredits(
         identity,
         BigInt(amountToWithdraw),
-        withdrawTo.address,
         {
+          toAddress: withdrawTo.address,
           signingKeyIndex: 1,
         },
       )).to.be.rejectedWith('Error conversion not implemented: Invalid public key security level HIGH. The state transition requires one of CRITICAL');
@@ -227,7 +233,9 @@ describe.skip('Withdrawals', function withdrawalsTest() {
       await client.platform.identities.withdrawCredits(
         identity,
         BigInt(1000000),
-        withdrawTo.address,
+        {
+          toAddress: withdrawTo.address,
+        },
       );
 
       await waitForSTPropagated();
