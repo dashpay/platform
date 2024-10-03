@@ -96,7 +96,7 @@ where
                         tx_id = transaction.txid().to_string(),
                         tx_index,
                         error = ?e,
-                        "Asset unlock transaction is expired or has no active quorum: {}",
+                        "Asset unlock transaction with index {tx_index} is expired or has no active quorum: {}",
                         e.message
                     );
                     transaction_submission_failures.push((transaction.txid(), tx_bytes));
@@ -106,7 +106,7 @@ where
                     tracing::warn!(
                         tx_id = transaction.txid().to_string(),
                         tx_index,
-                        "Failed to broadcast asset unlock transaction: {}",
+                        "Failed to broadcast asset unlock transaction with index {tx_index}: {}",
                         e
                     );
                     // Collect failed transactions for potential future retries
