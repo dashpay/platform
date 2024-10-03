@@ -7,6 +7,8 @@ use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::types::ConsensusParams;
 
 mod v0;
+mod v1;
+
 pub(crate) fn consensus_params_update(
     network: Network,
     original_platform_version: &PlatformVersion,
@@ -20,6 +22,12 @@ pub(crate) fn consensus_params_update(
         .consensus_params_update
     {
         0 => Ok(consensus_params_update_v0(
+            network,
+            original_platform_version,
+            new_platform_version,
+            epoch_info,
+        )),
+        1 => Ok(v1::consensus_params_update_v1(
             network,
             original_platform_version,
             new_platform_version,
