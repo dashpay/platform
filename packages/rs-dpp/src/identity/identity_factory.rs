@@ -42,6 +42,7 @@ use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCr
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -233,10 +234,10 @@ impl IdentityFactory {
         amount: u64,
         core_fee_per_byte: u32,
         pooling: Pooling,
-        output_script: CoreScript,
+        output_script: Option<CoreScript>,
         identity_nonce: IdentityNonce,
     ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
-        let identity_credit_withdrawal_transition = IdentityCreditWithdrawalTransitionV0 {
+        let identity_credit_withdrawal_transition = IdentityCreditWithdrawalTransitionV1 {
             identity_id,
             amount,
             core_fee_per_byte,
