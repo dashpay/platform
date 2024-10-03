@@ -79,7 +79,7 @@ where
                     tracing::debug!(
                         tx_id = transaction.txid().to_hex(),
                         tx_index,
-                        "Successfully broadcasted asset unlock transaction"
+                        "Successfully broadcasted asset unlock transaction with index {tx_index}",
                     );
                 }
                 // Handle specific errors
