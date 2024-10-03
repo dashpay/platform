@@ -4,7 +4,6 @@ mod tests {
     use crate::strategy::{
         ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
     };
-    use assert_matches::assert_matches;
     use dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, AssetUnlockStatusResult};
     use dpp::dashcore::bls_sig_utils::BLSSignature;
     use dpp::dashcore::hashes::Hash;
@@ -95,13 +94,13 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
-            initial_protocol_version: TEST_PLATFORM_V3.protocol_version,
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
+            .with_initial_protocol_version(TEST_PLATFORM_V3.protocol_version)
             .build_with_mock_rpc();
 
         platform
@@ -776,13 +775,13 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
-            initial_protocol_version: TEST_PLATFORM_V3.protocol_version,
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
+            .with_initial_protocol_version(TEST_PLATFORM_V3.protocol_version)
             .build_with_mock_rpc();
 
         platform
@@ -1144,7 +1143,6 @@ mod tests {
             current_validator_quorum_hash: current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
-            withdrawals: last_block_withdrawals,
             identity_nonce_counter,
             identity_contract_nonce_counter,
             instant_lock_quorums,
@@ -1481,12 +1479,12 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: minute_in_ms,
-            initial_protocol_version: TEST_PLATFORM_V3.protocol_version,
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
         let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(TEST_PLATFORM_V3.protocol_version)
             .with_config(config.clone())
             .build_with_mock_rpc();
 
@@ -1902,7 +1900,6 @@ mod tests {
                         ..Default::default()
                     },
                     block_spacing_ms: hour_in_ms,
-                    initial_protocol_version: TEST_PLATFORM_V3.protocol_version,
                     testing_configs: PlatformTestConfig::default_minimal_verifications(),
                     ..Default::default()
                 },
@@ -2037,7 +2034,6 @@ mod tests {
                     ..Default::default()
                 },
                 block_spacing_ms: hour_in_ms,
-                initial_protocol_version: TEST_PLATFORM_V3.protocol_version,
                 testing_configs: PlatformTestConfig::default_minimal_verifications(),
                 ..Default::default()
             },
@@ -2199,13 +2195,13 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: minute_in_ms,
-            initial_protocol_version: TEST_PLATFORM_V3.protocol_version,
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
+            .with_initial_protocol_version(TEST_PLATFORM_V3.protocol_version)
             .build_with_mock_rpc();
 
         platform
@@ -2598,7 +2594,6 @@ mod tests {
                     ..Default::default()
                 },
                 block_spacing_ms: hour_in_ms,
-                initial_protocol_version: TEST_PLATFORM_V3.protocol_version,
                 testing_configs: PlatformTestConfig::default_minimal_verifications(),
                 ..Default::default()
             },
