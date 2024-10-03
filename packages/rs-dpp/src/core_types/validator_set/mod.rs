@@ -13,6 +13,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 #[cfg(feature = "core-types-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt::{Display, Formatter};
 
 /// Version 0
 pub mod v0;
@@ -32,6 +33,14 @@ pub mod v0;
 pub enum ValidatorSet {
     /// Version 0
     V0(ValidatorSetV0),
+}
+
+impl Display for ValidatorSet {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValidatorSet::V0(v0) => write!(f, "{}", v0),
+        }
+    }
 }
 
 impl ValidatorSetV0Getters for ValidatorSet {

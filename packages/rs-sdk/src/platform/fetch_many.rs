@@ -16,8 +16,9 @@ use dapi_grpc::platform::v0::{
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
     GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
     GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetIdentitiesBalancesRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest,
+    GetIdentitiesBalancesRequest, GetIdentityKeysRequest, GetPathElementsRequest,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::data_contract::DataContract;
@@ -30,11 +31,14 @@ use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, voting::votes::resource_vote::ResourceVote,
 };
 use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
+use drive::grovedb::query_result_type::{Key, Path};
+use drive::grovedb::Element;
 use drive_proof_verifier::types::{
-    Contenders, ContestedResource, ContestedResources, DataContracts, ExtendedEpochInfos,
-    IdentityBalances, IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes,
-    ProposerBlockCountById, ProposerBlockCountByRange, ProposerBlockCounts,
-    ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
+    Contenders, ContestedResource, ContestedResources, DataContracts, Elements, ExtendedEpochInfos,
+    IdentityBalances, IdentityPublicKeys, KeysInPath, MasternodeProtocolVote,
+    MasternodeProtocolVotes, ProposerBlockCountById, ProposerBlockCountByRange,
+    ProposerBlockCounts, ProtocolVersionUpgrades, ResourceVotesByIdentity,
+    VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
@@ -414,4 +418,14 @@ impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
 /// * [Vec<Identifier>](dpp::prelude::Identifier) - list of identifiers of identities whose balance we want to fetch
 impl FetchMany<Identifier, IdentityBalances> for drive_proof_verifier::types::IdentityBalance {
     type Request = GetIdentitiesBalancesRequest;
+}
+
+//
+/// Fetch multiple elements.
+///
+/// ## Supported query types
+///
+/// * [KeysInPath]
+impl FetchMany<Key, Elements> for Element {
+    type Request = GetPathElementsRequest;
 }

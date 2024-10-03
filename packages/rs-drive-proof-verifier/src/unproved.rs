@@ -231,7 +231,7 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
                                         pro_tx_hash,
                                         public_key: None, // Assuming it's not provided here
                                         node_ip: member.node_ip,
-                                        node_id: PubkeyHash::from_slice(&[0; 32]).unwrap(), // Placeholder, since not provided
+                                        node_id: PubkeyHash::from_slice(&[0; 20]).expect("expected to make pub key hash from 20 byte empty array"), // Placeholder, since not provided
                                         core_port: 0, // Placeholder, since not provided
                                         platform_http_port: 0, // Placeholder, since not provided
                                         platform_p2p_port: 0, // Placeholder, since not provided

@@ -1,4 +1,5 @@
 use super::MockDashPlatformSdk;
+use dpp::bincode::config::standard;
 use dpp::{
     bincode,
     block::extended_epoch_info::ExtendedEpochInfo,
@@ -14,6 +15,7 @@ use dpp::{
     },
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
+use drive::grovedb::Element;
 use drive_proof_verifier::types::{
     Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem, EvoNodeStatus,
     IdentityBalanceAndRevision, MasternodeProtocolVote, PrefundedSpecializedBalance,
@@ -162,6 +164,29 @@ impl MockResponse for Document {
         Self: Sized,
     {
         Self::from_cbor(buf, None, None, sdk.version()).expect("decode data")
+    }
+}
+
+impl MockResponse for Element {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        // Create a bincode configuration
+        let config = standard();
+
+        // Serialize using the specified configuration
+        bincode::encode_to_vec(self, config).expect("Failed to serialize Element")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        // Create a bincode configuration
+        let config = standard();
+
+        // Deserialize using the specified configuration
+        bincode::decode_from_slice(buf, config)
+            .expect("Failed to deserialize Element")
+            .0
     }
 }
 
