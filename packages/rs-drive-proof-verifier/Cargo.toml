@@ -15,6 +15,7 @@ mocks = [
   "dep:platform-serialization-derive",
   "dep:platform-serialization",
   "dpp/document-serde-conversion",
+  "indexmap/serde",
 ]
 
 [dependencies]

@@ -75,12 +75,12 @@ pub type RetrievedObjects<K, O> = IndexMap<K, Option<O>>;
 ///
 /// * `K`: The type of the keys in the map.
 /// * `I`: The type of the integer in the map.
-pub type RetrievedIntegerValue<K, I> = BTreeMap<K, I>;
+pub type RetrievedIntegerValue<K, I> = IndexMap<K, I>;
 
 /// History of a data contract.
 ///
 /// Contains a map of data contract revisions to data contracts.
-pub type DataContractHistory = BTreeMap<u64, DataContract>;
+pub type DataContractHistory = IndexMap<u64, DataContract>;
 /// Multiple data contracts.
 ///
 /// Mapping between data contract IDs and data contracts.
@@ -114,14 +114,14 @@ impl Contenders {
         &self,
         document_type: &DocumentType,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<Identifier, Contender>, crate::Error> {
+    ) -> Result<IndexMap<Identifier, Contender>, crate::Error> {
         self.contenders
             .iter()
             .map(|(id, v)| {
                 let contender = v.try_to_contender(document_type.as_ref(), platform_version)?;
                 Ok((*id, contender))
             })
-            .collect::<Result<BTreeMap<Identifier, Contender>, dpp::ProtocolError>>()
+            .collect::<Result<IndexMap<Identifier, Contender>, dpp::ProtocolError>>()
             .map_err(Into::into)
     }
 }
@@ -450,7 +450,7 @@ impl FromIterator<(u64, Vec<VotePoll>)> for VotePollsGroupedByTimestamp {
         // collect all vote polls for the same timestamp into a single vector
         let data = iter
             .into_iter()
-            .fold(BTreeMap::new(), |mut acc, (timestamp, vote_poll)| {
+            .fold(IndexMap::new(), |mut acc, (timestamp, vote_poll)| {
                 let entry: &mut Vec<VotePoll> = acc.entry(timestamp).or_default();
                 entry.extend(vote_poll);
                 acc
@@ -586,7 +586,7 @@ impl FromIterator<(ProTxHash, Option<ProposerBlockCountByRange>)> for ProposerBl
                 let identifier = Identifier::from(pro_tx_hash.to_byte_array()); // Adjust this conversion logic as needed
                 (identifier, block_count)
             })
-            .collect::<BTreeMap<Identifier, u64>>();
+            .collect::<IndexMap<Identifier, u64>>();
 
         ProposerBlockCounts(map)
     }
@@ -604,7 +604,7 @@ impl FromIterator<(ProTxHash, Option<ProposerBlockCountById>)> for ProposerBlock
                 let identifier = Identifier::from(pro_tx_hash.to_byte_array()); // Adjust this conversion logic as needed
                 (identifier, block_count)
             })
-            .collect::<BTreeMap<Identifier, u64>>();
+            .collect::<IndexMap<Identifier, u64>>();
 
         ProposerBlockCounts(map)
     }

@@ -121,7 +121,7 @@ impl<K: Hash + Eq + MockResponse, V: MockResponse> MockResponse for IndexMap<K, 
         Self: Sized,
     {
         let (data, _): (IndexMap<Vec<u8>, Vec<u8>>, _) =
-            bincode::serde::decode_from_slice(buf, BINCODE_CONFIG).expect("decode BTreeMap");
+            bincode::serde::decode_from_slice(buf, BINCODE_CONFIG).expect("decode IndexMap");
 
         data.into_iter()
             .map(|(k, v)| (K::mock_deserialize(sdk, &k), V::mock_deserialize(sdk, &v)))
@@ -134,7 +134,7 @@ impl<K: Hash + Eq + MockResponse, V: MockResponse> MockResponse for IndexMap<K, 
             .map(|(k, v)| (k.mock_serialize(sdk), v.mock_serialize(sdk)))
             .collect();
 
-        bincode::serde::encode_to_vec(data, BINCODE_CONFIG).expect("encode BTreeMap")
+        bincode::serde::encode_to_vec(data, BINCODE_CONFIG).expect("encode IndexMap")
     }
 }
 

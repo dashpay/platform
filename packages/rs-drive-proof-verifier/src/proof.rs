@@ -904,7 +904,11 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((maybe_history, mtd.clone(), proof.clone()))
+        Ok((
+            maybe_history.map(IndexMap::from_iter),
+            mtd.clone(),
+            proof.clone(),
+        ))
     }
 }
 
