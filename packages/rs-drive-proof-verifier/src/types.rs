@@ -31,6 +31,8 @@ use dpp::{
 };
 use drive::grovedb::query_result_type::Path;
 use drive::grovedb::Element;
+// IndexMap is exposed to the public API
+pub use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "mocks")]
@@ -57,7 +59,7 @@ pub use evonode_status::*;
 ///
 /// * `K`: The type of the keys in the map.
 /// * `O`: The type of the objects in the map.
-pub type RetrievedObjects<K, O> = BTreeMap<K, Option<O>>;
+pub type RetrievedObjects<K, O> = IndexMap<K, Option<O>>;
 
 /// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///

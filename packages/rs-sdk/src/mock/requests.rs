@@ -3,7 +3,7 @@ use dpp::bincode::config::standard;
 use dpp::{
     bincode,
     block::extended_epoch_info::ExtendedEpochInfo,
-    dashcore::{hashes::Hash, ProTxHash},
+    dashcore::{hashes::Hash as CoreHash, ProTxHash},
     document::{serialization_traits::DocumentCborMethodsV0, Document},
     identifier::Identifier,
     identity::IdentityPublicKey,
@@ -18,11 +18,11 @@ use dpp::{
 use drive::grovedb::Element;
 use drive_proof_verifier::types::{
     Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem, EvoNodeStatus,
-    IdentityBalanceAndRevision, MasternodeProtocolVote, PrefundedSpecializedBalance,
+    IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PrefundedSpecializedBalance,
     ProposerBlockCounts, RetrievedIntegerValue, TotalCreditsInPlatform,
     VotePollsGroupedByTimestamp, Voters,
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, hash::Hash};
 
 static BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
@@ -112,6 +112,29 @@ impl<K: Ord + MockResponse, V: MockResponse> MockResponse for BTreeMap<K, V> {
             .collect();
 
         bincode::encode_to_vec(data, BINCODE_CONFIG).expect("encode BTreeMap")
+    }
+}
+
+impl<K: Hash + Eq + MockResponse, V: MockResponse> MockResponse for IndexMap<K, V> {
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (data, _): (IndexMap<Vec<u8>, Vec<u8>>, _) =
+            bincode::serde::decode_from_slice(buf, BINCODE_CONFIG).expect("decode BTreeMap");
+
+        data.into_iter()
+            .map(|(k, v)| (K::mock_deserialize(sdk, &k), V::mock_deserialize(sdk, &v)))
+            .collect()
+    }
+
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let data: IndexMap<Vec<u8>, Vec<u8>> = self
+            .iter()
+            .map(|(k, v)| (k.mock_serialize(sdk), v.mock_serialize(sdk)))
+            .collect();
+
+        bincode::serde::encode_to_vec(data, BINCODE_CONFIG).expect("encode BTreeMap")
     }
 }
 
@@ -232,7 +255,7 @@ impl MockResponse for ProTxHash {
     {
         let data = platform_versioned_decode_from_slice(buf, BINCODE_CONFIG, sdk.version())
             .expect("decode ProTxHash");
-        ProTxHash::from_raw_hash(Hash::from_byte_array(data))
+        ProTxHash::from_raw_hash(CoreHash::from_byte_array(data))
     }
 }
 

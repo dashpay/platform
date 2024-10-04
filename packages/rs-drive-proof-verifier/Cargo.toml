@@ -43,3 +43,4 @@ serde_json = { version = "1.0.103", features = [
 ], optional = true }
 hex = { version = "0.4.3" }
 derive_more = { version = "0.99.11" }
+indexmap = { version = "2.6.0" }

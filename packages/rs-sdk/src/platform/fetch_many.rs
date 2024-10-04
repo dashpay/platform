@@ -31,18 +31,16 @@ use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, voting::votes::resource_vote::ResourceVote,
 };
 use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
-use drive::grovedb::query_result_type::{Key, Path};
+use drive::grovedb::query_result_type::Key;
 use drive::grovedb::Element;
 use drive_proof_verifier::types::{
     Contenders, ContestedResource, ContestedResources, DataContracts, Elements, ExtendedEpochInfos,
-    IdentityBalances, IdentityPublicKeys, KeysInPath, MasternodeProtocolVote,
-    MasternodeProtocolVotes, ProposerBlockCountById, ProposerBlockCountByRange,
-    ProposerBlockCounts, ProtocolVersionUpgrades, ResourceVotesByIdentity,
-    VotePollsGroupedByTimestamp, Voter, Voters,
+    IdentityBalances, IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes,
+    ProposerBlockCountById, ProposerBlockCountByRange, ProposerBlockCounts,
+    ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
-use std::collections::BTreeMap;
 
 /// Fetch multiple objects from Platform.
 ///
@@ -240,7 +238,7 @@ impl FetchMany<Identifier, Documents> for Document {
         tracing::trace!(request=?document_query, response=?response, "fetch multiple documents");
 
         // let object: Option<BTreeMap<K,Document>> = sdk
-        let documents: BTreeMap<Identifier, Option<Document>> = sdk
+        let documents: Documents = sdk
             .parse_proof::<DocumentQuery, Documents>(document_query, response)
             .await?
             .unwrap_or_default();

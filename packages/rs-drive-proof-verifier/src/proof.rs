@@ -43,6 +43,7 @@ use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVot
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
+use indexmap::IndexMap;
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
@@ -832,24 +833,23 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        let maybe_contracts: Option<BTreeMap<Identifier, Option<DataContract>>> =
-            if !contracts.is_empty() {
-                let contracts: DataContracts = contracts
-                    .into_iter()
-                    .try_fold(DataContracts::new(), |mut acc, (k, v)| {
-                        Identifier::from_bytes(&k).map(|id| {
-                            acc.insert(id, v);
-                            acc
-                        })
+        let maybe_contracts: Option<DataContracts> = if !contracts.is_empty() {
+            let contracts: DataContracts = contracts
+                .into_iter()
+                .try_fold(DataContracts::new(), |mut acc, (k, v)| {
+                    Identifier::from_bytes(&k).map(|id| {
+                        acc.insert(id, v);
+                        acc
                     })
-                    .map_err(|e| Error::ResultEncodingError {
-                        error: e.to_string(),
-                    })?;
+                })
+                .map_err(|e| Error::ResultEncodingError {
+                    error: e.to_string(),
+                })?;
 
-                Some(contracts)
-            } else {
-                None
-            };
+            Some(contracts)
+        } else {
+            None
+        };
 
         Ok((maybe_contracts, mtd.clone(), proof.clone()))
     }
@@ -987,13 +987,13 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfo {
             provider,
         )?;
 
-        if let Some(mut e) = epochs.0 {
+        if let Some(e) = epochs.0 {
             if e.len() != 1 {
                 return Err(Error::RequestError {
                     error: format!("expected 1 epoch, got {}", e.len()),
                 });
             }
-            let epoch = e.pop_first().and_then(|v| v.1);
+            let epoch = e.into_iter().next().and_then(|v| v.1);
             Ok((epoch, epochs.1, epochs.2))
         } else {
             Ok((None, epochs.1, epochs.2))
@@ -1056,7 +1056,7 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
 
                 (info.index, Some(v))
             })
-            .collect::<BTreeMap<EpochIndex, Option<ExtendedEpochInfo>>>();
+            .collect::<ExtendedEpochInfos>();
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -1203,10 +1203,11 @@ impl FromProof<GetPathElementsRequest> for Elements {
 
         let (root_hash, objects) =
             Drive::verify_elements(&proof.grovedb_proof, path, keys, platform_version)?;
+        let elements: Elements = Elements::from_iter(objects);
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((objects.into_option(), mtd.clone(), proof.clone()))
+        Ok((elements.into_option(), mtd.clone(), proof.clone()))
     }
 }
 
@@ -1638,23 +1639,25 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
             }
         };
 
-        let (mut maybe_votes, mtd, proof) =
-            ResourceVotesByIdentity::maybe_from_proof_with_metadata(
-                request,
-                response,
-                network,
-                platform_version,
-                provider,
-            )?;
+        let (maybe_votes, mtd, proof) = ResourceVotesByIdentity::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network,
+            platform_version,
+            provider,
+        )?;
 
-        let (id, vote) = match maybe_votes.as_mut() {
+        let (id, vote) = match maybe_votes {
             Some(v) if v.len() > 1 => {
                 return Err(Error::ResponseDecodeError {
                     error: format!("expected 1 vote, got {}", v.len()),
                 })
             }
             Some(v) if v.is_empty() => return Ok((None, mtd, proof)),
-            Some(v) => v.pop_first().expect("is_empty() must detect empty map"),
+            Some(v) => v
+                .into_iter()
+                .next()
+                .expect("is_empty() must detect empty map"),
             None => return Ok((None, mtd, proof)),
         };
 
@@ -1873,6 +1876,12 @@ impl<K, T> Length for Vec<(K, Option<T>)> {
 }
 
 impl<K, T> Length for BTreeMap<K, Option<T>> {
+    fn count_some(&self) -> usize {
+        self.values().filter(|v| v.is_some()).count()
+    }
+}
+
+impl<K, T> Length for IndexMap<K, Option<T>> {
     fn count_some(&self) -> usize {
         self.values().filter(|v| v.is_some()).count()
     }
