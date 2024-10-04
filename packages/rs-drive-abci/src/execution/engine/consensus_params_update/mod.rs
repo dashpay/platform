@@ -35,7 +35,7 @@ pub(crate) fn consensus_params_update(
         )),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "consensus_params_update".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         })),
     }
