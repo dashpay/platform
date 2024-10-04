@@ -24,7 +24,7 @@ describe('IdentityFacade', () => {
   beforeEach(async () => {
     dpp = new DashPlatformProtocol(
       { generate: () => crypto.randomBytes(32) },
-      1,
+      3,
     );
 
     const chainAssetLockProofJS = getChainAssetLockProofFixture();
