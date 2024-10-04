@@ -4,6 +4,7 @@ import lodash from 'lodash';
 import path from 'path';
 
 import {
+  NETWORK_DEVNET,
   NETWORK_LOCAL,
   NETWORK_MAINNET,
   NETWORK_TESTNET,
@@ -908,6 +909,15 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.3';
             options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
             options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
+          });
+        return configFile;
+      },
+      '1.3.0-dev.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if ([NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_DEVNET].includes(options.network)) {
+              options.core.docker.image = 'dashpay/dashd:21.2.0-nightly.2024.09.12';
+            }
           });
         return configFile;
       },
