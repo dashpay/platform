@@ -832,24 +832,17 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
-
-        let maybe_contracts: Option<DataContracts> = if !contracts.is_empty() {
-            let contracts: DataContracts = contracts
-                .into_iter()
-                .try_fold(DataContracts::new(), |mut acc, (k, v)| {
-                    Identifier::from_bytes(&k).map(|id| {
-                        acc.insert(id, v);
-                        acc
-                    })
+        let maybe_contracts = contracts
+            .into_iter()
+            .map(|(k, v)| {
+                Identifier::from_bytes(&k).map(|id| (id, v)).map_err(|e| {
+                    Error::ResultEncodingError {
+                        error: e.to_string(),
+                    }
                 })
-                .map_err(|e| Error::ResultEncodingError {
-                    error: e.to_string(),
-                })?;
-
-            Some(contracts)
-        } else {
-            None
-        };
+            })
+            .collect::<Result<DataContracts, Error>>()?
+            .into_option();
 
         Ok((maybe_contracts, mtd.clone(), proof.clone()))
     }
