@@ -19,8 +19,8 @@ use drive::grovedb::Element;
 use drive_proof_verifier::types::{
     Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem, EvoNodeStatus,
     IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PrefundedSpecializedBalance,
-    ProposerBlockCounts, RetrievedIntegerValue, TotalCreditsInPlatform,
-    VotePollsGroupedByTimestamp, Voters,
+    ProposerBlockCounts, RetrievedValues, TotalCreditsInPlatform, VotePollsGroupedByTimestamp,
+    Voters,
 };
 use std::{collections::BTreeMap, hash::Hash};
 
@@ -268,7 +268,7 @@ impl MockResponse for ProposerBlockCounts {
     where
         Self: Sized,
     {
-        let data = RetrievedIntegerValue::<Identifier, u64>::mock_deserialize(sdk, buf);
+        let data = RetrievedValues::<Identifier, u64>::mock_deserialize(sdk, buf);
         ProposerBlockCounts(data)
     }
 }

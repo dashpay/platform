@@ -51,9 +51,15 @@ pub use evonode_status::*;
 /// from a server using [`FetchMany`](dash_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
 /// using [`FromProof`](crate::FromProof).
 ///
-/// Each key in the `RetrievedObjects` corresponds to an object of generic type `O`.
-/// If an object is found for a given key, the value is `Some(object)`.
-/// If no object is found for a given key, the value is `None`.
+/// Each key `K` in the `RetrievedObjects` corresponds to zero or one object of generic type `O`:
+/// * if an object is found for a given key, the value is `Some(object)`,
+/// * if no object is found for a given key, the value is `None`; this can be interpreted as a proof of absence.
+///
+/// This data structure preserves order of objects insertion. However, actual order of objects depends on the order of
+/// objects returned by Dash Drive, which is not always guaranteed to be correct.
+/// You can sort the objects by key if you need a specific order; see [`IndexMap::sort_keys`] and similar methods.
+///
+/// `RetrievedObjects` is a wrapper around the [`IndexMap`] type.
 ///
 /// # Generic Type Parameters
 ///
@@ -61,26 +67,32 @@ pub use evonode_status::*;
 /// * `O`: The type of the objects in the map.
 pub type RetrievedObjects<K, O> = IndexMap<K, Option<O>>;
 
-/// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
+/// A data structure that holds a set of values of a generic type `I`, indexed by a key of type `K`.
 ///
 /// This type is typically returned by functions that operate on multiple objects, such as fetching multiple objects
 /// from a server using [`FetchMany`](dash_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
 /// using [`FromProof`](crate::FromProof).
 ///
-/// Each key in the `RetrievedObjects` corresponds to an object of generic type `O`.
-/// If a value is found for a given key, the value is `value`.
-/// If no value is found for a given key, the value is `0`.
+/// Each key in this data structure corresponds to an existing value of generic type `I`. It differs from
+/// [`RetrievedObjects`] in that it does not contain `Option<I>`, but only `I`, so it cannot be interpreted as a
+/// proof of absence.
+///
+/// This data structure preserves the order of object insertion. However, the actual order of objects depends on the
+/// order of objects returned by Dash Drive, which is not always guaranteed to be correct.
+/// You can sort the objects by key if you need a specific order; see [`IndexMap::sort_keys`] and similar methods.
+///
+/// The ordering of the objects is guaranteed to be the same as the order of objects returned by Dash Drive.
 ///
 /// # Generic Type Parameters
 ///
 /// * `K`: The type of the keys in the map.
-/// * `I`: The type of the integer in the map.
-pub type RetrievedIntegerValue<K, I> = IndexMap<K, I>;
+/// * `I`: The type of the integer values in the map.
+pub type RetrievedValues<K, I> = IndexMap<K, I>;
 
 /// History of a data contract.
 ///
 /// Contains a map of data contract revisions to data contracts.
-pub type DataContractHistory = IndexMap<u64, DataContract>;
+pub type DataContractHistory = RetrievedValues<u64, DataContract>;
 /// Multiple data contracts.
 ///
 /// Mapping between data contract IDs and data contracts.
@@ -114,14 +126,14 @@ impl Contenders {
         &self,
         document_type: &DocumentType,
         platform_version: &PlatformVersion,
-    ) -> Result<IndexMap<Identifier, Contender>, crate::Error> {
+    ) -> Result<BTreeMap<Identifier, Contender>, crate::Error> {
         self.contenders
             .iter()
             .map(|(id, v)| {
                 let contender = v.try_to_contender(document_type.as_ref(), platform_version)?;
                 Ok((*id, contender))
             })
-            .collect::<Result<IndexMap<Identifier, Contender>, dpp::ProtocolError>>()
+            .collect::<Result<BTreeMap<Identifier, Contender>, dpp::ProtocolError>>()
             .map_err(Into::into)
     }
 }
@@ -450,7 +462,7 @@ impl FromIterator<(u64, Vec<VotePoll>)> for VotePollsGroupedByTimestamp {
         // collect all vote polls for the same timestamp into a single vector
         let data = iter
             .into_iter()
-            .fold(IndexMap::new(), |mut acc, (timestamp, vote_poll)| {
+            .fold(BTreeMap::new(), |mut acc, (timestamp, vote_poll)| {
                 let entry: &mut Vec<VotePoll> = acc.entry(timestamp).or_default();
                 entry.extend(vote_poll);
                 acc
@@ -572,7 +584,7 @@ pub type MasternodeProtocolVotes = RetrievedObjects<ProTxHash, MasternodeProtoco
 /// Mapping between proposers and the blocks they might have proposed
 #[derive(Debug, Default)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
-pub struct ProposerBlockCounts(pub RetrievedIntegerValue<Identifier, u64>);
+pub struct ProposerBlockCounts(pub RetrievedValues<Identifier, u64>);
 
 impl FromIterator<(ProTxHash, Option<ProposerBlockCountByRange>)> for ProposerBlockCounts {
     fn from_iter<I: IntoIterator<Item = (ProTxHash, Option<ProposerBlockCountByRange>)>>(
