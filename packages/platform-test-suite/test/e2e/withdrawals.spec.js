@@ -196,7 +196,7 @@ describe('Withdrawals', function withdrawalsTest() {
           toAddress: withdrawTo.address,
           signingKeyIndex: 1,
         },
-      )).to.be.rejectedWith('Error conversion not implemented: Invalid public key security level HIGH. The state transition requires one of CRITICAL');
+      )).to.be.rejectedWith('Error conversion not implemented: Invalid public key security level HIGH. The state transition requires one of MASTER');
     });
 
     // TODO: Figure out how to overcome client-side validation and implement
