@@ -7,7 +7,10 @@ use dpp::block::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 
+use crate::execution::engine::consensus_params_update::consensus_params_update;
 use crate::platform_types::cleaned_abci_messages::request_init_chain_cleaned_params;
+use crate::platform_types::epoch_info::v0::EpochInfoV0;
+use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set::ValidatorSetExt;
@@ -68,8 +71,8 @@ where
 
         // Create platform execution state
         let mut initial_platform_state = PlatformState::default_with_protocol_versions(
-            request.initial_protocol_version,
-            request.initial_protocol_version,
+            platform_version.protocol_version,
+            platform_version.protocol_version,
             &self.config,
         )?;
 
@@ -113,9 +116,6 @@ where
 
         initial_platform_state.set_genesis_block_info(Some(genesis_block_info));
 
-        initial_platform_state
-            .set_current_protocol_version_in_consensus(request.initial_protocol_version);
-
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
                 platform_state_fingerprint = hex::encode(initial_platform_state.fingerprint()?),
@@ -132,8 +132,24 @@ where
             .unwrap()
             .map_err(GroveDB)?;
 
+        // We use first platform version because Tenderdash starts genesis with first versions
+        // by default
+        let first_platform_version = PlatformVersion::first();
+
+        let epoch_info = EpochInfo::V0(EpochInfoV0::calculate(
+            genesis_time,
+            genesis_time,
+            None,
+            self.config.execution.epoch_time_length_s,
+        )?);
+
         Ok(ResponseInitChain {
-            consensus_params: None,
+            consensus_params: consensus_params_update(
+                self.config.network,
+                first_platform_version,
+                platform_version,
+                &epoch_info,
+            )?,
             app_hash: app_hash.to_vec(),
             validator_set_update: Some(validator_set),
             next_core_chain_lock_update: None,

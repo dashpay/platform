@@ -829,8 +829,15 @@ pub(crate) fn start_chain_for_strategy(
         .get::<QuorumHash>(&current_validator_quorum_hash)
         .expect("expected a quorum to be found");
 
+    let platform_state = abci_application.platform.state.load();
+    let protocol_version = platform_state
+        .current_platform_version()
+        .unwrap()
+        .protocol_version;
+    drop(platform_state);
+
     // init chain
-    let mut init_chain_request = static_init_chain_request(&config);
+    let mut init_chain_request = static_init_chain_request(&config, protocol_version);
 
     init_chain_request.initial_core_height = config.abci.genesis_core_height;
     init_chain_request.validator_set = Some(ValidatorSetUpdate {
