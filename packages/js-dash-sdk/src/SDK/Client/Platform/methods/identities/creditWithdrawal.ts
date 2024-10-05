@@ -28,37 +28,50 @@ const MIN_ASSET_UNLOCK_CORE_FEE_PER_BYTE = 1;
 const MINIMAL_WITHDRAWAL_AMOUNT = ASSET_UNLOCK_TX_SIZE * MIN_ASSET_UNLOCK_CORE_FEE_PER_BYTE * 1000;
 
 type WithdrawalOptions = {
-  signingKeyIndex: number
+  signingKeyIndex?: number
+  toAddress?: string
 };
 
 /** Creates platform credits withdrawal request
  * @param identity - identity to withdraw from
  * @param amount - amount of credits to withdraw
- * @param to - Dash L1 address
  * @param options - withdrawal options
+ * @param [options] - withdrawal options
+ * @param [options.toAddress] - withdrawal destination address
  */
 export async function creditWithdrawal(
   this: Platform,
   identity: Identity,
   amount: number,
-  to: string,
-  options: WithdrawalOptions = {
-    signingKeyIndex: 3,
-  },
+  options: WithdrawalOptions = { },
 ): Promise<Metadata> {
   await this.initialize();
 
+  // eslint-disable-next-line no-param-reassign
+  options = {
+    ...options,
+    signingKeyIndex: 3,
+  };
+
   const { dpp } = this;
 
-  let toAddress: Address;
-  try {
-    toAddress = new Address(to, this.client.network);
-  } catch (e) {
-    throw new Error(`Invalid core recipient "${to}" for network ${this.client.network}`);
-  }
-  this.logger.debug(`[Identity#creditWithdrawal] credits withdrawal from ${identity.getId().toString()} to ${toAddress.toString()} with amount ${amount}`);
+  let outputScriptBytes: Buffer | undefined;
+  if (options.toAddress) {
+    let toAddress: Address;
+    try {
+      toAddress = new Address(options.toAddress, this.client.network);
+    } catch (e) {
+      throw new Error(`Invalid core recipient "${options.toAddress}" for network ${this.client.network}`);
+    }
 
-  const outputScript = Script.buildPublicKeyHashOut(toAddress);
+    const outputScript = Script.buildPublicKeyHashOut(toAddress);
+    // @ts-ignore
+    outputScriptBytes = outputScript.toBuffer();
+
+    this.logger.debug(`[Identity#creditWithdrawal] credits withdrawal from ${identity.getId().toString()} to ${toAddress.toString()} with amount ${amount}`);
+  } else {
+    this.logger.debug(`[Identity#creditWithdrawal] credits withdrawal from ${identity.getId().toString()} to recent withdrawal address with amount ${amount}`);
+  }
 
   const balance = identity.getBalance();
   if (amount > balance) {
@@ -88,8 +101,7 @@ export async function creditWithdrawal(
       BigInt(amount),
       coreFeePerByte,
       DEFAULT_POOLING,
-      // @ts-ignore
-      outputScript.toBuffer(),
+      outputScriptBytes,
       BigInt(identityNonce),
     );
 

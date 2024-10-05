@@ -27,6 +27,12 @@ pub struct StateTransitionVersions {
 pub struct IdentityTransitionVersions {
     pub max_public_keys_in_creation: u16,
     pub asset_locks: IdentityTransitionAssetLockVersions,
+    pub credit_withdrawal: IdentityCreditWithdrawalTransitionVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct IdentityCreditWithdrawalTransitionVersions {
+    pub default_constructor: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
