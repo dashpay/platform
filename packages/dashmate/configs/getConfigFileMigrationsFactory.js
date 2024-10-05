@@ -448,142 +448,54 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         return configFile;
       },
       '1.0.0-dev.2': (configFile) => {
+        const consensusParams = {
+          block: {
+            max_bytes: '2097152',
+            max_gas: '57631392000',
+            time_iota_ms: '5000',
+          },
+          evidence: {
+            max_age: '100000',
+            max_age_num_blocks: '100000',
+            max_age_duration: '172800000000000',
+          },
+          validator: {
+            pub_key_types: ['bls12381'],
+          },
+          timeout: {
+            propose: '50000000000',
+            propose_delta: '5000000000',
+            vote: '10000000000',
+            vote_delta: '1000000000',
+          },
+          synchrony: {
+            message_delay: '70000000000',
+            precision: '1000000000',
+          },
+          abci: {
+            recheck_tx: true,
+          },
+          version: {
+            app_version: '1',
+          },
+        };
+
         const genesis = {
           base: {
-            consensus_params: {
-              block: {
-                max_bytes: '2097152',
-                max_gas: '57631392000',
-                time_iota_ms: '5000',
-              },
-              evidence: {
-                max_age: '100000',
-                max_age_num_blocks: '100000',
-                max_age_duration: '172800000000000',
-              },
-              validator: {
-                pub_key_types: ['bls12381'],
-              },
-              timeout: {
-                propose: '50000000000',
-                propose_delta: '5000000000',
-                vote: '10000000000',
-                vote_delta: '1000000000',
-              },
-              synchrony: {
-                message_delay: '70000000000',
-                precision: '1000000000',
-              },
-              abci: {
-                recheck_tx: true,
-              },
-              version: {
-                app_version: '1',
-              },
-            },
+            consensus_params: consensusParams,
           },
           local: {
-            consensus_params: {
-              block: {
-                max_bytes: '2097152',
-                max_gas: '57631392000',
-                time_iota_ms: '5000',
-              },
-              evidence: {
-                max_age: '100000',
-                max_age_num_blocks: '100000',
-                max_age_duration: '172800000000000',
-              },
-              validator: {
-                pub_key_types: ['bls12381'],
-              },
-              timeout: {
-                propose: '50000000000',
-                propose_delta: '5000000000',
-                vote: '10000000000',
-                vote_delta: '1000000000',
-              },
-              synchrony: {
-                message_delay: '70000000000',
-                precision: '1000000000',
-              },
-              abci: {
-                recheck_tx: true,
-              },
-              version: {
-                app_version: '1',
-              },
-            },
+            consensus_params: consensusParams,
           },
           testnet: {
             chain_id: 'dash-testnet-51',
             validator_quorum_type: 6,
-            consensus_params: {
-              block: {
-                max_bytes: '2097152',
-                max_gas: '57631392000',
-                time_iota_ms: '5000',
-              },
-              evidence: {
-                max_age: '100000',
-                max_age_num_blocks: '100000',
-                max_age_duration: '172800000000000',
-              },
-              validator: {
-                pub_key_types: ['bls12381'],
-              },
-              timeout: {
-                propose: '50000000000',
-                propose_delta: '5000000000',
-                vote: '10000000000',
-                vote_delta: '1000000000',
-              },
-              synchrony: {
-                message_delay: '70000000000',
-                precision: '1000000000',
-              },
-              abci: {
-                recheck_tx: true,
-              },
-              version: {
-                app_version: '1',
-              },
-            },
+            consensus_params: consensusParams,
           },
           mainnet: {
             chain_id: 'evo1',
             validator_quorum_type: 4,
-            consensus_params: {
-              block: {
-                max_bytes: '2097152',
-                max_gas: '57631392000',
-                time_iota_ms: '5000',
-              },
-              evidence: {
-                max_age: '100000',
-                max_age_num_blocks: '100000',
-                max_age_duration: '172800000000000',
-              },
-              validator: {
-                pub_key_types: ['bls12381'],
-              },
-              timeout: {
-                propose: '50000000000',
-                propose_delta: '5000000000',
-                vote: '10000000000',
-                vote_delta: '1000000000',
-              },
-              synchrony: {
-                message_delay: '70000000000',
-                precision: '1000000000',
-              },
-              abci: {
-                recheck_tx: true,
-              },
-              version: {
-                app_version: '1',
-              },
-            },
+            consensus_params: consensusParams,
           },
         };
 
@@ -914,129 +826,34 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       },
       '1.1.0-dev.1': (configFile) => {
         const consensusParams = {
-          base: {
-            block: {
-              max_bytes: '2097152',
-              max_gas: '57631392000',
-              time_iota_ms: '5000',
-            },
-            evidence: {
-              max_age: '100000',
-              max_age_num_blocks: '100000',
-              max_age_duration: '172800000000000',
-            },
-            validator: {
-              pub_key_types: ['bls12381'],
-            },
-            timeout: {
-              propose: '50000000000',
-              propose_delta: '5000000000',
-              vote: '10000000000',
-              vote_delta: '1000000000',
-            },
-            synchrony: {
-              message_delay: '70000000000',
-              precision: '1000000000',
-            },
-            abci: {
-              recheck_tx: true,
-            },
-            version: {
-              app_version: '1',
-            },
+          block: {
+            max_bytes: '2097152',
+            max_gas: '57631392000',
+            time_iota_ms: '5000',
           },
-          local: {
-            block: {
-              max_bytes: '2097152',
-              max_gas: '57631392000',
-              time_iota_ms: '5000',
-            },
-            evidence: {
-              max_age: '100000',
-              max_age_num_blocks: '100000',
-              max_age_duration: '172800000000000',
-            },
-            validator: {
-              pub_key_types: ['bls12381'],
-            },
-            timeout: {
-              propose: '50000000000',
-              propose_delta: '5000000000',
-              vote: '10000000000',
-              vote_delta: '1000000000',
-            },
-            synchrony: {
-              message_delay: '70000000000',
-              precision: '1000000000',
-            },
-            abci: {
-              recheck_tx: true,
-            },
-            version: {
-              app_version: '1',
-            },
+          evidence: {
+            max_age: '100000',
+            max_age_num_blocks: '100000',
+            max_age_duration: '172800000000000',
           },
-          testnet: {
-            block: {
-              max_bytes: '2097152',
-              max_gas: '57631392000',
-              time_iota_ms: '5000',
-            },
-            evidence: {
-              max_age: '100000',
-              max_age_num_blocks: '100000',
-              max_age_duration: '172800000000000',
-            },
-            validator: {
-              pub_key_types: ['bls12381'],
-            },
-            timeout: {
-              propose: '50000000000',
-              propose_delta: '5000000000',
-              vote: '10000000000',
-              vote_delta: '1000000000',
-            },
-            synchrony: {
-              message_delay: '70000000000',
-              precision: '1000000000',
-            },
-            abci: {
-              recheck_tx: true,
-            },
-            version: {
-              app_version: '1',
-            },
+          validator: {
+            pub_key_types: ['bls12381'],
           },
-          mainnet: {
-            block: {
-              max_bytes: '2097152',
-              max_gas: '57631392000',
-              time_iota_ms: '5000',
-            },
-            evidence: {
-              max_age: '100000',
-              max_age_num_blocks: '100000',
-              max_age_duration: '172800000000000',
-            },
-            validator: {
-              pub_key_types: ['bls12381'],
-            },
-            timeout: {
-              propose: '50000000000',
-              propose_delta: '5000000000',
-              vote: '10000000000',
-              vote_delta: '1000000000',
-            },
-            synchrony: {
-              message_delay: '70000000000',
-              precision: '1000000000',
-            },
-            abci: {
-              recheck_tx: true,
-            },
-            version: {
-              app_version: '1',
-            },
+          timeout: {
+            propose: '50000000000',
+            propose_delta: '5000000000',
+            vote: '10000000000',
+            vote_delta: '1000000000',
+          },
+          synchrony: {
+            message_delay: '70000000000',
+            precision: '1000000000',
+          },
+          abci: {
+            recheck_tx: true,
+          },
+          version: {
+            app_version: '1',
           },
         };
 
@@ -1059,9 +876,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.drive.tenderdash.p2p.maxConnections = 64;
             options.platform.drive.tenderdash.p2p.maxOutgoingConnections = 30;
 
-            if (consensusParams[name]) {
+            if (defaultConfigs.has(name)) {
               options.platform.drive.tenderdash.genesis
-                .consensus_params = consensusParams[name];
+                .consensus_params = consensusParams;
             }
 
             options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
