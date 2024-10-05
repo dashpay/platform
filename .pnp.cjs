@@ -8269,10 +8269,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["cookie", [\
-      ["npm:0.4.1", {\
-        "packageLocation": "./.yarn/cache/cookie-npm-0.4.1-cc5e2ebb42-0f2defd60a.zip/node_modules/cookie/",\
+      ["npm:0.7.1", {\
+        "packageLocation": "./.yarn/cache/cookie-npm-0.7.1-f01524ff99-aec6a6aa07.zip/node_modules/cookie/",\
         "packageDependencies": [\
-          ["cookie", "npm:0.4.1"]\
+          ["cookie", "npm:0.7.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -9365,7 +9365,7 @@ const RAW_RUNTIME_STATE =
           ["@types/node", "npm:18.16.1"],\
           ["accepts", "npm:1.3.7"],\
           ["base64id", "npm:2.0.0"],\
-          ["cookie", "npm:0.4.1"],\
+          ["cookie", "npm:0.7.1"],\
           ["cors", "npm:2.8.5"],\
           ["debug", "virtual:4b12ba5111caf7e8338099bdbc7cb046a9f8e079a44e74d0c03dca469876e3071ebbe671c5e90ae6b78ae33e22c205fa5ed32169a4aabd1404b13c56d09986e1#npm:4.3.4"],\
           ["engine.io-parser", "npm:5.0.4"],\
