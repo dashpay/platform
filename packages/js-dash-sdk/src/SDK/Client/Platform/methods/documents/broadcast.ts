@@ -18,7 +18,8 @@ export default async function broadcast(
   documents: {
     create?: ExtendedDocument[],
     replace?: ExtendedDocument[],
-    delete?: ExtendedDocument[]
+    delete?: ExtendedDocument[],
+    transfer?: ExtendedDocument[]
   },
   identity: any,
 ): Promise<any> {
@@ -26,6 +27,7 @@ export default async function broadcast(
     create: documents.create?.length || 0,
     replace: documents.replace?.length || 0,
     delete: documents.delete?.length || 0,
+    transfer: documents.transfer?.length || 0,
   });
   await this.initialize();
 
@@ -36,6 +38,7 @@ export default async function broadcast(
     ...(documents.create || []),
     ...(documents.replace || []),
     ...(documents.delete || []),
+    ...(documents.transfer || []),
   ][0]?.getDataContractId();
 
   if (!dataContractId) {
@@ -79,6 +82,7 @@ export default async function broadcast(
     create: documents.create?.length || 0,
     replace: documents.replace?.length || 0,
     delete: documents.delete?.length || 0,
+    transfer: documents.transfer?.length || 0,
   });
 
   return documentsBatchTransition;
