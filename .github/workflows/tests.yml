@@ -80,6 +80,8 @@ jobs:
       fail-fast: false
       matrix:
         rs-package: ${{ fromJson(needs.changes.outputs.rs-packages) }}
+        exclude:
+          - rs-package: 'drive-abci'
     uses: ./.github/workflows/tests-rs-package.yml
     with:
       package: ${{ matrix.rs-package }}
@@ -89,6 +91,22 @@ jobs:
       # Run drive tests on self-hosted 4x
       test-runner: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
       check-each-feature: ${{ contains(fromJSON('["dash-sdk","rs-dapi-client","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
+      
+  rs-drive-abci:
+    name: Drive ABCI
+    needs:
+      - changes
+    secrets: inherit
+    if: contains(needs.changes.outputs.rs-packages, 'drive-abci')
+    uses: ./.github/workflows/tests-rs-drive-abci.yml
+    with:
+      package: ${{ matrix.rs-package }}
+      # lint-runner: ${{ contains(fromJSON('["drive-abci", "drive"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' || '"ubuntu-22.04"' }}
+      # FIXME: Clippy fails on github hosted runners, most likely due to RAM usage. Using self-hosted runners for now.
+      lint-runner: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
+      # Run drive tests on self-hosted 4x
+      test-runner: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
+      check-each-feature: true
 
   rs-crates-security:
     name: Rust crates security audit

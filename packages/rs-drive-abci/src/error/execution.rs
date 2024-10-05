@@ -90,7 +90,7 @@ pub enum ExecutionError {
 
     /// A protocol upgrade incoherence error occurred.
     #[error("protocol upgrade incoherence error: {0}")]
-    ProtocolUpgradeIncoherence(&'static str),
+    ProtocolUpgradeIncoherence(String),
 
     /// Data is missing from the drive.
     #[error("drive missing data error: {0}")]
