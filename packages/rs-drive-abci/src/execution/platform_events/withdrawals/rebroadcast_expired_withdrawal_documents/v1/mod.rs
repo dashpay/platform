@@ -68,7 +68,12 @@ where
         for mut document in expired_withdrawal_documents_to_retry_signing {
             document.set_u8(
                 withdrawal::properties::STATUS,
-                WithdrawalStatus::POOLED as u8,
+                WithdrawalStatus::BROADCASTED as u8,
+            );
+
+            document.set_u64(
+                withdrawal::properties::TRANSACTION_SIGN_HEIGHT,
+                block_info.core_height as u64,
             );
 
             document.set_updated_at(Some(block_info.time_ms));
