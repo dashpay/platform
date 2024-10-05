@@ -9,6 +9,7 @@ import createAssetLockTransaction from './createAssetLockTransaction';
 
 import broadcastDocument from './methods/documents/broadcast';
 import createDocument from './methods/documents/create';
+import transferDocument from './methods/documents/transfer';
 import getDocument from './methods/documents/get';
 
 import publishContract from './methods/contracts/publish';
@@ -58,6 +59,7 @@ export interface PlatformOpts {
 interface Records {
   broadcast: Function,
   create: Function,
+  transfer: Function,
   get: Function,
 }
 
@@ -165,6 +167,7 @@ export class Platform {
     this.documents = {
       broadcast: broadcastDocument.bind(this),
       create: createDocument.bind(this),
+      transfer: transferDocument.bind(this),
       get: getDocument.bind(this),
     };
     this.contracts = {
