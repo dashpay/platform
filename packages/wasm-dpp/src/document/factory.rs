@@ -32,6 +32,7 @@ pub struct DocumentTransitions {
     create: Vec<ExtendedDocumentWasm>,
     replace: Vec<ExtendedDocumentWasm>,
     delete: Vec<ExtendedDocumentWasm>,
+    transfer: Vec<ExtendedDocumentWasm>,
 }
 
 #[wasm_bindgen(js_class=DocumentTransitions)]
@@ -54,6 +55,11 @@ impl DocumentTransitions {
     #[wasm_bindgen(js_name = "addTransitionDelete")]
     pub fn add_transition_delete(&mut self, transition: ExtendedDocumentWasm) {
         self.delete.push(transition)
+    }
+
+    #[wasm_bindgen(js_name = "addTransitionTransfer")]
+    pub fn add_transition_transfer(&mut self, transition: ExtendedDocumentWasm) {
+        self.transfer.push(transition)
     }
 }
 
@@ -283,10 +289,12 @@ fn extract_documents_by_action(
     let documents_create = extract_documents_of_action(documents, "create").with_js_error()?;
     let documents_replace = extract_documents_of_action(documents, "replace").with_js_error()?;
     let documents_delete = extract_documents_of_action(documents, "delete").with_js_error()?;
+    let documents_transfer = extract_documents_of_action(documents, "transfer").with_js_error()?;
 
     documents_by_action.insert(DocumentTransitionActionType::Create, documents_create);
     documents_by_action.insert(DocumentTransitionActionType::Replace, documents_replace);
     documents_by_action.insert(DocumentTransitionActionType::Delete, documents_delete);
+    documents_by_action.insert(DocumentTransitionActionType::Transfer, documents_transfer);
 
     Ok(documents_by_action)
 }
