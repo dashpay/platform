@@ -110,6 +110,11 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
             genesis: {
               chain_id: 'dash-testnet-51',
               validator_quorum_type: 6,
+              consensus_params: {
+                version: {
+                  app_version: '1',
+                },
+              },
             },
           },
         },

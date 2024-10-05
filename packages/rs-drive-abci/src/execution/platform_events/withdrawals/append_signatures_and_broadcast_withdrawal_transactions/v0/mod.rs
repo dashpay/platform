@@ -31,7 +31,7 @@ where
         }
 
         tracing::debug!(
-            "Broadcasting {} withdrawal transactions",
+            "Broadcasting {} asset unlock transactions",
             withdrawal_transactions_with_vote_extensions.len(),
         );
 
@@ -55,19 +55,20 @@ where
             let signature = BLSSignature::from(signature_bytes);
 
             // Modify the transaction's payload
-            if let Some(AssetUnlockPayloadType(mut payload)) =
-                transaction.special_transaction_payload
-            {
-                // Assign the quorum signature
-                payload.quorum_sig = signature;
-
-                // Assign the modified payload back to the transaction
-                transaction.special_transaction_payload = Some(AssetUnlockPayloadType(payload));
-            } else {
+            let Some(AssetUnlockPayloadType(mut payload)) = transaction.special_transaction_payload
+            else {
                 return Err(Error::Execution(ExecutionError::CorruptedCachedState(
                     "withdrawal transaction payload must be AssetUnlockPayloadType".to_string(),
                 )));
-            }
+            };
+
+            // Assign the quorum signature
+            payload.quorum_sig = signature;
+
+            let tx_index = payload.base.index;
+
+            // Assign the modified payload back to the transaction
+            transaction.special_transaction_payload = Some(AssetUnlockPayloadType(payload));
 
             // Serialize the transaction
             let tx_bytes = consensus::serialize(&transaction);
@@ -77,7 +78,8 @@ where
                 Ok(_) => {
                     tracing::debug!(
                         tx_id = transaction.txid().to_hex(),
-                        "Successfully broadcasted withdrawal transaction"
+                        tx_index,
+                        "Successfully broadcasted asset unlock transaction with index {tx_index}",
                     );
                 }
                 // Handle specific errors
@@ -92,7 +94,9 @@ where
                 {
                     tracing::debug!(
                         tx_id = transaction.txid().to_string(),
-                        "Asset unlock is expired or has no active quorum: {}",
+                        tx_index,
+                        error = ?e,
+                        "Asset unlock transaction with index {tx_index} is expired or has no active quorum: {}",
                         e.message
                     );
                     transaction_submission_failures.push((transaction.txid(), tx_bytes));
@@ -101,7 +105,8 @@ where
                 Err(e) => {
                     tracing::warn!(
                         tx_id = transaction.txid().to_string(),
-                        "Failed to broadcast asset unlock transaction: {}",
+                        tx_index,
+                        "Failed to broadcast asset unlock transaction with index {tx_index}: {}",
                         e
                     );
                     // Collect failed transactions for potential future retries

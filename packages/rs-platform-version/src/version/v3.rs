@@ -7,8 +7,9 @@ use crate::version::dpp_versions::{
     DocumentTypeClassMethodVersions, DocumentTypeIndexVersions, DocumentTypeMethodVersions,
     DocumentTypeSchemaVersions, DocumentTypeValidationVersions, DocumentTypeVersions,
     DocumentVersions, DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
-    IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
-    IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
+    IdentityCreditWithdrawalTransitionVersions, IdentityKeyTypeMethodVersions,
+    IdentityTransitionAssetLockVersions, IdentityTransitionVersions, IdentityVersions,
+    JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
     RecursiveSchemaValidatorVersions, StateTransitionConversionVersions,
     StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions,
     VotingValidationVersions, VotingVersions,
@@ -620,7 +621,8 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                 check_tx: 0,
                 run_block_proposal: 0,
                 finalize_block_proposal: 0,
-                consensus_params_update: 0,
+                // Update app version if changed as well
+                consensus_params_update: 1,
             },
             initialization: DriveAbciInitializationMethodVersions {
                 initial_core_height_and_time: 0,
@@ -1188,6 +1190,9 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                     50000,
                     validate_asset_lock_transaction_structure: 0,
                     validate_instant_asset_lock_proof_structure: 0,
+                },
+                credit_withdrawal: IdentityCreditWithdrawalTransitionVersions {
+                    default_constructor: 1,
                 },
             },
         },
