@@ -12,7 +12,7 @@ describe('Withdrawals', function withdrawalsTest() {
   this.bail(true);
 
   let client;
-  let identity;``
+  let identity;
 
   before(async function createClients() {
     // TODO: temporarily disabled on browser because of header stream is not syncing
@@ -38,7 +38,7 @@ describe('Withdrawals', function withdrawalsTest() {
   });
 
   describe('Any Identity', () => {
-    const INITIAL_BALANCE = 1000000;
+    const INITIAL_BALANCE = 2000000;
 
     before(async () => {
       identity = await client.platform.identities.register(INITIAL_BALANCE);
