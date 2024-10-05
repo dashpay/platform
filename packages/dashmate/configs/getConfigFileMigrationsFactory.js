@@ -482,20 +482,20 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         const genesis = {
           base: {
-            consensus_params: consensusParams,
+            consensus_params: lodash.cloneDeep(consensusParams),
           },
           local: {
-            consensus_params: consensusParams,
+            consensus_params: lodash.cloneDeep(consensusParams),
           },
           testnet: {
             chain_id: 'dash-testnet-51',
             validator_quorum_type: 6,
-            consensus_params: consensusParams,
+            consensus_params: lodash.cloneDeep(consensusParams),
           },
           mainnet: {
             chain_id: 'evo1',
             validator_quorum_type: 4,
-            consensus_params: consensusParams,
+            consensus_params: lodash.cloneDeep(consensusParams),
           },
         };
 
@@ -878,7 +878,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (defaultConfigs.has(name)) {
               options.platform.drive.tenderdash.genesis
-                .consensus_params = consensusParams;
+                .consensus_params = lodash.cloneDeep(consensusParams);
             }
 
             options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
