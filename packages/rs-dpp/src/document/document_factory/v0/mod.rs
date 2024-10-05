@@ -32,6 +32,7 @@ use crate::state_transition::documents_batch_transition::{
     DocumentsBatchTransition, DocumentsBatchTransitionV0,
 };
 use itertools::Itertools;
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransferTransition;
 
 const PROPERTY_FEATURE_VERSION: &str = "$version";
 const PROPERTY_ENTROPY: &str = "$entropy";
