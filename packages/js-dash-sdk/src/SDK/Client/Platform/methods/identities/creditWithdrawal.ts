@@ -49,8 +49,8 @@ export async function creditWithdrawal(
 
   // eslint-disable-next-line no-param-reassign
   options = {
-    ...options,
     signingKeyIndex: 3,
+    ...options,
   };
 
   const { dpp } = this;
