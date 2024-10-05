@@ -73,8 +73,10 @@ impl IdentityCreditWithdrawalTransition {
     pub fn default_versioned(platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
         match platform_version
             .dpp
-            .identity_versions
-            .identity_structure_version
+            .state_transitions
+            .identities
+            .credit_withdrawal
+            .default_constructor
         {
             0 => Ok(IdentityCreditWithdrawalTransition::V0(
                 IdentityCreditWithdrawalTransitionV0::default(),
