@@ -152,6 +152,10 @@ impl PlatformVersion {
             .expect("expected to have a platform version")
     }
 
+    pub fn desired<'a>() -> &'a Self {
+        DESIRED_PLATFORM_VERSION
+    }
+
     #[cfg(feature = "mock-versions")]
     /// Set mock versions for testing
     pub fn replace_test_versions(versions: Vec<PlatformVersion>) {

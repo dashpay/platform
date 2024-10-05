@@ -615,7 +615,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 check_tx: 0,
                 run_block_proposal: 0,
                 finalize_block_proposal: 0,
-                consensus_params_update: 0,
+                consensus_params_update: 1,
             },
             initialization: DriveAbciInitializationMethodVersions {
                 initial_core_height_and_time: 0,

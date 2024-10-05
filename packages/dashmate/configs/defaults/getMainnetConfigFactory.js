@@ -66,6 +66,11 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
             genesis: {
               chain_id: 'evo1',
               validator_quorum_type: 4,
+              consensus_params: {
+                version: {
+                  app_version: '1',
+                },
+              },
             },
           },
           abci: {
