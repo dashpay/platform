@@ -1,3 +1,36 @@
+## [1.4.0-dev.4](https://github.com/dashpay/platform/compare/v1.4.0-dev.3...v1.4.0-dev.4) (2024-10-05)
+
+
+### Features
+
+* **sdk:** enable withdrawals v1 in JS SDK ([#2201](https://github.com/dashpay/platform/issues/2201))
+* start network with latest version if genesis version not set ([#2206](https://github.com/dashpay/platform/issues/2206))
+
+
+### Bug Fixes
+
+* cookie accepts cookie name, path, and domain with out of bounds characters ([#2211](https://github.com/dashpay/platform/issues/2211))
+* **drive:** set sign height when rebroadcasting ([#2210](https://github.com/dashpay/platform/issues/2210))
+* **sdk:** small sdk improvements and fixes for v1.4 ([#2200](https://github.com/dashpay/platform/issues/2200))
+
+
+### Code Refactoring
+
+* **drive:** remove duplicated withdrawal amount validation ([#2191](https://github.com/dashpay/platform/issues/2191))
+
+
+### Miscellaneous Chores
+
+* bump GroveDB dependency ([#2196](https://github.com/dashpay/platform/issues/2196))
+* **drive:** improve withdrawal logging ([#2203](https://github.com/dashpay/platform/issues/2203))
+* **drive:** logs and metrics for withdrawal daily limit ([#2192](https://github.com/dashpay/platform/issues/2192))
+* **release:** replace colima with native docker in macOS builds ([#2188](https://github.com/dashpay/platform/issues/2188))
+
+
+### Tests
+
+* **test-suite:** enable withdrawal tests ([#2202](https://github.com/dashpay/platform/issues/2202))
+
 ## [1.4.0-dev.2](https://github.com/dashpay/platform/compare/v1.4.0-dev.1...v1.4.0-dev.2) (2024-09-30)
 
 
