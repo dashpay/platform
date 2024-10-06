@@ -204,14 +204,14 @@ impl KeyType {
     /// Gets the public key data for a private key depending on the key type
     pub fn public_key_data_from_private_key_data(
         &self,
-        private_key_bytes: Vec<u8>,
+        private_key_bytes: &[u8],
         network: Network,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
             KeyType::ECDSA_SECP256K1 => {
                 let secp = Secp256k1::new();
                 let secret_key =
-                    dashcore::secp256k1::SecretKey::from_slice(private_key_bytes.as_slice())
+                    dashcore::secp256k1::SecretKey::from_slice(private_key_bytes)
                         .map_err(|e| ProtocolError::Generic(e.to_string()))?;
                 let private_key = dashcore::PrivateKey::new(secret_key, network);
 
@@ -219,7 +219,7 @@ impl KeyType {
             }
             KeyType::BLS12_381 => {
                 let private_key =
-                    bls_signatures::PrivateKey::from_bytes(private_key_bytes.as_slice(), false)
+                    bls_signatures::PrivateKey::from_bytes(private_key_bytes, false)
                         .map_err(|e| ProtocolError::Generic(e.to_string()))?;
                 let public_key_bytes = private_key
                     .g1_element()
@@ -231,7 +231,7 @@ impl KeyType {
             KeyType::ECDSA_HASH160 => {
                 let secp = Secp256k1::new();
                 let secret_key =
-                    dashcore::secp256k1::SecretKey::from_slice(private_key_bytes.as_slice())
+                    dashcore::secp256k1::SecretKey::from_slice(private_key_bytes)
                         .map_err(|e| ProtocolError::Generic(e.to_string()))?;
                 let private_key = dashcore::PrivateKey::new(secret_key, network);
 
@@ -241,7 +241,7 @@ impl KeyType {
                 #[cfg(feature = "ed25519-dalek")]
                 {
                     let key_pair = ed25519_dalek::SigningKey::from_bytes(
-                        &private_key_bytes.as_slice().try_into().map_err(|_| {
+                        &private_key_bytes.try_into().map_err(|_| {
                             ProtocolError::InvalidVectorSizeError(InvalidVectorSizeError::new(
                                 32,
                                 private_key_bytes.len(),
