@@ -15,7 +15,7 @@ impl<C> Platform<C> {
     ///
     /// # Arguments
     ///
-    /// * payout_address - The payout address for the owner.
+    /// * owner_public_key_address - The public key address of the owner.
     /// * key_id - The KeyID for the identity public key.
     /// * platform_version - The version of the platform to determine which method to delegate to.
     ///
