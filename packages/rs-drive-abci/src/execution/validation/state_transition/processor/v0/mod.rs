@@ -29,6 +29,7 @@ use crate::execution::validation::state_transition::identity_top_up::StateTransi
 use crate::execution::validation::state_transition::state_transitions::identity_update::advanced_structure::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_top_up::identity_retrieval::v0::IdentityTopUpStateTransitionIdentityRetrievalV0;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::execution::validation::state_transition::state_transitions::identity_credit_withdrawal::signature_purpose_matches_requirements::IdentityCreditWithdrawalStateTransitionSignaturePurposeMatchesRequirementsValidation;
 pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     block_info: &BlockInfo,
@@ -810,7 +811,6 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
         match self {
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
-            | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::DocumentsBatch(_) => {
                 //Basic signature verification
@@ -822,6 +822,29 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
                     execution_context,
                     platform_version,
                 )?)
+            }
+            StateTransition::IdentityCreditWithdrawal(credit_withdrawal) => {
+                let mut consensus_validation_result = self
+                    .validate_state_transition_identity_signed(
+                        drive,
+                        true,
+                        false,
+                        tx,
+                        execution_context,
+                        platform_version,
+                    )?;
+
+                if consensus_validation_result.is_valid_with_data() {
+                    let validation_result = credit_withdrawal
+                        .validate_signature_purpose_matches_requirements(
+                            consensus_validation_result.data.as_ref().unwrap(),
+                            platform_version,
+                        )?;
+                    if !validation_result.is_valid() {
+                        consensus_validation_result.add_errors(validation_result.errors);
+                    }
+                }
+                Ok(consensus_validation_result)
             }
             StateTransition::IdentityUpdate(_) => {
                 //Basic signature verification

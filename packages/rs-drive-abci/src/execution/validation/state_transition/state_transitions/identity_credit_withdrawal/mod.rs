@@ -1,5 +1,6 @@
 mod balance;
 mod nonce;
+pub(crate) mod signature_purpose_matches_requirements;
 mod state;
 mod structure;
 
@@ -131,7 +132,9 @@ impl StateTransitionStateValidationV0 for IdentityCreditWithdrawalTransition {
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
-    use crate::execution::validation::state_transition::tests::setup_identity_with_withdrawal_key_and_system_credits;
+    use crate::execution::validation::state_transition::tests::{
+        setup_identity_with_withdrawal_key_and_system_credits, setup_masternode_owner_identity,
+    };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -378,6 +381,154 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_masternode_credit_withdrawal_without_withdrawal_address_creates_withdrawal_document_when_signing_with_withdrawal_key(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut rng = StdRng::seed_from_u64(529);
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
+
+        let (identity, signer, _, _) = setup_masternode_owner_identity(
+            &mut platform,
+            rng.gen(),
+            dash_to_credits!(0.5),
+            platform_version,
+        );
+
+        let platform_state = platform.state.load();
+
+        let withdrawal_amount = dash_to_credits!(0.1);
+
+        let credit_withdrawal_transition = IdentityCreditWithdrawalTransition::try_from_identity(
+            &identity,
+            None,
+            withdrawal_amount,
+            Pooling::Never,
+            1,
+            0,
+            signer,
+            None,
+            PreferredKeyPurposeForSigningWithdrawal::TransferOnly,
+            2,
+            platform_version,
+            None,
+        )
+        .expect("expected a credit withdrawal transition");
+
+        let credit_withdrawal_transition_serialized_transition = credit_withdrawal_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![credit_withdrawal_transition_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default_with_time(1_200_001_000),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+        );
+    }
+
+    #[test]
+    fn test_masternode_credit_withdrawal_without_withdrawal_address_creates_withdrawal_document_when_signing_with_owner_key(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut rng = StdRng::seed_from_u64(529);
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
+
+        let (identity, signer, _, _) = setup_masternode_owner_identity(
+            &mut platform,
+            rng.gen(),
+            dash_to_credits!(0.5),
+            platform_version,
+        );
+
+        let platform_state = platform.state.load();
+
+        let withdrawal_amount = dash_to_credits!(0.1);
+
+        let credit_withdrawal_transition = IdentityCreditWithdrawalTransition::try_from_identity(
+            &identity,
+            None,
+            withdrawal_amount,
+            Pooling::Never,
+            1,
+            0,
+            signer,
+            None,
+            PreferredKeyPurposeForSigningWithdrawal::OwnerOnly,
+            2,
+            platform_version,
+            None,
+        )
+        .expect("expected a credit withdrawal transition");
+
+        let credit_withdrawal_transition_serialized_transition = credit_withdrawal_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![credit_withdrawal_transition_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default_with_time(1_200_001_000),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+        );
+    }
+
     mod errors {
         use super::*;
         use dpp::consensus::state::state_error::StateError;
@@ -454,6 +605,85 @@ mod tests {
                 [StateTransitionExecutionResult::UnpaidConsensusError(
                     ConsensusError::StateError(
                         StateError::NoTransferKeyForCoreWithdrawalAvailableError(_)
+                    )
+                )]
+            );
+        }
+
+        #[test]
+        fn test_masternode_credit_withdrawal_with_withdrawal_address_creates_when_signing_with_owner_key_should_fail(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut rng = StdRng::seed_from_u64(529);
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
+
+            let (identity, signer, _, _) = setup_masternode_owner_identity(
+                &mut platform,
+                rng.gen(),
+                dash_to_credits!(0.5),
+                platform_version,
+            );
+
+            let platform_state = platform.state.load();
+
+            let withdrawal_amount = dash_to_credits!(0.1);
+
+            let credit_withdrawal_transition =
+                IdentityCreditWithdrawalTransition::try_from_identity(
+                    &identity,
+                    Some(CoreScript::random_p2pkh(&mut rng)),
+                    withdrawal_amount,
+                    Pooling::Never,
+                    1,
+                    0,
+                    signer,
+                    None,
+                    PreferredKeyPurposeForSigningWithdrawal::OwnerOnly,
+                    2,
+                    platform_version,
+                    None,
+                )
+                .expect("expected a credit withdrawal transition");
+
+            let credit_withdrawal_transition_serialized_transition = credit_withdrawal_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![credit_withdrawal_transition_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default_with_time(1_200_001_000),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(
+                        BasicError::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError(_)
                     )
                 )]
             );

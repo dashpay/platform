@@ -200,6 +200,7 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub identity_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub identity_credit_withdrawal_state_transition_purpose_matches_requirements: FeatureVersion,
     pub identity_credit_transfer_state_transition: DriveAbciStateTransitionValidationVersion,
     pub masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,

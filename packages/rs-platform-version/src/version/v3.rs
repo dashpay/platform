@@ -777,6 +777,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                     state: 0,
                     transform_into_action: 0,
                 },
+                identity_credit_withdrawal_state_transition_purpose_matches_requirements: 0,
                 identity_credit_transfer_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),

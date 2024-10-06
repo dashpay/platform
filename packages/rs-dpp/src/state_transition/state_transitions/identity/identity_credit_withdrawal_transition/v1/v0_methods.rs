@@ -65,9 +65,9 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
                 let mut key: Option<&IdentityPublicKey>;
 
                 match preferred_key_purpose_for_signing_withdrawal {
-                    PreferredKeyPurposeForSigningWithdrawal::MasterPreferred => {
+                    PreferredKeyPurposeForSigningWithdrawal::OwnerPreferred => {
                         key = identity.get_first_public_key_matching(
-                            Purpose::AUTHENTICATION,
+                            Purpose::OWNER,
                             SecurityLevel::full_range().into(),
                             KeyType::all_key_types().into(),
                             true,
@@ -93,16 +93,16 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
 
                         if key.is_none() || !signer.can_sign_with(key.unwrap()) {
                             key = identity.get_first_public_key_matching(
-                                Purpose::AUTHENTICATION,
+                                Purpose::OWNER,
                                 SecurityLevel::full_range().into(),
                                 KeyType::all_key_types().into(),
                                 true,
                             );
                         }
                     }
-                    PreferredKeyPurposeForSigningWithdrawal::MasterOnly => {
+                    PreferredKeyPurposeForSigningWithdrawal::OwnerOnly => {
                         key = identity.get_first_public_key_matching(
-                            Purpose::AUTHENTICATION,
+                            Purpose::OWNER,
                             SecurityLevel::full_range().into(),
                             KeyType::all_key_types().into(),
                             true,
