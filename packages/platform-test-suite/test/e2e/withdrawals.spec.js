@@ -183,7 +183,7 @@ describe('Withdrawals', function withdrawalsTest() {
       )).to.be.rejectedWith(`Withdrawal amount "${amountToWithdraw}" is bigger that identity balance "${identityBalanceBefore}"`);
     });
 
-    it('should not allow to create withdrawal with wrong security key type', async () => {
+    it('should not allow to create withdrawal with authentication key purpose', async () => {
       const account = await client.getWalletAccount();
       const identityBalanceBefore = identity.getBalance();
       const withdrawTo = await account.getUnusedAddress();
@@ -196,7 +196,7 @@ describe('Withdrawals', function withdrawalsTest() {
           toAddress: withdrawTo.address,
           signingKeyIndex: 1,
         },
-      )).to.be.rejectedWith('Error conversion not implemented: Invalid public key security level HIGH. The state transition requires one of MASTER');
+      )).to.be.rejectedWith('Error conversion not implemented: Invalid identity key purpose AUTHENTICATION. This state transition requires TRANSFER | OWNER');
     });
 
     // TODO: Figure out how to overcome client-side validation and implement
