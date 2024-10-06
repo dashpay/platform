@@ -218,15 +218,22 @@ impl KeyType {
                 Ok(private_key.public_key(&secp).to_bytes())
             }
             KeyType::BLS12_381 => {
-                let private_key =
-                    bls_signatures::PrivateKey::from_bytes(private_key_bytes, false)
-                        .map_err(|e| ProtocolError::Generic(e.to_string()))?;
-                let public_key_bytes = private_key
-                    .g1_element()
-                    .expect("expected to get a public key from a bls private key")
-                    .to_bytes()
-                    .to_vec();
-                Ok(public_key_bytes)
+                #[cfg(feature = "bls-signatures")]
+                {
+                    let private_key =
+                        bls_signatures::PrivateKey::from_bytes(private_key_bytes, false)
+                            .map_err(|e| ProtocolError::Generic(e.to_string()))?;
+                    let public_key_bytes = private_key
+                        .g1_element()
+                        .expect("expected to get a public key from a bls private key")
+                        .to_bytes()
+                        .to_vec();
+                    Ok(public_key_bytes)
+                }
+                #[cfg(not(feature = "bls-signatures"))]
+                return Err(ProtocolError::NotSupported(
+                    "Converting a private key to a bls public key is not supported without the bls-signatures feature".to_string(),
+                ));
             }
             KeyType::ECDSA_HASH160 => {
                 let secp = Secp256k1::new();
