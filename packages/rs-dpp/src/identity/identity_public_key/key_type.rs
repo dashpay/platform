@@ -1,4 +1,3 @@
-#[cfg(feature = "random-public-keys")]
 use crate::util::hash::ripemd160_sha256;
 use anyhow::bail;
 use bincode::{Decode, Encode};
@@ -8,9 +7,7 @@ use ciborium::value::Value as CborValue;
 use dashcore::secp256k1::rand::rngs::StdRng as EcdsaRng;
 #[cfg(feature = "random-public-keys")]
 use dashcore::secp256k1::rand::SeedableRng;
-#[cfg(feature = "random-public-keys")]
 use dashcore::secp256k1::Secp256k1;
-#[cfg(feature = "random-public-keys")]
 use dashcore::Network;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -241,15 +238,22 @@ impl KeyType {
                 Ok(ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()).to_vec())
             }
             KeyType::EDDSA_25519_HASH160 => {
-                let key_pair = ed25519_dalek::SigningKey::from_bytes(
-                    &private_key_bytes.as_slice().try_into().map_err(|_| {
-                        ProtocolError::InvalidVectorSizeError(InvalidVectorSizeError::new(
-                            32,
-                            private_key_bytes.len(),
-                        ))
-                    })?,
-                );
-                Ok(ripemd160_sha256(key_pair.verifying_key().to_bytes().as_slice()).to_vec())
+                #[cfg(feature = "ed25519-dalek")]
+                {
+                    let key_pair = ed25519_dalek::SigningKey::from_bytes(
+                        &private_key_bytes.as_slice().try_into().map_err(|_| {
+                            ProtocolError::InvalidVectorSizeError(InvalidVectorSizeError::new(
+                                32,
+                                private_key_bytes.len(),
+                            ))
+                        })?,
+                    );
+                    Ok(ripemd160_sha256(key_pair.verifying_key().to_bytes().as_slice()).to_vec())
+                }
+                #[cfg(not(feature = "ed25519-dalek"))]
+                return Err(ProtocolError::NotSupported(
+                    "Converting a private key to a eddsa hash 160 is not supported without the ed25519-dalek feature".to_string(),
+                ));
             }
             KeyType::BIP13_SCRIPT_HASH => {
                 return Err(ProtocolError::NotSupported(
