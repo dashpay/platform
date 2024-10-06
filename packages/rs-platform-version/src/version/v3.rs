@@ -636,6 +636,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                     get_voter_identity_key: 0,
                     get_operator_identity_keys: 0,
                     get_owner_identity_withdrawal_key: 0,
+                    get_owner_identity_owner_key: 0,
                     get_voter_identifier_from_masternode_list_item: 0,
                     get_operator_identifier_from_masternode_list_item: 0,
                     create_operator_identity: 0,

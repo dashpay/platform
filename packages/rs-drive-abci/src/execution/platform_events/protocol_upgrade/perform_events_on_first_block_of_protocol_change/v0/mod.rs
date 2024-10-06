@@ -1,7 +1,14 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
+use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::hashes::Hash;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
+use drive::drive::identity::key::fetch::{
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
+};
 use drive::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
     WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
@@ -30,12 +37,19 @@ impl<C> Platform<C> {
     /// * `Err(Error)`: If there was an issue executing the protocol-specific events.
     pub(super) fn perform_events_on_first_block_of_protocol_change_v0(
         &self,
+        platform_state: &PlatformState,
+        block_info: &BlockInfo,
         transaction: &Transaction,
         previous_protocol_version: ProtocolVersion,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         if previous_protocol_version < 4 && platform_version.protocol_version >= 4 {
-            self.transition_to_version_4(transaction, platform_version)?;
+            self.transition_to_version_4(
+                platform_state,
+                block_info,
+                transaction,
+                platform_version,
+            )?;
         }
 
         Ok(())
@@ -57,9 +71,12 @@ impl<C> Platform<C> {
     /// * `Err(Error)`: If there was an issue creating or updating the necessary data structures.
     fn transition_to_version_4(
         &self,
+        platform_state: &PlatformState,
+        block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // We are adding the withdrawal transactions sum amount tree
         let path = get_withdrawal_root_path();
         self.drive.grove_insert_if_not_exists(
             (&path).into(),
@@ -69,6 +86,7 @@ impl<C> Platform<C> {
             None,
             &platform_version.drive,
         )?;
+        // We are adding a tree to store broadcasted transactions that might expire
         self.drive.grove_insert_if_not_exists(
             (&path).into(),
             &WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
@@ -77,6 +95,57 @@ impl<C> Platform<C> {
             None,
             &platform_version.drive,
         )?;
+        // We need to add all masternode owner keys
+        // This is because owner identities only had a withdrawal key
+        // But no owner key
+        for masternode in platform_state.full_masternode_list().values() {
+            let masternode_id = masternode.pro_tx_hash.to_byte_array();
+            let key_request = IdentityKeysRequest {
+                identity_id: masternode_id,
+                request_type: KeyRequestType::AllKeys,
+                limit: None,
+                offset: None,
+            };
+
+            let old_owner_identity_keys = self
+                .drive
+                .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
+                    key_request,
+                    Some(transaction),
+                    platform_version,
+                )?;
+
+            if old_owner_identity_keys.is_empty() {
+                continue;
+            }
+
+            let last_key_id = *old_owner_identity_keys
+                .keys()
+                .max()
+                .expect("there must be keys, we already checked");
+
+            let new_owner_key = Self::get_owner_identity_owner_key(
+                masternode.state.owner_address,
+                last_key_id + 1,
+                platform_version,
+            )?;
+
+            tracing::trace!(
+                identity_id = ?masternode_id,
+                withdrawal_key = ?new_owner_key,
+                method = "transition_to_version_4",
+                "add new owner key to owner identity"
+            );
+
+            self.drive.add_new_non_unique_keys_to_identity(
+                masternode_id,
+                vec![new_owner_key],
+                block_info,
+                true,
+                Some(transaction),
+                platform_version,
+            )?;
+        }
         Ok(())
     }
 }

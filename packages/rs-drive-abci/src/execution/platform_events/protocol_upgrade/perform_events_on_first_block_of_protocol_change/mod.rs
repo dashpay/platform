@@ -3,6 +3,8 @@ mod v0;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::PlatformState;
+use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use drive::grovedb::Transaction;
@@ -40,6 +42,8 @@ impl<C> Platform<C> {
     ///
     pub fn perform_events_on_first_block_of_protocol_change(
         &self,
+        platform_state: &PlatformState,
+        block_info: &BlockInfo,
         transaction: &Transaction,
         previous_protocol_version: ProtocolVersion,
         platform_version: &PlatformVersion,
@@ -51,6 +55,8 @@ impl<C> Platform<C> {
             .perform_events_on_first_block_of_protocol_change
         {
             Some(0) => self.perform_events_on_first_block_of_protocol_change_v0(
+                platform_state,
+                block_info,
                 transaction,
                 previous_protocol_version,
                 platform_version,

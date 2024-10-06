@@ -19,7 +19,7 @@ use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 lazy_static! {
-    static ref ALLOWED_SECURITY_LEVELS: HashMap<Purpose, Vec<SecurityLevel>> = {
+    static ref ALLOWED_SECURITY_LEVELS_FOR_EXTERNALLY_ADDED_KEYS: HashMap<Purpose, Vec<SecurityLevel>> = {
         let mut m = HashMap::new();
         m.insert(
             Purpose::AUTHENTICATION,
@@ -119,8 +119,8 @@ impl IdentityPublicKeyInCreation {
         let validation_errors = identity_public_keys_with_witness
             .iter()
             .filter_map(|identity_public_key| {
-                let allowed_security_levels =
-                    ALLOWED_SECURITY_LEVELS.get(&identity_public_key.purpose());
+                let allowed_security_levels = ALLOWED_SECURITY_LEVELS_FOR_EXTERNALLY_ADDED_KEYS
+                    .get(&identity_public_key.purpose());
                 if let Some(levels) = allowed_security_levels {
                     if !levels.contains(&identity_public_key.security_level()) {
                         Some(

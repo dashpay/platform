@@ -691,8 +691,8 @@ impl IdentityKeysRequest {
             sec_btree_map.insert(security_level, CurrentKeyOfKindRequest);
         }
         let mut purpose_btree_map = BTreeMap::new();
-        for purpose in 0..=Purpose::last() as u8 {
-            purpose_btree_map.insert(purpose, sec_btree_map.clone());
+        for purpose in Purpose::searchable_purposes() {
+            purpose_btree_map.insert(purpose as u8, sec_btree_map.clone());
         }
         IdentityKeysRequest {
             identity_id,
