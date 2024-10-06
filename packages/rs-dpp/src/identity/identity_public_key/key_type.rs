@@ -210,9 +210,8 @@ impl KeyType {
         match self {
             KeyType::ECDSA_SECP256K1 => {
                 let secp = Secp256k1::new();
-                let secret_key =
-                    dashcore::secp256k1::SecretKey::from_slice(private_key_bytes)
-                        .map_err(|e| ProtocolError::Generic(e.to_string()))?;
+                let secret_key = dashcore::secp256k1::SecretKey::from_slice(private_key_bytes)
+                    .map_err(|e| ProtocolError::Generic(e.to_string()))?;
                 let private_key = dashcore::PrivateKey::new(secret_key, network);
 
                 Ok(private_key.public_key(&secp).to_bytes())
@@ -237,9 +236,8 @@ impl KeyType {
             }
             KeyType::ECDSA_HASH160 => {
                 let secp = Secp256k1::new();
-                let secret_key =
-                    dashcore::secp256k1::SecretKey::from_slice(private_key_bytes)
-                        .map_err(|e| ProtocolError::Generic(e.to_string()))?;
+                let secret_key = dashcore::secp256k1::SecretKey::from_slice(private_key_bytes)
+                    .map_err(|e| ProtocolError::Generic(e.to_string()))?;
                 let private_key = dashcore::PrivateKey::new(secret_key, network);
 
                 Ok(ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()).to_vec())
