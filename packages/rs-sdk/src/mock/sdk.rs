@@ -304,7 +304,7 @@ impl MockDashPlatformSdk {
     /// ## Generic Parameters
     ///
     /// - `O`: Type of the object that will be returned in response to the query.
-    /// Must implement [FetchMany]. `Vec<O>` must implement [MockResponse].
+    ///   Must implement [FetchMany]. `Vec<O>` must implement [MockResponse].
     /// - `Q`: Type of the query that will be sent to Platform. Must implement [Query] and [Mockable].
     ///
     /// ## Arguments
@@ -330,20 +330,23 @@ impl MockDashPlatformSdk {
         K: Ord,
         O: FetchMany<K, R>,
         Q: Query<<O as FetchMany<K, R>>::Request>,
-        R: FromIterator<(K, Option<O>)> + MockResponse + Send + Default,
+        R,
     >(
         &mut self,
         query: Q,
         objects: Option<R>,
     ) -> Result<&mut Self, Error>
     where
-        R: MockResponse,
         <<O as FetchMany<K, R>>::Request as TransportRequest>::Response: Default,
-        R: FromProof<
+        R: FromIterator<(K, Option<O>)>
+            + FromProof<
                 <O as FetchMany<K, R>>::Request,
                 Request = <O as FetchMany<K, R>>::Request,
                 Response = <<O as FetchMany<K, R>>::Request as TransportRequest>::Response,
-            > + Sync,
+            > + MockResponse
+            + Sync
+            + Send
+            + Default,
     {
         let grpc_request = query.query(self.prove()).expect("query must be correct");
         self.expect(grpc_request, objects).await?;

@@ -1,5 +1,4 @@
-//!
-//!
+//! This module contains tests for the mock fetch functionality.
 
 use super::common::{mock_data_contract, mock_document_type};
 use dash_sdk::{

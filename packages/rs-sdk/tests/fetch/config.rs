@@ -141,14 +141,14 @@ impl Config {
     /// ## Feature flags
     ///
     /// * `offline-testing` is not set - connect to Platform and generate
-    /// new test vectors during execution
+    ///   new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
-    /// load existing test vectors from disk
+    ///   load existing test vectors from disk
     ///
     /// ## Arguments
     ///
     /// * namespace - namespace to use when storing mock expectations; this is used to separate
-    /// expectations from different tests.
+    ///   expectations from different tests.
     ///
     /// When empty string is provided, expectations are stored in the root of the dump directory.
     pub async fn setup_api(&self, namespace: &str) -> dash_sdk::Sdk {

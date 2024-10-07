@@ -12,8 +12,8 @@ use drive::error::proof::ProofError;
 ///
 /// # Parameters
 /// - `response_metadata`: A reference to `ResponseMetadata` obtained from a platform response.
-/// This metadata includes various block-related information such as time in milliseconds,
-/// height, core chain locked height, and epoch.
+///   This metadata includes various block-related information such as time in milliseconds,
+///   height, core chain locked height, and epoch.
 ///
 /// # Returns
 /// If successful, returns `Ok(BlockInfo)` where `BlockInfo` contains:
