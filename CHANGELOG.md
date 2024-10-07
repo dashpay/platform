@@ -1,3 +1,11 @@
+## [1.4.0-dev.6](https://github.com/dashpay/platform/compare/v1.4.0-dev.5...v1.4.0-dev.6) (2024-10-07)
+
+
+### Miscellaneous Chores
+
+* **sdk:** expose drive module in public API for rs-sdk ([#2217](https://github.com/dashpay/platform/issues/2217))
+* update dependences ([#2072](https://github.com/dashpay/platform/issues/2072))
+
 ## [1.4.0-dev.5](https://github.com/dashpay/platform/compare/v1.4.0-dev.4...v1.4.0-dev.5) (2024-10-07)
 
 
