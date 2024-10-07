@@ -77,6 +77,7 @@ pub use dashcore_rpc;
 pub use dpp;
 pub use drive;
 pub use rs_dapi_client as dapi_client;
+pub use drive_proof_verifier::types as query_types;
 
 /// Version of the SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
