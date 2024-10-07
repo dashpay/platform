@@ -31,7 +31,7 @@ mod property_names {
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[display( "Base: {}, Revision: {}, Data: {:?}", "base", "revision", "data")]
+#[display("Base: {}, Revision: {}, Data: {:?}", "base", "revision", "data")]
 pub struct DocumentReplaceTransitionV0 {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,
