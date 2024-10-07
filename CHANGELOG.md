@@ -1,3 +1,10 @@
+## [1.4.0-dev.7](https://github.com/dashpay/platform/compare/v1.4.0-dev.6...v1.4.0-dev.7) (2024-10-07)
+
+
+### Miscellaneous Chores
+
+* **drive:** log invalid state on deserialisation ([#2220](https://github.com/dashpay/platform/issues/2220))
+
 ## [1.4.0-dev.6](https://github.com/dashpay/platform/compare/v1.4.0-dev.5...v1.4.0-dev.6) (2024-10-07)
 
 
