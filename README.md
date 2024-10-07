@@ -25,8 +25,6 @@ If you are looking for how to contribute to the project or need any help with
 building an app on the Dash Platform - message us on the [Devs
 Discord](https://chat.dashdevs.org/)!
 
-## Note: Dash Platform is currently available on the Dash Testnet only
-
 ## Intro
 
 This is a multi-package repository - sometimes also known as monorepository -
