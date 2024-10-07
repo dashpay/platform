@@ -59,7 +59,9 @@ reopen = { version = "1.0.3" }
 delegate = { version = "0.13" }
 regex = { version = "1.8.1" }
 metrics = { version = "0.23" }
-metrics-exporter-prometheus = { version = "0.15" }
+metrics-exporter-prometheus = { version = "0.15", default-features = false, features = [
+  "http-listener",
+] }
 url = { version = "2.3.1" }
 ureq = { "version" = "2.6.2" }
 tokio = { version = "1.39", features = [
