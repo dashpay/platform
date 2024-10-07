@@ -170,7 +170,7 @@ impl Drive {
         )?;
 
         // In Withdrawals
-        Drive::add_initial_withdrawal_state_structure_operations(&mut batch);
+        Drive::add_initial_withdrawal_state_structure_operations(&mut batch, platform_version);
 
         // For Versioning via forks
         Drive::add_initial_fork_update_structure_operations(&mut batch);
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_create_initial_state_structure() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn test_initial_state_structure_proper_heights() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let _db_transaction = drive.grove.start_transaction();
 

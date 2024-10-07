@@ -233,6 +233,20 @@ class PlatformPromiseClient {
   }
 
   /**
+   * @param {!GetStatusRequest} getStatusRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetIdentityKeysResponse>}
+   */
+  getStatus(getStatusRequest, metadata = {}) {
+    return promisify(
+      this.client.getStatus.bind(this.client),
+    )(
+      getStatusRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {

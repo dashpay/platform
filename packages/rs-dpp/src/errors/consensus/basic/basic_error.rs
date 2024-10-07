@@ -23,14 +23,15 @@ use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
 use crate::consensus::basic::document::{
-    DataContractNotPresentError, DocumentCreationNotAllowedError,
-    DocumentFieldMaxSizeExceededError, DocumentTransitionsAreAbsentError,
-    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
-    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
-    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
-    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
-    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
-    MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
+    ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
+    DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
+    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
+    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
+    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
+    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
+    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
+    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
+    MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
 };
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError,
@@ -51,7 +52,7 @@ use crate::consensus::basic::identity::{
     InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
     InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
     MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
-    TooManyMasterPublicKeyError,
+    TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
@@ -335,6 +336,11 @@ pub enum BasicError {
     ),
 
     #[error(transparent)]
+    WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError(
+        WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
+    ),
+
+    #[error(transparent)]
     InvalidIdentityCreditWithdrawalTransitionCoreFeeError(
         InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
     ),
@@ -393,6 +399,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     UnsupportedFeatureError(UnsupportedFeatureError),
+
+    #[error(transparent)]
+    ContestedDocumentsTemporarilyNotAllowedError(ContestedDocumentsTemporarilyNotAllowedError),
 }
 
 impl From<BasicError> for ConsensusError {

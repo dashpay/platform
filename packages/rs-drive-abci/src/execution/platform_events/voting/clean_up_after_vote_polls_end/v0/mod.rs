@@ -19,6 +19,7 @@ where
     pub(super) fn clean_up_after_vote_polls_end_v0(
         &self,
         vote_polls: &BTreeMap<TimestampMillis, Vec<ResolvedVotePollWithVotes>>,
+        clean_up_testnet_corrupted_reference_issue: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -44,6 +45,7 @@ where
             // Call the function to clean up contested document resource vote polls
             self.clean_up_after_contested_resources_vote_polls_end(
                 contested_polls,
+                clean_up_testnet_corrupted_reference_issue,
                 transaction,
                 platform_version,
             )

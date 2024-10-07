@@ -92,6 +92,8 @@ impl Drive {
 
         let drive_key = DriveKeyInfo::Key(encode_u64(end_date));
 
+        // println!("adding end vote date at end_date {} ({})", end_date, if estimated_costs_only_with_layer_info.is_some() { "costs"} else {"apply"});
+
         let path_key_info = drive_key.add_path_info::<0>(PathInfo::PathAsVec(end_date_query_path));
 
         let apply_type = if estimated_costs_only_with_layer_info.is_none() {

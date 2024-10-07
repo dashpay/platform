@@ -127,6 +127,7 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_identity_nonce: FeatureVersion,
     pub verify_identity_contract_nonce: FeatureVersion,
     pub verify_identities_contract_keys: FeatureVersion,
+    pub verify_identity_revision_for_identity_id: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -144,6 +145,7 @@ pub struct DriveVerifyVoteMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifySystemMethodVersions {
     pub verify_epoch_infos: FeatureVersion,
+    pub verify_epoch_proposers: FeatureVersion,
     pub verify_elements: FeatureVersion,
     pub verify_total_credits_in_system: FeatureVersion,
     pub verify_upgrade_state: FeatureVersion,
@@ -319,6 +321,8 @@ pub struct DriveVoteCleanupMethodVersions {
     pub remove_contested_resource_vote_poll_votes_operations: FeatureVersion,
     pub remove_contested_resource_vote_poll_documents_operations: FeatureVersion,
     pub remove_contested_resource_vote_poll_contenders_operations: FeatureVersion,
+    pub remove_contested_resource_top_level_index_operations: FeatureVersion,
+    pub remove_contested_resource_info_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -348,6 +352,9 @@ pub struct DriveDocumentMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
     pub query_documents: FeatureVersion,
+    pub query_contested_documents: FeatureVersion,
+    pub query_contested_documents_vote_state: FeatureVersion,
+    pub query_documents_with_flags: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -424,6 +431,7 @@ pub struct DriveGroveBasicMethodVersions {
     pub grove_insert_empty_tree: FeatureVersion,
     pub grove_insert_empty_sum_tree: FeatureVersion,
     pub grove_insert_if_not_exists: FeatureVersion,
+    pub grove_insert_if_not_exists_return_existing_element: FeatureVersion,
     pub grove_clear: FeatureVersion,
     pub grove_delete: FeatureVersion,
     pub grove_get_raw: FeatureVersion,
@@ -447,11 +455,14 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_insert_empty_tree: FeatureVersion,
     pub batch_insert_empty_tree_if_not_exists: FeatureVersion,
     pub batch_insert_empty_tree_if_not_exists_check_existing_operations: FeatureVersion,
+    pub batch_insert_sum_item_or_add_to_if_already_exists: FeatureVersion,
     pub batch_insert: FeatureVersion,
     pub batch_insert_if_not_exists: FeatureVersion,
     pub batch_insert_if_changed_value: FeatureVersion,
     pub batch_replace: FeatureVersion,
     pub batch_delete: FeatureVersion,
+    pub batch_delete_items_in_path_query: FeatureVersion,
+    pub batch_move_items_in_path_query: FeatureVersion,
     pub batch_remove_raw: FeatureVersion,
     pub batch_delete_up_tree_while_empty: FeatureVersion,
     pub batch_refresh_reference: FeatureVersion,
@@ -496,7 +507,8 @@ pub struct DriveCreditPoolEpochsMethodVersions {
     pub get_epoch_start_block_core_height: FeatureVersion,
     pub get_epoch_start_block_height: FeatureVersion,
     pub get_first_epoch_start_block_info_between_epochs: FeatureVersion,
-    pub get_epoch_proposers: FeatureVersion,
+    pub fetch_epoch_proposers: FeatureVersion,
+    pub prove_epoch_proposers: FeatureVersion,
     pub get_epochs_proposer_block_count: FeatureVersion,
     pub add_update_pending_epoch_refunds_operations: FeatureVersion,
     pub is_epochs_proposers_tree_empty: FeatureVersion,
@@ -554,12 +566,13 @@ pub struct DriveIdentityMethodVersions {
 pub struct DriveIdentityWithdrawalMethodVersions {
     pub document: DriveIdentityWithdrawalDocumentMethodVersions,
     pub transaction: DriveIdentityWithdrawalTransactionMethodVersions,
+    pub calculate_current_withdrawal_limit: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityWithdrawalDocumentMethodVersions {
     pub fetch_oldest_withdrawal_documents_by_status: FeatureVersion,
-    pub find_up_to_100_withdrawal_documents_by_status_and_transaction_indices: FeatureVersion,
+    pub find_withdrawal_documents_by_status_and_transaction_indices: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -578,6 +591,8 @@ pub struct DriveIdentityWithdrawalTransactionIndexMethodVersions {
 pub struct DriveIdentityWithdrawalTransactionQueueMethodVersions {
     pub add_enqueue_untied_withdrawal_transaction_operations: FeatureVersion,
     pub dequeue_untied_withdrawal_transactions: FeatureVersion,
+    pub remove_broadcasted_withdrawal_transactions_after_completion_operations: FeatureVersion,
+    pub move_broadcasted_withdrawal_transactions_back_to_queue_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -26,7 +26,7 @@ describe('IdentityFactory', () => {
 
     // const identityValidator = new IdentityValidator(blsAdapter);
 
-    factory = new IdentityFactory(1);
+    factory = new IdentityFactory(3);
 
     identity = await getIdentityFixture(instantAssetLockProof.createIdentifier());
     identity.setBalance(0);

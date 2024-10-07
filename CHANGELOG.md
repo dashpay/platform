@@ -1,3 +1,378 @@
+## [1.4.0-dev.5](https://github.com/dashpay/platform/compare/v1.4.0-dev.4...v1.4.0-dev.5) (2024-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** add owner keys to identities, fixed verification of use of owner keys (#2215)
+
+### Features
+
+* **dpp:** add a convenience method to get the public key data for a private key depending on the key type ([#2214](https://github.com/dashpay/platform/issues/2214))
+* **platform:** add owner keys to identities, fixed verification of use of owner keys ([#2215](https://github.com/dashpay/platform/issues/2215))
+
+## [1.4.0-dev.4](https://github.com/dashpay/platform/compare/v1.4.0-dev.3...v1.4.0-dev.4) (2024-10-05)
+
+
+### Features
+
+* **sdk:** enable withdrawals v1 in JS SDK ([#2201](https://github.com/dashpay/platform/issues/2201))
+* start network with latest version if genesis version not set ([#2206](https://github.com/dashpay/platform/issues/2206))
+
+
+### Bug Fixes
+
+* cookie accepts cookie name, path, and domain with out of bounds characters ([#2211](https://github.com/dashpay/platform/issues/2211))
+* **drive:** set sign height when rebroadcasting ([#2210](https://github.com/dashpay/platform/issues/2210))
+* **sdk:** small sdk improvements and fixes for v1.4 ([#2200](https://github.com/dashpay/platform/issues/2200))
+
+
+### Code Refactoring
+
+* **drive:** remove duplicated withdrawal amount validation ([#2191](https://github.com/dashpay/platform/issues/2191))
+
+
+### Miscellaneous Chores
+
+* bump GroveDB dependency ([#2196](https://github.com/dashpay/platform/issues/2196))
+* **drive:** improve withdrawal logging ([#2203](https://github.com/dashpay/platform/issues/2203))
+* **drive:** logs and metrics for withdrawal daily limit ([#2192](https://github.com/dashpay/platform/issues/2192))
+* **release:** replace colima with native docker in macOS builds ([#2188](https://github.com/dashpay/platform/issues/2188))
+
+
+### Tests
+
+* **test-suite:** enable withdrawal tests ([#2202](https://github.com/dashpay/platform/issues/2202))
+
+## [1.4.0-dev.2](https://github.com/dashpay/platform/compare/v1.4.0-dev.1...v1.4.0-dev.2) (2024-09-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** matched withdrawal fees to actual processing cost (#2186)
+* **platform:** withdrawal automatic retries after core rejection (#2185)
+* **platform:** withdrawal limits (#2182)
+
+### Features
+
+* **dashmate:** collect docker stats in the doctor command ([#2180](https://github.com/dashpay/platform/issues/2180))
+* **dashmate:** validate external IP ([#2183](https://github.com/dashpay/platform/issues/2183))
+* **platform:** matched withdrawal fees to actual processing cost ([#2186](https://github.com/dashpay/platform/issues/2186))
+* **platform:** withdrawal automatic retries after core rejection ([#2185](https://github.com/dashpay/platform/issues/2185))
+* **platform:** withdrawal limits ([#2182](https://github.com/dashpay/platform/issues/2182))
+* **sdk:** get node status ([#2139](https://github.com/dashpay/platform/issues/2139))
+
+
+### Build System
+
+* devcontainer support ([#2179](https://github.com/dashpay/platform/issues/2179))
+
+
+### Continuous Integration
+
+* prebuild dev containers ([#2184](https://github.com/dashpay/platform/issues/2184))
+
+## [1.4.0-dev.1](https://github.com/dashpay/platform/compare/v1.3.0...v1.4.0-dev.1) (2024-09-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** change default network to mainnet (#2161)
+* **dashmate:** confirm a node reset (#2160)
+* **platform:** withdrawals polishing and fixes for mainnet (#2166)
+* **platform:** do not switch to oldest quorums in validator set update (#2167)
+
+### Features
+
+* **dashmate:** confirm a node reset ([#2160](https://github.com/dashpay/platform/issues/2160))
+* **platform:** do not switch to oldest quorums in validator set update ([#2167](https://github.com/dashpay/platform/issues/2167))
+* **platform:** get current quorum info  ([#2168](https://github.com/dashpay/platform/issues/2168))
+* **platform:** withdrawals polishing and fixes for mainnet ([#2166](https://github.com/dashpay/platform/issues/2166))
+* **sdk:** change default network to mainnet ([#2161](https://github.com/dashpay/platform/issues/2161))
+
+
+### Bug Fixes
+
+* **dapi:** getStatus cache invalidation ([#2155](https://github.com/dashpay/platform/issues/2155))
+* **dapi:** invalid mainnet seed ports ([#2173](https://github.com/dashpay/platform/issues/2173))
+* **dashmate:** cannot read properties of undefined (reading 'expires') ([#2164](https://github.com/dashpay/platform/issues/2164))
+* **dashmate:** colors[updated] is not a function ([#2157](https://github.com/dashpay/platform/issues/2157))
+* **dashmate:** doctor fails collecting to big logs ([#2158](https://github.com/dashpay/platform/issues/2158))
+* **dashmate:** port marks as closed if ipv6 is not disabled ([#2162](https://github.com/dashpay/platform/issues/2162))
+* **dashmate:** remove confusing short flag name ([#2165](https://github.com/dashpay/platform/issues/2165))
+
+
+### Continuous integration
+
+* build dashmate package on macos14
+  
+
+### Documentation
+
+* **dashmate:** document logging configuration ([#2156](https://github.com/dashpay/platform/issues/2156))
+
+
+### Tests
+
+* **dashmate:** e2e tests failing due to DKG interval check ([#2171](https://github.com/dashpay/platform/issues/2171))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** do not call mint on masternodes ([#2172](https://github.com/dashpay/platform/issues/2172))
+* **platform:** protocol version 4 creation ([#2153](https://github.com/dashpay/platform/issues/2153))
+
+
+## [1.3.0](https://github.com/dashpay/platform/compare/v1.2.0...v1.3.0) (2024-09-19)
+
+### Features
+
+* **platform:** query many identity balances at a time ([#2112](https://github.com/dashpay/platform/pull/2112))
+* **platform:** query block count per Evonode proposed in any given epoch ([#2114](https://github.com/dashpay/platform/pull/2114))
+* **platform:** contests on testnet/devnet/local should take less time ([#2115](https://github.com/dashpay/platform/pull/2115))
+* **dapi:** implement getIdentityBalance ([#2105](https://github.com/dashpay/platform/pull/2105))
+* **dashmate:** doctor diagnostic ([#2085](https://github.com/dashpay/platform/pull/2085))
+* **dashmate:** enhance core logging configuration ([#2121](https://github.com/dashpay/platform/pull/2121))
+* **platform:** support Tenderdash upgrade ([#2136](https://github.com/dashpay/platform/pull/2136))
+
+### Bug Fixes
+
+* **sdk:** use proofs when waiting for asset lock ([#2067](https://github.com/dashpay/platform/pull/2067))
+* **platform:** contested username distribution ([#2118](https://github.com/dashpay/platform/pull/2118))
+* **drive-abci:** require 75 percent of active, not total hpmns ([#2127](https://github.com/dashpay/platform/pull/2127))
+* **drive-abci:** cleanup of later contests on testnet only ([#2134](https://github.com/dashpay/platform/pull/2134))
+* **platform:** contested username time fix ([#2137](https://github.com/dashpay/platform/pull/2137))
+* **dashmate:** invalid debug core log path ([#2143](https://github.com/dashpay/platform/pull/2143))
+* **tests:** fix upgrade tests because of 51% limit on v1 ([#2151](https://github.com/dashpay/platform/pull/2151))
+* **platform:** add limits to identity balances and proposed block counts queries ([#2148](https://github.com/dashpay/platform/pull/2148))
+* body-parser vulnerability ([#2119](https://github.com/dashpay/platform/pull/2119))
+
+### Miscellaneous Chores
+
+* add change base branch script ([#2082](https://github.com/dashpay/platform/pull/2082))
+* emergency version upgrade to v1.3 Protocol Version 2 ([#2138](https://github.com/dashpay/platform/pull/2138))
+* disable config from testnet propagates network test ([#2149](https://github.com/dashpay/platform/pull/2149))
+* **js-sdk** connect to mainnet by default ([#2146](https://github.com/dashpay/platform/pull/2146))
+
+### Build System
+
+* cache Rust dependencies build as a docker layer ([#1900](https://github.com/dashpay/platform/pull/1900))
+* **drive-abci:** debug docker image with grovedb visualizer and tokio console ([#2012](https://github.com/dashpay/platform/pull/2012))
+* **dashmate:** update tenderdash image to fix-wrong-proposer-at-round ([#2140](https://github.com/dashpay/platform/pull/2140))
+* bump rs-tenderdash-abci to 1.2.0+1.3.0 ([#2147](https://github.com/dashpay/platform/pull/2147))
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** contested username distribution ([#2118](https://github.com/dashpay/platform/pull/2118))
+* **platform:** contests on testnet/devnet/local should take less time ([#2115](https://github.com/dashpay/platform/pull/2115))
+* **dashmate:** docker logs rotation ([#2125](https://github.com/dashpay/platform/pull/2125))
+
+**Full Changelog**: [https://github.com/dashpay/platform/compare/v1.2.0...v1.3.0](https://github.com/dashpay/platform/compare/v1.2.0...v1.3.0)
+
+## [1.3.0-dev.7](https://github.com/dashpay/platform/compare/v1.3.0-dev.6...v1.3.0-dev.7) (2024-09-18)
+
+
+### Bug Fixes
+
+* **dashmate:** invalid debug core log path ([#2143](https://github.com/dashpay/platform/issues/2143))
+
+
+### Miscellaneous Chores
+
+* change Upgrade 4 Epochs Later ([#2144](https://github.com/dashpay/platform/issues/2144))
+
+## [1.3.0-dev.6](https://github.com/dashpay/platform/compare/v1.3.0-dev.5...v1.3.0-dev.6) (2024-09-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** support Tenderdash upgrade (#2136)
+* **platform:** contested username time fix (#2137)
+* **platform:** emergency version upgrade to v1.3 Protocol Version 2 (#2138)
+* 
+### Bug Fixes
+
+* **platform:** contested username time fix ([#2137](https://github.com/dashpay/platform/issues/2137))
+
+## [1.3.0-dev.5](https://github.com/dashpay/platform/compare/v1.3.0-dev.4...v1.3.0-dev.5) (2024-09-16)
+
+
+### Bug Fixes
+
+* **drive-abci:** cleanup of later contests on testnet only ([#2134](https://github.com/dashpay/platform/issues/2134))
+
+## [1.3.0-dev.4](https://github.com/dashpay/platform/compare/v1.3.0-dev.3...v1.3.0-dev.4) (2024-09-16)
+
+
+### Bug Fixes
+
+* require75p of active not total hpmns ([#2129](https://github.com/dashpay/platform/issues/2129))
+
+## [1.3.0-dev.3](https://github.com/dashpay/platform/compare/v1.3.0-dev.2...v1.3.0-dev.3) (2024-09-16)
+
+
+### Bug Fixes
+
+* **drive-abci:** require 75 percent of active, not total hpmns ([#2127](https://github.com/dashpay/platform/issues/2127))
+
+## [1.3.0-dev.2](https://github.com/dashpay/platform/compare/v1.3.0-dev.1...v1.3.0-dev.2) (2024-09-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** contests on testnet should take less time (#2115)
+* **platform:** contested username distribution (#2118)
+
+### Features
+
+* **platform:** contests on testnet should take less time ([#2115](https://github.com/dashpay/platform/issues/2115))
+
+
+### Bug Fixes
+
+* body-parser vulnerability ([#2119](https://github.com/dashpay/platform/issues/2119))
+* **platform:** contested username distribution ([#2118](https://github.com/dashpay/platform/issues/2118))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update platform images to `1-dev` ([#2120](https://github.com/dashpay/platform/issues/2120))
+
+
+### Styles
+
+* **dapi:** better api for identities balances ([#2122](https://github.com/dashpay/platform/issues/2122))
+
+## [1.3.0-dev.1](https://github.com/dashpay/platform/compare/v1.2.0...v1.3.0-dev.1) (2024-09-12)
+
+
+### Features
+
+* query block count per Evonode proposed in any given epoch ([#2114](https://github.com/dashpay/platform/issues/2114))
+* query many identity balances at a time ([#2112](https://github.com/dashpay/platform/issues/2112))
+
+
+### Bug Fixes
+
+* **sdk:** use proofs when waiting for asset lock ([#2067](https://github.com/dashpay/platform/issues/2067))
+
+
+### Build System
+
+* cache Rust dependencies build as a docker layer ([#1900](https://github.com/dashpay/platform/issues/1900))
+* **drive-abci:** debug docker image with grovedb visualizer and tokio console ([#2012](https://github.com/dashpay/platform/issues/2012))
+
+
+### Miscellaneous Chores
+
+* add change base branch script ([#2082](https://github.com/dashpay/platform/issues/2082))
+* creation of protocol V2 ([#2104](https://github.com/dashpay/platform/issues/2104))
+
+## [1.2.0](https://github.com/dashpay/platform/compare/v1.1.1...v1.2.0) (2024-08-30)
+
+
+### Features
+
+* **dapi:** serve even if tenderdash is not connected ([#2086](https://github.com/dashpay/platform/issues/2086))
+* **dashmate:** validate SSL certificate files ([#2089](https://github.com/dashpay/platform/issues/2089))
+* platform status endpoint ([#2088](https://github.com/dashpay/platform/issues/2088))
+* script to check which nodes are updated to v1.1 ([#2083](https://github.com/dashpay/platform/issues/2083))
+
+
+### Bug Fixes
+
+* **dashmate:** docker-compose version is obsolete ([#2073](https://github.com/dashpay/platform/issues/2073))
+* replay issue when round is 0 on replay. ([#2091](https://github.com/dashpay/platform/issues/2091))
+* security vulnerability in webpack ([#2090](https://github.com/dashpay/platform/issues/2090))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash version ([#2093](https://github.com/dashpay/platform/issues/2093))
+* **dashmate:** update tenderdash version to 1.2.0 ([#2078](https://github.com/dashpay/platform/issues/2078))
+* update rust to 1.80 ([#2070](https://github.com/dashpay/platform/issues/2070))
+
+
+
+## [1.2.0-rc.1](https://github.com/dashpay/platform/compare/v1.1.1...v1.2.0-rc.1) (2024-08-30)
+
+
+### Features
+
+* **dapi:** serve even if tenderdash is not connected ([#2086](https://github.com/dashpay/platform/issues/2086))
+* **dashmate:** validate SSL certificate files ([#2089](https://github.com/dashpay/platform/issues/2089))
+* platform status endpoint ([#2088](https://github.com/dashpay/platform/issues/2088))
+* script to check which nodes are updated to v1.1 ([#2083](https://github.com/dashpay/platform/issues/2083))
+
+
+### Bug Fixes
+
+* **dashmate:** docker-compose version is obsolete ([#2073](https://github.com/dashpay/platform/issues/2073))
+* replay issue when round is 0 on replay. ([#2091](https://github.com/dashpay/platform/issues/2091))
+* security vulnerability in webpack ([#2090](https://github.com/dashpay/platform/issues/2090))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash version ([#2093](https://github.com/dashpay/platform/issues/2093))
+* **dashmate:** update tenderdash version to 1.2.0 ([#2078](https://github.com/dashpay/platform/issues/2078))
+* update rust to 1.80 ([#2070](https://github.com/dashpay/platform/issues/2070))
+
+### [1.1.1](https://github.com/dashpay/platform/compare/v1.1.0...v1.1.1) (2024-08-25)
+
+
+### Features
+
+* **dashmate:** update testnet config ([#2079](https://github.com/dashpay/platform/issues/2079))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash version to 1.2.0 ([#2078](https://github.com/dashpay/platform/issues/2078))
+
+
+## [1.1.0](https://github.com/dashpay/platform/compare/v1.1.0-dev.1...v1.1.0) (2024-08-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** just in time fee update fixes (#2075)
+* do not allow contested documents for the first three epochs (#2066)
+* **drive-abci:** fix wrong fields in dash top level domain  (#2065)
+* **platform:** fix reference of items between epochs (#2064)
+* **sdk:** mock sdk cannot find quorum keys in offline mode (#2061)
+* **sdk:** overflow when using &&sdk in DapiRequestExecutor (#2060)
+
+### Features
+
+* **dashmate:** add `dashmate doctor` command ([#2024](https://github.com/dashpay/platform/issues/2024))
+* **dashmate:** compress doctor report and other improvements ([#2071](https://github.com/dashpay/platform/issues/2071))
+* **dashmate:** configure proposer and tx limits ([#2057](https://github.com/dashpay/platform/issues/2057))
+* **dpp:** function for getting enabled matching public keys in identities ([#2052](https://github.com/dashpay/platform/issues/2052))
+* where clauses recognize nested properties
+
+
+### Bug Fixes
+
+* add back the matches on system properties
+* **dapi:** getTotalCreditsOnPlatform missing parts ([#2059](https://github.com/dashpay/platform/issues/2059))
+* **dashmate:** core reindex command not working ([#2054](https://github.com/dashpay/platform/issues/2054))
+* **dashmate:** the reset platform command doesn't remove data ([#2053](https://github.com/dashpay/platform/issues/2053))
+* **drive-abci:** fix wrong fields in dash top level domain  ([#2065](https://github.com/dashpay/platform/issues/2065))
+* **drive:** just in time fee update fixes ([#2075](https://github.com/dashpay/platform/issues/2075))
+* **platform:** fix reference of items between epochs ([#2064](https://github.com/dashpay/platform/issues/2064))
+* **sdk:** mock sdk cannot find quorum keys in offline mode ([#2061](https://github.com/dashpay/platform/issues/2061))
+* **sdk:** overflow when using &&sdk in DapiRequestExecutor ([#2060](https://github.com/dashpay/platform/issues/2060))
+
+
+### Code Refactoring
+
+* rename getTotalCreditsOnPlatform ([#2056](https://github.com/dashpay/platform/issues/2056))
+
+
+### Miscellaneous Chores
+
+* do not allow contested documents for the first three epochs ([#2066](https://github.com/dashpay/platform/issues/2066))
+
 ## [1.1.0-dev.1](https://github.com/dashpay/platform/compare/v1.0.2...v1.1.0-dev.1) (2024-08-13)
 
 
@@ -552,14 +927,14 @@ There are multiple breaking changes that make previously created state invalid:
 
 * make strategy start identities a new struct ([#1764](https://github.com/dashpay/platform/issues/1764))
 * updated descriptions and function names in strategy tests plus readme file ([#1785](https://github.com/dashpay/platform/issues/1785))
-  
+
 
 ### Miscellaneous Chores
 
 * **dashmate:** readme fixes ([#1624](https://github.com/dashpay/platform/issues/1624))
 * fix npm audit for follow-redirects package ([#1781](https://github.com/dashpay/platform/issues/1781))
 * **dapi:** use broadcast_tx instead of deprecated broadcast_tx_sync ([#1775](https://github.com/dashpay/platform/issues/1775))
-  
+
 
 ### Build System
 
@@ -802,6 +1177,14 @@ There are multiple breaking changes that make previously created state invalid:
 ### Miscellaneous Chores
 
 * automatic clippy fixes ([#1528](https://github.com/dashpay/platform/issues/1528), [#1602](https://github.com/dashpay/platform/issues/1602))
+
+
+### [0.25.22](https://github.com/dashpay/platform/compare/v0.25.21...v0.25.22) (2024-01-19)
+
+
+### Bug Fixes
+
+* **dashmate:** dapi kills host machine on container stop ([#1670](https://github.com/dashpay/platform/issues/1670))
 
 ### [0.25.21](https://github.com/dashpay/platform/compare/v0.25.20...v0.25.21) (2023-12-28)
 

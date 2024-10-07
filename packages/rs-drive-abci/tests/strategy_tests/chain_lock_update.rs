@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-
     use crate::execution::run_chain_for_strategy;
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
     use crate::strategy::{MasternodeListChangesStrategy, NetworkStrategy};
@@ -68,12 +67,7 @@ mod tests {
                 ..Default::default()
             },
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig {
-                block_signing: false,
-                store_platform_state: false,
-                block_commit_signature_verification: false,
-                disable_instant_lock_signature_verification: true,
-            },
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()

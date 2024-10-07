@@ -259,7 +259,6 @@ pub(crate) fn identity_query_keys_purpose_tree_path_vec(
 
 /// identity query keys security level tree path vec
 #[cfg(feature = "server")]
-/// Identity query keys security level tree path vec
 pub(crate) fn identity_query_keys_security_level_tree_path_vec(
     identity_id: &[u8],
     security_level: SecurityLevel,
@@ -288,7 +287,6 @@ pub(crate) fn identity_query_keys_for_direct_searchable_reference_full_tree_path
     ]
 }
 
-/// identity query keys full tree path
 #[cfg(feature = "server")]
 /// Identity query keys full tree path
 pub(crate) fn identity_query_keys_for_authentication_full_tree_path<'a>(
@@ -301,6 +299,28 @@ pub(crate) fn identity_query_keys_for_authentication_full_tree_path<'a>(
         Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyReferences),
         Into::<&[u8; 1]>::into(Purpose::AUTHENTICATION),
         security_level,
+    ]
+}
+
+/// Identity query keys for transfer full tree path
+#[cfg(feature = "server")]
+pub fn identity_transfer_keys_tree_path(identity_id: &[u8]) -> [&[u8]; 5] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Identities),
+        identity_id,
+        Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeKeyReferences),
+        Into::<&[u8; 1]>::into(Purpose::TRANSFER),
+        Into::<&[u8; 1]>::into(SecurityLevel::CRITICAL),
+    ]
+}
+
+/// Identity query keys for transfer full tree path as vec
+pub fn identity_transfer_keys_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityTreeKeyReferences as u8],
+        vec![Purpose::TRANSFER as u8],
     ]
 }
 

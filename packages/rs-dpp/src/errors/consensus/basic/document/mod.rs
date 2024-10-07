@@ -1,3 +1,4 @@
+mod contested_documents_temporarily_not_allowed_error;
 mod data_contract_not_present_error;
 mod document_creation_not_allowed_error;
 mod document_field_max_size_exceeded_error;
@@ -16,6 +17,7 @@ mod missing_document_transition_type_error;
 mod missing_document_type_error;
 mod missing_positions_in_document_type_properties_error;
 
+pub use contested_documents_temporarily_not_allowed_error::*;
 pub use data_contract_not_present_error::*;
 pub use document_creation_not_allowed_error::*;
 pub use document_field_max_size_exceeded_error::*;

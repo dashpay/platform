@@ -13,6 +13,8 @@ pub mod object_size_info;
 pub mod common;
 #[cfg(feature = "server")]
 mod operations;
+
+/// Storage flags
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod storage_flags;
 /// Test helpers

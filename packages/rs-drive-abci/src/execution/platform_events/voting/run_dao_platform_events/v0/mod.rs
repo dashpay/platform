@@ -30,6 +30,7 @@ where
         // Check for any vote polls that might have ended
 
         self.check_for_ended_vote_polls(
+            last_committed_platform_state,
             block_platform_state,
             block_info,
             transaction,

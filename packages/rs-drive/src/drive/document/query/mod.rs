@@ -3,10 +3,16 @@
 //! Defines and implements in Drive functions relevant to querying.
 //!
 
-mod query_contested_documents_vote_state;
+/// query of the vote state
+pub mod query_contested_documents_vote_state;
 mod query_documents;
+mod query_documents_with_flags;
+
+/// query of the contested documents in their storage
+pub mod query_contested_documents_storage;
 
 pub use query_documents::*;
+pub use query_documents_with_flags::*;
 
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use dpp::block::block_info::BlockInfo;
@@ -30,11 +36,6 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::query::DriveDocumentQuery;
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use crate::verify::RootHash;
-#[cfg(all(
-    feature = "fixtures-and-mocks",
-    feature = "data-contract-cbor-conversion"
-))]
-use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(all(feature = "fixtures-and-mocks", feature = "cbor_query"))]

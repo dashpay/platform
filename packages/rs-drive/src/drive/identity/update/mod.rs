@@ -21,7 +21,7 @@ mod tests {
 
         #[test]
         fn should_add_one_new_key_to_identity() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -81,7 +81,7 @@ mod tests {
 
         #[test]
         fn should_add_two_dozen_new_keys_to_identity() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -141,7 +141,7 @@ mod tests {
 
         #[test]
         fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -200,7 +200,7 @@ mod tests {
 
         #[test]
         fn should_disable_a_few_keys() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -279,7 +279,7 @@ mod tests {
 
         #[test]
         fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -328,7 +328,7 @@ mod tests {
 
         #[test]
         fn estimated_costs_should_have_same_storage_cost() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -387,7 +387,7 @@ mod tests {
 
         #[test]
         fn should_update_revision() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -447,7 +447,7 @@ mod tests {
 
         #[test]
         fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 

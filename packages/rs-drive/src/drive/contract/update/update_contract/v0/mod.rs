@@ -65,7 +65,6 @@ impl Drive {
                 platform_version,
             );
         }
-        let _drive_version = &platform_version.drive;
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 

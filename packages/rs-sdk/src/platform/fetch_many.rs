@@ -4,6 +4,7 @@
 //!
 //! ## Traits
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
+use super::LimitQuery;
 use crate::{
     error::Error,
     mock::MockResponse,
@@ -13,7 +14,9 @@ use crate::{
 use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
-    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
+    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
+    GetIdentitiesBalancesRequest, GetIdentityKeysRequest, GetPathElementsRequest,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
     GetVotePollsByEndDateRequest,
 };
@@ -28,16 +31,17 @@ use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, voting::votes::resource_vote::ResourceVote,
 };
 use dpp::{document::Document, voting::contender_structs::ContenderWithSerializedDocument};
+use drive::grovedb::query_result_type::Key;
+use drive::grovedb::Element;
 use drive_proof_verifier::types::{
-    Contenders, ContestedResource, ContestedResources, DataContracts, ExtendedEpochInfos,
-    IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes, ProtocolVersionUpgrades,
-    ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
+    Contenders, ContestedResource, ContestedResources, DataContracts, Elements, ExtendedEpochInfos,
+    IdentityBalances, IdentityPublicKeys, MasternodeProtocolVote, MasternodeProtocolVotes,
+    ProposerBlockCountById, ProposerBlockCountByRange, ProposerBlockCounts,
+    ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
-
-use super::LimitQuery;
 
 /// Fetch multiple objects from Platform.
 ///
@@ -264,9 +268,9 @@ impl FetchMany<KeyID, IdentityPublicKeys> for IdentityPublicKey {
 ///
 /// * [EpochQuery](super::types::epoch::EpochQuery) - query that specifies epoch matching criteria
 /// * [EpochIndex](dpp::block::epoch::EpochIndex) - epoch index of first object to find; will return up to
-/// [DEFAULT_EPOCH_QUERY_LIMIT](super::query::DEFAULT_EPOCH_QUERY_LIMIT) objects starting from this index
+///   [DEFAULT_EPOCH_QUERY_LIMIT](super::query::DEFAULT_EPOCH_QUERY_LIMIT) objects starting from this index
 /// * [`LimitQuery<EpochQuery>`](super::LimitQuery), [`LimitQuery<EpochIndex>`](super::LimitQuery) - limit query
-/// that allows to specify maximum number of objects to fetch; see also [FetchMany::fetch_many_with_limit()].
+///   that allows to specify maximum number of objects to fetch; see also [FetchMany::fetch_many_with_limit()].
 impl FetchMany<EpochIndex, ExtendedEpochInfos> for ExtendedEpochInfo {
     type Request = GetEpochsInfoRequest;
 }
@@ -283,12 +287,12 @@ impl FetchMany<EpochIndex, ExtendedEpochInfos> for ExtendedEpochInfo {
 /// ## Example
 ///
 /// ```rust
-/// use dash_sdk::{Sdk, platform::FetchMany};
-/// use drive_proof_verifier::types::ProtocolVersionVoteCount;
+/// use dash_sdk::{Sdk, platform::FetchMany, Error};
+/// use drive_proof_verifier::types::{ProtocolVersionUpgrades, ProtocolVersionVoteCount};
 ///
 /// # tokio_test::block_on(async {
 /// let sdk = Sdk::new_mock();
-/// let result = ProtocolVersionVoteCount::fetch_many(&sdk, ()).await;
+/// let result: Result<ProtocolVersionUpgrades, Error> = ProtocolVersionVoteCount::fetch_many(&sdk, ()).await;
 /// # });
 /// ```
 impl FetchMany<ProtocolVersion, ProtocolVersionUpgrades> for ProtocolVersionVoteCount {
@@ -304,13 +308,44 @@ impl FetchMany<ProtocolVersion, ProtocolVersionUpgrades> for ProtocolVersionVote
 /// ## Supported query types
 ///
 /// * [ProTxHash](dashcore_rpc::dashcore::ProTxHash) - proTxHash of first object to find; will return up to
-/// [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
+///   [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
 /// * [`Option<ProTxHash>`](dashcore_rpc::dashcore::ProTxHash) - proTxHash that can be and [Option]; if it is `None`,
-/// the query will return all objects
+///   the query will return all objects
 /// * [`LimitQuery<ProTxHash>`](super::LimitQuery) - limit query that allows to specify maximum number of objects
-/// to fetch; see also [FetchMany::fetch_many_with_limit()].
+///   to fetch; see also [FetchMany::fetch_many_with_limit()].
 impl FetchMany<ProTxHash, MasternodeProtocolVotes> for MasternodeProtocolVote {
     type Request = GetProtocolVersionUpgradeVoteStatusRequest;
+}
+
+/// Fetch information about the proposed block count by proposers for a given epoch.
+///
+/// Returns list of [ProposerBlockCounts](drive_proof_verifier::types::ProposerBlockCounts)
+/// indexed by [ProTxHash](dashcore_rpc::dashcore::ProTxHash). Each item in this list represents
+/// node protxhash and the amount of blocks that were proposed.
+///
+/// ## Supported query types
+///
+/// * [ProTxHash](dashcore_rpc::dashcore::ProTxHash) - proTxHash of first object to find; will return up to
+///   [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
+/// * [`Option<ProTxHash>`](dashcore_rpc::dashcore::ProTxHash) - proTxHash that can be and [Option]; if it is `None`,
+///   the query will return all objects
+/// * [`LimitQuery<ProTxHash>`](super::LimitQuery) - limit query that allows to specify maximum number of objects
+///   to fetch; see also [FetchMany::fetch_many_with_limit()].
+impl FetchMany<ProTxHash, ProposerBlockCounts> for ProposerBlockCountByRange {
+    type Request = GetEvonodesProposedEpochBlocksByRangeRequest;
+}
+
+/// Fetch information about the proposed block count by proposers for a given epoch.
+///
+/// Returns list of [ProposerBlockCounts](drive_proof_verifier::types::ProposerBlockCounts)
+/// indexed by [ProTxHash](dashcore_rpc::dashcore::ProTxHash). Each item in this list represents
+/// node pro_tx_hash and the amount of blocks that were proposed.
+///
+/// ## Supported query types
+///
+/// * [ProTxHash](dashcore_rpc::dashcore::ProTxHash) - proTxHash of an evonode to find; will return one evonode block count
+impl FetchMany<ProTxHash, ProposerBlockCounts> for ProposerBlockCountById {
+    type Request = GetEvonodesProposedEpochBlocksByIdsRequest;
 }
 
 /// Fetch multiple data contracts.
@@ -372,4 +407,24 @@ impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
 /// * [VotePollsByEndDateDriveQuery]
 impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
     type Request = GetVotePollsByEndDateRequest;
+}
+
+//
+/// Fetch multiple identity balances.
+///
+/// ## Supported query types
+///
+/// * [Vec<Identifier>](dpp::prelude::Identifier) - list of identifiers of identities whose balance we want to fetch
+impl FetchMany<Identifier, IdentityBalances> for drive_proof_verifier::types::IdentityBalance {
+    type Request = GetIdentitiesBalancesRequest;
+}
+
+//
+/// Fetch multiple elements.
+///
+/// ## Supported query types
+///
+/// * [KeysInPath]
+impl FetchMany<Key, Elements> for Element {
+    type Request = GetPathElementsRequest;
 }

@@ -17,7 +17,6 @@ export default function getConfigMock(sinon) {
   configMock.get.withArgs('platform.drive.tenderdash.rpc.host').returns('127.0.0.1');
   configMock.get.withArgs('platform.drive.tenderdash.rpc.port').returns('8103');
   configMock.get.withArgs('platform.enable').returns(true);
-  configMock.get.withArgs('core.log.file.path').returns('/Users/user/.dashmate/logs/base/core.log');
 
   return configMock;
 }

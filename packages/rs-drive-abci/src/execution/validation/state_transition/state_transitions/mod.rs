@@ -51,7 +51,7 @@ impl ValidationMode {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+pub(in crate::execution) mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::block::block_info::BlockInfo;
@@ -125,7 +125,7 @@ pub(crate) mod tests {
     use crate::execution::types::processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome;
 
     /// We add an identity, but we also add the same amount to system credits
-    pub(crate) fn setup_identity_with_system_credits(
+    pub(in crate::execution) fn setup_identity_with_system_credits(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         credits: Credits,
@@ -138,7 +138,7 @@ pub(crate) mod tests {
         setup_identity(platform, seed, credits)
     }
 
-    pub(crate) fn setup_identity(
+    pub(in crate::execution) fn setup_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         credits: Credits,
@@ -196,7 +196,50 @@ pub(crate) mod tests {
         (identity, signer, critical_public_key)
     }
 
-    pub(crate) fn setup_identity_return_master_key(
+    pub(in crate::execution) fn setup_identity_without_adding_it(
+        seed: u64,
+        credits: Credits,
+    ) -> (Identity, SimpleSigner, IdentityPublicKey) {
+        let platform_version = PlatformVersion::latest();
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                0,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(master_key.clone(), master_private_key.clone());
+
+        let (critical_public_key, private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
+                1,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_key(critical_public_key.clone(), private_key.clone());
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([
+                (0, master_key.clone()),
+                (1, critical_public_key.clone()),
+            ]),
+            balance: credits,
+            revision: 0,
+        }
+        .into();
+
+        (identity, signer, critical_public_key)
+    }
+
+    pub(in crate::execution) fn setup_identity_return_master_key(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         credits: Credits,
@@ -299,9 +342,10 @@ pub(crate) mod tests {
         key
     }
 
-    pub(crate) fn setup_identity_with_withdrawal_key_and_system_credits(
+    pub(in crate::execution) fn setup_identity_with_withdrawal_key_and_system_credits(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
+        withdrawal_key_type: KeyType,
         credits: Credits,
     ) -> (Identity, SimpleSigner, IdentityPublicKey, IdentityPublicKey) {
         let platform_version = PlatformVersion::latest();
@@ -339,7 +383,7 @@ pub(crate) mod tests {
                 &mut rng,
                 Purpose::TRANSFER,
                 SecurityLevel::CRITICAL,
-                KeyType::ECDSA_SECP256K1,
+                withdrawal_key_type,
                 None,
                 platform_version,
             )
@@ -379,7 +423,7 @@ pub(crate) mod tests {
         (identity, signer, critical_public_key, withdrawal_public_key)
     }
 
-    pub(crate) fn process_state_transitions(
+    pub(in crate::execution) fn process_state_transitions(
         platform: &TempPlatform<MockCoreRPCLike>,
         state_transitions: &[StateTransition],
         block_info: BlockInfo,
@@ -427,7 +471,6 @@ pub(crate) mod tests {
                 app_hash: None,
             }),
             epoch_info: EpochInfo::V0(EpochInfoV0::default()),
-            hpmn_count: 0,
             unsigned_withdrawal_transactions: Default::default(),
             block_platform_state: platform_state.clone(),
             proposer_results: None,
@@ -453,7 +496,7 @@ pub(crate) mod tests {
         (fee_results, processed_block_fees)
     }
 
-    pub(crate) fn fetch_expected_identity_balance(
+    pub(in crate::execution) fn fetch_expected_identity_balance(
         platform: &TempPlatform<MockCoreRPCLike>,
         identity_id: Identifier,
         platform_version: &PlatformVersion,
@@ -468,7 +511,113 @@ pub(crate) mod tests {
                 .expect("expected a balance")
         );
     }
-    pub(crate) fn setup_masternode_identity(
+
+    pub(in crate::execution) fn setup_masternode_owner_identity(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        seed: u64,
+        credits: Credits,
+        platform_version: &PlatformVersion,
+    ) -> (Identity, SimpleSigner, IdentityPublicKey, IdentityPublicKey) {
+        let mut signer = SimpleSigner::default();
+
+        platform
+            .drive
+            .add_to_system_credits(credits, None, platform_version)
+            .expect("expected to add to system credits");
+
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let (transfer_key, transfer_private_key) =
+            IdentityPublicKey::random_masternode_transfer_key_with_rng(
+                0,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        let (owner_key, owner_private_key) =
+            IdentityPublicKey::random_masternode_owner_key_with_rng(1, &mut rng, platform_version)
+                .expect("expected to get key pair");
+
+        let owner_address = owner_key
+            .public_key_hash()
+            .expect("expected a public key hash");
+
+        let payout_address = transfer_key
+            .public_key_hash()
+            .expect("expected a public key hash");
+
+        signer.add_key(transfer_key.clone(), transfer_private_key.clone());
+        signer.add_key(owner_key.clone(), owner_private_key.clone());
+
+        let pro_tx_hash_bytes: [u8; 32] = rng.gen();
+
+        let identity: Identity = IdentityV0 {
+            id: pro_tx_hash_bytes.into(),
+            public_keys: BTreeMap::from([(0, transfer_key.clone()), (1, owner_key.clone())]),
+            balance: credits,
+            revision: 0,
+        }
+        .into();
+
+        // We just add this identity to the system first
+
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                true,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new identity");
+
+        let mut platform_state = platform.state.load().clone().deref().clone();
+
+        let pro_tx_hash = ProTxHash::from_byte_array(pro_tx_hash_bytes);
+
+        let random_ip = Ipv4Addr::new(
+            rng.gen_range(0..255),
+            rng.gen_range(0..255),
+            rng.gen_range(0..255),
+            rng.gen_range(0..255),
+        );
+
+        platform_state.full_masternode_list_mut().insert(
+            pro_tx_hash,
+            MasternodeListItem {
+                node_type: MasternodeType::Regular,
+                pro_tx_hash,
+                collateral_hash: Txid::from_byte_array(rng.gen()),
+                collateral_index: 0,
+                collateral_address: rng.gen(),
+                operator_reward: 0.0,
+                state: DMNState {
+                    service: SocketAddr::new(IpAddr::V4(random_ip), 19999),
+                    registered_height: 0,
+                    pose_revived_height: None,
+                    pose_ban_height: None,
+                    revocation_reason: 0,
+                    owner_address,
+                    voting_address: rng.gen(),
+                    payout_address,
+                    pub_key_operator: vec![],
+                    operator_payout_address: None,
+                    platform_node_id: None,
+                    platform_p2p_port: None,
+                    platform_http_port: None,
+                },
+            },
+        );
+
+        platform.state.store(Arc::new(platform_state));
+
+        (identity, signer, owner_key, transfer_key)
+    }
+
+    pub(in crate::execution) fn setup_masternode_voting_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,
         platform_version: &PlatformVersion,
@@ -557,7 +706,7 @@ pub(crate) mod tests {
         (pro_tx_hash_bytes.into(), identity, signer, voting_key)
     }
 
-    pub(crate) fn take_down_masternode_identities(
+    pub(in crate::execution) fn take_down_masternode_identities(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         masternode_identities: &Vec<Identifier>,
     ) {
@@ -574,7 +723,7 @@ pub(crate) mod tests {
         platform.state.store(Arc::new(platform_state));
     }
 
-    pub(crate) fn create_dpns_name_contest_give_key_info(
+    pub(in crate::execution) fn create_dpns_name_contest_give_key_info(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -619,6 +768,8 @@ pub(crate) mod tests {
                 platform_state,
                 rng,
                 name,
+                None,
+                false,
                 platform_version,
             );
 
@@ -645,7 +796,7 @@ pub(crate) mod tests {
         )
     }
 
-    pub(crate) fn create_dpns_identity_name_contest(
+    pub(in crate::execution) fn create_dpns_identity_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -673,12 +824,51 @@ pub(crate) mod tests {
             platform_state,
             rng,
             name,
+            None,
+            false,
             platform_version,
         );
         (identity_1_info.0, identity_2_info.0, dpns_contract)
     }
 
-    pub(crate) fn create_dpns_contract_name_contest(
+    /// This can be useful if we already created the identities and we reuse the seed
+    pub(in crate::execution) fn create_dpns_identity_name_contest_skip_creating_identities(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        seed: u64,
+        name: &str,
+        nonce_offset: Option<IdentityNonce>,
+        platform_version: &PlatformVersion,
+    ) -> (Identity, Identity, Arc<DataContract>) {
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let identity_1_info = setup_identity_without_adding_it(rng.gen(), dash_to_credits!(0.5));
+
+        let identity_2_info = setup_identity_without_adding_it(rng.gen(), dash_to_credits!(0.5));
+
+        // Flip them if needed so identity 1 id is always smaller than identity 2 id
+        let (identity_1_info, identity_2_info) = if identity_1_info.0.id() < identity_2_info.0.id()
+        {
+            (identity_1_info, identity_2_info)
+        } else {
+            (identity_2_info, identity_1_info)
+        };
+
+        let (_, _, dpns_contract) = create_dpns_name_contest_on_identities(
+            platform,
+            &identity_1_info,
+            &identity_2_info,
+            platform_state,
+            rng,
+            name,
+            nonce_offset,
+            true, //we should also skip preorder
+            platform_version,
+        );
+        (identity_1_info.0, identity_2_info.0, dpns_contract)
+    }
+
+    pub(in crate::execution) fn create_dpns_contract_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -734,6 +924,8 @@ pub(crate) mod tests {
         platform_state: &PlatformState,
         mut rng: StdRng,
         name: &str,
+        nonce_offset: Option<IdentityNonce>,
+        skip_preorder: bool,
         platform_version: &PlatformVersion,
     ) -> (
         ((Document, Bytes32), (Document, Bytes32)),
@@ -857,7 +1049,7 @@ pub(crate) mod tests {
                 preorder,
                 entropy.0,
                 key_1,
-                2,
+                2 + nonce_offset.unwrap_or_default(),
                 0,
                 signer_1,
                 platform_version,
@@ -878,7 +1070,7 @@ pub(crate) mod tests {
                 preorder,
                 entropy.0,
                 key_2,
-                2,
+                2 + nonce_offset.unwrap_or_default(),
                 0,
                 signer_2,
                 platform_version,
@@ -899,7 +1091,7 @@ pub(crate) mod tests {
                 domain,
                 entropy.0,
                 key_1,
-                3,
+                3 + nonce_offset.unwrap_or_default(),
                 0,
                 signer_1,
                 platform_version,
@@ -919,7 +1111,7 @@ pub(crate) mod tests {
                 domain,
                 entropy.0,
                 key_2,
-                3,
+                3 + nonce_offset.unwrap_or_default(),
                 0,
                 signer_2,
                 platform_version,
@@ -933,37 +1125,51 @@ pub(crate) mod tests {
             .serialize_to_bytes()
             .expect("expected documents batch serialized state transition");
 
-        let transaction = platform.drive.grove.start_transaction();
+        if !skip_preorder {
+            let transaction = platform.drive.grove.start_transaction();
 
-        let processing_result = platform
-            .platform
-            .process_raw_state_transitions(
-                &vec![
-                    documents_batch_create_serialized_preorder_transition_1.clone(),
-                    documents_batch_create_serialized_preorder_transition_2.clone(),
-                ],
-                platform_state,
-                &BlockInfo::default_with_time(
-                    platform_state
-                        .last_committed_block_time_ms()
-                        .unwrap_or_default()
-                        + 3000,
-                ),
-                &transaction,
-                platform_version,
-                false,
-                None,
-            )
-            .expect("expected to process state transition");
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![
+                        documents_batch_create_serialized_preorder_transition_1.clone(),
+                        documents_batch_create_serialized_preorder_transition_2.clone(),
+                    ],
+                    platform_state,
+                    &BlockInfo::default_with_time(
+                        platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    ),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
 
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("expected to commit transaction");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.valid_count(), 2);
+            let successful_count = processing_result
+                .execution_results()
+                .iter()
+                .filter(|result| {
+                    assert_matches!(
+                        result,
+                        StateTransitionExecutionResult::SuccessfulExecution(_, _)
+                    );
+                    true
+                })
+                .count();
+
+            assert_eq!(successful_count, 2);
+        }
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -995,7 +1201,19 @@ pub(crate) mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.valid_count(), 2);
+        let successful_count = processing_result
+            .execution_results()
+            .iter()
+            .filter(|result| {
+                assert_matches!(
+                    result,
+                    StateTransitionExecutionResult::SuccessfulExecution(_, _)
+                );
+                true
+            })
+            .count();
+
+        assert_eq!(successful_count, 2);
         (
             ((preorder_document_1, entropy), (document_1, entropy)),
             ((preorder_document_2, entropy), (document_2, entropy)),
@@ -1287,7 +1505,7 @@ pub(crate) mod tests {
         )
     }
 
-    pub(crate) fn add_contender_to_dpns_name_contest(
+    pub(in crate::execution) fn add_contender_to_dpns_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
@@ -1468,7 +1686,7 @@ pub(crate) mod tests {
         identity_1
     }
 
-    pub(crate) fn verify_dpns_name_contest(
+    pub(in crate::execution) fn verify_dpns_name_contest(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &Guard<Arc<PlatformState>>,
         dpns_contract: &DataContract,
@@ -1676,7 +1894,7 @@ pub(crate) mod tests {
         assert_eq!(second_contender.vote_tally(), Some(0));
     }
 
-    pub(crate) fn perform_vote(
+    pub(in crate::execution) fn perform_vote(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &Guard<Arc<PlatformState>>,
         dpns_contract: &DataContract,
@@ -1755,19 +1973,20 @@ pub(crate) mod tests {
         }
     }
 
-    pub(crate) fn perform_votes(
+    pub(in crate::execution) fn perform_votes(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         dpns_contract: &DataContract,
         resource_vote_choice: ResourceVoteChoice,
         name: &str,
         count: u64,
         start_seed: u64,
+        nonce_offset: Option<IdentityNonce>,
         platform_version: &PlatformVersion,
     ) -> Vec<(Identifier, Identity, SimpleSigner, IdentityPublicKey)> {
         let mut masternode_infos = vec![];
         for i in 0..count {
             let (pro_tx_hash_bytes, voting_identity, signer, voting_key) =
-                setup_masternode_identity(platform, start_seed + i, platform_version);
+                setup_masternode_voting_identity(platform, start_seed + i, platform_version);
 
             let platform_state = platform.state.load();
 
@@ -1780,7 +1999,7 @@ pub(crate) mod tests {
                 &signer,
                 pro_tx_hash_bytes,
                 &voting_key,
-                1,
+                1 + nonce_offset.unwrap_or_default(),
                 None,
                 platform_version,
             );
@@ -1790,12 +2009,13 @@ pub(crate) mod tests {
         masternode_infos
     }
 
-    pub(crate) fn perform_votes_multi(
+    pub(in crate::execution) fn perform_votes_multi(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         dpns_contract: &DataContract,
         resource_vote_choices: Vec<(ResourceVoteChoice, u64)>,
         name: &str,
         start_seed: u64,
+        nonce_offset: Option<IdentityNonce>,
         platform_version: &PlatformVersion,
     ) -> BTreeMap<ResourceVoteChoice, Vec<(Identifier, Identity, SimpleSigner, IdentityPublicKey)>>
     {
@@ -1809,6 +2029,7 @@ pub(crate) mod tests {
                 name,
                 count,
                 count_aggregate,
+                nonce_offset,
                 platform_version,
             );
             masternodes_by_vote_choice.insert(resource_vote_choice, masternode_infos);
@@ -1817,7 +2038,7 @@ pub(crate) mod tests {
         masternodes_by_vote_choice
     }
 
-    pub(crate) fn get_vote_states(
+    pub(in crate::execution) fn get_vote_states(
         platform: &TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         dpns_contract: &DataContract,
@@ -1848,7 +2069,7 @@ pub(crate) mod tests {
         let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
             .expect("expected to encode the word dash");
 
-        let quantum_encoded =
+        let name_encoded =
             bincode::encode_to_vec(Value::Text(convert_to_homograph_safe_chars(name)), config)
                 .expect("expected to encode the word quantum");
 
@@ -1862,7 +2083,7 @@ pub(crate) mod tests {
                             contract_id: dpns_contract.id().to_vec(),
                             document_type_name: domain.name().clone(),
                             index_name: index_name.clone(),
-                            index_values: vec![dash_encoded.clone(), quantum_encoded.clone()],
+                            index_values: vec![dash_encoded.clone(), name_encoded.clone()],
                             result_type: result_type as i32,
                             allow_include_locked_and_abstaining_vote_tally,
                             start_at_identifier_info,
@@ -1923,7 +2144,7 @@ pub(crate) mod tests {
         )
     }
 
-    pub(crate) fn get_proved_vote_states(
+    pub(in crate::execution) fn get_proved_vote_states(
         platform: &TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         dpns_contract: &DataContract,

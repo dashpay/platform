@@ -118,6 +118,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidDocumentTypeNameError(_) => 10415,
             Self::DocumentCreationNotAllowedError(_) => 10416,
             Self::DocumentFieldMaxSizeExceededError(_) => 10417,
+            Self::ContestedDocumentsTemporarilyNotAllowedError(_) => 10418,
 
             // Identity Errors: 10500-10599
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 10500,
@@ -152,6 +153,7 @@ impl ErrorWithCode for BasicError {
             Self::MasterPublicKeyUpdateError(_) => 10529,
             Self::IdentityAssetLockTransactionOutPointNotEnoughBalanceError(_) => 10530,
             Self::IdentityAssetLockStateTransitionReplayError(_) => 10531,
+            Self::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError(_) => 10532,
 
             // State Transition Errors: 10600-10699
             Self::InvalidStateTransitionTypeError { .. } => 10600,
@@ -213,6 +215,7 @@ impl ErrorWithCode for StateError {
             Self::DocumentContestCurrentlyLockedError(_) => 40110,
             Self::DocumentContestNotJoinableError(_) => 40111,
             Self::DocumentContestIdentityAlreadyContestantError(_) => 40112,
+            Self::DocumentContestDocumentWithSameIdAlreadyPresentError(_) => 40113,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -229,6 +232,8 @@ impl ErrorWithCode for StateError {
             Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 40211,
             Self::DocumentTypeUpdateError(_) => 40212,
             Self::DataContractUpdatePermissionError(_) => 40213,
+            Self::MissingTransferKeyError(_) => 40214,
+            Self::NoTransferKeyForCoreWithdrawalAvailableError(_) => 40215,
 
             // Voting Errors: 40300-40399
             Self::MasternodeNotFoundError(_) => 40300,

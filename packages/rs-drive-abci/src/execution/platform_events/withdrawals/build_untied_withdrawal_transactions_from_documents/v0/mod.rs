@@ -1,28 +1,19 @@
-use std::collections::HashMap;
-
-use dashcore_rpc::dashcore::{
-    blockdata::transaction::special_transaction::asset_unlock::{
-        qualified_asset_unlock::ASSET_UNLOCK_TX_SIZE,
-        unqualified_asset_unlock::{AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo},
-    },
-    consensus::Encodable,
-    ScriptBuf, TxOut,
-};
-use dpp::document::{Document, DocumentV0Getters};
+use dashcore_rpc::dashcore::consensus::Encodable;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contracts::withdrawals_contract;
+use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
+use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-
-use drive::dpp::identifier::Identifier;
-use drive::dpp::identity::convert_credits_to_duffs;
-use drive::drive::identity::withdrawals::{
-    WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes,
-};
+use dpp::withdrawal::{WithdrawalTransactionIndex, WithdrawalTransactionIndexAndBytes};
 
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
     rpc::core::CoreRPCLike,
 };
+use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
 where
@@ -31,101 +22,91 @@ where
     /// Build list of Core transactions from withdrawal documents
     pub(super) fn build_untied_withdrawal_transactions_from_documents_v0(
         &self,
-        documents: &[Document],
+        documents: &mut Vec<Document>,
         start_index: WithdrawalTransactionIndex,
-    ) -> Result<HashMap<Identifier, WithdrawalTransactionIndexAndBytes>, Error> {
-        let mut withdrawals: HashMap<Identifier, WithdrawalTransactionIndexAndBytes> =
-            HashMap::new();
+        block_info: &BlockInfo,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Vec<WithdrawalTransactionIndexAndBytes>, Credits), Error> {
+        documents.iter_mut().enumerate().try_fold(
+            (Vec::new(), 0u64), // Start with an empty vector for transactions and 0 for total amount.
+            |(mut transactions, mut total_amount), (i, document)| {
+                // Calculate the transaction index.
+                let transaction_index = start_index + i as WithdrawalTransactionIndex;
 
-        for (i, document) in documents.iter().enumerate() {
-            let output_script_bytes = document
-                .properties()
-                .get_bytes(withdrawal::properties::OUTPUT_SCRIPT)
-                .map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Can't get outputScript from withdrawal document",
+                // Convert the document into the withdrawal transaction information.
+                let withdrawal_transaction = document.try_into_asset_unlock_base_transaction_info(
+                    transaction_index,
+                    platform_version,
+                )?;
+
+                // Create a buffer to hold the encoded transaction.
+                let mut transaction_buffer: Vec<u8> = vec![];
+
+                // Get the withdrawal amount from the document properties.
+                let amount: u64 = document
+                    .properties()
+                    .get_integer(withdrawal::properties::AMOUNT)?;
+
+                // Add the amount to the total, checking for overflow.
+                total_amount = total_amount.checked_add(amount).ok_or_else(|| {
+                    Error::Execution(ExecutionError::Overflow(
+                        "Overflow while calculating total amount",
                     ))
                 })?;
 
-            let amount = document
-                .properties()
-                .get_integer(withdrawal::properties::AMOUNT)
-                .map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Can't get amount from withdrawal document",
+                // Consensus encode the withdrawal transaction into the buffer.
+                withdrawal_transaction
+                    .consensus_encode(&mut transaction_buffer)
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "Can't consensus encode a withdrawal transaction",
+                        ))
+                    })?;
+
+                // Update the document properties.
+                document.set_u64(withdrawal::properties::TRANSACTION_INDEX, transaction_index);
+                document.set_u8(
+                    withdrawal::properties::STATUS,
+                    withdrawals_contract::WithdrawalStatus::POOLED as u8,
+                );
+                document.set_updated_at(Some(block_info.time_ms));
+
+                // Increment the document revision, handle error if it fails.
+                document.increment_revision().map_err(|_| {
+                    Error::Execution(ExecutionError::Overflow(
+                        "Overflow when adding to document revision for withdrawals",
                     ))
                 })?;
 
-            let core_fee_per_byte: u32 = document
-                .properties()
-                .get_integer(withdrawal::properties::CORE_FEE_PER_BYTE)
-                .map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Can't get coreFeePerByte from withdrawal document",
-                    ))
-                })?;
+                // Add the transaction index and encoded transaction to the result.
+                transactions.push((transaction_index, transaction_buffer));
 
-            let output_script = ScriptBuf::from_bytes(output_script_bytes);
-
-            let tx_out = TxOut {
-                value: convert_credits_to_duffs(amount)?,
-                script_pubkey: output_script,
-            };
-
-            let transaction_index = start_index + i as WithdrawalTransactionIndex;
-
-            let withdrawal_transaction = AssetUnlockBaseTransactionInfo {
-                version: 1,
-                lock_time: 0,
-                output: vec![tx_out],
-                base_payload: AssetUnlockBasePayload {
-                    version: 1,
-                    index: transaction_index,
-                    fee: ASSET_UNLOCK_TX_SIZE as u32 * core_fee_per_byte,
-                },
-            };
-
-            let mut transaction_buffer: Vec<u8> = vec![];
-
-            withdrawal_transaction
-                .consensus_encode(&mut transaction_buffer)
-                .map_err(|_| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Can't consensus encode a withdrawal transaction",
-                    ))
-                })?;
-
-            withdrawals.insert(document.id(), (transaction_index, transaction_buffer));
-        }
-
-        Ok(withdrawals)
+                // Return the updated accumulator.
+                Ok((transactions, total_amount))
+            },
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
-
-    use dpp::withdrawal::Pooling;
-    use dpp::{
-        data_contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture,
-    };
+    use dpp::tests::fixtures::get_withdrawal_document_fixture;
     use drive::util::test_helpers::setup::setup_document;
 
     mod build_withdrawal_transactions_from_documents {
+        use super::*;
+        use crate::test::helpers::setup::TestPlatformBuilder;
+        use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
         use dpp::prelude::Identifier;
+        use dpp::system_data_contracts::withdrawals_contract::WithdrawalStatus;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
-        use drive::drive::identity::withdrawals::WithdrawalTransactionIndexAndBytes;
+        use dpp::withdrawal::Pooling;
         use drive::util::test_helpers::setup::setup_system_data_contract;
-        use itertools::Itertools;
-
-        use crate::test::helpers::setup::TestPlatformBuilder;
-
-        use super::*;
 
         #[test]
         fn test_build() {
@@ -152,7 +133,7 @@ mod tests {
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                    "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
+                    "status": WithdrawalStatus::POOLED as u8,
                     "transactionIndex": 1u64,
                 }),
                 None,
@@ -180,7 +161,7 @@ mod tests {
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                    "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
+                    "status": WithdrawalStatus::POOLED as u8,
                     "transactionIndex": 2u64,
                 }),
                 None,
@@ -196,18 +177,21 @@ mod tests {
                 Some(&transaction),
             );
 
-            let documents = vec![document_1, document_2];
+            let mut documents = vec![document_1, document_2];
 
-            let transactions = platform
-                .build_untied_withdrawal_transactions_from_documents_v0(&documents, 50)
+            let block_info = BlockInfo::default_with_time(50);
+
+            let (transactions, credits) = platform
+                .build_untied_withdrawal_transactions_from_documents_v0(
+                    &mut documents,
+                    50,
+                    &block_info,
+                    platform_version,
+                )
                 .expect("to build transactions from documents");
 
             assert_eq!(
-                transactions
-                    .values()
-                    .cloned()
-                    .sorted()
-                    .collect::<Vec<WithdrawalTransactionIndexAndBytes>>(),
+                transactions,
                 vec![
                     (
                         50,
@@ -226,10 +210,9 @@ mod tests {
                         ],
                     ),
                 ]
-                .into_iter()
-                .sorted()
-                .collect::<Vec<WithdrawalTransactionIndexAndBytes>>(),
             );
+
+            assert_eq!(credits, 2000);
         }
     }
 }

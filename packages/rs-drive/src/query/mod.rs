@@ -50,12 +50,13 @@ pub use grovedb::{
     Element, Error as GroveError, TransactionArg,
 };
 
+use dpp::document;
+use dpp::prelude::Identifier;
 #[cfg(feature = "server")]
 use {
     crate::{drive::Drive, error::Error::GroveDB, fees::op::LowLevelDriveOperation},
     dpp::block::block_info::BlockInfo,
 };
-
 // Crate-local unconditional imports
 use crate::config::DriveConfig;
 // Crate-local unconditional imports
@@ -132,6 +133,13 @@ pub fn contract_lookup_fn_for_contract<'a>(
 #[cfg(any(feature = "server", feature = "verify"))]
 /// A query to get the votes given out by an identity
 pub mod contested_resource_votes_given_by_identity_query;
+#[cfg(any(feature = "server", feature = "verify"))]
+/// A query to get contested documents before they have been awarded
+pub mod drive_contested_document_query;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// A query to get the block counts of proposers in an epoch
+pub mod proposer_block_count_query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct
@@ -305,6 +313,36 @@ pub struct DriveDocumentQuery<'a> {
 }
 
 impl<'a> DriveDocumentQuery<'a> {
+    /// Gets a document by their primary key
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn new_primary_key_single_item_query(
+        contract: &'a DataContract,
+        document_type: DocumentTypeRef<'a>,
+        id: Identifier,
+    ) -> Self {
+        DriveDocumentQuery {
+            contract,
+            document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: Some(WhereClause {
+                    field: document::property_names::ID.to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(id.to_buffer()),
+                }),
+                in_clause: None,
+                range_clause: None,
+                equal_clauses: Default::default(),
+            },
+            offset: None,
+            limit: None,
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+        }
+    }
+
     #[cfg(feature = "server")]
     /// Returns any item
     pub fn any_item_query(contract: &'a DataContract, document_type: DocumentTypeRef<'a>) -> Self {
@@ -1513,7 +1551,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 // There is no last_clause which means we are using an index most likely because of an order_by, however we have no
                 // clauses, in this case we should use the first value of the index.
                 let first_index = index.properties.first().ok_or(Error::Drive(
-                    DriveError::CorruptedContractIndexes("index must have properties"),
+                    DriveError::CorruptedContractIndexes("index must have properties".to_string()),
                 ))?; // Index must have properties
                 Self::recursive_insert_on_query(
                     None,
@@ -1567,7 +1605,7 @@ impl<'a> DriveDocumentQuery<'a> {
                             .iter()
                             .find(|field| where_clause.field == field.name)
                             .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(
-                                "index must have last_clause field",
+                                "index must have last_clause field".to_string(),
                             )))?;
                         Self::recursive_insert_on_query(
                             Some(&mut query),
@@ -1599,7 +1637,7 @@ impl<'a> DriveDocumentQuery<'a> {
                             .iter()
                             .find(|field| subquery_where_clause.field == field.name)
                             .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(
-                                "index must have subquery_clause field",
+                                "index must have subquery_clause field".to_string(),
                             )))?;
                         Self::recursive_insert_on_query(
                             Some(&mut subquery),
@@ -1831,7 +1869,6 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(feature = "server")]
-    #[allow(unused)]
     /// Executes an internal query with no proof and returns the values and skipped items.
     pub(crate) fn execute_no_proof_internal(
         &self,
@@ -2001,7 +2038,7 @@ mod tests {
     }
 
     fn setup_family_birthday_contract() -> (Drive, DataContract) {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 

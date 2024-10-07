@@ -26,13 +26,6 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
           subnet: '172.26.24.0/24',
         },
       },
-      core: {
-        log: {
-          file: {
-            path: homeDir.joinPath('logs', 'mainnet', 'core.log'),
-          },
-        },
-      },
       network: NETWORK_MAINNET,
       platform: {
         enable: false,
@@ -71,8 +64,13 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
               ttlNumBlocks: 0,
             },
             genesis: {
-              chain_id: 'dash-1',
+              chain_id: 'evo1',
               validator_quorum_type: 4,
+              consensus_params: {
+                version: {
+                  app_version: '1',
+                },
+              },
             },
           },
           abci: {

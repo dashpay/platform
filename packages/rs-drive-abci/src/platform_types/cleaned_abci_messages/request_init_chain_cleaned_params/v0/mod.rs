@@ -75,10 +75,12 @@ impl TryFrom<RequestInitChain> for RequestInitChainCleanedParams {
             "consensus params are required in init chain".to_string(),
         ))?;
 
-        let tenderdash_abci::proto::types::VersionParams { app_version } =
-            consensus_params.version.ok_or(AbciError::BadRequest(
-                "consensus params version is required in init chain".to_string(),
-            ))?;
+        let tenderdash_abci::proto::types::VersionParams {
+            app_version,
+            consensus_version: _consensus_version,
+        } = consensus_params.version.ok_or(AbciError::BadRequest(
+            "consensus params version is required in init chain".to_string(),
+        ))?;
 
         Ok(Self {
             genesis_time,

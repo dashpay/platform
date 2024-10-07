@@ -114,14 +114,16 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getOutputScript)]
-    pub fn get_output_script(&self) -> Buffer {
-        Buffer::from_bytes(self.0.output_script().as_bytes())
+    pub fn get_output_script(&self) -> Option<Buffer> {
+        self.0
+            .output_script()
+            .map(|core_script| Buffer::from_bytes(core_script.as_bytes()))
     }
 
     #[wasm_bindgen(js_name=setOutputScript)]
-    pub fn set_output_script(&mut self, output_script: Vec<u8>) {
+    pub fn set_output_script(&mut self, output_script: Option<Vec<u8>>) {
         self.0
-            .set_output_script(CoreScript::from_bytes(output_script));
+            .set_output_script(output_script.map(CoreScript::from_bytes));
     }
 
     #[wasm_bindgen(js_name=getNonce)]
@@ -153,6 +155,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
         let version = match self.0 {
             IdentityCreditWithdrawalTransition::V0(_) => "0",
+            IdentityCreditWithdrawalTransition::V1(_) => "1",
         };
 
         js_sys::Reflect::set(&js_object, &"$version".to_owned().into(), &version.into())?;
@@ -205,12 +208,15 @@ impl IdentityCreditWithdrawalTransitionWasm {
             &JsValue::from_f64((object.pooling as u8) as f64),
         )?;
 
-        let output_script = Buffer::from_bytes(object.output_script.as_bytes());
-        js_sys::Reflect::set(
-            &js_object,
-            &"outputScript".to_owned().into(),
-            &output_script.into(),
-        )?;
+        if let Some(output_script) = object.output_script {
+            let output_script = Buffer::from_bytes(output_script.as_bytes());
+
+            js_sys::Reflect::set(
+                &js_object,
+                &"outputScript".to_owned().into(),
+                &output_script.into(),
+            )?;
+        }
 
         js_sys::Reflect::set(
             &js_object,
@@ -243,6 +249,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
         let version = match self.0 {
             IdentityCreditWithdrawalTransition::V0(_) => "0",
+            IdentityCreditWithdrawalTransition::V1(_) => "1",
         };
 
         js_sys::Reflect::set(&js_object, &"$version".to_owned().into(), &version.into())?;
@@ -297,16 +304,16 @@ impl IdentityCreditWithdrawalTransitionWasm {
             &JsValue::from_f64((object.pooling as u8) as f64),
         )?;
 
-        let output_script = platform_value::string_encoding::encode(
-            object.output_script.as_bytes(),
-            Encoding::Base64,
-        );
+        if let Some(output_script) = object.output_script {
+            let output_script =
+                platform_value::string_encoding::encode(output_script.as_bytes(), Encoding::Base64);
 
-        js_sys::Reflect::set(
-            &js_object,
-            &"outputScript".to_owned().into(),
-            &output_script.into(),
-        )?;
+            js_sys::Reflect::set(
+                &js_object,
+                &"outputScript".to_owned().into(),
+                &output_script.into(),
+            )?;
+        }
 
         js_sys::Reflect::set(
             &js_object,

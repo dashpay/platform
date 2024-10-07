@@ -1,7 +1,10 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Setters;
+use crate::execution::engine::consensus_params_update::consensus_params_update;
+use crate::execution::types::block_execution_context::v0::{
+    BlockExecutionContextV0Getters, BlockExecutionContextV0Setters,
+};
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -9,6 +12,7 @@ use crate::platform_types::state_transitions_processing_result::StateTransitionE
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
 use dpp::version::TryIntoPlatformVersioned;
+use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{ExecTxResult, TxRecord};
@@ -32,6 +36,8 @@ where
     let platform_state = app.platform().state.load();
 
     let last_committed_core_height = platform_state.last_committed_core_height();
+
+    let starting_platform_version = platform_state.current_platform_version()?;
 
     let core_chain_lock_update = match app.platform().core_rpc.get_best_chain_lock() {
         Ok(latest_chain_lock) => {
@@ -87,11 +93,15 @@ where
         if transaction_guard.is_none() {
             Err(Error::Abci(AbciError::BadRequest("received a prepare proposal request for the genesis height before an init chain request".to_string())))?;
         };
-        if request.round > 0 {
-            transaction_guard
-                .as_ref()
-                .map(|tx| tx.rollback_to_savepoint());
-        };
+        tracing::debug!(
+            "rolling back to savepoint to process genesis proposal for round: {}",
+            request.round,
+        );
+        if let Some(tx) = transaction_guard.as_ref() {
+            tx.rollback_to_savepoint()
+                .map_err(|e| drive::grovedb::error::Error::StorageError(RocksDBError(e)))?;
+            tx.set_savepoint();
+        }
         transaction_guard
     } else {
         app.start_transaction();
@@ -124,6 +134,8 @@ where
         mut block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
 
+    let epoch_info = block_execution_context.epoch_info();
+
     // We need to let Tenderdash know about the transactions we should remove from execution
     let valid_tx_count = state_transitions_result.valid_count();
     let failed_tx_count = state_transitions_result.failed_count();
@@ -151,10 +163,26 @@ where
             // Such state transitions must be invalidated by check tx, but they might
             // still be added to mempool due to inconsistency between check tx and tx processing
             // (fees calculation) or malicious proposer.
-            StateTransitionExecutionResult::UnpaidConsensusError(..) => TxAction::Removed,
+            StateTransitionExecutionResult::UnpaidConsensusError(consensus_error) => {
+                tracing::trace!(
+                    "UnpaidConsensusError at height {}, round {}: {:?}",
+                    request.height,
+                    request.round,
+                    consensus_error
+                );
+                TxAction::Removed
+            }
             // We shouldn't include in the block any state transitions that produced an internal error
             // during execution
-            StateTransitionExecutionResult::InternalError(..) => TxAction::Removed,
+            StateTransitionExecutionResult::InternalError(error_message) => {
+                tracing::debug!(
+                    "InternalError at height {}, round {}: {}",
+                    request.height,
+                    request.round,
+                    error_message
+                );
+                TxAction::Removed
+            }
             // State Transition was not executed as it reached the maximum time limit
             StateTransitionExecutionResult::NotExecuted(..) => TxAction::Delayed,
         };
@@ -194,8 +222,12 @@ where
             signature: chain_lock.signature.to_bytes().to_vec(),
         }),
         validator_set_update,
-        // TODO: implement consensus param updates
-        consensus_param_updates: None,
+        consensus_param_updates: consensus_params_update(
+            app.platform().config.network,
+            starting_platform_version,
+            platform_version,
+            epoch_info,
+        )?,
         app_version: platform_version.protocol_version as u64,
     };
 

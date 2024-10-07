@@ -12,11 +12,11 @@ impl StateTransitionIdentitySigned for MasternodeVoteTransitionV0 {
         self.signature_public_key_id = key_id
     }
 
-    fn security_level_requirement(&self) -> Vec<SecurityLevel> {
+    fn security_level_requirement(&self, _purpose: Purpose) -> Vec<SecurityLevel> {
         vec![CRITICAL, HIGH, MEDIUM]
     }
 
-    fn purpose_requirement(&self) -> Purpose {
-        Purpose::VOTING
+    fn purpose_requirement(&self) -> Vec<Purpose> {
+        vec![Purpose::VOTING]
     }
 }

@@ -151,7 +151,7 @@ mod tests {
         current_core_height: CoreBlockHeight,
     ) -> Credits {
         let (platform, _state, platform_version) =
-            setup_platform(Some((1, activation_core_height)), Network::Regtest);
+            setup_platform(Some((1, activation_core_height)), Network::Regtest, None);
 
         platform
             .drive
@@ -218,7 +218,7 @@ mod tests {
         current_core_height: CoreBlockHeight,
     ) -> Credits {
         let (platform, _state, platform_version) =
-            setup_platform(Some((1, activation_core_height)), Network::Regtest);
+            setup_platform(Some((1, activation_core_height)), Network::Regtest, None);
 
         platform
             .drive

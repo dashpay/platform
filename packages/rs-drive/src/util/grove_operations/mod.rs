@@ -108,9 +108,26 @@ pub mod grove_batch_operations_costs;
 /// Clear a subtree in grovedb
 pub mod grove_clear;
 
+/// Provides functionality to delete items in a path based on a query.
+pub mod batch_delete_items_in_path_query;
+
+/// Inserts an element if it does not exist and returns the existing element if it does.
+pub mod batch_insert_if_not_exists_return_existing_element;
+
+/// Inserts a sum item or adds to it if it already exists.
+pub mod batch_insert_sum_item_or_add_to_if_already_exists;
+
+/// Retrieves serialized or sum results from a path query in GroveDB.
 mod grove_get_path_query_serialized_or_sum_results;
-/// Proved path query in grovedb with a conditional query
+
+/// Executes a proved path query in GroveDB with an optional conditional query.
 pub mod grove_get_proved_path_query_with_conditional;
+
+/// Inserts an element if it does not exist and returns the existing element if it does in GroveDB.
+pub mod grove_insert_if_not_exists_return_existing_element;
+
+/// Moved items that are found in a path query to a new path.
+pub mod batch_move_items_in_path_query;
 
 use grovedb_costs::CostContext;
 
@@ -163,13 +180,36 @@ pub enum BatchDeleteApplyType {
     StatelessBatchDelete {
         /// Are we deleting in a sum tree
         is_sum_tree: bool,
-        /// What is the estimated value size
+        /// What is the estimated key size
         estimated_key_size: u32,
         /// What is the estimated value size
         estimated_value_size: u32,
     },
     /// Stateful batch delete
     StatefulBatchDelete {
+        /// Are we known to be in a subtree and does this subtree have sums
+        is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
+    },
+}
+
+/// Batch move apply type
+#[derive(Debug, Copy, Clone)]
+pub enum BatchMoveApplyType {
+    /// Stateless batch move
+    StatelessBatchMove {
+        /// Are we moving from inside a sum tree
+        in_tree_using_sums: bool,
+        /// Are we moving a sum tree
+        is_sum_tree: bool,
+        /// What is the estimated key size
+        estimated_key_size: u32,
+        /// What is the estimated value size
+        estimated_value_size: u32,
+        /// The flags length
+        flags_len: FlagsLen,
+    },
+    /// Stateful batch move
+    StatefulBatchMove {
         /// Are we known to be in a subtree and does this subtree have sums
         is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
     },

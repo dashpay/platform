@@ -54,7 +54,7 @@ db-dir = "data"
 log-level = "{{=it.platform.drive.tenderdash.log.level}}"
 
 # Path to the log file. This parameter is an additional option to the existing stderr output
-{{? it.platform.drive.tenderdash.log.path }}log-file-path = "/var/log/tenderdash/{{= it.platform.drive.tenderdash.log.path.split('/').pop() }}"{{?}}
+{{? it.platform.drive.tenderdash.log.path }}log-file-path = "/var/log/tenderdash/tenderdash.log"{{?}}
 
 # Output format: 'plain' (colored text) or 'json'
 log-format = "{{=it.platform.drive.tenderdash.log.format}}"

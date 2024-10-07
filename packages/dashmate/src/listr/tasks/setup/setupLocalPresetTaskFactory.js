@@ -139,11 +139,8 @@ export default function setupLocalPresetTaskFactory(
                 config.set('docker.network.subnet', subnet.join('.'));
 
                 // Setup Core debug logs
-                const coreLogFilePath = homeDir.joinPath('logs', config.getName(), 'core.log');
-                config.set('core.log.file.path', coreLogFilePath);
-
                 if (ctx.debugLogs) {
-                  config.set('core.log.file.categories', ['all']);
+                  config.set('core.log.debug.enabled', true);
                 }
 
                 // Although not all nodes are miners, all nodes should be aware of

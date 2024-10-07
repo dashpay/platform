@@ -1,4 +1,5 @@
 use super::MockDashPlatformSdk;
+use dpp::bincode::config::standard;
 use dpp::{
     bincode,
     block::extended_epoch_info::ExtendedEpochInfo,
@@ -14,9 +15,11 @@ use dpp::{
     },
     voting::votes::{resource_vote::ResourceVote, Vote},
 };
+use drive::grovedb::Element;
 use drive_proof_verifier::types::{
-    Contenders, ContestedResources, ElementFetchRequestItem, IdentityBalanceAndRevision,
-    MasternodeProtocolVote, PrefundedSpecializedBalance, TotalCreditsInPlatform,
+    Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem, EvoNodeStatus,
+    IdentityBalanceAndRevision, MasternodeProtocolVote, PrefundedSpecializedBalance,
+    ProposerBlockCounts, RetrievedIntegerValue, TotalCreditsInPlatform,
     VotePollsGroupedByTimestamp, Voters,
 };
 use std::collections::BTreeMap;
@@ -164,6 +167,29 @@ impl MockResponse for Document {
     }
 }
 
+impl MockResponse for Element {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        // Create a bincode configuration
+        let config = standard();
+
+        // Serialize using the specified configuration
+        bincode::encode_to_vec(self, config).expect("Failed to serialize Element")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        // Create a bincode configuration
+        let config = standard();
+
+        // Deserialize using the specified configuration
+        bincode::decode_from_slice(buf, config)
+            .expect("Failed to deserialize Element")
+            .0
+    }
+}
+
 impl MockResponse for drive_proof_verifier::types::IdentityNonceFetcher {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         (self.0).to_be_bytes().to_vec()
@@ -210,6 +236,20 @@ impl MockResponse for ProTxHash {
     }
 }
 
+impl MockResponse for ProposerBlockCounts {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.0.mock_serialize(sdk)
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let data = RetrievedIntegerValue::<Identifier, u64>::mock_deserialize(sdk, buf);
+        ProposerBlockCounts(data)
+    }
+}
+
 impl_mock_response!(Identity);
 impl_mock_response!(IdentityPublicKey);
 impl_mock_response!(Identifier);
@@ -229,3 +269,5 @@ impl_mock_response!(VotePollsGroupedByTimestamp);
 impl_mock_response!(PrefundedSpecializedBalance);
 impl_mock_response!(TotalCreditsInPlatform);
 impl_mock_response!(ElementFetchRequestItem);
+impl_mock_response!(EvoNodeStatus);
+impl_mock_response!(CurrentQuorumsInfo);

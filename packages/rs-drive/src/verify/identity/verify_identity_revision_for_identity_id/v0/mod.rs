@@ -36,7 +36,8 @@ impl Drive {
     /// - The proved key value is not for the correct path or key in balances.
     /// - More than one balance is found.
     ///
-    pub fn verify_identity_revision_for_identity_id_v0(
+    #[inline(always)]
+    pub(super) fn verify_identity_revision_for_identity_id_v0(
         proof: &[u8],
         identity_id: [u8; 32],
         verify_subset_of_proof: bool,

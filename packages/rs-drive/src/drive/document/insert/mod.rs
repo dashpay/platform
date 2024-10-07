@@ -35,12 +35,6 @@ mod add_indices_for_top_index_level_for_contract_operations;
 // This module contains functionality for adding a reference for an index level for contract operations
 mod add_reference_for_index_level_for_contract_operations;
 
-#[cfg(all(
-    feature = "fixtures-and-mocks",
-    feature = "data-contract-cbor-conversion"
-))]
-use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
-
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
@@ -160,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_documents() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -256,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_contact_request_with_fee() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -321,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_profile_with_fee() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -386,7 +380,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_profile_average_case_cost_fee() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -451,7 +445,7 @@ mod tests {
 
     #[test]
     fn test_unknown_state_cost_dashpay_fee_for_add_documents() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -527,7 +521,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_fee_for_documents_detail() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -620,7 +614,7 @@ mod tests {
 
     #[test]
     fn test_add_dpns_document_with_fee() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 

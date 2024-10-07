@@ -58,21 +58,24 @@ use dpp::consensus::signature::SignatureError;
 use dpp::consensus::state::state_error::StateError;
 
 use dpp::consensus::state::data_trigger::DataTriggerError::{
-    DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
+  DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
 };
 use wasm_bindgen::{JsError, JsValue};
 use dpp::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError, InvalidDocumentTypeRequiredSecurityLevelError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
-use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
-use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError};
+use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedError, DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
+use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
 use dpp::consensus::basic::overflow_error::OverflowError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
+use dpp::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
+use dpp::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
+use dpp::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
@@ -291,6 +294,15 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::MasternodeIncorrectVoterIdentityIdError(e) => {
             generic_consensus_error!(MasternodeIncorrectVoterIdentityIdError, e).into()
+        }
+        StateError::DocumentContestDocumentWithSameIdAlreadyPresentError(e) => {
+            generic_consensus_error!(DocumentContestDocumentWithSameIdAlreadyPresentError, e).into()
+        }
+        StateError::MissingTransferKeyError(e) => {
+            generic_consensus_error!(MissingTransferKeyError, e).into()
+        }
+        StateError::NoTransferKeyForCoreWithdrawalAvailableError(e) => {
+            generic_consensus_error!(NoTransferKeyForCoreWithdrawalAvailableError, e).into()
         }
     }
 }
@@ -544,6 +556,16 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::ContestedUniqueIndexWithUniqueIndexError(e) => {
             generic_consensus_error!(ContestedUniqueIndexWithUniqueIndexError, e).into()
+        }
+        BasicError::ContestedDocumentsTemporarilyNotAllowedError(e) => {
+            generic_consensus_error!(ContestedDocumentsTemporarilyNotAllowedError, e).into()
+        }
+        BasicError::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError(e) => {
+            generic_consensus_error!(
+                WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
+                e
+            )
+            .into()
         }
     }
 }

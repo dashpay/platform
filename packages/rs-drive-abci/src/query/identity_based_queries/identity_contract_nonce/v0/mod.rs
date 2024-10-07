@@ -92,7 +92,7 @@ mod tests {
 
     #[test]
     fn test_invalid_identity_id() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetIdentityContractNonceRequestV0 {
             identity_id: vec![0; 8],
@@ -111,7 +111,7 @@ mod tests {
 
     #[test]
     fn test_invalid_contract_id() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetIdentityContractNonceRequestV0 {
             identity_id: vec![0; 32],
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn test_identity_not_found_when_querying_identity_nonce() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetIdentityContractNonceRequestV0 {
             identity_id: vec![0; 32],
@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_contract_info_not_found_when_querying_identity_nonce_with_known_identity() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
         let mut rng = StdRng::seed_from_u64(45);
         let id = rng.gen::<[u8; 32]>();
         let _unused_identity =
@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_identity_is_found_when_querying_identity_nonce() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
         let mut rng = StdRng::seed_from_u64(10);
         let id = rng.gen::<[u8; 32]>();
         let identity = create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn test_identity_is_found_when_querying_identity_nonce_after_update() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
         let mut rng = StdRng::seed_from_u64(10);
         let id = rng.gen::<[u8; 32]>();
         let identity = create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_identity_is_found_when_querying_identity_nonce_after_update_for_past() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
         let mut rng = StdRng::seed_from_u64(10);
         let id = rng.gen::<[u8; 32]>();
         let identity = create_test_identity_with_rng(&platform.drive, id, &mut rng, None, version)
@@ -373,7 +373,7 @@ mod tests {
 
     #[test]
     fn test_identity_contract_nonce_absence_proof() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet);
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetIdentityContractNonceRequestV0 {
             identity_id: vec![0; 32],

@@ -20,7 +20,7 @@ impl<C> Platform<C> {
     ) -> Result<QueryValidationResult<GetPathElementsResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
-                QueryError::DecodingError("could not decode epoch info request".to_string()),
+                QueryError::DecodingError("could not decode path elements".to_string()),
             ));
         };
 

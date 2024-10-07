@@ -1,6 +1,7 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
 use crate::abci::AbciError;
 use crate::error::Error;
+use crate::execution::engine::consensus_params_update::consensus_params_update;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
 };
@@ -8,9 +9,11 @@ use crate::execution::types::block_state_info::v0::{
     BlockStateInfoV0Getters, BlockStateInfoV0Setters,
 };
 use crate::platform_types::block_execution_outcome;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::TryIntoPlatformVersioned;
+use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 
@@ -70,6 +73,7 @@ where
                 )))?;
             }
         } else {
+            // we were the proposer
             let Some(proposal_info) = block_execution_context.proposer_results() else {
                 Err(Error::Abci(AbciError::BadRequest(
                     "received a process proposal request twice".to_string(),
@@ -154,10 +158,14 @@ where
         if transaction_guard.is_none() {
             Err(Error::Abci(AbciError::BadRequest("received a process proposal request for the genesis height before an init chain request".to_string())))?;
         }
-        if request.round > 0 {
-            transaction_guard
-                .as_ref()
-                .map(|tx| tx.rollback_to_savepoint());
+        tracing::debug!(
+            "rolling back to savepoint to process genesis proposal for round: {}",
+            request.round,
+        );
+        if let Some(tx) = transaction_guard.as_ref() {
+            tx.rollback_to_savepoint()
+                .map_err(|e| drive::grovedb::error::Error::StorageError(RocksDBError(e)))?;
+            tx.set_savepoint();
         }
         transaction_guard
     } else {
@@ -170,6 +178,8 @@ where
         .expect("transaction must be started");
 
     let platform_state = app.platform().state.load();
+
+    let starting_platform_version = platform_state.current_platform_version()?;
 
     // Running the proposal executes all the state transitions for the block
     let run_result = app.platform().run_block_proposal(
@@ -205,6 +215,8 @@ where
         platform_version,
         block_execution_context,
     } = run_result.into_data().map_err(Error::Protocol)?;
+
+    let epoch_info = *block_execution_context.epoch_info();
 
     app.block_execution_context()
         .write()
@@ -268,8 +280,12 @@ where
         tx_results,
         status: proto::response_process_proposal::ProposalStatus::Accept.into(),
         validator_set_update,
-        // TODO: Implement consensus param updates
-        consensus_param_updates: None,
+        consensus_param_updates: consensus_params_update(
+            app.platform().config.network,
+            starting_platform_version,
+            platform_version,
+            &epoch_info,
+        )?,
         events: Vec::new(),
     };
 

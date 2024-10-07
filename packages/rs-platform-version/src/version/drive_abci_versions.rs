@@ -5,6 +5,7 @@ pub struct DriveAbciVersion {
     pub structs: DriveAbciStructureVersions,
     pub methods: DriveAbciMethodVersions,
     pub validation_and_processing: DriveAbciValidationVersions,
+    pub withdrawal_constants: DriveAbciWithdrawalConstants,
     pub query: DriveAbciQueryVersions,
 }
 
@@ -16,6 +17,7 @@ pub struct DriveAbciQueryVersions {
     pub document_query: FeatureVersionBounds,
     pub prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions,
     pub identity_based_queries: DriveAbciQueryIdentityVersions,
+    pub validator_queries: DriveAbciQueryValidatorVersions,
     pub data_contract_based_queries: DriveAbciQueryDataContractVersions,
     pub voting_based_queries: DriveAbciQueryVotingVersions,
     pub system: DriveAbciQuerySystemVersions,
@@ -34,8 +36,15 @@ pub struct DriveAbciQueryIdentityVersions {
     pub identity_nonce: FeatureVersionBounds,
     pub identity_contract_nonce: FeatureVersionBounds,
     pub balance: FeatureVersionBounds,
+    pub identities_balances: FeatureVersionBounds,
     pub balance_and_revision: FeatureVersionBounds,
     pub identity_by_public_key_hash: FeatureVersionBounds,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryValidatorVersions {
+    pub proposed_block_counts_by_evonode_ids: FeatureVersionBounds,
+    pub proposed_block_counts_by_range: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -59,6 +68,8 @@ pub struct DriveAbciQuerySystemVersions {
     pub version_upgrade_state: FeatureVersionBounds,
     pub version_upgrade_vote_status: FeatureVersionBounds,
     pub epoch_infos: FeatureVersionBounds,
+    pub current_quorums_info: FeatureVersionBounds,
+    pub partial_status: FeatureVersionBounds,
     pub path_elements: FeatureVersionBounds,
     pub total_credits_in_platform: FeatureVersionBounds,
 }
@@ -103,6 +114,12 @@ pub struct DriveAbciValidationVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct DriveAbciWithdrawalConstants {
+    pub core_expiration_blocks: u32,
+    pub cleanup_expired_locks_of_withdrawal_amounts_limit: u16,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciValidationConstants {
     pub maximum_vote_polls_to_process: u16,
     pub maximum_contenders_to_consider: u16,
@@ -132,6 +149,7 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
+    pub is_allowed: FeatureVersion,
     pub document_create_transition_structure_validation: FeatureVersion,
     pub document_delete_transition_structure_validation: FeatureVersion,
     pub document_replace_transition_structure_validation: FeatureVersion,
@@ -182,6 +200,7 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub identity_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub identity_credit_withdrawal_state_transition_purpose_matches_requirements: FeatureVersion,
     pub identity_credit_transfer_state_transition: DriveAbciStateTransitionValidationVersion,
     pub masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
@@ -213,6 +232,7 @@ pub struct DriveAbciEngineMethodVersions {
     pub check_tx: FeatureVersion,
     pub run_block_proposal: FeatureVersion,
     pub finalize_block_proposal: FeatureVersion,
+    pub consensus_params_update: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -227,7 +247,8 @@ pub struct DriveAbciCoreBasedUpdatesMethodVersions {
 pub struct DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
     pub get_voter_identity_key: FeatureVersion,
     pub get_operator_identity_keys: FeatureVersion,
-    pub get_owner_identity_key: FeatureVersion,
+    pub get_owner_identity_withdrawal_key: FeatureVersion,
+    pub get_owner_identity_owner_key: FeatureVersion,
     pub get_voter_identifier_from_masternode_list_item: FeatureVersion,
     pub get_operator_identifier_from_masternode_list_item: FeatureVersion,
     pub create_operator_identity: FeatureVersion,
@@ -319,13 +340,16 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     pub fetch_transactions_block_inclusion_status: FeatureVersion,
     pub pool_withdrawals_into_transactions_queue: FeatureVersion,
     pub update_broadcasted_withdrawal_statuses: FeatureVersion,
+    pub rebroadcast_expired_withdrawal_documents: FeatureVersion,
     pub append_signatures_and_broadcast_withdrawal_transactions: FeatureVersion,
+    pub cleanup_expired_locks_of_withdrawal_amounts: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciProtocolUpgradeMethodVersions {
     pub check_for_desired_protocol_upgrade: FeatureVersion,
     pub upgrade_protocol_version_on_epoch_change: FeatureVersion,
+    pub perform_events_on_first_block_of_protocol_change: OptionalFeatureVersion,
     pub protocol_version_upgrade_percentage_needed: u64,
 }
 

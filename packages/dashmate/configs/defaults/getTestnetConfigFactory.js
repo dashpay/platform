@@ -30,11 +30,6 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
         rpc: {
           port: 19998,
         },
-        log: {
-          file: {
-            path: homeDir.joinPath('logs', 'testnet', 'core.log'),
-          },
-        },
         spork: {
           address: 'yjPtiKh2uwk3bDutTEA2q9mCtXyiZRWn55',
         },
@@ -113,8 +108,13 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
               port: 36660,
             },
             genesis: {
-              chain_id: 'dash-testnet-49',
+              chain_id: 'dash-testnet-51',
               validator_quorum_type: 6,
+              consensus_params: {
+                version: {
+                  app_version: '1',
+                },
+              },
             },
           },
         },
