@@ -40,8 +40,8 @@ support its release on the Dash production network (mainnet). The packages in
 this repository may be used on the following networks:
 
 - [x] **Development networks** ([**devnets**](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#devnet))
-- [x] [**Testnet**](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#devnet#testnet)
-- [x] [Mainnet](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#devnet#mainnet)
+- [x] [**Testnet**](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#testnet)
+- [x] [Mainnet](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#mainnet)
 
 ## FAQ
 
