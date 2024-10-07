@@ -64,7 +64,7 @@ metrics-exporter-prometheus = { version = "0.15", default-features = false, feat
 ] }
 url = { version = "2.3.1" }
 ureq = { "version" = "2.6.2" }
-tokio = { version = "1.39", features = [
+tokio = { version = "1.40", features = [
   "macros",
   "signal",
   "rt-multi-thread",
