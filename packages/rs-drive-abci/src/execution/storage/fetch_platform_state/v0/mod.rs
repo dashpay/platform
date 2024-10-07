@@ -20,7 +20,7 @@ impl<C> Platform<C> {
                     .map_err(Error::Protocol);
 
                 if result.is_err() {
-                    tracing::trace!(
+                    tracing::error!(
                         bytes = hex::encode(&bytes),
                         "Unable deserialize platform state for version {}",
                         platform_version.protocol_version
