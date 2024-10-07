@@ -105,7 +105,7 @@ async fn contested_resources_start_at_value() {
         for inclusive in [true, false] {
             // when I set start_at_value to some value,
             for (i, start) in all.0.iter().enumerate() {
-                let ContestedResource::Value(start_value) = start.clone();
+                let ContestedResource(start_value) = start.clone();
 
                 let query = VotePollsByDocumentTypeQuery {
                     start_at_value: Some((start_value, inclusive)),
@@ -217,7 +217,7 @@ async fn contested_resources_limit_PLAN_656() {
                 );
             }
 
-            let ContestedResource::Value(last) =
+            let ContestedResource(last) =
                 rss.0.into_iter().last().expect("last contested resource");
             start_at_value = Some((last, false));
 
