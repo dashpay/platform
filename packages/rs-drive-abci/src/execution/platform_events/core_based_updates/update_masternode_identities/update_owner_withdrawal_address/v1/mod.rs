@@ -6,7 +6,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::KeyID;
+use dpp::identity::{KeyID, Purpose};
 
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
@@ -22,7 +22,8 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    pub(super) fn update_owner_withdrawal_address_v0(
+    /// In this version we change how the new key_id is found, as there might also be an owner key
+    pub(super) fn update_owner_withdrawal_address_v1(
         &self,
         owner_identifier: [u8; 32],
         new_withdrawal_address: [u8; 20],
@@ -55,8 +56,14 @@ where
         let key_ids_to_disable: Vec<KeyID> = old_withdrawal_identity_keys
             .iter()
             .filter_map(|(key_id, key)| {
-                if key.disabled_at().is_some() || key.data().as_slice() == &new_withdrawal_address {
-                    None //No need to disable it again or if we are adding the same key we already had
+                if key.disabled_at().is_some()
+                    || key.data().as_slice() == &new_withdrawal_address
+                    || key.purpose() == Purpose::OWNER
+                {
+                    // We should not disable the owner key
+                    // Also no need to disable withdrawal keys again
+                    // Or if we are adding the same key we already had
+                    None
                 } else {
                     Some(*key_id)
                 }
@@ -68,7 +75,7 @@ where
                 identity_id = ?owner_identifier,
                 keys_ids = ?key_ids_to_disable,
                 disable_at = ?block_info.time_ms,
-                method = "update_owner_withdrawal_address_v0",
+                method = "update_owner_withdrawal_address_v1",
                 "disable old withdrawal keys in owner identity"
             );
 
@@ -98,7 +105,10 @@ where
                 }));
             }
         } else {
-            let last_key_id = *old_withdrawal_identity_keys.keys().max().unwrap(); //todo
+            let last_key_id = *old_withdrawal_identity_keys
+                .keys()
+                .max()
+                .expect("there must be keys, we already checked");
 
             // add the new key
             let new_owner_withdrawal_key = Self::get_owner_identity_withdrawal_key(
@@ -110,7 +120,7 @@ where
             tracing::trace!(
                 identity_id = ?owner_identifier,
                 withdrawal_key = ?new_owner_withdrawal_key,
-                method = "update_owner_withdrawal_address_v0",
+                method = "update_owner_withdrawal_address_v1",
                 "add new withdrawal key to owner identity"
             );
 

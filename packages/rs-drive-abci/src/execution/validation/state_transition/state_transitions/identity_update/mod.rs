@@ -116,9 +116,13 @@ mod tests {
     use crate::execution::validation::state_transition::tests::{
         setup_add_key_to_identity, setup_identity_return_master_key,
     };
+    use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
+    use dpp::dashcore::key::{KeyPair, Secp256k1};
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
@@ -128,8 +132,11 @@ mod tests {
     use dpp::serialization::{PlatformSerializable, Signable};
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+    use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
     use dpp::state_transition::StateTransition;
     use platform_version::version::PlatformVersion;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
 
     #[test]
     fn test_identity_update_that_disables_an_authentication_key() {
@@ -336,5 +343,110 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(" | ")
         );
+    }
+
+    #[test]
+    fn test_identity_update_adding_owner_key_not_allowed() {
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform_version = PlatformVersion::latest();
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+        let platform_state = platform.state.load();
+
+        let secp = Secp256k1::new();
+
+        let mut rng = StdRng::seed_from_u64(1292);
+
+        let new_key_pair = KeyPair::new(&secp, &mut rng);
+
+        let new_key = IdentityPublicKeyInCreationV0 {
+            id: 2,
+            purpose: Purpose::OWNER,
+            security_level: SecurityLevel::HIGH,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: new_key_pair.public_key().serialize().to_vec().into(),
+            signature: Default::default(),
+            contract_bounds: None,
+        };
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![new_key.into()],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+
+        let data = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+        update_transition.set_signature(
+            signer
+                .sign(&key, data.as_slice())
+                .expect("expected to sign"),
+        );
+
+        let update_transition_bytes = update_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![update_transition_bytes.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        // We expect there to be an error because you should not be able to add owner keys
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::BasicError(_)
+            )]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let issues = platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
+
+        assert_eq!(issues.len(), 0);
     }
 }

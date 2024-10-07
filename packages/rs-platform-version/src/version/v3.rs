@@ -636,6 +636,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                     get_voter_identity_key: 0,
                     get_operator_identity_keys: 0,
                     get_owner_identity_withdrawal_key: 0,
+                    get_owner_identity_owner_key: 0,
                     get_voter_identifier_from_masternode_list_item: 0,
                     get_operator_identifier_from_masternode_list_item: 0,
                     create_operator_identity: 0,
@@ -776,6 +777,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                     state: 0,
                     transform_into_action: 0,
                 },
+                identity_credit_withdrawal_state_transition_purpose_matches_requirements: 0,
                 identity_credit_transfer_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),

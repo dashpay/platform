@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use crate::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path_vec, get_withdrawal_transactions_broadcasted_path,
-    get_withdrawal_transactions_broadcasted_path_vec, get_withdrawal_transactions_queue_path,
+    get_withdrawal_root_path_vec, get_withdrawal_transactions_broadcasted_path_vec,
     get_withdrawal_transactions_queue_path_vec, get_withdrawal_transactions_sum_tree_path_vec,
     WITHDRAWAL_TRANSACTIONS_NEXT_INDEX_KEY,
 };
