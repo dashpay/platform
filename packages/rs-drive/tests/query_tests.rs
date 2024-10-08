@@ -75,6 +75,7 @@ use dpp::tests::json_document::json_document_to_contract;
 use dpp::util::cbor_serializer;
 use once_cell::sync::Lazy;
 
+use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 
 #[cfg(feature = "server")]
@@ -2305,7 +2306,7 @@ fn test_family_person_update() {
     let platform_version = PlatformVersion::latest();
 
     let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -2883,7 +2884,7 @@ fn test_family_with_nulls_query() {
     let platform_version = PlatformVersion::latest();
 
     let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     let db_transaction = drive.grove.start_transaction();
 

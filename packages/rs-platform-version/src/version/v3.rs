@@ -609,7 +609,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DriveAbciStructureVersions {
             platform_state_structure: 0,
-            platform_state_for_saving_structure: 0,
+            platform_state_for_saving_structure_default: 0,
             state_transition_execution_context: 0,
             commit: 0,
             masternode: 0,
