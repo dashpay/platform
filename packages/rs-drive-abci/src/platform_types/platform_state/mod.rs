@@ -548,3 +548,24 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod versioned_deserialize {
+        use super::*;
+        use crate::test::fixture::platform_state::PLATFORM_STATE_V3_TESTNET;
+        use platform_version::version::v3::PLATFORM_V3;
+        use std::ops::Deref;
+
+        #[test]
+        fn should_deserialize_state_v3_from_testnet() {
+            let serialized_state =
+                hex::decode(PLATFORM_STATE_V3_TESTNET.deref()).expect("failed to decode hex");
+
+            PlatformState::versioned_deserialize(&serialized_state, &PLATFORM_V3)
+                .expect("failed to deserialize state");
+        }
+    }
+}
