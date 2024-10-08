@@ -25,7 +25,8 @@ fn create_channel(
     let mut builder = Channel::builder(uri).tls_config(
         ClientTlsConfig::new()
             .with_native_roots()
-            .with_webpki_roots(),
+            .with_webpki_roots()
+            .assume_http2(true),
     )?;
 
     if let Some(settings) = settings {
