@@ -560,7 +560,7 @@ mod tests {
         use std::ops::Deref;
 
         #[test]
-        fn should_deserialize_state_v3_from_testnet() {
+        fn should_deserialize_state_stored_in_version_0_from_testnet() {
             let serialized_state =
                 hex::decode(PLATFORM_STATE_V3_TESTNET.deref()).expect("failed to decode hex");
 
