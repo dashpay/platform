@@ -20,8 +20,14 @@ dump = ["mocks"]
 offline-testing = []
 
 [dependencies]
-backon = { version = "1.2.0"}
-dapi-grpc = { path = "../dapi-grpc", features = ["client"], default-features = false }
+backon = { version = "1.2", default-features = false, features = [
+    "tokio-sleep",
+] }
+dapi-grpc = { path = "../dapi-grpc", features = [
+    "core",
+    "platform",
+    "client",
+], default-features = false }
 futures = "0.3.28"
 http-serde = { version = "2.1", optional = true }
 rand = { version = "0.8.5", features = ["small_rng"] }
