@@ -76,10 +76,11 @@ mod tests {
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::version::fee::FeeVersion;
     use dpp::version::PlatformVersion;
 
     static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {

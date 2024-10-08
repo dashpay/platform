@@ -70,7 +70,7 @@ impl Display for ValidatorSetV0 {
 impl Encode for ValidatorSetV0 {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
         // Encode each field in the order they appear in the struct
-        let quorum_hash_bytes = self.quorum_hash.as_byte_array().to_vec();
+        let quorum_hash_bytes = self.quorum_hash.as_byte_array();
         quorum_hash_bytes.encode(encoder)?;
         self.quorum_index.encode(encoder)?;
         self.core_height.encode(encoder)?;
@@ -85,7 +85,7 @@ impl Encode for ValidatorSetV0 {
 
         // Custom encoding for BlsPublicKey if needed
         // Assuming BlsPublicKey can be serialized to a byte slice
-        let public_key_bytes = self.threshold_public_key.to_bytes();
+        let public_key_bytes = *self.threshold_public_key.to_bytes();
         public_key_bytes.encode(encoder)?;
 
         Ok(())
@@ -95,8 +95,8 @@ impl Encode for ValidatorSetV0 {
 #[cfg(feature = "core-types-serialization")]
 impl Decode for ValidatorSetV0 {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
-        // Decode each field in the same order as they were encoded
-        let quorum_hash = Vec::<u8>::decode(decoder)?;
+        // Decode the quorum hash directly as a [u8; 32] array
+        let quorum_hash = <[u8; 32]>::decode(decoder)?;
         let quorum_index = Option::<u32>::decode(decoder)?;
         let core_height = u32::decode(decoder)?;
 
@@ -114,17 +114,16 @@ impl Decode for ValidatorSetV0 {
             })
             .collect::<Result<_, bincode::error::DecodeError>>()?;
 
-        // Custom decoding for BlsPublicKey if needed
-        // Assuming BlsPublicKey can be deserialized from a byte slice
-        let public_key_bytes = Vec::<u8>::decode(decoder)?;
+        // Decode the [u8; 48] directly
+        let mut public_key_bytes = [0u8; 48];
+        let bytes = <[u8; 48]>::decode(decoder)?;
+        public_key_bytes.copy_from_slice(&bytes);
         let threshold_public_key = BlsPublicKey::from_bytes(&public_key_bytes).map_err(|_| {
             bincode::error::DecodeError::OtherString("Failed to decode BlsPublicKey".to_string())
         })?;
 
         Ok(ValidatorSetV0 {
-            quorum_hash: QuorumHash::from_slice(&quorum_hash).map_err(|_| {
-                bincode::error::DecodeError::OtherString("Failed to decode QuorumHash".to_string())
-            })?,
+            quorum_hash: QuorumHash::from_byte_array(quorum_hash),
             quorum_index,
             core_height,
             members,
@@ -138,8 +137,8 @@ impl<'de> BorrowDecode<'de> for ValidatorSetV0 {
     fn borrow_decode<D: Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
         // Decode each field in the same order as they were encoded
 
-        // Decode quorum_hash as Vec<u8>
-        let quorum_hash = Vec::<u8>::decode(decoder)?;
+        // Decode the quorum hash directly as a [u8; 32] array
+        let quorum_hash = <[u8; 32]>::decode(decoder)?;
         // Decode quorum_index as Option<u32>
         let quorum_index = Option::<u32>::decode(decoder)?;
         // Decode core_height as u32
@@ -160,15 +159,17 @@ impl<'de> BorrowDecode<'de> for ValidatorSetV0 {
             .collect::<Result<_, bincode::error::DecodeError>>()?;
 
         // Custom decoding for BlsPublicKey if needed
-        let public_key_bytes = Vec::<u8>::decode(decoder)?;
+        let mut public_key_bytes = [0u8; 48];
+        let bytes = <[u8; 48]>::decode(decoder)?;
+        public_key_bytes.copy_from_slice(&bytes);
         let threshold_public_key = BlsPublicKey::from_bytes(&public_key_bytes).map_err(|_| {
-            bincode::error::DecodeError::OtherString("Failed to decode BlsPublicKey".to_string())
+            bincode::error::DecodeError::OtherString(
+                "Failed to decode BlsPublicKey in borrow decode".to_string(),
+            )
         })?;
 
         Ok(ValidatorSetV0 {
-            quorum_hash: QuorumHash::from_slice(&quorum_hash).map_err(|_| {
-                bincode::error::DecodeError::OtherString("Failed to decode QuorumHash".to_string())
-            })?,
+            quorum_hash: QuorumHash::from_byte_array(quorum_hash),
             quorum_index,
             core_height,
             members,
@@ -276,5 +277,64 @@ impl ValidatorSetV0Setters for ValidatorSetV0 {
 
     fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey) {
         self.threshold_public_key = threshold_public_key;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bincode::config;
+    use dashcore::PubkeyHash;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_serialize_deserialize_validator_set_v0() {
+        // Sample data for testing
+        let quorum_hash = QuorumHash::from_slice(&[1; 32]).unwrap();
+        let quorum_index = Some(42);
+        let core_height = 1000;
+
+        // Create a sample ProTxHash and ValidatorV0 instance
+        let pro_tx_hash = ProTxHash::from_slice(&[2; 32]).unwrap();
+        let public_key = Some(BlsPublicKey::generate());
+        let node_ip = "192.168.1.1".to_string();
+        let node_id = PubkeyHash::from_slice(&[4; 20]).unwrap();
+        let validator = ValidatorV0 {
+            pro_tx_hash: pro_tx_hash.clone(),
+            public_key,
+            node_ip,
+            node_id,
+            core_port: 8080,
+            platform_http_port: 9090,
+            platform_p2p_port: 10010,
+            is_banned: false,
+        };
+
+        // Create a BTreeMap with one entry for the ValidatorSetV0
+        let mut members = BTreeMap::new();
+        members.insert(pro_tx_hash, validator);
+
+        // Create a sample threshold public key
+        let threshold_public_key = BlsPublicKey::generate();
+
+        // Create the ValidatorSetV0 instance
+        let validator_set = ValidatorSetV0 {
+            quorum_hash,
+            quorum_index,
+            core_height,
+            members,
+            threshold_public_key,
+        };
+
+        // Serialize the ValidatorSetV0 instance
+        let encoded = bincode::encode_to_vec(&validator_set, config::standard()).unwrap();
+
+        // Deserialize the data back into a ValidatorSetV0 instance
+        let decoded: ValidatorSetV0 = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        // Verify that the deserialized instance matches the original instance
+        assert_eq!(validator_set, decoded);
     }
 }
