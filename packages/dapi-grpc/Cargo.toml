@@ -23,9 +23,6 @@ tenderdash-proto = []
 client = [
   "tonic/channel",
   "tonic/transport",
-  "tonic/tls",
-  "tonic/tls-roots",
-  "tonic/tls-webpki-roots",
   "platform",
 ]
 server = ["tonic/channel", "tonic/transport", "platform"]
@@ -35,9 +32,12 @@ mocks = ["serde", "dep:serde_json"]
 [dependencies]
 prost = { version = "0.13" }
 futures-core = "0.3.30"
-tonic = { version = "0.12", features = [
+tonic = { version = "0.12.3", features = [
   "codegen",
   "prost",
+  "tls",
+  "tls-native-roots",
+  "tls-webpki-roots",
 ], default-features = false }
 serde = { version = "1.0.197", optional = true, features = ["derive"] }
 serde_bytes = { version = "0.11.12", optional = true }
@@ -49,7 +49,7 @@ dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 platform-version = { path = "../rs-platform-version" }
 
 [build-dependencies]
-tonic-build = { version = "0.12" }
+tonic-build = { version = "0.12.3" }
 
 [lib]
 
