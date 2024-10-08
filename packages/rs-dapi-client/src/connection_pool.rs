@@ -67,13 +67,13 @@ impl ConnectionPool {
     /// * `prefix` -  Prefix for the item in the pool. Used to distinguish between Core and Platform clients.
     /// * `uri` - URI of the node.
     /// * `settings` - Applied request settings.
-    pub fn get_or_create<T>(
+    pub fn get_or_create<E>(
         &self,
         prefix: PoolPrefix,
         uri: &Uri,
         settings: Option<&AppliedRequestSettings>,
-        create: impl FnOnce() -> Result<PoolItem, T>,
-    ) -> Result<PoolItem, T> {
+        create: impl FnOnce() -> Result<PoolItem, E>,
+    ) -> Result<PoolItem, E> {
         if let Some(cli) = self.get(prefix, uri, settings) {
             return Ok(cli);
         }
