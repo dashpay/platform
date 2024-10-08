@@ -256,7 +256,7 @@ impl DapiRequestExecutor for DapiClient {
         // Start the routine with retry policy applied:
         // We allow let_and_return because `result` is used later if dump feature is enabled
         let result = routine
-            .retry(&retry_settings)
+            .retry(retry_settings)
             .notify(|error, duration| {
                 tracing::warn!(
                     ?error,
