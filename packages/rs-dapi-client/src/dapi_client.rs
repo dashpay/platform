@@ -199,7 +199,13 @@ impl DapiRequestExecutor for DapiClient {
                     address.uri().clone(),
                     &applied_settings,
                     &pool,
-                );
+                )
+                .map_err(|e| {
+                    DapiClientError::<<R::Client as TransportClient>::Error>::Transport(
+                        e,
+                        address.clone(),
+                    )
+                })?;
 
                 let response = transport_request
                     .execute_transport(&mut transport_client, &applied_settings)

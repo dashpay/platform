@@ -8,7 +8,7 @@ use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::core::v0::{self as core_proto};
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
-use dapi_grpc::tonic::transport::Uri;
+use dapi_grpc::tonic::transport::{ClientTlsConfig, Uri};
 use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{transport::Channel, IntoRequest};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
@@ -18,8 +18,11 @@ pub type PlatformGrpcClient = PlatformClient<Channel>;
 /// Core Client using gRPC transport.
 pub type CoreGrpcClient = CoreClient<Channel>;
 
-fn create_channel(uri: Uri, settings: Option<&AppliedRequestSettings>) -> Channel {
-    let mut builder = Channel::builder(uri);
+fn create_channel(
+    uri: Uri,
+    settings: Option<&AppliedRequestSettings>,
+) -> Result<Channel, dapi_grpc::tonic::transport::Error> {
+    let mut builder = Channel::builder(uri).tls_config(ClientTlsConfig::new())?;
 
     if let Some(settings) = settings {
         if let Some(timeout) = settings.connect_timeout {
@@ -27,50 +30,84 @@ fn create_channel(uri: Uri, settings: Option<&AppliedRequestSettings>) -> Channe
         }
     }
 
-    builder.connect_lazy()
+    Ok(builder.connect_lazy())
 }
 
 impl TransportClient for PlatformGrpcClient {
     type Error = dapi_grpc::tonic::Status;
 
-    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Self {
-        pool.get_or_create(PoolPrefix::Platform, &uri, None, || {
-            Self::new(create_channel(uri.clone(), None)).into()
-        })
-        .into()
+    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, Self::Error> {
+        Ok(pool
+            .get_or_create(PoolPrefix::Platform, &uri, None, || {
+                match create_channel(uri.clone(), None) {
+                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                        "Channel creation failed: {}",
+                        e
+                    ))),
+                }
+            })?
+            .into())
     }
 
     fn with_uri_and_settings(
         uri: Uri,
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
-    ) -> Self {
-        pool.get_or_create(PoolPrefix::Platform, &uri, Some(settings), || {
-            Self::new(create_channel(uri.clone(), Some(settings))).into()
-        })
-        .into()
+    ) -> Result<Self, Self::Error> {
+        Ok(pool
+            .get_or_create(
+                PoolPrefix::Platform,
+                &uri,
+                Some(settings),
+                || match create_channel(uri.clone(), Some(settings)) {
+                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                        "Channel creation failed: {}",
+                        e
+                    ))),
+                },
+            )?
+            .into())
     }
 }
 
 impl TransportClient for CoreGrpcClient {
     type Error = dapi_grpc::tonic::Status;
 
-    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Self {
-        pool.get_or_create(PoolPrefix::Core, &uri, None, || {
-            Self::new(create_channel(uri.clone(), None)).into()
-        })
-        .into()
+    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, Self::Error> {
+        Ok(pool
+            .get_or_create(PoolPrefix::Core, &uri, None, || {
+                match create_channel(uri.clone(), None) {
+                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                        "Channel creation failed: {}",
+                        e
+                    ))),
+                }
+            })?
+            .into())
     }
 
     fn with_uri_and_settings(
         uri: Uri,
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
-    ) -> Self {
-        pool.get_or_create(PoolPrefix::Core, &uri, Some(settings), || {
-            Self::new(create_channel(uri.clone(), Some(settings))).into()
-        })
-        .into()
+    ) -> Result<Self, Self::Error> {
+        Ok(pool
+            .get_or_create(
+                PoolPrefix::Core,
+                &uri,
+                Some(settings),
+                || match create_channel(uri.clone(), Some(settings)) {
+                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
+                        "Channel creation failed: {}",
+                        e
+                    ))),
+                },
+            )?
+            .into())
     }
 }
 
