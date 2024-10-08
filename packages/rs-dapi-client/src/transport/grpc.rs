@@ -22,7 +22,11 @@ fn create_channel(
     uri: Uri,
     settings: Option<&AppliedRequestSettings>,
 ) -> Result<Channel, dapi_grpc::tonic::transport::Error> {
-    let mut builder = Channel::builder(uri).tls_config(ClientTlsConfig::new())?;
+    let mut builder = Channel::builder(uri).tls_config(
+        ClientTlsConfig::new()
+            .with_native_roots()
+            .with_webpki_roots(),
+    )?;
 
     if let Some(settings) = settings {
         if let Some(timeout) = settings.connect_timeout {
