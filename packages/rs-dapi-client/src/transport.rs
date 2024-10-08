@@ -51,12 +51,12 @@ pub trait TransportClient: Send + Sized {
     type Error: CanRetry + Send + Debug + Mockable;
 
     /// Build client using node's url.
-    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Self;
+    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, Self::Error>;
 
     /// Build client using node's url and [AppliedRequestSettings].
     fn with_uri_and_settings(
         uri: Uri,
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
-    ) -> Self;
+    ) -> Result<Self, Self::Error>;
 }

@@ -309,11 +309,12 @@ dependencies = [
 
 [[package]]
 name = "backon"
-version = "0.5.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33e5b65cc81d81fbb8488f36458ab4771be35a722967bbc959df28b47397e3ff"
+checksum = "e4fa97bb310c33c811334143cf64c5bb2b7b3c06e453db6b095d7061eff8f113"
 dependencies = [
  "fastrand",
+ "tokio",
 ]
 
 [[package]]
@@ -673,7 +674,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "check-features"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "toml",
 ]
@@ -1042,7 +1043,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "dapi-grpc-macros",
  "futures-core",
@@ -1058,7 +1059,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc-macros"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "dapi-grpc",
  "heck 0.5.0",
@@ -1103,7 +1104,7 @@ dependencies = [
 
 [[package]]
 name = "dash-sdk"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -1203,7 +1204,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1213,7 +1214,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1344,7 +1345,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1354,7 +1355,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1406,7 +1407,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1447,7 +1448,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1502,7 +1503,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "bincode",
  "dapi-grpc",
@@ -1723,7 +1724,7 @@ checksum = "9fc0510504f03c51ada170672ac806f1f105a88aa97a5281117e1ddc3368e51a"
 
 [[package]]
 name = "feature-flags-contract"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -2561,7 +2562,7 @@ dependencies = [
 
 [[package]]
 name = "json-schema-compatibility-validator"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "assert_matches",
  "json-patch",
@@ -2719,7 +2720,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3299,7 +3300,7 @@ checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
 
 [[package]]
 name = "platform-serialization"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "bincode",
  "platform-version",
@@ -3307,7 +3308,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3317,7 +3318,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -3338,7 +3339,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "quote",
  "syn 2.0.75",
@@ -3346,7 +3347,7 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "bincode",
  "grovedb-version",
@@ -3357,7 +3358,7 @@ dependencies = [
 
 [[package]]
 name = "platform-versioning"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3849,7 +3850,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "backon",
  "chrono",
@@ -3955,9 +3956,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-native-certs"
-version = "0.7.2"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04182dffc9091a404e0fc069ea5cd60e5b866c3adf881eff99a32d048242dffa"
+checksum = "fcaf18a4f2be7326cd874a5fa579fae794320a0f388d365dca7e480e55f83f8a"
 dependencies = [
  "openssl-probe",
  "rustls-pemfile",
@@ -4316,7 +4317,7 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 
 [[package]]
 name = "simple-signer"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "base64 0.22.1",
  "bincode",
@@ -4382,7 +4383,7 @@ dependencies = [
 
 [[package]]
 name = "strategy-tests"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "bincode",
  "dpp",
@@ -4791,9 +4792,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-stream"
-version = "0.1.15"
+version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "267ac89e0bec6e691e5813911606935d77c476ff49024f98abcea3e7b15e37af"
+checksum = "4f4e6ce100d0eb49a2734f8c0812bcd324cf357d21810932c5df6b96ef2b86f1"
 dependencies = [
  "futures-core",
  "pin-project-lite",
@@ -4884,9 +4885,9 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.12.1"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38659f4a91aba8598d27821589f5db7dddd94601e7a01b1e485a50e5484c7401"
+checksum = "877c5b330756d856ffcc4553ab34a5684481ade925ecc54bcd1bf02b1d0d4d52"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -5301,7 +5302,7 @@ checksum = "ed9d5b4305409d1fc9482fee2d7f9bcbf24b3972bf59817ef757e23982242a93"
 
 [[package]]
 name = "wasm-dpp"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5603,7 +5604,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "1.4.0-dev.6"
+version = "1.4.0-dev.7"
 dependencies = [
  "num_enum 0.5.11",
  "platform-value",
