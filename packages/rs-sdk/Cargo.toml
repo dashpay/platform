@@ -57,6 +57,7 @@ test-case = { version = "3.3.1" }
 
 [features]
 default = ["mocks", "offline-testing"]
+tokio-sleep = ["rs-dapi-client/tokio-sleep"]
 
 mocks = [
   "dep:serde",

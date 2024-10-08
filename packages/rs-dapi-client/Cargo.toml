@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 default = ["mocks", "offline-testing"]
+tokio-sleep = ["backon/tokio-sleep"]
 mocks = [
     "dep:sha2",
     "dep:hex",
@@ -19,7 +20,7 @@ dump = ["mocks"]
 offline-testing = []
 
 [dependencies]
-backon = "0.5"
+backon = { version = "1.2.0"}
 dapi-grpc = { path = "../dapi-grpc" }
 futures = "0.3.28"
 http-serde = { version = "2.1", optional = true }
