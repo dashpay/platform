@@ -224,11 +224,8 @@ pub struct ElementFetchRequestItem(pub Element);
 pub type IdentityBalanceAndRevision = (u64, Revision);
 
 /// Contested resource values.
-#[derive(Debug, derive_more::From, Clone, PartialEq)]
-pub enum ContestedResource {
-    /// Generic [Value]
-    Value(Value),
-}
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContestedResource(pub Value);
 
 impl ContestedResource {
     /// Get the value.
@@ -244,13 +241,9 @@ impl ContestedResource {
     }
 }
 
-impl TryInto<Value> for ContestedResource {
-    type Error = crate::Error;
-
-    fn try_into(self) -> Result<Value, Self::Error> {
-        match self {
-            ContestedResource::Value(value) => Ok(value),
-        }
+impl Into<Value> for ContestedResource {
+    fn into(self) -> Value {
+        self.0
     }
 }
 
@@ -261,9 +254,7 @@ impl PlatformVersionEncode for ContestedResource {
         encoder: &mut E,
         _platform_version: &platform_version::PlatformVersion,
     ) -> Result<(), bincode::error::EncodeError> {
-        match self {
-            ContestedResource::Value(value) => value.encode(encoder),
-        }
+        self.0.encode(encoder)
     }
 }
 
@@ -273,7 +264,7 @@ impl PlatformVersionedDecode for ContestedResource {
         decoder: &mut D,
         _platform_version: &platform_version::PlatformVersion,
     ) -> Result<Self, bincode::error::DecodeError> {
-        Ok(ContestedResource::Value(Value::decode(decoder)?))
+        Ok(ContestedResource(Value::decode(decoder)?))
     }
 }
 
