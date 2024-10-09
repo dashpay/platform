@@ -170,6 +170,29 @@ impl Identifier {
         Identifier::from_bytes(&vec)
     }
 
+    pub fn from_string_unknown_encoding(encoded_value: &str) -> Result<Identifier, Error> {
+        // Attempt to decode as Hex
+        if let Ok(vec) = string_encoding::decode(encoded_value, Encoding::Hex) {
+            return Identifier::from_bytes(&vec);
+        }
+
+        // Attempt to decode as Base58
+        if let Ok(vec) = string_encoding::decode(encoded_value, Encoding::Base58) {
+            return Identifier::from_bytes(&vec);
+        }
+
+        // Attempt to decode as Base64
+        if let Ok(vec) = string_encoding::decode(encoded_value, Encoding::Base64) {
+            return Identifier::from_bytes(&vec);
+        }
+
+        // If all decoding attempts fail, return an error
+        Err(Error::StringDecodingError(
+            "Failed to decode string with any known encoding (tried hex, base58, base64)"
+                .to_string(),
+        ))
+    }
+
     pub fn from_string_with_encoding_string(
         encoded_value: &str,
         encoding_string: Option<&str>,
