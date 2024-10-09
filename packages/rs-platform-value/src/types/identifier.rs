@@ -185,7 +185,7 @@ impl Identifier {
             tried.push(encoding.to_string());
         }
         Err(Error::StringDecodingError(format!(
-            "Failed to decode string with any known encoding (tried {})",
+            "Failed to decode string with encodings [{}]",
             tried.join(", ")
         )))
     }
