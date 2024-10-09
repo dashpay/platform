@@ -17,17 +17,29 @@ use std::{fmt::Debug, sync::Mutex};
 
 /// Core RPC client that can be used to retrieve quorum keys from core.
 ///
-/// Implements [`ContextProvider`] trait.
-///
 /// TODO: This is a temporary implementation, effective until we integrate SPV.
-pub struct CoreClient {
+pub struct LowLevelDashCoreClient {
     core: Mutex<Client>,
     server_address: String,
     core_user: String,
+    core_password: String,
     core_port: u16,
 }
 
-impl Debug for CoreClient {
+impl Clone for LowLevelDashCoreClient {
+    // As Client does not implement Clone, we just create a new instance of CoreClient here.
+    fn clone(&self) -> Self {
+        LowLevelDashCoreClient::new(
+            &self.server_address,
+            self.core_port,
+            &self.core_user,
+            &self.core_password,
+        )
+        .expect("Failed to clone CoreClient when cloning, this should not happen")
+    }
+}
+
+impl Debug for LowLevelDashCoreClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CoreClient")
             .field("server_address", &self.server_address)
@@ -37,7 +49,7 @@ impl Debug for CoreClient {
     }
 }
 
-impl CoreClient {
+impl LowLevelDashCoreClient {
     /// Create new Dash Core client.
     ///
     /// # Arguments
@@ -63,13 +75,14 @@ impl CoreClient {
             core: Mutex::new(core),
             server_address: server_address.to_string(),
             core_user: core_user.to_string(),
+            core_password: core_password.to_string(),
             core_port,
         })
     }
 }
 
 // Wallet functions
-impl CoreClient {
+impl LowLevelDashCoreClient {
     /// List unspent transactions
     ///
     /// ## Arguments

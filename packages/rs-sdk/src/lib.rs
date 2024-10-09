@@ -62,9 +62,8 @@
 #![allow(rustdoc::private_intra_doc_links)]
 
 pub mod core;
-#[cfg(feature = "mocks")]
-mod core_client;
 pub mod error;
+mod internal;
 mod internal_cache;
 pub mod mock;
 pub mod platform;

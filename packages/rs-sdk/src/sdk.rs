@@ -7,6 +7,7 @@ use crate::mock::MockResponse;
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
+use arc_swap::{ArcSwapAny, ArcSwapOption};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::bincode;
@@ -79,7 +80,6 @@ pub type LastQueryTimestamp = u64;
 /// ## Examples
 ///
 /// See tests/ for examples of using the SDK.
-#[derive(Clone)]
 pub struct Sdk {
     /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)  
     pub network: Network,
@@ -97,13 +97,27 @@ pub struct Sdk {
     /// ## Panics
     ///
     /// Note that setting this to None can panic.
-    context_provider: Option<Arc<Box<dyn ContextProvider>>>,
+    context_provider: ArcSwapOption<Box<dyn ContextProvider>>,
 
     /// Cancellation token; once cancelled, all pending requests should be aborted.
     pub(crate) cancel_token: CancellationToken,
 
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
+}
+impl Clone for Sdk {
+    fn clone(&self) -> Self {
+        Self {
+            network: self.network,
+            inner: self.inner.clone(),
+            proofs: self.proofs,
+            internal_cache: Arc::clone(&self.internal_cache),
+            context_provider: ArcSwapOption::new(self.context_provider.load_full()),
+            cancel_token: self.cancel_token.clone(),
+            #[cfg(feature = "mocks")]
+            dump_dir: self.dump_dir.clone(),
+        }
+    }
 }
 
 impl Debug for Sdk {
@@ -202,8 +216,8 @@ impl Sdk {
     where
         O::Request: Mockable,
     {
-        let provider = self
-            .context_provider
+        let provider_guard = self.context_provider.load();
+        let provider = provider_guard
             .as_ref()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
@@ -242,8 +256,8 @@ impl Sdk {
     where
         O::Request: Mockable,
     {
-        let provider = self
-            .context_provider
+        let provider_guard = self.context_provider.load();
+        let provider = provider_guard
             .as_ref()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
@@ -263,7 +277,9 @@ impl Sdk {
         }
     }
     pub fn context_provider(&self) -> Option<impl ContextProvider> {
-        self.context_provider.as_ref().map(Arc::clone)
+        let provider_guard = self.context_provider.load();
+        let provider = provider_guard.as_ref().map(Arc::clone);
+        provider
     }
 
     /// Returns a mutable reference to the `MockDashPlatformSdk` instance.
@@ -493,9 +509,9 @@ impl Sdk {
     /// [ContextProvider] is used to access state information, like data contracts and quorum public keys.
     ///
     /// Note that this will overwrite any previous context provider.
-    pub fn set_context_provider<C: ContextProvider + 'static>(&mut self, context_provider: C) {
+    pub fn set_context_provider<C: ContextProvider + 'static>(&self, context_provider: C) {
         self.context_provider
-            .replace(Arc::new(Box::new(context_provider)));
+            .swap(Some(Arc::new(Box::new(context_provider))));
     }
 
     /// Returns a future that resolves when the Sdk is cancelled (eg. shutdown was requested).
@@ -772,14 +788,14 @@ impl SdkBuilder {
                     network: self.network,
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
-                    context_provider: self.context_provider.map(Arc::new),
+                    context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
                     cancel_token: self.cancel_token,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                     internal_cache: Default::default(),
                 };
                 // if context provider is not set correctly (is None), it means we need to fallback to core wallet
-                if  sdk.context_provider.is_none() {
+                if  sdk.context_provider.load().is_none() {
                     #[cfg(feature = "mocks")]
                     if !self.core_ip.is_empty() {
                         let mut context_provider = GrpcContextProvider::new(None,
@@ -792,7 +808,7 @@ impl SdkBuilder {
                         // We have cyclical dependency Sdk <-> GrpcContextProvider, so we just do some
                         // workaround using additional Arc.
                         let context_provider= Arc::new(context_provider);
-                        sdk.context_provider.replace(Arc::new(Box::new(context_provider.clone())));
+                        sdk.context_provider.swap(Some(Arc::new(Box::new(context_provider.clone()))));
                         context_provider.set_sdk(Some(sdk.clone()));
                     } else{
                         tracing::warn!(
@@ -831,13 +847,13 @@ impl SdkBuilder {
                     dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     internal_cache: Default::default(),
-                    context_provider:Some(Arc::new(context_provider)),
+                    context_provider:ArcSwapAny::new( Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
                 };
                 let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and connot be reconfigured");
                 guard.set_sdk(sdk.clone());
                 if let Some(ref dump_dir) = self.dump_dir {
-                    pollster::block_on(   guard.load_expectations(dump_dir))?;
+                    guard.load_expectations_sync(dump_dir)?;
                 };
 
                 sdk

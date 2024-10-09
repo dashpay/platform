@@ -278,7 +278,7 @@ async fn contested_resources_limit_PLAN_656() {
 }, Ok("ContestedResources([])".into()); "Non-existing end_index_values returns error")]
 #[test_case::test_case(|q| q.end_index_values = vec![Value::Array(vec![0.into(), 1.into()])], Err("incorrect index values error: too many end index values were provided"); "wrong type of end_index_values should return InvalidArgument")]
 #[test_case::test_case(|q| q.limit = Some(0), Err(r#"code: InvalidArgument"#); "limit 0 returns InvalidArgument")]
-#[test_case::test_case(|q| q.limit = Some(std::u16::MAX), Err(r#"code: InvalidArgument"#); "limit std::u16::MAX returns InvalidArgument")]
+#[test_case::test_case(|q| q.limit = Some(u16::MAX), Err(r#"code: InvalidArgument"#); "limit u16::MAX returns InvalidArgument")]
 // Disabled due to bug PLAN-656
 // #[test_case::test_case(|q| {
 //     q.start_index_values = vec![Value::Text("dash".to_string())];
@@ -306,7 +306,7 @@ async fn contested_resources_fields(
     // handle panics to not stop other test cases from running
     let unwinded = catch_unwind(|| {
         {
-            pollster::block_on(async {
+            futures::executor::block_on(async {
                 let mut query = base_query(&cfg);
                 query_mut_fn(&mut query);
 
