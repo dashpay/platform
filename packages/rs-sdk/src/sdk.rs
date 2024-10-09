@@ -41,6 +41,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
+use zeroize::Zeroizing;
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
@@ -584,7 +585,7 @@ pub struct SdkBuilder {
     core_ip: String,
     core_port: u16,
     core_user: String,
-    core_password: String,
+    core_password: Zeroizing<String>,
 
     /// If true, request and verify proofs of the responses.
     proofs: bool,
@@ -620,7 +621,7 @@ impl Default for SdkBuilder {
             network: Network::Dash,
             core_ip: "".to_string(),
             core_port: 0,
-            core_password: "".to_string(),
+            core_password: "".to_string().into(),
             core_user: "".to_string(),
 
             proofs: true,
@@ -743,7 +744,7 @@ impl SdkBuilder {
         self.core_ip = ip.to_string();
         self.core_port = port;
         self.core_user = user.to_string();
-        self.core_password = password.to_string();
+        self.core_password = Zeroizing::from(password.to_string());
 
         self
     }

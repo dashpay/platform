@@ -14,6 +14,7 @@ use dpp::dashcore::ProTxHash;
 use dpp::prelude::CoreBlockHeight;
 use drive_proof_verifier::error::ContextProviderError;
 use std::{fmt::Debug, sync::Mutex};
+use zeroize::Zeroizing;
 
 /// Core RPC client that can be used to retrieve quorum keys from core.
 ///
@@ -22,7 +23,7 @@ pub struct LowLevelDashCoreClient {
     core: Mutex<Client>,
     server_address: String,
     core_user: String,
-    core_password: String,
+    core_password: Zeroizing<String>,
     core_port: u16,
 }
 
@@ -75,7 +76,7 @@ impl LowLevelDashCoreClient {
             core: Mutex::new(core),
             server_address: server_address.to_string(),
             core_user: core_user.to_string(),
-            core_password: core_password.to_string(),
+            core_password: core_password.to_string().into(),
             core_port,
         })
     }
