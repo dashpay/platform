@@ -86,7 +86,7 @@ impl MockDashPlatformSdk {
     /// Load all expectations from files in a directory asynchronously.
     ///
     /// See [MockDashPlatformSdk::load_expectations_sync()] for more details.
-    #[deprecated(note = "use load_expectations_sync")]
+    #[deprecated(since = "1.4.0", note = "use load_expectations_sync")]
     pub async fn load_expectations<P: AsRef<std::path::Path> + Send + 'static>(
         &mut self,
         dir: P,
@@ -317,13 +317,16 @@ impl MockDashPlatformSdk {
         objects: Option<R>,
     ) -> Result<&mut Self, Error>
     where
-        R: FromIterator<(K, Option<O>)> + MockResponse + Send + Default + MockResponse,
-        <<O as FetchMany<K, R>>::Request as TransportRequest>::Response: Default,
-        R: FromProof<
+        R: FromIterator<(K, Option<O>)>
+            + MockResponse
+            + FromProof<
                 <O as FetchMany<K, R>>::Request,
                 Request = <O as FetchMany<K, R>>::Request,
                 Response = <<O as FetchMany<K, R>>::Request as TransportRequest>::Response,
-            > + Sync,
+            > + Sync
+            + Send
+            + Default,
+        <<O as FetchMany<K, R>>::Request as TransportRequest>::Response: Default,
     {
         let grpc_request = query.query(self.prove()).expect("query must be correct");
         self.expect(grpc_request, objects).await?;
