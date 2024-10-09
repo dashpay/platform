@@ -1,3 +1,15 @@
+## [1.4.0-dev.8](https://github.com/dashpay/platform/compare/v1.4.0-dev.7...v1.4.0-dev.8) (2024-10-08)
+
+
+### Features
+
+* **sdk:** fix client tls connections ([#2223](https://github.com/dashpay/platform/issues/2223))
+
+
+### Bug Fixes
+
+* **platform:** fixed Platform State deserialization issue ([#2227](https://github.com/dashpay/platform/issues/2227))
+
 ## [1.4.0-dev.7](https://github.com/dashpay/platform/compare/v1.4.0-dev.6...v1.4.0-dev.7) (2024-10-07)
 
 

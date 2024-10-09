@@ -1,10 +1,11 @@
 [package]
 name = "rs-dapi-client"
-version = "1.4.0-dev.7"
+version = "1.4.0-dev.8"
 edition = "2021"
 
 [features]
 default = ["mocks", "offline-testing"]
+tokio-sleep = ["backon/tokio-sleep"]
 mocks = [
     "dep:sha2",
     "dep:hex",
@@ -19,9 +20,7 @@ dump = ["mocks"]
 offline-testing = []
 
 [dependencies]
-backon = { version = "1.2", default-features = false, features = [
-    "tokio-sleep",
-] }
+backon = { version = "1.2"}
 dapi-grpc = { path = "../dapi-grpc", features = [
     "core",
     "platform",

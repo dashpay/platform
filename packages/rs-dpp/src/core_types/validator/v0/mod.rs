@@ -47,7 +47,8 @@ impl Encode for ValidatorV0 {
         // Encode each field in the order they appear in the struct
 
         // Encode ProTxHash
-        self.pro_tx_hash.to_byte_array().to_vec().encode(encoder)?;
+        let pro_tx_hash_bytes = self.pro_tx_hash.as_byte_array();
+        pro_tx_hash_bytes.encode(encoder)?;
 
         // Encode Option<BlsPublicKey>
         match &self.public_key {
@@ -64,7 +65,8 @@ impl Encode for ValidatorV0 {
         self.node_ip.encode(encoder)?;
 
         // Encode node_id
-        self.node_id.to_byte_array().to_vec().encode(encoder)?;
+        let node_id_bytes = self.node_id.as_byte_array();
+        node_id_bytes.encode(encoder)?;
 
         // Encode core_port, platform_http_port, and platform_p2p_port as u16
         self.core_port.encode(encoder)?;
@@ -84,14 +86,14 @@ impl Decode for ValidatorV0 {
         // Decode each field in the same order as they were encoded
 
         // Decode ProTxHash
-        let pro_tx_hash_bytes = Vec::<u8>::decode(decoder)?;
+        let pro_tx_hash_bytes = <[u8; 32]>::decode(decoder)?;
         let pro_tx_hash = ProTxHash::from_slice(&pro_tx_hash_bytes)
             .map_err(|_| DecodeError::OtherString("Failed to decode ProTxHash".to_string()))?;
 
         // Decode Option<BlsPublicKey>
         let has_public_key = bool::decode(decoder)?;
         let public_key = if has_public_key {
-            let public_key_bytes = Vec::<u8>::decode(decoder)?;
+            let public_key_bytes = <[u8; 48]>::decode(decoder)?;
             Some(BlsPublicKey::from_bytes(&public_key_bytes).map_err(|_| {
                 DecodeError::OtherString("Failed to decode BlsPublicKey".to_string())
             })?)
@@ -103,7 +105,7 @@ impl Decode for ValidatorV0 {
         let node_ip = String::decode(decoder)?;
 
         // Decode node_id
-        let node_id_bytes = Vec::<u8>::decode(decoder)?;
+        let node_id_bytes = <[u8; 20]>::decode(decoder)?;
         let node_id = PubkeyHash::from_slice(&node_id_bytes)
             .map_err(|_| DecodeError::OtherString("Failed to decode NodeId".to_string()))?;
 
@@ -248,5 +250,47 @@ impl ValidatorV0Setters for ValidatorV0 {
 
     fn set_is_banned(&mut self, is_banned: bool) {
         self.is_banned = is_banned;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bincode::config;
+
+    #[test]
+    fn test_serialize_deserialize_validator_v0() {
+        // Sample data for testing
+        let pro_tx_hash = ProTxHash::from_slice(&[1; 32]).unwrap();
+        let public_key = Some(BlsPublicKey::generate());
+        let node_ip = "127.0.0.1".to_string();
+        let node_id = PubkeyHash::from_slice(&[3; 20]).unwrap();
+        let core_port = 9999;
+        let platform_http_port = 8888;
+        let platform_p2p_port = 7777;
+        let is_banned = false;
+
+        // Create a ValidatorV0 instance
+        let validator = ValidatorV0 {
+            pro_tx_hash,
+            public_key,
+            node_ip,
+            node_id,
+            core_port,
+            platform_http_port,
+            platform_p2p_port,
+            is_banned,
+        };
+
+        // Serialize the ValidatorV0 instance
+        let encoded = bincode::encode_to_vec(&validator, config::standard()).unwrap();
+
+        // Deserialize the data back into a ValidatorV0 instance
+        let decoded: ValidatorV0 = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        // Verify that the deserialized instance matches the original instance
+        assert_eq!(validator, decoded);
     }
 }

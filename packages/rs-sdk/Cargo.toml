@@ -1,6 +1,6 @@
 [package]
 name = "dash-sdk"
-version = "1.4.0-dev.7"
+version = "1.4.0-dev.8"
 edition = "2021"
 
 [dependencies]
@@ -57,6 +57,7 @@ test-case = { version = "3.3.1" }
 
 [features]
 default = ["mocks", "offline-testing"]
+tokio-sleep = ["rs-dapi-client/tokio-sleep"]
 
 mocks = [
   "dep:serde",

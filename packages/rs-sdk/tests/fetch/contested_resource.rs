@@ -231,14 +231,14 @@ async fn contested_resources_limit_PLAN_656() {
 /// ## Preconditions
 ///
 /// None
-#[test_case::test_case(|_q| {}, Ok("ContestedResources([Value(Text(".into()); "unmodified base query is Ok")]
+#[test_case::test_case(|_q| {}, Ok("ContestedResources([ContestedResource(Text(".into()); "unmodified base query is Ok")]
 #[test_case::test_case(|q| q.start_index_values = vec![Value::Text("".to_string())], Ok("".into()); "index value empty string is Ok")]
 #[test_case::test_case(|q| q.document_type_name = "some random non-existing name".to_string(), Err(r#"code: InvalidArgument, message: "document type some random non-existing name not found"#); "non existing document type returns InvalidArgument")]
 #[test_case::test_case(|q| q.index_name = "nx index".to_string(), Err(r#"code: InvalidArgument, message: "index with name nx index is not the contested index"#); "non existing index returns InvalidArgument")]
 #[test_case::test_case(|q| q.index_name = "dashIdentityId".to_string(), Err(r#"code: InvalidArgument, message: "index with name dashIdentityId is not the contested index"#); "existing non-contested index returns InvalidArgument")]
 // Disabled due to bug PLAN-653
 // #[test_case::test_case(|q| q.start_at_value = Some((Value::Array(vec![]), true)), Err(r#"code: InvalidArgument"#); "start_at_value wrong index type returns InvalidArgument PLAN-653")]
-#[test_case::test_case(|q| q.start_index_values = vec![], Ok(r#"ContestedResources([Value(Text("dash"))])"#.into()); "start_index_values empty vec returns top-level keys")]
+#[test_case::test_case(|q| q.start_index_values = vec![], Ok(r#"ContestedResources([ContestedResource(Text("dash"))])"#.into()); "start_index_values empty vec returns top-level keys")]
 #[test_case::test_case(|q| q.start_index_values = vec![Value::Text("".to_string())], Ok(r#"ContestedResources([])"#.into()); "start_index_values empty string returns zero results")]
 #[test_case::test_case(|q| {
     q.start_index_values = vec![
@@ -249,7 +249,7 @@ async fn contested_resources_limit_PLAN_656() {
 #[test_case::test_case(|q| {
     q.start_index_values = vec![];
     q.end_index_values = vec![Value::Text(TEST_DPNS_NAME.to_string())];
-}, Ok(r#"ContestedResources([Value(Text("dash"))])"#.into()); "end_index_values one value with empty start_index_values returns 'dash'")]
+}, Ok(r#"ContestedResources([ContestedResource(Text("dash"))])"#.into()); "end_index_values one value with empty start_index_values returns 'dash'")]
 #[test_case::test_case(|q| {
     q.start_index_values = vec![];
     q.end_index_values = vec![Value::Text(TEST_DPNS_NAME.to_string()), Value::Text("non existing".to_string())];
