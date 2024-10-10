@@ -40,26 +40,34 @@ impl CoreScript {
         Self(bytes.into())
     }
 
-    pub fn random_p2pkh(rng: &mut StdRng) -> Self {
+    pub fn new_p2pkh(key_hash: [u8; 20]) -> Self {
         let mut bytes: Vec<u8> = vec![
             opcodes::all::OP_DUP.to_u8(),
             opcodes::all::OP_HASH160.to_u8(),
             opcodes::all::OP_PUSHBYTES_20.to_u8(),
         ];
-        bytes.append(&mut rng.gen::<[u8; 20]>().to_vec());
+        bytes.extend_from_slice(&key_hash);
         bytes.push(opcodes::all::OP_EQUALVERIFY.to_u8());
         bytes.push(opcodes::all::OP_CHECKSIG.to_u8());
         Self::from_bytes(bytes)
     }
 
-    pub fn random_p2sh(rng: &mut StdRng) -> Self {
+    pub fn new_p2sh(script_hash: [u8; 20]) -> Self {
         let mut bytes = vec![
             opcodes::all::OP_HASH160.to_u8(),
             opcodes::all::OP_PUSHBYTES_20.to_u8(),
         ];
-        bytes.append(&mut rng.gen::<[u8; 20]>().to_vec());
+        bytes.extend_from_slice(&script_hash);
         bytes.push(opcodes::all::OP_EQUAL.to_u8());
         Self::from_bytes(bytes)
+    }
+
+    pub fn random_p2sh(rng: &mut StdRng) -> Self {
+        Self::new_p2sh(rng.gen())
+    }
+
+    pub fn random_p2pkh(rng: &mut StdRng) -> Self {
+        Self::new_p2pkh(rng.gen())
     }
 }
 

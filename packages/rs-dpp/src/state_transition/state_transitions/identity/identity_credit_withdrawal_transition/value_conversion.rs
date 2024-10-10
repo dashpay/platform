@@ -9,6 +9,7 @@ use crate::state_transition::state_transitions::identity::identity_credit_withdr
 use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
+use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
@@ -18,6 +19,11 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransition 
             IdentityCreditWithdrawalTransition::V0(transition) => {
                 let mut value = transition.to_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
+                Ok(value)
+            }
+            IdentityCreditWithdrawalTransition::V1(transition) => {
+                let mut value = transition.to_object(skip_signature)?;
+                value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(1))?;
                 Ok(value)
             }
         }
@@ -30,6 +36,11 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransition 
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
             }
+            IdentityCreditWithdrawalTransition::V1(transition) => {
+                let mut value = transition.to_canonical_object(skip_signature)?;
+                value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(1))?;
+                Ok(value)
+            }
         }
     }
 
@@ -40,6 +51,11 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransition 
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
             }
+            IdentityCreditWithdrawalTransition::V1(transition) => {
+                let mut value = transition.to_canonical_cleaned_object(skip_signature)?;
+                value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(1))?;
+                Ok(value)
+            }
         }
     }
 
@@ -48,6 +64,11 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransition 
             IdentityCreditWithdrawalTransition::V0(transition) => {
                 let mut value = transition.to_cleaned_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
+                Ok(value)
+            }
+            IdentityCreditWithdrawalTransition::V1(transition) => {
+                let mut value = transition.to_cleaned_object(skip_signature)?;
+                value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(1))?;
                 Ok(value)
             }
         }
@@ -70,6 +91,11 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransition 
 
         match version {
             0 => Ok(IdentityCreditWithdrawalTransitionV0::from_object(
+                raw_object,
+                platform_version,
+            )?
+            .into()),
+            1 => Ok(IdentityCreditWithdrawalTransitionV1::from_object(
                 raw_object,
                 platform_version,
             )?
@@ -101,6 +127,11 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransition 
                 platform_version,
             )?
             .into()),
+            1 => Ok(IdentityCreditWithdrawalTransitionV1::from_value_map(
+                raw_value_map,
+                platform_version,
+            )?
+            .into()),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityCreditWithdrawalTransition version {n}"
             ))),
@@ -114,6 +145,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransition 
 
         match version {
             0 => IdentityCreditWithdrawalTransitionV0::clean_value(value),
+            1 => IdentityCreditWithdrawalTransitionV1::clean_value(value),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityCreditWithdrawalTransition version {n}"
             ))),

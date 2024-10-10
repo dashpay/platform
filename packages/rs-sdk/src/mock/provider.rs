@@ -1,25 +1,25 @@
-//! Example ContextProvider that uses the Core gRPC API to fetch data from the platform.
+//! Example ContextProvider that uses the Core gRPC API to fetch data from Platform.
 
-use crate::core_client::CoreClient;
+use crate::core::LowLevelDashCoreClient;
 use crate::platform::Fetch;
+use crate::sync::block_on;
 use crate::{Error, Sdk};
 use arc_swap::ArcSwapAny;
 use dpp::data_contract::DataContract;
+use dpp::prelude::{CoreBlockHeight, Identifier};
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
-// use platform_value::Identifier;
-use pollster::FutureExt;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use dpp::platform_value::Identifier;
 
-/// Context provider that uses the Core gRPC API to fetch data from the platform.
+/// Context provider that uses the Core gRPC API to fetch data from Platform.
 ///
 /// Example [ContextProvider] used by the Sdk for testing purposes.
 pub struct GrpcContextProvider {
     /// Core client
-    core: CoreClient,
+    core: LowLevelDashCoreClient,
     /// [Sdk] to use when fetching data from Platform
     ///
     /// Note that if the `sdk` is `None`, the context provider will not be able to fetch data itself and will rely on
@@ -42,7 +42,7 @@ pub struct GrpcContextProvider {
 
     /// Directory where to store dumped data.
     ///
-    /// This is used to store data that is fetched from the platform and can be used for testing purposes.
+    /// This is used to store data that is fetched from Platform and can be used for testing purposes.
     #[cfg(feature = "mocks")]
     pub dump_dir: Option<std::path::PathBuf>,
 }
@@ -64,7 +64,8 @@ impl GrpcContextProvider {
         data_contracts_cache_size: NonZeroUsize,
         quorum_public_keys_cache_size: NonZeroUsize,
     ) -> Result<Self, Error> {
-        let core_client = CoreClient::new(core_ip, core_port, core_user, core_password)?;
+        let core_client =
+            LowLevelDashCoreClient::new(core_ip, core_port, core_user, core_password)?;
         Ok(Self {
             core: core_client,
             sdk: ArcSwapAny::new(Arc::new(sdk)),
@@ -85,7 +86,7 @@ impl GrpcContextProvider {
     }
     /// Set the directory where to store dumped data.
     ///
-    /// When set, the context provider will store data fetched from the platform into this directory.
+    /// When set, the context provider will store data fetched from Platform into this directory.
     #[cfg(feature = "mocks")]
     pub fn set_dump_dir(&mut self, dump_dir: Option<std::path::PathBuf>) {
         self.dump_dir = dump_dir;
@@ -199,9 +200,9 @@ impl ContextProvider for GrpcContextProvider {
 
         let sdk_cloned = sdk.clone();
 
-        let data_contract: Option<DataContract> = DataContract::fetch(&sdk_cloned, contract_id)
-            .block_on()
-            .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
+        let data_contract: Option<DataContract> =
+            block_on(async move { DataContract::fetch(&sdk_cloned, contract_id).await })?
+                .map_err(|e| ContextProviderError::DataContractFailure(e.to_string()))?;
 
         if let Some(ref dc) = data_contract {
             self.data_contracts_cache.put(*data_contract_id, dc.clone());
@@ -214,11 +215,15 @@ impl ContextProvider for GrpcContextProvider {
 
         Ok(data_contract.map(Arc::new))
     }
+
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        self.core.get_platform_activation_height()
+    }
 }
 
 /// Thread-safe cache of various objects inside the SDK.
 ///
-/// This is used to cache objects that are expensive to fetch from the platform, like data contracts.
+/// This is used to cache objects that are expensive to fetch from Platform, like data contracts.
 pub struct Cache<K: Hash + Eq, V> {
     // We use a Mutex to allow access to the cache when we don't have mutable &self
     // And we use Arc to allow multiple threads to access the cache without having to clone it

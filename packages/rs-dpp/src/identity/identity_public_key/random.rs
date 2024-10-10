@@ -464,6 +464,149 @@ impl IdentityPublicKey {
         }
     }
 
+    /// Generates a random ECDSA critical-level authentication key for a masternode owner.
+    ///
+    /// This function generates a random key that can be used for owner authentication in a masternode context.
+    /// The function accepts an optional seed for deterministic key generation, or uses entropy-based randomness if no seed is provided.
+    ///
+    /// # Parameters
+    ///
+    /// * `id`: The identifier (`KeyID`) for the masternode owner key.
+    /// * `seed`: An optional `u64` value used to seed the random number generator. If `None`, the RNG will be seeded from entropy.
+    /// * `platform_version`: A reference to the `PlatformVersion` struct, which is used to determine the correct key structure version.
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple containing the generated `IdentityPublicKey` for the masternode owner and the corresponding private key as a byte vector.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ProtocolError` if the platform version is not supported.
+    pub fn random_masternode_owner_key(
+        id: KeyID,
+        seed: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        let mut rng = match seed {
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        };
+        Self::random_masternode_owner_key_with_rng(id, &mut rng, platform_version)
+    }
+
+    /// Generates a random ECDSA critical-level authentication key for a masternode owner using a custom RNG.
+    ///
+    /// This function generates a random key using a given random number generator (RNG). This is useful when specific control over the randomness is needed.
+    ///
+    /// # Parameters
+    ///
+    /// * `id`: The identifier (`KeyID`) for the masternode owner key.
+    /// * `rng`: A mutable reference to a `StdRng` instance used to generate randomness.
+    /// * `platform_version`: A reference to the `PlatformVersion` struct, which is used to determine the correct key structure version.
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple containing the generated `IdentityPublicKey` for the masternode owner and the corresponding private key as a byte vector.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ProtocolError` if the platform version is not supported.
+    pub fn random_masternode_owner_key_with_rng(
+        id: KeyID,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_key_structure_version
+        {
+            0 => {
+                let (key, private_key) =
+                    IdentityPublicKeyV0::random_owner_key_with_rng(id, rng, platform_version)?;
+                Ok((key.into(), private_key))
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "IdentityPublicKey::random_masternode_owner_key_with_rng".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Generates a random ECDSA critical-level transfer key for a masternode.
+    ///
+    /// This function generates a random key for use in transferring ownership of a masternode. An optional seed can be provided for deterministic key generation, or entropy-based randomness is used if no seed is given.
+    ///
+    /// # Parameters
+    ///
+    /// * `id`: The identifier (`KeyID`) for the masternode transfer key.
+    /// * `seed`: An optional `u64` value used to seed the random number generator. If `None`, the RNG will be seeded from entropy.
+    /// * `platform_version`: A reference to the `PlatformVersion` struct, which is used to determine the correct key structure version.
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple containing the generated `IdentityPublicKey` for the masternode transfer key and the corresponding private key as a byte vector.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ProtocolError` if the platform version is not supported.
+    pub fn random_masternode_transfer_key(
+        id: KeyID,
+        seed: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        let mut rng = match seed {
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        };
+        Self::random_masternode_transfer_key_with_rng(id, &mut rng, platform_version)
+    }
+
+    /// Generates a random ECDSA critical-level transfer key for a masternode using a custom RNG.
+    ///
+    /// This function generates a random key for masternode transfers using a given random number generator (RNG).
+    ///
+    /// # Parameters
+    ///
+    /// * `id`: The identifier (`KeyID`) for the masternode transfer key.
+    /// * `rng`: A mutable reference to a `StdRng` instance used to generate randomness.
+    /// * `platform_version`: A reference to the `PlatformVersion` struct, which is used to determine the correct key structure version.
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple containing the generated `IdentityPublicKey` for the masternode transfer key and the corresponding private key as a byte vector.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ProtocolError` if the platform version is not supported.
+    pub fn random_masternode_transfer_key_with_rng(
+        id: KeyID,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_key_structure_version
+        {
+            0 => {
+                let (key, private_key) =
+                    IdentityPublicKeyV0::random_masternode_transfer_key_with_rng(
+                        id,
+                        rng,
+                        platform_version,
+                    )?;
+                Ok((key.into(), private_key))
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "IdentityPublicKey::random_masternode_transfer_key_with_rng".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
     /// Generates a random ECDSA high-level authentication public key along with its corresponding private key.
     ///
     /// This method constructs a random ECDSA (using the secp256k1 curve) high-level authentication public key

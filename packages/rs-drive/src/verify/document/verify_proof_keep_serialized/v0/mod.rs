@@ -24,7 +24,7 @@ impl<'a> DriveDocumentQuery<'a> {
     /// * The path query fails to verify against the given proof.
     /// * Converting the element into bytes fails.
     #[inline(always)]
-    pub(crate) fn verify_proof_keep_serialized_v0(
+    pub(super) fn verify_proof_keep_serialized_v0(
         &self,
         proof: &[u8],
         platform_version: &PlatformVersion,

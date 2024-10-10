@@ -1,7 +1,7 @@
-use crate::drive::identity::withdrawals::WithdrawalTransactionIndex;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::withdrawal::WithdrawalTransactionIndex;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 

@@ -2,12 +2,14 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 mod v0;
+mod v1;
 
 impl<C> Platform<C>
 where
@@ -29,6 +31,7 @@ where
     pub(in crate::execution) fn pool_withdrawals_into_transactions_queue(
         &self,
         block_info: &BlockInfo,
+        last_committed_platform_state: &PlatformState,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -40,12 +43,18 @@ where
         {
             0 => self.pool_withdrawals_into_transactions_queue_v0(
                 block_info,
+                last_committed_platform_state,
+                transaction,
+                platform_version,
+            ),
+            1 => self.pool_withdrawals_into_transactions_queue_v1(
+                block_info,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "pool_withdrawals_into_transactions_queue".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

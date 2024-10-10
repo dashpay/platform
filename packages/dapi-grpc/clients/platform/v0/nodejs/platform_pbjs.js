@@ -318,6 +318,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentitiesBalances}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getIdentitiesBalancesCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} [response] GetIdentitiesBalancesResponse
+                         */
+
+                        /**
+                         * Calls getIdentitiesBalances.
+                         * @function getIdentitiesBalances
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest} request GetIdentitiesBalancesRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getIdentitiesBalancesCallback} callback Node-style callback called with the error, if any, and GetIdentitiesBalancesResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getIdentitiesBalances = function getIdentitiesBalances(request, callback) {
+                            return this.rpcCall(getIdentitiesBalances, $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest, $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse, request, callback);
+                        }, "name", { value: "getIdentitiesBalances" });
+
+                        /**
+                         * Calls getIdentitiesBalances.
+                         * @function getIdentitiesBalances
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest} request GetIdentitiesBalancesRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentityBalanceAndRevision}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getIdentityBalanceAndRevisionCallback
@@ -347,6 +380,72 @@ $root.org = (function() {
                          * @instance
                          * @param {org.dash.platform.dapi.v0.IGetIdentityBalanceAndRevisionRequest} request GetIdentityBalanceAndRevisionRequest message or plain object
                          * @returns {Promise<org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getEvonodesProposedEpochBlocksByIds}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getEvonodesProposedEpochBlocksByIdsCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} [response] GetEvonodesProposedEpochBlocksResponse
+                         */
+
+                        /**
+                         * Calls getEvonodesProposedEpochBlocksByIds.
+                         * @function getEvonodesProposedEpochBlocksByIds
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByIdsRequest} request GetEvonodesProposedEpochBlocksByIdsRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getEvonodesProposedEpochBlocksByIdsCallback} callback Node-style callback called with the error, if any, and GetEvonodesProposedEpochBlocksResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getEvonodesProposedEpochBlocksByIds = function getEvonodesProposedEpochBlocksByIds(request, callback) {
+                            return this.rpcCall(getEvonodesProposedEpochBlocksByIds, $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest, $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse, request, callback);
+                        }, "name", { value: "getEvonodesProposedEpochBlocksByIds" });
+
+                        /**
+                         * Calls getEvonodesProposedEpochBlocksByIds.
+                         * @function getEvonodesProposedEpochBlocksByIds
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByIdsRequest} request GetEvonodesProposedEpochBlocksByIdsRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getEvonodesProposedEpochBlocksByRange}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getEvonodesProposedEpochBlocksByRangeCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} [response] GetEvonodesProposedEpochBlocksResponse
+                         */
+
+                        /**
+                         * Calls getEvonodesProposedEpochBlocksByRange.
+                         * @function getEvonodesProposedEpochBlocksByRange
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByRangeRequest} request GetEvonodesProposedEpochBlocksByRangeRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getEvonodesProposedEpochBlocksByRangeCallback} callback Node-style callback called with the error, if any, and GetEvonodesProposedEpochBlocksResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getEvonodesProposedEpochBlocksByRange = function getEvonodesProposedEpochBlocksByRange(request, callback) {
+                            return this.rpcCall(getEvonodesProposedEpochBlocksByRange, $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest, $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse, request, callback);
+                        }, "name", { value: "getEvonodesProposedEpochBlocksByRange" });
+
+                        /**
+                         * Calls getEvonodesProposedEpochBlocksByRange.
+                         * @function getEvonodesProposedEpochBlocksByRange
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByRangeRequest} request GetEvonodesProposedEpochBlocksByRangeRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse>} Promise
                          * @variation 2
                          */
 
@@ -912,6 +1011,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getTotalCreditsInPlatform}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getTotalCreditsInPlatformCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse} [response] GetTotalCreditsInPlatformResponse
+                         */
+
+                        /**
+                         * Calls getTotalCreditsInPlatform.
+                         * @function getTotalCreditsInPlatform
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformRequest} request GetTotalCreditsInPlatformRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getTotalCreditsInPlatformCallback} callback Node-style callback called with the error, if any, and GetTotalCreditsInPlatformResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getTotalCreditsInPlatform = function getTotalCreditsInPlatform(request, callback) {
+                            return this.rpcCall(getTotalCreditsInPlatform, $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest, $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse, request, callback);
+                        }, "name", { value: "getTotalCreditsInPlatform" });
+
+                        /**
+                         * Calls getTotalCreditsInPlatform.
+                         * @function getTotalCreditsInPlatform
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformRequest} request GetTotalCreditsInPlatformRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getPathElements}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getPathElementsCallback
@@ -941,6 +1073,72 @@ $root.org = (function() {
                          * @instance
                          * @param {org.dash.platform.dapi.v0.IGetPathElementsRequest} request GetPathElementsRequest message or plain object
                          * @returns {Promise<org.dash.platform.dapi.v0.GetPathElementsResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getStatus}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getStatusCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetStatusResponse} [response] GetStatusResponse
+                         */
+
+                        /**
+                         * Calls getStatus.
+                         * @function getStatus
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetStatusRequest} request GetStatusRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getStatusCallback} callback Node-style callback called with the error, if any, and GetStatusResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getStatus = function getStatus(request, callback) {
+                            return this.rpcCall(getStatus, $root.org.dash.platform.dapi.v0.GetStatusRequest, $root.org.dash.platform.dapi.v0.GetStatusResponse, request, callback);
+                        }, "name", { value: "getStatus" });
+
+                        /**
+                         * Calls getStatus.
+                         * @function getStatus
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetStatusRequest} request GetStatusRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetStatusResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getCurrentQuorumsInfo}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getCurrentQuorumsInfoCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse} [response] GetCurrentQuorumsInfoResponse
+                         */
+
+                        /**
+                         * Calls getCurrentQuorumsInfo.
+                         * @function getCurrentQuorumsInfo
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoRequest} request GetCurrentQuorumsInfoRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getCurrentQuorumsInfoCallback} callback Node-style callback called with the error, if any, and GetCurrentQuorumsInfoResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getCurrentQuorumsInfo = function getCurrentQuorumsInfo(request, callback) {
+                            return this.rpcCall(getCurrentQuorumsInfo, $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest, $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse, request, callback);
+                        }, "name", { value: "getCurrentQuorumsInfo" });
+
+                        /**
+                         * Calls getCurrentQuorumsInfo.
+                         * @function getCurrentQuorumsInfo
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoRequest} request GetCurrentQuorumsInfoRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse>} Promise
                          * @variation 2
                          */
 
@@ -11167,6 +11365,3277 @@ $root.org = (function() {
                         })();
 
                         return GetIdentitiesContractKeysResponse;
+                    })();
+
+                    v0.GetEvonodesProposedEpochBlocksByIdsRequest = (function() {
+
+                        /**
+                         * Properties of a GetEvonodesProposedEpochBlocksByIdsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetEvonodesProposedEpochBlocksByIdsRequest
+                         * @property {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.IGetEvonodesProposedEpochBlocksByIdsRequestV0|null} [v0] GetEvonodesProposedEpochBlocksByIdsRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetEvonodesProposedEpochBlocksByIdsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetEvonodesProposedEpochBlocksByIdsRequest.
+                         * @implements IGetEvonodesProposedEpochBlocksByIdsRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByIdsRequest=} [properties] Properties to set
+                         */
+                        function GetEvonodesProposedEpochBlocksByIdsRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetEvonodesProposedEpochBlocksByIdsRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.IGetEvonodesProposedEpochBlocksByIdsRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @instance
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetEvonodesProposedEpochBlocksByIdsRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetEvonodesProposedEpochBlocksByIdsRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetEvonodesProposedEpochBlocksByIdsRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByIdsRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest} GetEvonodesProposedEpochBlocksByIdsRequest instance
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.create = function create(properties) {
+                            return new GetEvonodesProposedEpochBlocksByIdsRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetEvonodesProposedEpochBlocksByIdsRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByIdsRequest} message GetEvonodesProposedEpochBlocksByIdsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetEvonodesProposedEpochBlocksByIdsRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByIdsRequest} message GetEvonodesProposedEpochBlocksByIdsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetEvonodesProposedEpochBlocksByIdsRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest} GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetEvonodesProposedEpochBlocksByIdsRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest} GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetEvonodesProposedEpochBlocksByIdsRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetEvonodesProposedEpochBlocksByIdsRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest} GetEvonodesProposedEpochBlocksByIdsRequest
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetEvonodesProposedEpochBlocksByIdsRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest} message GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetEvonodesProposedEpochBlocksByIdsRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetEvonodesProposedEpochBlocksByIdsRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetEvonodesProposedEpochBlocksByIdsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                             * @interface IGetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @property {number|null} [epoch] GetEvonodesProposedEpochBlocksByIdsRequestV0 epoch
+                             * @property {Array.<Uint8Array>|null} [ids] GetEvonodesProposedEpochBlocksByIdsRequestV0 ids
+                             * @property {boolean|null} [prove] GetEvonodesProposedEpochBlocksByIdsRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetEvonodesProposedEpochBlocksByIdsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest
+                             * @classdesc Represents a GetEvonodesProposedEpochBlocksByIdsRequestV0.
+                             * @implements IGetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.IGetEvonodesProposedEpochBlocksByIdsRequestV0=} [properties] Properties to set
+                             */
+                            function GetEvonodesProposedEpochBlocksByIdsRequestV0(properties) {
+                                this.ids = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByIdsRequestV0 epoch.
+                             * @member {number} epoch
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.prototype.epoch = 0;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByIdsRequestV0 ids.
+                             * @member {Array.<Uint8Array>} ids
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.prototype.ids = $util.emptyArray;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByIdsRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetEvonodesProposedEpochBlocksByIdsRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.IGetEvonodesProposedEpochBlocksByIdsRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0} GetEvonodesProposedEpochBlocksByIdsRequestV0 instance
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.create = function create(properties) {
+                                return new GetEvonodesProposedEpochBlocksByIdsRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetEvonodesProposedEpochBlocksByIdsRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.IGetEvonodesProposedEpochBlocksByIdsRequestV0} message GetEvonodesProposedEpochBlocksByIdsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.epoch != null && Object.hasOwnProperty.call(message, "epoch"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.epoch);
+                                if (message.ids != null && message.ids.length)
+                                    for (var i = 0; i < message.ids.length; ++i)
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.ids[i]);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetEvonodesProposedEpochBlocksByIdsRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.IGetEvonodesProposedEpochBlocksByIdsRequestV0} message GetEvonodesProposedEpochBlocksByIdsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetEvonodesProposedEpochBlocksByIdsRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0} GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.epoch = reader.uint32();
+                                        break;
+                                    case 2:
+                                        if (!(message.ids && message.ids.length))
+                                            message.ids = [];
+                                        message.ids.push(reader.bytes());
+                                        break;
+                                    case 3:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetEvonodesProposedEpochBlocksByIdsRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0} GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetEvonodesProposedEpochBlocksByIdsRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                    if (!$util.isInteger(message.epoch))
+                                        return "epoch: integer expected";
+                                if (message.ids != null && message.hasOwnProperty("ids")) {
+                                    if (!Array.isArray(message.ids))
+                                        return "ids: array expected";
+                                    for (var i = 0; i < message.ids.length; ++i)
+                                        if (!(message.ids[i] && typeof message.ids[i].length === "number" || $util.isString(message.ids[i])))
+                                            return "ids: buffer[] expected";
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetEvonodesProposedEpochBlocksByIdsRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0} GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0();
+                                if (object.epoch != null)
+                                    message.epoch = object.epoch >>> 0;
+                                if (object.ids) {
+                                    if (!Array.isArray(object.ids))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0.ids: array expected");
+                                    message.ids = [];
+                                    for (var i = 0; i < object.ids.length; ++i)
+                                        if (typeof object.ids[i] === "string")
+                                            $util.base64.decode(object.ids[i], message.ids[i] = $util.newBuffer($util.base64.length(object.ids[i])), 0);
+                                        else if (object.ids[i].length >= 0)
+                                            message.ids[i] = object.ids[i];
+                                }
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetEvonodesProposedEpochBlocksByIdsRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0} message GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.ids = [];
+                                if (options.defaults) {
+                                    object.epoch = 0;
+                                    object.prove = false;
+                                }
+                                if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                    object.epoch = message.epoch;
+                                if (message.ids && message.ids.length) {
+                                    object.ids = [];
+                                    for (var j = 0; j < message.ids.length; ++j)
+                                        object.ids[j] = options.bytes === String ? $util.base64.encode(message.ids[j], 0, message.ids[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.ids[j]) : message.ids[j];
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetEvonodesProposedEpochBlocksByIdsRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetEvonodesProposedEpochBlocksByIdsRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetEvonodesProposedEpochBlocksByIdsRequestV0;
+                        })();
+
+                        return GetEvonodesProposedEpochBlocksByIdsRequest;
+                    })();
+
+                    v0.GetEvonodesProposedEpochBlocksResponse = (function() {
+
+                        /**
+                         * Properties of a GetEvonodesProposedEpochBlocksResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetEvonodesProposedEpochBlocksResponse
+                         * @property {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.IGetEvonodesProposedEpochBlocksResponseV0|null} [v0] GetEvonodesProposedEpochBlocksResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetEvonodesProposedEpochBlocksResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetEvonodesProposedEpochBlocksResponse.
+                         * @implements IGetEvonodesProposedEpochBlocksResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksResponse=} [properties] Properties to set
+                         */
+                        function GetEvonodesProposedEpochBlocksResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetEvonodesProposedEpochBlocksResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.IGetEvonodesProposedEpochBlocksResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @instance
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetEvonodesProposedEpochBlocksResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetEvonodesProposedEpochBlocksResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetEvonodesProposedEpochBlocksResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} GetEvonodesProposedEpochBlocksResponse instance
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.create = function create(properties) {
+                            return new GetEvonodesProposedEpochBlocksResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetEvonodesProposedEpochBlocksResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksResponse} message GetEvonodesProposedEpochBlocksResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetEvonodesProposedEpochBlocksResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksResponse} message GetEvonodesProposedEpochBlocksResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetEvonodesProposedEpochBlocksResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} GetEvonodesProposedEpochBlocksResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetEvonodesProposedEpochBlocksResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} GetEvonodesProposedEpochBlocksResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetEvonodesProposedEpochBlocksResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetEvonodesProposedEpochBlocksResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} GetEvonodesProposedEpochBlocksResponse
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetEvonodesProposedEpochBlocksResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse} message GetEvonodesProposedEpochBlocksResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetEvonodesProposedEpochBlocksResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetEvonodesProposedEpochBlocksResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetEvonodesProposedEpochBlocksResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                             * @interface IGetEvonodesProposedEpochBlocksResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodesProposedBlocks|null} [evonodesProposedBlockCountsInfo] GetEvonodesProposedEpochBlocksResponseV0 evonodesProposedBlockCountsInfo
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetEvonodesProposedEpochBlocksResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetEvonodesProposedEpochBlocksResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetEvonodesProposedEpochBlocksResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse
+                             * @classdesc Represents a GetEvonodesProposedEpochBlocksResponseV0.
+                             * @implements IGetEvonodesProposedEpochBlocksResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.IGetEvonodesProposedEpochBlocksResponseV0=} [properties] Properties to set
+                             */
+                            function GetEvonodesProposedEpochBlocksResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksResponseV0 evonodesProposedBlockCountsInfo.
+                             * @member {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodesProposedBlocks|null|undefined} evonodesProposedBlockCountsInfo
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.prototype.evonodesProposedBlockCountsInfo = null;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksResponseV0 result.
+                             * @member {"evonodesProposedBlockCountsInfo"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetEvonodesProposedEpochBlocksResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["evonodesProposedBlockCountsInfo", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetEvonodesProposedEpochBlocksResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.IGetEvonodesProposedEpochBlocksResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0} GetEvonodesProposedEpochBlocksResponseV0 instance
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.create = function create(properties) {
+                                return new GetEvonodesProposedEpochBlocksResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetEvonodesProposedEpochBlocksResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.IGetEvonodesProposedEpochBlocksResponseV0} message GetEvonodesProposedEpochBlocksResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.evonodesProposedBlockCountsInfo != null && Object.hasOwnProperty.call(message, "evonodesProposedBlockCountsInfo"))
+                                    $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.encode(message.evonodesProposedBlockCountsInfo, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetEvonodesProposedEpochBlocksResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.IGetEvonodesProposedEpochBlocksResponseV0} message GetEvonodesProposedEpochBlocksResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetEvonodesProposedEpochBlocksResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0} GetEvonodesProposedEpochBlocksResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.evonodesProposedBlockCountsInfo = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetEvonodesProposedEpochBlocksResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0} GetEvonodesProposedEpochBlocksResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetEvonodesProposedEpochBlocksResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.evonodesProposedBlockCountsInfo != null && message.hasOwnProperty("evonodesProposedBlockCountsInfo")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.verify(message.evonodesProposedBlockCountsInfo);
+                                        if (error)
+                                            return "evonodesProposedBlockCountsInfo." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetEvonodesProposedEpochBlocksResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0} GetEvonodesProposedEpochBlocksResponseV0
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0();
+                                if (object.evonodesProposedBlockCountsInfo != null) {
+                                    if (typeof object.evonodesProposedBlockCountsInfo !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.evonodesProposedBlockCountsInfo: object expected");
+                                    message.evonodesProposedBlockCountsInfo = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.fromObject(object.evonodesProposedBlockCountsInfo);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetEvonodesProposedEpochBlocksResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0} message GetEvonodesProposedEpochBlocksResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.evonodesProposedBlockCountsInfo != null && message.hasOwnProperty("evonodesProposedBlockCountsInfo")) {
+                                    object.evonodesProposedBlockCountsInfo = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.toObject(message.evonodesProposedBlockCountsInfo, options);
+                                    if (options.oneofs)
+                                        object.result = "evonodesProposedBlockCountsInfo";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetEvonodesProposedEpochBlocksResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetEvonodesProposedEpochBlocksResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks = (function() {
+
+                                /**
+                                 * Properties of an EvonodeProposedBlocks.
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                                 * @interface IEvonodeProposedBlocks
+                                 * @property {Uint8Array|null} [proTxHash] EvonodeProposedBlocks proTxHash
+                                 * @property {number|Long|null} [count] EvonodeProposedBlocks count
+                                 */
+
+                                /**
+                                 * Constructs a new EvonodeProposedBlocks.
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                                 * @classdesc Represents an EvonodeProposedBlocks.
+                                 * @implements IEvonodeProposedBlocks
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodeProposedBlocks=} [properties] Properties to set
+                                 */
+                                function EvonodeProposedBlocks(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * EvonodeProposedBlocks proTxHash.
+                                 * @member {Uint8Array} proTxHash
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @instance
+                                 */
+                                EvonodeProposedBlocks.prototype.proTxHash = $util.newBuffer([]);
+
+                                /**
+                                 * EvonodeProposedBlocks count.
+                                 * @member {number|Long} count
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @instance
+                                 */
+                                EvonodeProposedBlocks.prototype.count = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Creates a new EvonodeProposedBlocks instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodeProposedBlocks=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks} EvonodeProposedBlocks instance
+                                 */
+                                EvonodeProposedBlocks.create = function create(properties) {
+                                    return new EvonodeProposedBlocks(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified EvonodeProposedBlocks message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodeProposedBlocks} message EvonodeProposedBlocks message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                EvonodeProposedBlocks.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.proTxHash != null && Object.hasOwnProperty.call(message, "proTxHash"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.proTxHash);
+                                    if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.count);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified EvonodeProposedBlocks message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodeProposedBlocks} message EvonodeProposedBlocks message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                EvonodeProposedBlocks.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an EvonodeProposedBlocks message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks} EvonodeProposedBlocks
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                EvonodeProposedBlocks.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.proTxHash = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.count = reader.uint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an EvonodeProposedBlocks message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks} EvonodeProposedBlocks
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                EvonodeProposedBlocks.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an EvonodeProposedBlocks message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                EvonodeProposedBlocks.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                        if (!(message.proTxHash && typeof message.proTxHash.length === "number" || $util.isString(message.proTxHash)))
+                                            return "proTxHash: buffer expected";
+                                    if (message.count != null && message.hasOwnProperty("count"))
+                                        if (!$util.isInteger(message.count) && !(message.count && $util.isInteger(message.count.low) && $util.isInteger(message.count.high)))
+                                            return "count: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an EvonodeProposedBlocks message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks} EvonodeProposedBlocks
+                                 */
+                                EvonodeProposedBlocks.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks();
+                                    if (object.proTxHash != null)
+                                        if (typeof object.proTxHash === "string")
+                                            $util.base64.decode(object.proTxHash, message.proTxHash = $util.newBuffer($util.base64.length(object.proTxHash)), 0);
+                                        else if (object.proTxHash.length >= 0)
+                                            message.proTxHash = object.proTxHash;
+                                    if (object.count != null)
+                                        if ($util.Long)
+                                            (message.count = $util.Long.fromValue(object.count)).unsigned = true;
+                                        else if (typeof object.count === "string")
+                                            message.count = parseInt(object.count, 10);
+                                        else if (typeof object.count === "number")
+                                            message.count = object.count;
+                                        else if (typeof object.count === "object")
+                                            message.count = new $util.LongBits(object.count.low >>> 0, object.count.high >>> 0).toNumber(true);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an EvonodeProposedBlocks message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks} message EvonodeProposedBlocks
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                EvonodeProposedBlocks.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.proTxHash = "";
+                                        else {
+                                            object.proTxHash = [];
+                                            if (options.bytes !== Array)
+                                                object.proTxHash = $util.newBuffer(object.proTxHash);
+                                        }
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.count = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.count = options.longs === String ? "0" : 0;
+                                    }
+                                    if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                        object.proTxHash = options.bytes === String ? $util.base64.encode(message.proTxHash, 0, message.proTxHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.proTxHash) : message.proTxHash;
+                                    if (message.count != null && message.hasOwnProperty("count"))
+                                        if (typeof message.count === "number")
+                                            object.count = options.longs === String ? String(message.count) : message.count;
+                                        else
+                                            object.count = options.longs === String ? $util.Long.prototype.toString.call(message.count) : options.longs === Number ? new $util.LongBits(message.count.low >>> 0, message.count.high >>> 0).toNumber(true) : message.count;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this EvonodeProposedBlocks to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                EvonodeProposedBlocks.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return EvonodeProposedBlocks;
+                            })();
+
+                            GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks = (function() {
+
+                                /**
+                                 * Properties of an EvonodesProposedBlocks.
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                                 * @interface IEvonodesProposedBlocks
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodeProposedBlocks>|null} [evonodesProposedBlockCounts] EvonodesProposedBlocks evonodesProposedBlockCounts
+                                 */
+
+                                /**
+                                 * Constructs a new EvonodesProposedBlocks.
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0
+                                 * @classdesc Represents an EvonodesProposedBlocks.
+                                 * @implements IEvonodesProposedBlocks
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodesProposedBlocks=} [properties] Properties to set
+                                 */
+                                function EvonodesProposedBlocks(properties) {
+                                    this.evonodesProposedBlockCounts = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * EvonodesProposedBlocks evonodesProposedBlockCounts.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodeProposedBlocks>} evonodesProposedBlockCounts
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @instance
+                                 */
+                                EvonodesProposedBlocks.prototype.evonodesProposedBlockCounts = $util.emptyArray;
+
+                                /**
+                                 * Creates a new EvonodesProposedBlocks instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodesProposedBlocks=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks} EvonodesProposedBlocks instance
+                                 */
+                                EvonodesProposedBlocks.create = function create(properties) {
+                                    return new EvonodesProposedBlocks(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified EvonodesProposedBlocks message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodesProposedBlocks} message EvonodesProposedBlocks message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                EvonodesProposedBlocks.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.evonodesProposedBlockCounts != null && message.evonodesProposedBlockCounts.length)
+                                        for (var i = 0; i < message.evonodesProposedBlockCounts.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.encode(message.evonodesProposedBlockCounts[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified EvonodesProposedBlocks message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.IEvonodesProposedBlocks} message EvonodesProposedBlocks message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                EvonodesProposedBlocks.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an EvonodesProposedBlocks message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks} EvonodesProposedBlocks
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                EvonodesProposedBlocks.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.evonodesProposedBlockCounts && message.evonodesProposedBlockCounts.length))
+                                                message.evonodesProposedBlockCounts = [];
+                                            message.evonodesProposedBlockCounts.push($root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an EvonodesProposedBlocks message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks} EvonodesProposedBlocks
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                EvonodesProposedBlocks.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an EvonodesProposedBlocks message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                EvonodesProposedBlocks.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.evonodesProposedBlockCounts != null && message.hasOwnProperty("evonodesProposedBlockCounts")) {
+                                        if (!Array.isArray(message.evonodesProposedBlockCounts))
+                                            return "evonodesProposedBlockCounts: array expected";
+                                        for (var i = 0; i < message.evonodesProposedBlockCounts.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.verify(message.evonodesProposedBlockCounts[i]);
+                                            if (error)
+                                                return "evonodesProposedBlockCounts." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an EvonodesProposedBlocks message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks} EvonodesProposedBlocks
+                                 */
+                                EvonodesProposedBlocks.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks();
+                                    if (object.evonodesProposedBlockCounts) {
+                                        if (!Array.isArray(object.evonodesProposedBlockCounts))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.evonodesProposedBlockCounts: array expected");
+                                        message.evonodesProposedBlockCounts = [];
+                                        for (var i = 0; i < object.evonodesProposedBlockCounts.length; ++i) {
+                                            if (typeof object.evonodesProposedBlockCounts[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks.evonodesProposedBlockCounts: object expected");
+                                            message.evonodesProposedBlockCounts[i] = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.fromObject(object.evonodesProposedBlockCounts[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an EvonodesProposedBlocks message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks} message EvonodesProposedBlocks
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                EvonodesProposedBlocks.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.evonodesProposedBlockCounts = [];
+                                    if (message.evonodesProposedBlockCounts && message.evonodesProposedBlockCounts.length) {
+                                        object.evonodesProposedBlockCounts = [];
+                                        for (var j = 0; j < message.evonodesProposedBlockCounts.length; ++j)
+                                            object.evonodesProposedBlockCounts[j] = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocks.toObject(message.evonodesProposedBlockCounts[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this EvonodesProposedBlocks to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocks
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                EvonodesProposedBlocks.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return EvonodesProposedBlocks;
+                            })();
+
+                            return GetEvonodesProposedEpochBlocksResponseV0;
+                        })();
+
+                        return GetEvonodesProposedEpochBlocksResponse;
+                    })();
+
+                    v0.GetEvonodesProposedEpochBlocksByRangeRequest = (function() {
+
+                        /**
+                         * Properties of a GetEvonodesProposedEpochBlocksByRangeRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetEvonodesProposedEpochBlocksByRangeRequest
+                         * @property {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.IGetEvonodesProposedEpochBlocksByRangeRequestV0|null} [v0] GetEvonodesProposedEpochBlocksByRangeRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetEvonodesProposedEpochBlocksByRangeRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetEvonodesProposedEpochBlocksByRangeRequest.
+                         * @implements IGetEvonodesProposedEpochBlocksByRangeRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByRangeRequest=} [properties] Properties to set
+                         */
+                        function GetEvonodesProposedEpochBlocksByRangeRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetEvonodesProposedEpochBlocksByRangeRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.IGetEvonodesProposedEpochBlocksByRangeRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @instance
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetEvonodesProposedEpochBlocksByRangeRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetEvonodesProposedEpochBlocksByRangeRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetEvonodesProposedEpochBlocksByRangeRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByRangeRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest} GetEvonodesProposedEpochBlocksByRangeRequest instance
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.create = function create(properties) {
+                            return new GetEvonodesProposedEpochBlocksByRangeRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetEvonodesProposedEpochBlocksByRangeRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByRangeRequest} message GetEvonodesProposedEpochBlocksByRangeRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetEvonodesProposedEpochBlocksByRangeRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetEvonodesProposedEpochBlocksByRangeRequest} message GetEvonodesProposedEpochBlocksByRangeRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetEvonodesProposedEpochBlocksByRangeRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest} GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetEvonodesProposedEpochBlocksByRangeRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest} GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetEvonodesProposedEpochBlocksByRangeRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetEvonodesProposedEpochBlocksByRangeRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest} GetEvonodesProposedEpochBlocksByRangeRequest
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetEvonodesProposedEpochBlocksByRangeRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest} message GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetEvonodesProposedEpochBlocksByRangeRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetEvonodesProposedEpochBlocksByRangeRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetEvonodesProposedEpochBlocksByRangeRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                             * @interface IGetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @property {number|null} [epoch] GetEvonodesProposedEpochBlocksByRangeRequestV0 epoch
+                             * @property {number|null} [limit] GetEvonodesProposedEpochBlocksByRangeRequestV0 limit
+                             * @property {Uint8Array|null} [startAfter] GetEvonodesProposedEpochBlocksByRangeRequestV0 startAfter
+                             * @property {Uint8Array|null} [startAt] GetEvonodesProposedEpochBlocksByRangeRequestV0 startAt
+                             * @property {boolean|null} [prove] GetEvonodesProposedEpochBlocksByRangeRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetEvonodesProposedEpochBlocksByRangeRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest
+                             * @classdesc Represents a GetEvonodesProposedEpochBlocksByRangeRequestV0.
+                             * @implements IGetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.IGetEvonodesProposedEpochBlocksByRangeRequestV0=} [properties] Properties to set
+                             */
+                            function GetEvonodesProposedEpochBlocksByRangeRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByRangeRequestV0 epoch.
+                             * @member {number} epoch
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype.epoch = 0;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByRangeRequestV0 limit.
+                             * @member {number} limit
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype.limit = 0;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByRangeRequestV0 startAfter.
+                             * @member {Uint8Array} startAfter
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype.startAfter = $util.newBuffer([]);
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByRangeRequestV0 startAt.
+                             * @member {Uint8Array} startAt
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype.startAt = $util.newBuffer([]);
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByRangeRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype.prove = false;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetEvonodesProposedEpochBlocksByRangeRequestV0 start.
+                             * @member {"startAfter"|"startAt"|undefined} start
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype, "start", {
+                                get: $util.oneOfGetter($oneOfFields = ["startAfter", "startAt"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetEvonodesProposedEpochBlocksByRangeRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.IGetEvonodesProposedEpochBlocksByRangeRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0} GetEvonodesProposedEpochBlocksByRangeRequestV0 instance
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.create = function create(properties) {
+                                return new GetEvonodesProposedEpochBlocksByRangeRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetEvonodesProposedEpochBlocksByRangeRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.IGetEvonodesProposedEpochBlocksByRangeRequestV0} message GetEvonodesProposedEpochBlocksByRangeRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.epoch != null && Object.hasOwnProperty.call(message, "epoch"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.epoch);
+                                if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.limit);
+                                if (message.startAfter != null && Object.hasOwnProperty.call(message, "startAfter"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.startAfter);
+                                if (message.startAt != null && Object.hasOwnProperty.call(message, "startAt"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.startAt);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 5, wireType 0 =*/40).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetEvonodesProposedEpochBlocksByRangeRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.IGetEvonodesProposedEpochBlocksByRangeRequestV0} message GetEvonodesProposedEpochBlocksByRangeRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetEvonodesProposedEpochBlocksByRangeRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0} GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.epoch = reader.uint32();
+                                        break;
+                                    case 2:
+                                        message.limit = reader.uint32();
+                                        break;
+                                    case 3:
+                                        message.startAfter = reader.bytes();
+                                        break;
+                                    case 4:
+                                        message.startAt = reader.bytes();
+                                        break;
+                                    case 5:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetEvonodesProposedEpochBlocksByRangeRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0} GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetEvonodesProposedEpochBlocksByRangeRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                    if (!$util.isInteger(message.epoch))
+                                        return "epoch: integer expected";
+                                if (message.limit != null && message.hasOwnProperty("limit"))
+                                    if (!$util.isInteger(message.limit))
+                                        return "limit: integer expected";
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter")) {
+                                    properties.start = 1;
+                                    if (!(message.startAfter && typeof message.startAfter.length === "number" || $util.isString(message.startAfter)))
+                                        return "startAfter: buffer expected";
+                                }
+                                if (message.startAt != null && message.hasOwnProperty("startAt")) {
+                                    if (properties.start === 1)
+                                        return "start: multiple values";
+                                    properties.start = 1;
+                                    if (!(message.startAt && typeof message.startAt.length === "number" || $util.isString(message.startAt)))
+                                        return "startAt: buffer expected";
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetEvonodesProposedEpochBlocksByRangeRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0} GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0();
+                                if (object.epoch != null)
+                                    message.epoch = object.epoch >>> 0;
+                                if (object.limit != null)
+                                    message.limit = object.limit >>> 0;
+                                if (object.startAfter != null)
+                                    if (typeof object.startAfter === "string")
+                                        $util.base64.decode(object.startAfter, message.startAfter = $util.newBuffer($util.base64.length(object.startAfter)), 0);
+                                    else if (object.startAfter.length >= 0)
+                                        message.startAfter = object.startAfter;
+                                if (object.startAt != null)
+                                    if (typeof object.startAt === "string")
+                                        $util.base64.decode(object.startAt, message.startAt = $util.newBuffer($util.base64.length(object.startAt)), 0);
+                                    else if (object.startAt.length >= 0)
+                                        message.startAt = object.startAt;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetEvonodesProposedEpochBlocksByRangeRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0} message GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.epoch = 0;
+                                    object.limit = 0;
+                                    object.prove = false;
+                                }
+                                if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                    object.epoch = message.epoch;
+                                if (message.limit != null && message.hasOwnProperty("limit"))
+                                    object.limit = message.limit;
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter")) {
+                                    object.startAfter = options.bytes === String ? $util.base64.encode(message.startAfter, 0, message.startAfter.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAfter) : message.startAfter;
+                                    if (options.oneofs)
+                                        object.start = "startAfter";
+                                }
+                                if (message.startAt != null && message.hasOwnProperty("startAt")) {
+                                    object.startAt = options.bytes === String ? $util.base64.encode(message.startAt, 0, message.startAt.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAt) : message.startAt;
+                                    if (options.oneofs)
+                                        object.start = "startAt";
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetEvonodesProposedEpochBlocksByRangeRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetEvonodesProposedEpochBlocksByRangeRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetEvonodesProposedEpochBlocksByRangeRequestV0;
+                        })();
+
+                        return GetEvonodesProposedEpochBlocksByRangeRequest;
+                    })();
+
+                    v0.GetIdentitiesBalancesRequest = (function() {
+
+                        /**
+                         * Properties of a GetIdentitiesBalancesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentitiesBalancesRequest
+                         * @property {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0|null} [v0] GetIdentitiesBalancesRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetIdentitiesBalancesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentitiesBalancesRequest.
+                         * @implements IGetIdentitiesBalancesRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest=} [properties] Properties to set
+                         */
+                        function GetIdentitiesBalancesRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentitiesBalancesRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @instance
+                         */
+                        GetIdentitiesBalancesRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentitiesBalancesRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentitiesBalancesRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetIdentitiesBalancesRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} GetIdentitiesBalancesRequest instance
+                         */
+                        GetIdentitiesBalancesRequest.create = function create(properties) {
+                            return new GetIdentitiesBalancesRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesBalancesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest} message GetIdentitiesBalancesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesBalancesRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesBalancesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesRequest} message GetIdentitiesBalancesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesBalancesRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesBalancesRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} GetIdentitiesBalancesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesBalancesRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesBalancesRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} GetIdentitiesBalancesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesBalancesRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentitiesBalancesRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentitiesBalancesRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentitiesBalancesRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} GetIdentitiesBalancesRequest
+                         */
+                        GetIdentitiesBalancesRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentitiesBalancesRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest} message GetIdentitiesBalancesRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentitiesBalancesRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentitiesBalancesRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentitiesBalancesRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetIdentitiesBalancesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                             * @interface IGetIdentitiesBalancesRequestV0
+                             * @property {Array.<Uint8Array>|null} [ids] GetIdentitiesBalancesRequestV0 ids
+                             * @property {boolean|null} [prove] GetIdentitiesBalancesRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetIdentitiesBalancesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest
+                             * @classdesc Represents a GetIdentitiesBalancesRequestV0.
+                             * @implements IGetIdentitiesBalancesRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0=} [properties] Properties to set
+                             */
+                            function GetIdentitiesBalancesRequestV0(properties) {
+                                this.ids = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentitiesBalancesRequestV0 ids.
+                             * @member {Array.<Uint8Array>} ids
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesRequestV0.prototype.ids = $util.emptyArray;
+
+                            /**
+                             * GetIdentitiesBalancesRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetIdentitiesBalancesRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} GetIdentitiesBalancesRequestV0 instance
+                             */
+                            GetIdentitiesBalancesRequestV0.create = function create(properties) {
+                                return new GetIdentitiesBalancesRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentitiesBalancesRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0} message GetIdentitiesBalancesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentitiesBalancesRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.ids != null && message.ids.length)
+                                    for (var i = 0; i < message.ids.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.ids[i]);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentitiesBalancesRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.IGetIdentitiesBalancesRequestV0} message GetIdentitiesBalancesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentitiesBalancesRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentitiesBalancesRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} GetIdentitiesBalancesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentitiesBalancesRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.ids && message.ids.length))
+                                            message.ids = [];
+                                        message.ids.push(reader.bytes());
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentitiesBalancesRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} GetIdentitiesBalancesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentitiesBalancesRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentitiesBalancesRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentitiesBalancesRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.ids != null && message.hasOwnProperty("ids")) {
+                                    if (!Array.isArray(message.ids))
+                                        return "ids: array expected";
+                                    for (var i = 0; i < message.ids.length; ++i)
+                                        if (!(message.ids[i] && typeof message.ids[i].length === "number" || $util.isString(message.ids[i])))
+                                            return "ids: buffer[] expected";
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentitiesBalancesRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} GetIdentitiesBalancesRequestV0
+                             */
+                            GetIdentitiesBalancesRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0();
+                                if (object.ids) {
+                                    if (!Array.isArray(object.ids))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0.ids: array expected");
+                                    message.ids = [];
+                                    for (var i = 0; i < object.ids.length; ++i)
+                                        if (typeof object.ids[i] === "string")
+                                            $util.base64.decode(object.ids[i], message.ids[i] = $util.newBuffer($util.base64.length(object.ids[i])), 0);
+                                        else if (object.ids[i].length >= 0)
+                                            message.ids[i] = object.ids[i];
+                                }
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentitiesBalancesRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0} message GetIdentitiesBalancesRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentitiesBalancesRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.ids = [];
+                                if (options.defaults)
+                                    object.prove = false;
+                                if (message.ids && message.ids.length) {
+                                    object.ids = [];
+                                    for (var j = 0; j < message.ids.length; ++j)
+                                        object.ids[j] = options.bytes === String ? $util.base64.encode(message.ids[j], 0, message.ids[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.ids[j]) : message.ids[j];
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentitiesBalancesRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentitiesBalancesRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetIdentitiesBalancesRequestV0;
+                        })();
+
+                        return GetIdentitiesBalancesRequest;
+                    })();
+
+                    v0.GetIdentitiesBalancesResponse = (function() {
+
+                        /**
+                         * Properties of a GetIdentitiesBalancesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentitiesBalancesResponse
+                         * @property {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0|null} [v0] GetIdentitiesBalancesResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetIdentitiesBalancesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentitiesBalancesResponse.
+                         * @implements IGetIdentitiesBalancesResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesResponse=} [properties] Properties to set
+                         */
+                        function GetIdentitiesBalancesResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentitiesBalancesResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @instance
+                         */
+                        GetIdentitiesBalancesResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentitiesBalancesResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentitiesBalancesResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetIdentitiesBalancesResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} GetIdentitiesBalancesResponse instance
+                         */
+                        GetIdentitiesBalancesResponse.create = function create(properties) {
+                            return new GetIdentitiesBalancesResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesBalancesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesResponse} message GetIdentitiesBalancesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesBalancesResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesBalancesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesBalancesResponse} message GetIdentitiesBalancesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesBalancesResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesBalancesResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} GetIdentitiesBalancesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesBalancesResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesBalancesResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} GetIdentitiesBalancesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesBalancesResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentitiesBalancesResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentitiesBalancesResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentitiesBalancesResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} GetIdentitiesBalancesResponse
+                         */
+                        GetIdentitiesBalancesResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentitiesBalancesResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse} message GetIdentitiesBalancesResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentitiesBalancesResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentitiesBalancesResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentitiesBalancesResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetIdentitiesBalancesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                             * @interface IGetIdentitiesBalancesResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances|null} [identitiesBalances] GetIdentitiesBalancesResponseV0 identitiesBalances
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentitiesBalancesResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentitiesBalancesResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetIdentitiesBalancesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse
+                             * @classdesc Represents a GetIdentitiesBalancesResponseV0.
+                             * @implements IGetIdentitiesBalancesResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0=} [properties] Properties to set
+                             */
+                            function GetIdentitiesBalancesResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetIdentitiesBalancesResponseV0 identitiesBalances.
+                             * @member {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances|null|undefined} identitiesBalances
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesResponseV0.prototype.identitiesBalances = null;
+
+                            /**
+                             * GetIdentitiesBalancesResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetIdentitiesBalancesResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             */
+                            GetIdentitiesBalancesResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetIdentitiesBalancesResponseV0 result.
+                             * @member {"identitiesBalances"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetIdentitiesBalancesResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["identitiesBalances", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetIdentitiesBalancesResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} GetIdentitiesBalancesResponseV0 instance
+                             */
+                            GetIdentitiesBalancesResponseV0.create = function create(properties) {
+                                return new GetIdentitiesBalancesResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentitiesBalancesResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0} message GetIdentitiesBalancesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentitiesBalancesResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identitiesBalances != null && Object.hasOwnProperty.call(message, "identitiesBalances"))
+                                    $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.encode(message.identitiesBalances, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetIdentitiesBalancesResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.IGetIdentitiesBalancesResponseV0} message GetIdentitiesBalancesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetIdentitiesBalancesResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetIdentitiesBalancesResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} GetIdentitiesBalancesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentitiesBalancesResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.identitiesBalances = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetIdentitiesBalancesResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} GetIdentitiesBalancesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetIdentitiesBalancesResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetIdentitiesBalancesResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetIdentitiesBalancesResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.identitiesBalances != null && message.hasOwnProperty("identitiesBalances")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.verify(message.identitiesBalances);
+                                        if (error)
+                                            return "identitiesBalances." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetIdentitiesBalancesResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} GetIdentitiesBalancesResponseV0
+                             */
+                            GetIdentitiesBalancesResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0();
+                                if (object.identitiesBalances != null) {
+                                    if (typeof object.identitiesBalances !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.identitiesBalances: object expected");
+                                    message.identitiesBalances = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.fromObject(object.identitiesBalances);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetIdentitiesBalancesResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0} message GetIdentitiesBalancesResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetIdentitiesBalancesResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.identitiesBalances != null && message.hasOwnProperty("identitiesBalances")) {
+                                    object.identitiesBalances = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.toObject(message.identitiesBalances, options);
+                                    if (options.oneofs)
+                                        object.result = "identitiesBalances";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetIdentitiesBalancesResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetIdentitiesBalancesResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetIdentitiesBalancesResponseV0.IdentityBalance = (function() {
+
+                                /**
+                                 * Properties of an IdentityBalance.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                                 * @interface IIdentityBalance
+                                 * @property {Uint8Array|null} [identityId] IdentityBalance identityId
+                                 * @property {number|Long|null} [balance] IdentityBalance balance
+                                 */
+
+                                /**
+                                 * Constructs a new IdentityBalance.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                                 * @classdesc Represents an IdentityBalance.
+                                 * @implements IIdentityBalance
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance=} [properties] Properties to set
+                                 */
+                                function IdentityBalance(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * IdentityBalance identityId.
+                                 * @member {Uint8Array} identityId
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @instance
+                                 */
+                                IdentityBalance.prototype.identityId = $util.newBuffer([]);
+
+                                /**
+                                 * IdentityBalance balance.
+                                 * @member {number|Long} balance
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @instance
+                                 */
+                                IdentityBalance.prototype.balance = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Creates a new IdentityBalance instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} IdentityBalance instance
+                                 */
+                                IdentityBalance.create = function create(properties) {
+                                    return new IdentityBalance(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityBalance message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance} message IdentityBalance message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityBalance.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.identityId != null && Object.hasOwnProperty.call(message, "identityId"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identityId);
+                                    if (message.balance != null && Object.hasOwnProperty.call(message, "balance"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.balance);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified IdentityBalance message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance} message IdentityBalance message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentityBalance.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an IdentityBalance message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} IdentityBalance
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityBalance.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.identityId = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.balance = reader.uint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an IdentityBalance message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} IdentityBalance
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentityBalance.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an IdentityBalance message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                IdentityBalance.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                        if (!(message.identityId && typeof message.identityId.length === "number" || $util.isString(message.identityId)))
+                                            return "identityId: buffer expected";
+                                    if (message.balance != null && message.hasOwnProperty("balance"))
+                                        if (!$util.isInteger(message.balance) && !(message.balance && $util.isInteger(message.balance.low) && $util.isInteger(message.balance.high)))
+                                            return "balance: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an IdentityBalance message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} IdentityBalance
+                                 */
+                                IdentityBalance.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance();
+                                    if (object.identityId != null)
+                                        if (typeof object.identityId === "string")
+                                            $util.base64.decode(object.identityId, message.identityId = $util.newBuffer($util.base64.length(object.identityId)), 0);
+                                        else if (object.identityId.length >= 0)
+                                            message.identityId = object.identityId;
+                                    if (object.balance != null)
+                                        if ($util.Long)
+                                            (message.balance = $util.Long.fromValue(object.balance)).unsigned = true;
+                                        else if (typeof object.balance === "string")
+                                            message.balance = parseInt(object.balance, 10);
+                                        else if (typeof object.balance === "number")
+                                            message.balance = object.balance;
+                                        else if (typeof object.balance === "object")
+                                            message.balance = new $util.LongBits(object.balance.low >>> 0, object.balance.high >>> 0).toNumber(true);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an IdentityBalance message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance} message IdentityBalance
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                IdentityBalance.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.identityId = "";
+                                        else {
+                                            object.identityId = [];
+                                            if (options.bytes !== Array)
+                                                object.identityId = $util.newBuffer(object.identityId);
+                                        }
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.balance = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.balance = options.longs === String ? "0" : 0;
+                                    }
+                                    if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                        object.identityId = options.bytes === String ? $util.base64.encode(message.identityId, 0, message.identityId.length) : options.bytes === Array ? Array.prototype.slice.call(message.identityId) : message.identityId;
+                                    if (message.balance != null && message.hasOwnProperty("balance"))
+                                        if (typeof message.balance === "number")
+                                            object.balance = options.longs === String ? String(message.balance) : message.balance;
+                                        else
+                                            object.balance = options.longs === String ? $util.Long.prototype.toString.call(message.balance) : options.longs === Number ? new $util.LongBits(message.balance.low >>> 0, message.balance.high >>> 0).toNumber(true) : message.balance;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this IdentityBalance to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                IdentityBalance.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return IdentityBalance;
+                            })();
+
+                            GetIdentitiesBalancesResponseV0.IdentitiesBalances = (function() {
+
+                                /**
+                                 * Properties of an IdentitiesBalances.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                                 * @interface IIdentitiesBalances
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance>|null} [entries] IdentitiesBalances entries
+                                 */
+
+                                /**
+                                 * Constructs a new IdentitiesBalances.
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0
+                                 * @classdesc Represents an IdentitiesBalances.
+                                 * @implements IIdentitiesBalances
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances=} [properties] Properties to set
+                                 */
+                                function IdentitiesBalances(properties) {
+                                    this.entries = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * IdentitiesBalances entries.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentityBalance>} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @instance
+                                 */
+                                IdentitiesBalances.prototype.entries = $util.emptyArray;
+
+                                /**
+                                 * Creates a new IdentitiesBalances instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} IdentitiesBalances instance
+                                 */
+                                IdentitiesBalances.create = function create(properties) {
+                                    return new IdentitiesBalances(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified IdentitiesBalances message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances} message IdentitiesBalances message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentitiesBalances.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.entries != null && message.entries.length)
+                                        for (var i = 0; i < message.entries.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified IdentitiesBalances message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IIdentitiesBalances} message IdentitiesBalances message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                IdentitiesBalances.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an IdentitiesBalances message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} IdentitiesBalances
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentitiesBalances.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.entries && message.entries.length))
+                                                message.entries = [];
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an IdentitiesBalances message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} IdentitiesBalances
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                IdentitiesBalances.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an IdentitiesBalances message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                IdentitiesBalances.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        if (!Array.isArray(message.entries))
+                                            return "entries: array expected";
+                                        for (var i = 0; i < message.entries.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.verify(message.entries[i]);
+                                            if (error)
+                                                return "entries." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an IdentitiesBalances message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} IdentitiesBalances
+                                 */
+                                IdentitiesBalances.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances();
+                                    if (object.entries) {
+                                        if (!Array.isArray(object.entries))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.entries: array expected");
+                                        message.entries = [];
+                                        for (var i = 0; i < object.entries.length; ++i) {
+                                            if (typeof object.entries[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances.entries: object expected");
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.fromObject(object.entries[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an IdentitiesBalances message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances} message IdentitiesBalances
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                IdentitiesBalances.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.entries = [];
+                                    if (message.entries && message.entries.length) {
+                                        object.entries = [];
+                                        for (var j = 0; j < message.entries.length; ++j)
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalance.toObject(message.entries[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this IdentitiesBalances to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalances
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                IdentitiesBalances.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return IdentitiesBalances;
+                            })();
+
+                            return GetIdentitiesBalancesResponseV0;
+                        })();
+
+                        return GetIdentitiesBalancesResponse;
                     })();
 
                     v0.GetProofsRequest = (function() {
@@ -35967,6 +39436,892 @@ $root.org = (function() {
                         return GetPrefundedSpecializedBalanceResponse;
                     })();
 
+                    v0.GetTotalCreditsInPlatformRequest = (function() {
+
+                        /**
+                         * Properties of a GetTotalCreditsInPlatformRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetTotalCreditsInPlatformRequest
+                         * @property {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.IGetTotalCreditsInPlatformRequestV0|null} [v0] GetTotalCreditsInPlatformRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetTotalCreditsInPlatformRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetTotalCreditsInPlatformRequest.
+                         * @implements IGetTotalCreditsInPlatformRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformRequest=} [properties] Properties to set
+                         */
+                        function GetTotalCreditsInPlatformRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetTotalCreditsInPlatformRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.IGetTotalCreditsInPlatformRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @instance
+                         */
+                        GetTotalCreditsInPlatformRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetTotalCreditsInPlatformRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetTotalCreditsInPlatformRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetTotalCreditsInPlatformRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest} GetTotalCreditsInPlatformRequest instance
+                         */
+                        GetTotalCreditsInPlatformRequest.create = function create(properties) {
+                            return new GetTotalCreditsInPlatformRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetTotalCreditsInPlatformRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformRequest} message GetTotalCreditsInPlatformRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetTotalCreditsInPlatformRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetTotalCreditsInPlatformRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformRequest} message GetTotalCreditsInPlatformRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetTotalCreditsInPlatformRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetTotalCreditsInPlatformRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest} GetTotalCreditsInPlatformRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetTotalCreditsInPlatformRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetTotalCreditsInPlatformRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest} GetTotalCreditsInPlatformRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetTotalCreditsInPlatformRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetTotalCreditsInPlatformRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetTotalCreditsInPlatformRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetTotalCreditsInPlatformRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest} GetTotalCreditsInPlatformRequest
+                         */
+                        GetTotalCreditsInPlatformRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetTotalCreditsInPlatformRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest} message GetTotalCreditsInPlatformRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetTotalCreditsInPlatformRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetTotalCreditsInPlatformRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetTotalCreditsInPlatformRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetTotalCreditsInPlatformRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                             * @interface IGetTotalCreditsInPlatformRequestV0
+                             * @property {boolean|null} [prove] GetTotalCreditsInPlatformRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetTotalCreditsInPlatformRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest
+                             * @classdesc Represents a GetTotalCreditsInPlatformRequestV0.
+                             * @implements IGetTotalCreditsInPlatformRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.IGetTotalCreditsInPlatformRequestV0=} [properties] Properties to set
+                             */
+                            function GetTotalCreditsInPlatformRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetTotalCreditsInPlatformRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @instance
+                             */
+                            GetTotalCreditsInPlatformRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetTotalCreditsInPlatformRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.IGetTotalCreditsInPlatformRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0} GetTotalCreditsInPlatformRequestV0 instance
+                             */
+                            GetTotalCreditsInPlatformRequestV0.create = function create(properties) {
+                                return new GetTotalCreditsInPlatformRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetTotalCreditsInPlatformRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.IGetTotalCreditsInPlatformRequestV0} message GetTotalCreditsInPlatformRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetTotalCreditsInPlatformRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetTotalCreditsInPlatformRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.IGetTotalCreditsInPlatformRequestV0} message GetTotalCreditsInPlatformRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetTotalCreditsInPlatformRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetTotalCreditsInPlatformRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0} GetTotalCreditsInPlatformRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetTotalCreditsInPlatformRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetTotalCreditsInPlatformRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0} GetTotalCreditsInPlatformRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetTotalCreditsInPlatformRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetTotalCreditsInPlatformRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetTotalCreditsInPlatformRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetTotalCreditsInPlatformRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0} GetTotalCreditsInPlatformRequestV0
+                             */
+                            GetTotalCreditsInPlatformRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0();
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetTotalCreditsInPlatformRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0} message GetTotalCreditsInPlatformRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetTotalCreditsInPlatformRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.prove = false;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetTotalCreditsInPlatformRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetTotalCreditsInPlatformRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetTotalCreditsInPlatformRequestV0;
+                        })();
+
+                        return GetTotalCreditsInPlatformRequest;
+                    })();
+
+                    v0.GetTotalCreditsInPlatformResponse = (function() {
+
+                        /**
+                         * Properties of a GetTotalCreditsInPlatformResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetTotalCreditsInPlatformResponse
+                         * @property {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.IGetTotalCreditsInPlatformResponseV0|null} [v0] GetTotalCreditsInPlatformResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetTotalCreditsInPlatformResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetTotalCreditsInPlatformResponse.
+                         * @implements IGetTotalCreditsInPlatformResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformResponse=} [properties] Properties to set
+                         */
+                        function GetTotalCreditsInPlatformResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetTotalCreditsInPlatformResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.IGetTotalCreditsInPlatformResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @instance
+                         */
+                        GetTotalCreditsInPlatformResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetTotalCreditsInPlatformResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetTotalCreditsInPlatformResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetTotalCreditsInPlatformResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse} GetTotalCreditsInPlatformResponse instance
+                         */
+                        GetTotalCreditsInPlatformResponse.create = function create(properties) {
+                            return new GetTotalCreditsInPlatformResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetTotalCreditsInPlatformResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformResponse} message GetTotalCreditsInPlatformResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetTotalCreditsInPlatformResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetTotalCreditsInPlatformResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetTotalCreditsInPlatformResponse} message GetTotalCreditsInPlatformResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetTotalCreditsInPlatformResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetTotalCreditsInPlatformResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse} GetTotalCreditsInPlatformResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetTotalCreditsInPlatformResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetTotalCreditsInPlatformResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse} GetTotalCreditsInPlatformResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetTotalCreditsInPlatformResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetTotalCreditsInPlatformResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetTotalCreditsInPlatformResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetTotalCreditsInPlatformResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse} GetTotalCreditsInPlatformResponse
+                         */
+                        GetTotalCreditsInPlatformResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetTotalCreditsInPlatformResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse} message GetTotalCreditsInPlatformResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetTotalCreditsInPlatformResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetTotalCreditsInPlatformResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetTotalCreditsInPlatformResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetTotalCreditsInPlatformResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                             * @interface IGetTotalCreditsInPlatformResponseV0
+                             * @property {number|Long|null} [credits] GetTotalCreditsInPlatformResponseV0 credits
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetTotalCreditsInPlatformResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetTotalCreditsInPlatformResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetTotalCreditsInPlatformResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse
+                             * @classdesc Represents a GetTotalCreditsInPlatformResponseV0.
+                             * @implements IGetTotalCreditsInPlatformResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.IGetTotalCreditsInPlatformResponseV0=} [properties] Properties to set
+                             */
+                            function GetTotalCreditsInPlatformResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetTotalCreditsInPlatformResponseV0 credits.
+                             * @member {number|Long} credits
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @instance
+                             */
+                            GetTotalCreditsInPlatformResponseV0.prototype.credits = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetTotalCreditsInPlatformResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @instance
+                             */
+                            GetTotalCreditsInPlatformResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetTotalCreditsInPlatformResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @instance
+                             */
+                            GetTotalCreditsInPlatformResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetTotalCreditsInPlatformResponseV0 result.
+                             * @member {"credits"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetTotalCreditsInPlatformResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["credits", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetTotalCreditsInPlatformResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.IGetTotalCreditsInPlatformResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0} GetTotalCreditsInPlatformResponseV0 instance
+                             */
+                            GetTotalCreditsInPlatformResponseV0.create = function create(properties) {
+                                return new GetTotalCreditsInPlatformResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetTotalCreditsInPlatformResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.IGetTotalCreditsInPlatformResponseV0} message GetTotalCreditsInPlatformResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetTotalCreditsInPlatformResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.credits != null && Object.hasOwnProperty.call(message, "credits"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.credits);
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetTotalCreditsInPlatformResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.IGetTotalCreditsInPlatformResponseV0} message GetTotalCreditsInPlatformResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetTotalCreditsInPlatformResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetTotalCreditsInPlatformResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0} GetTotalCreditsInPlatformResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetTotalCreditsInPlatformResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.credits = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetTotalCreditsInPlatformResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0} GetTotalCreditsInPlatformResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetTotalCreditsInPlatformResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetTotalCreditsInPlatformResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetTotalCreditsInPlatformResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.credits != null && message.hasOwnProperty("credits")) {
+                                    properties.result = 1;
+                                    if (!$util.isInteger(message.credits) && !(message.credits && $util.isInteger(message.credits.low) && $util.isInteger(message.credits.high)))
+                                        return "credits: integer|Long expected";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetTotalCreditsInPlatformResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0} GetTotalCreditsInPlatformResponseV0
+                             */
+                            GetTotalCreditsInPlatformResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0();
+                                if (object.credits != null)
+                                    if ($util.Long)
+                                        (message.credits = $util.Long.fromValue(object.credits)).unsigned = true;
+                                    else if (typeof object.credits === "string")
+                                        message.credits = parseInt(object.credits, 10);
+                                    else if (typeof object.credits === "number")
+                                        message.credits = object.credits;
+                                    else if (typeof object.credits === "object")
+                                        message.credits = new $util.LongBits(object.credits.low >>> 0, object.credits.high >>> 0).toNumber(true);
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetTotalCreditsInPlatformResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0} message GetTotalCreditsInPlatformResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetTotalCreditsInPlatformResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.credits != null && message.hasOwnProperty("credits")) {
+                                    if (typeof message.credits === "number")
+                                        object.credits = options.longs === String ? String(message.credits) : message.credits;
+                                    else
+                                        object.credits = options.longs === String ? $util.Long.prototype.toString.call(message.credits) : options.longs === Number ? new $util.LongBits(message.credits.low >>> 0, message.credits.high >>> 0).toNumber(true) : message.credits;
+                                    if (options.oneofs)
+                                        object.result = "credits";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetTotalCreditsInPlatformResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetTotalCreditsInPlatformResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetTotalCreditsInPlatformResponseV0;
+                        })();
+
+                        return GetTotalCreditsInPlatformResponse;
+                    })();
+
                     v0.GetPathElementsRequest = (function() {
 
                         /**
@@ -37137,6 +41492,5104 @@ $root.org = (function() {
                         })();
 
                         return GetPathElementsResponse;
+                    })();
+
+                    v0.GetStatusRequest = (function() {
+
+                        /**
+                         * Properties of a GetStatusRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetStatusRequest
+                         * @property {org.dash.platform.dapi.v0.GetStatusRequest.IGetStatusRequestV0|null} [v0] GetStatusRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetStatusRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetStatusRequest.
+                         * @implements IGetStatusRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetStatusRequest=} [properties] Properties to set
+                         */
+                        function GetStatusRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetStatusRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetStatusRequest.IGetStatusRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @instance
+                         */
+                        GetStatusRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetStatusRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetStatusRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetStatusRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetStatusRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetStatusRequest} GetStatusRequest instance
+                         */
+                        GetStatusRequest.create = function create(properties) {
+                            return new GetStatusRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetStatusRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetStatusRequest} message GetStatusRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetStatusRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetStatusRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetStatusRequest} message GetStatusRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetStatusRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetStatusRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetStatusRequest} GetStatusRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetStatusRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetStatusRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetStatusRequest} GetStatusRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetStatusRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetStatusRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetStatusRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetStatusRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetStatusRequest} GetStatusRequest
+                         */
+                        GetStatusRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetStatusRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetStatusRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetStatusRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetStatusRequest} message GetStatusRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetStatusRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetStatusRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetStatusRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetStatusRequest.GetStatusRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetStatusRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                             * @interface IGetStatusRequestV0
+                             */
+
+                            /**
+                             * Constructs a new GetStatusRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest
+                             * @classdesc Represents a GetStatusRequestV0.
+                             * @implements IGetStatusRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetStatusRequest.IGetStatusRequestV0=} [properties] Properties to set
+                             */
+                            function GetStatusRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * Creates a new GetStatusRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusRequest.IGetStatusRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0} GetStatusRequestV0 instance
+                             */
+                            GetStatusRequestV0.create = function create(properties) {
+                                return new GetStatusRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetStatusRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusRequest.IGetStatusRequestV0} message GetStatusRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetStatusRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetStatusRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusRequest.IGetStatusRequestV0} message GetStatusRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetStatusRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetStatusRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0} GetStatusRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetStatusRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetStatusRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0} GetStatusRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetStatusRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetStatusRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetStatusRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetStatusRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0} GetStatusRequestV0
+                             */
+                            GetStatusRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0)
+                                    return object;
+                                return new $root.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0();
+                            };
+
+                            /**
+                             * Creates a plain object from a GetStatusRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0} message GetStatusRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetStatusRequestV0.toObject = function toObject() {
+                                return {};
+                            };
+
+                            /**
+                             * Converts this GetStatusRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetStatusRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetStatusRequestV0;
+                        })();
+
+                        return GetStatusRequest;
+                    })();
+
+                    v0.GetStatusResponse = (function() {
+
+                        /**
+                         * Properties of a GetStatusResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetStatusResponse
+                         * @property {org.dash.platform.dapi.v0.GetStatusResponse.IGetStatusResponseV0|null} [v0] GetStatusResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetStatusResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetStatusResponse.
+                         * @implements IGetStatusResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetStatusResponse=} [properties] Properties to set
+                         */
+                        function GetStatusResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetStatusResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetStatusResponse.IGetStatusResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @instance
+                         */
+                        GetStatusResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetStatusResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetStatusResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetStatusResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetStatusResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse} GetStatusResponse instance
+                         */
+                        GetStatusResponse.create = function create(properties) {
+                            return new GetStatusResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetStatusResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetStatusResponse} message GetStatusResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetStatusResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetStatusResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetStatusResponse} message GetStatusResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetStatusResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetStatusResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse} GetStatusResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetStatusResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetStatusResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse} GetStatusResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetStatusResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetStatusResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetStatusResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetStatusResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse} GetStatusResponse
+                         */
+                        GetStatusResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetStatusResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetStatusResponse} message GetStatusResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetStatusResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetStatusResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetStatusResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetStatusResponse.GetStatusResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetStatusResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                             * @interface IGetStatusResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IVersion|null} [version] GetStatusResponseV0 version
+                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INode|null} [node] GetStatusResponseV0 node
+                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IChain|null} [chain] GetStatusResponseV0 chain
+                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork|null} [network] GetStatusResponseV0 network
+                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IStateSync|null} [stateSync] GetStatusResponseV0 stateSync
+                             * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.ITime|null} [time] GetStatusResponseV0 time
+                             */
+
+                            /**
+                             * Constructs a new GetStatusResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse
+                             * @classdesc Represents a GetStatusResponseV0.
+                             * @implements IGetStatusResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.IGetStatusResponseV0=} [properties] Properties to set
+                             */
+                            function GetStatusResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetStatusResponseV0 version.
+                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IVersion|null|undefined} version
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             */
+                            GetStatusResponseV0.prototype.version = null;
+
+                            /**
+                             * GetStatusResponseV0 node.
+                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INode|null|undefined} node
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             */
+                            GetStatusResponseV0.prototype.node = null;
+
+                            /**
+                             * GetStatusResponseV0 chain.
+                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IChain|null|undefined} chain
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             */
+                            GetStatusResponseV0.prototype.chain = null;
+
+                            /**
+                             * GetStatusResponseV0 network.
+                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork|null|undefined} network
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             */
+                            GetStatusResponseV0.prototype.network = null;
+
+                            /**
+                             * GetStatusResponseV0 stateSync.
+                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IStateSync|null|undefined} stateSync
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             */
+                            GetStatusResponseV0.prototype.stateSync = null;
+
+                            /**
+                             * GetStatusResponseV0 time.
+                             * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.ITime|null|undefined} time
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             */
+                            GetStatusResponseV0.prototype.time = null;
+
+                            /**
+                             * Creates a new GetStatusResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.IGetStatusResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} GetStatusResponseV0 instance
+                             */
+                            GetStatusResponseV0.create = function create(properties) {
+                                return new GetStatusResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetStatusResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.IGetStatusResponseV0} message GetStatusResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetStatusResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.version != null && Object.hasOwnProperty.call(message, "version"))
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.encode(message.version, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.node != null && Object.hasOwnProperty.call(message, "node"))
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.encode(message.node, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.chain != null && Object.hasOwnProperty.call(message, "chain"))
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.encode(message.chain, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.network != null && Object.hasOwnProperty.call(message, "network"))
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.encode(message.network, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                if (message.stateSync != null && Object.hasOwnProperty.call(message, "stateSync"))
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.encode(message.stateSync, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+                                if (message.time != null && Object.hasOwnProperty.call(message, "time"))
+                                    $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.encode(message.time, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetStatusResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.IGetStatusResponseV0} message GetStatusResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetStatusResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetStatusResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} GetStatusResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetStatusResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.version = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.node = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.chain = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.decode(reader, reader.uint32());
+                                        break;
+                                    case 4:
+                                        message.network = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.decode(reader, reader.uint32());
+                                        break;
+                                    case 5:
+                                        message.stateSync = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.decode(reader, reader.uint32());
+                                        break;
+                                    case 6:
+                                        message.time = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetStatusResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} GetStatusResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetStatusResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetStatusResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetStatusResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.version != null && message.hasOwnProperty("version")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.verify(message.version);
+                                    if (error)
+                                        return "version." + error;
+                                }
+                                if (message.node != null && message.hasOwnProperty("node")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.verify(message.node);
+                                    if (error)
+                                        return "node." + error;
+                                }
+                                if (message.chain != null && message.hasOwnProperty("chain")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.verify(message.chain);
+                                    if (error)
+                                        return "chain." + error;
+                                }
+                                if (message.network != null && message.hasOwnProperty("network")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.verify(message.network);
+                                    if (error)
+                                        return "network." + error;
+                                }
+                                if (message.stateSync != null && message.hasOwnProperty("stateSync")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.verify(message.stateSync);
+                                    if (error)
+                                        return "stateSync." + error;
+                                }
+                                if (message.time != null && message.hasOwnProperty("time")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.verify(message.time);
+                                    if (error)
+                                        return "time." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetStatusResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} GetStatusResponseV0
+                             */
+                            GetStatusResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0();
+                                if (object.version != null) {
+                                    if (typeof object.version !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.version: object expected");
+                                    message.version = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.fromObject(object.version);
+                                }
+                                if (object.node != null) {
+                                    if (typeof object.node !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.node: object expected");
+                                    message.node = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.fromObject(object.node);
+                                }
+                                if (object.chain != null) {
+                                    if (typeof object.chain !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.chain: object expected");
+                                    message.chain = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.fromObject(object.chain);
+                                }
+                                if (object.network != null) {
+                                    if (typeof object.network !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.network: object expected");
+                                    message.network = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.fromObject(object.network);
+                                }
+                                if (object.stateSync != null) {
+                                    if (typeof object.stateSync !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.stateSync: object expected");
+                                    message.stateSync = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.fromObject(object.stateSync);
+                                }
+                                if (object.time != null) {
+                                    if (typeof object.time !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.time: object expected");
+                                    message.time = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.fromObject(object.time);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetStatusResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0} message GetStatusResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetStatusResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.version = null;
+                                    object.node = null;
+                                    object.chain = null;
+                                    object.network = null;
+                                    object.stateSync = null;
+                                    object.time = null;
+                                }
+                                if (message.version != null && message.hasOwnProperty("version"))
+                                    object.version = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.toObject(message.version, options);
+                                if (message.node != null && message.hasOwnProperty("node"))
+                                    object.node = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.toObject(message.node, options);
+                                if (message.chain != null && message.hasOwnProperty("chain"))
+                                    object.chain = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.toObject(message.chain, options);
+                                if (message.network != null && message.hasOwnProperty("network"))
+                                    object.network = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.toObject(message.network, options);
+                                if (message.stateSync != null && message.hasOwnProperty("stateSync"))
+                                    object.stateSync = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.toObject(message.stateSync, options);
+                                if (message.time != null && message.hasOwnProperty("time"))
+                                    object.time = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.toObject(message.time, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetStatusResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetStatusResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetStatusResponseV0.Version = (function() {
+
+                                /**
+                                 * Properties of a Version.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @interface IVersion
+                                 * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.ISoftware|null} [software] Version software
+                                 * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.IProtocol|null} [protocol] Version protocol
+                                 */
+
+                                /**
+                                 * Constructs a new Version.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @classdesc Represents a Version.
+                                 * @implements IVersion
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IVersion=} [properties] Properties to set
+                                 */
+                                function Version(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Version software.
+                                 * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.ISoftware|null|undefined} software
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @instance
+                                 */
+                                Version.prototype.software = null;
+
+                                /**
+                                 * Version protocol.
+                                 * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.IProtocol|null|undefined} protocol
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @instance
+                                 */
+                                Version.prototype.protocol = null;
+
+                                /**
+                                 * Creates a new Version instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IVersion=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version} Version instance
+                                 */
+                                Version.create = function create(properties) {
+                                    return new Version(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Version message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IVersion} message Version message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Version.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.software != null && Object.hasOwnProperty.call(message, "software"))
+                                        $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.encode(message.software, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    if (message.protocol != null && Object.hasOwnProperty.call(message, "protocol"))
+                                        $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.encode(message.protocol, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Version message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IVersion} message Version message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Version.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Version message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version} Version
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Version.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.software = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.decode(reader, reader.uint32());
+                                            break;
+                                        case 2:
+                                            message.protocol = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.decode(reader, reader.uint32());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Version message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version} Version
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Version.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Version message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Version.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.software != null && message.hasOwnProperty("software")) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.verify(message.software);
+                                        if (error)
+                                            return "software." + error;
+                                    }
+                                    if (message.protocol != null && message.hasOwnProperty("protocol")) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.verify(message.protocol);
+                                        if (error)
+                                            return "protocol." + error;
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Version message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version} Version
+                                 */
+                                Version.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version();
+                                    if (object.software != null) {
+                                        if (typeof object.software !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.software: object expected");
+                                        message.software = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.fromObject(object.software);
+                                    }
+                                    if (object.protocol != null) {
+                                        if (typeof object.protocol !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.protocol: object expected");
+                                        message.protocol = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.fromObject(object.protocol);
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Version message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version} message Version
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Version.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.software = null;
+                                        object.protocol = null;
+                                    }
+                                    if (message.software != null && message.hasOwnProperty("software"))
+                                        object.software = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.toObject(message.software, options);
+                                    if (message.protocol != null && message.hasOwnProperty("protocol"))
+                                        object.protocol = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.toObject(message.protocol, options);
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Version to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Version.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                Version.Software = (function() {
+
+                                    /**
+                                     * Properties of a Software.
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                     * @interface ISoftware
+                                     * @property {string|null} [dapi] Software dapi
+                                     * @property {string|null} [drive] Software drive
+                                     * @property {string|null} [tenderdash] Software tenderdash
+                                     */
+
+                                    /**
+                                     * Constructs a new Software.
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                     * @classdesc Represents a Software.
+                                     * @implements ISoftware
+                                     * @constructor
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.ISoftware=} [properties] Properties to set
+                                     */
+                                    function Software(properties) {
+                                        if (properties)
+                                            for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                                if (properties[keys[i]] != null)
+                                                    this[keys[i]] = properties[keys[i]];
+                                    }
+
+                                    /**
+                                     * Software dapi.
+                                     * @member {string} dapi
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @instance
+                                     */
+                                    Software.prototype.dapi = "";
+
+                                    /**
+                                     * Software drive.
+                                     * @member {string} drive
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @instance
+                                     */
+                                    Software.prototype.drive = "";
+
+                                    /**
+                                     * Software tenderdash.
+                                     * @member {string} tenderdash
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @instance
+                                     */
+                                    Software.prototype.tenderdash = "";
+
+                                    /**
+                                     * Creates a new Software instance using the specified properties.
+                                     * @function create
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.ISoftware=} [properties] Properties to set
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} Software instance
+                                     */
+                                    Software.create = function create(properties) {
+                                        return new Software(properties);
+                                    };
+
+                                    /**
+                                     * Encodes the specified Software message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.verify|verify} messages.
+                                     * @function encode
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.ISoftware} message Software message or plain object to encode
+                                     * @param {$protobuf.Writer} [writer] Writer to encode to
+                                     * @returns {$protobuf.Writer} Writer
+                                     */
+                                    Software.encode = function encode(message, writer) {
+                                        if (!writer)
+                                            writer = $Writer.create();
+                                        if (message.dapi != null && Object.hasOwnProperty.call(message, "dapi"))
+                                            writer.uint32(/* id 1, wireType 2 =*/10).string(message.dapi);
+                                        if (message.drive != null && Object.hasOwnProperty.call(message, "drive"))
+                                            writer.uint32(/* id 2, wireType 2 =*/18).string(message.drive);
+                                        if (message.tenderdash != null && Object.hasOwnProperty.call(message, "tenderdash"))
+                                            writer.uint32(/* id 3, wireType 2 =*/26).string(message.tenderdash);
+                                        return writer;
+                                    };
+
+                                    /**
+                                     * Encodes the specified Software message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software.verify|verify} messages.
+                                     * @function encodeDelimited
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.ISoftware} message Software message or plain object to encode
+                                     * @param {$protobuf.Writer} [writer] Writer to encode to
+                                     * @returns {$protobuf.Writer} Writer
+                                     */
+                                    Software.encodeDelimited = function encodeDelimited(message, writer) {
+                                        return this.encode(message, writer).ldelim();
+                                    };
+
+                                    /**
+                                     * Decodes a Software message from the specified reader or buffer.
+                                     * @function decode
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                     * @param {number} [length] Message length if known beforehand
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} Software
+                                     * @throws {Error} If the payload is not a reader or valid buffer
+                                     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                     */
+                                    Software.decode = function decode(reader, length) {
+                                        if (!(reader instanceof $Reader))
+                                            reader = $Reader.create(reader);
+                                        var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software();
+                                        while (reader.pos < end) {
+                                            var tag = reader.uint32();
+                                            switch (tag >>> 3) {
+                                            case 1:
+                                                message.dapi = reader.string();
+                                                break;
+                                            case 2:
+                                                message.drive = reader.string();
+                                                break;
+                                            case 3:
+                                                message.tenderdash = reader.string();
+                                                break;
+                                            default:
+                                                reader.skipType(tag & 7);
+                                                break;
+                                            }
+                                        }
+                                        return message;
+                                    };
+
+                                    /**
+                                     * Decodes a Software message from the specified reader or buffer, length delimited.
+                                     * @function decodeDelimited
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} Software
+                                     * @throws {Error} If the payload is not a reader or valid buffer
+                                     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                     */
+                                    Software.decodeDelimited = function decodeDelimited(reader) {
+                                        if (!(reader instanceof $Reader))
+                                            reader = new $Reader(reader);
+                                        return this.decode(reader, reader.uint32());
+                                    };
+
+                                    /**
+                                     * Verifies a Software message.
+                                     * @function verify
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {Object.<string,*>} message Plain object to verify
+                                     * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                     */
+                                    Software.verify = function verify(message) {
+                                        if (typeof message !== "object" || message === null)
+                                            return "object expected";
+                                        if (message.dapi != null && message.hasOwnProperty("dapi"))
+                                            if (!$util.isString(message.dapi))
+                                                return "dapi: string expected";
+                                        if (message.drive != null && message.hasOwnProperty("drive"))
+                                            if (!$util.isString(message.drive))
+                                                return "drive: string expected";
+                                        if (message.tenderdash != null && message.hasOwnProperty("tenderdash"))
+                                            if (!$util.isString(message.tenderdash))
+                                                return "tenderdash: string expected";
+                                        return null;
+                                    };
+
+                                    /**
+                                     * Creates a Software message from a plain object. Also converts values to their respective internal types.
+                                     * @function fromObject
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {Object.<string,*>} object Plain object
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} Software
+                                     */
+                                    Software.fromObject = function fromObject(object) {
+                                        if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software)
+                                            return object;
+                                        var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software();
+                                        if (object.dapi != null)
+                                            message.dapi = String(object.dapi);
+                                        if (object.drive != null)
+                                            message.drive = String(object.drive);
+                                        if (object.tenderdash != null)
+                                            message.tenderdash = String(object.tenderdash);
+                                        return message;
+                                    };
+
+                                    /**
+                                     * Creates a plain object from a Software message. Also converts values to other types if specified.
+                                     * @function toObject
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software} message Software
+                                     * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                     * @returns {Object.<string,*>} Plain object
+                                     */
+                                    Software.toObject = function toObject(message, options) {
+                                        if (!options)
+                                            options = {};
+                                        var object = {};
+                                        if (options.defaults) {
+                                            object.dapi = "";
+                                            object.drive = "";
+                                            object.tenderdash = "";
+                                        }
+                                        if (message.dapi != null && message.hasOwnProperty("dapi"))
+                                            object.dapi = message.dapi;
+                                        if (message.drive != null && message.hasOwnProperty("drive"))
+                                            object.drive = message.drive;
+                                        if (message.tenderdash != null && message.hasOwnProperty("tenderdash"))
+                                            object.tenderdash = message.tenderdash;
+                                        return object;
+                                    };
+
+                                    /**
+                                     * Converts this Software to JSON.
+                                     * @function toJSON
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software
+                                     * @instance
+                                     * @returns {Object.<string,*>} JSON object
+                                     */
+                                    Software.prototype.toJSON = function toJSON() {
+                                        return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                    };
+
+                                    return Software;
+                                })();
+
+                                Version.Protocol = (function() {
+
+                                    /**
+                                     * Properties of a Protocol.
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                     * @interface IProtocol
+                                     * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.ITenderdash|null} [tenderdash] Protocol tenderdash
+                                     * @property {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.IDrive|null} [drive] Protocol drive
+                                     */
+
+                                    /**
+                                     * Constructs a new Protocol.
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version
+                                     * @classdesc Represents a Protocol.
+                                     * @implements IProtocol
+                                     * @constructor
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.IProtocol=} [properties] Properties to set
+                                     */
+                                    function Protocol(properties) {
+                                        if (properties)
+                                            for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                                if (properties[keys[i]] != null)
+                                                    this[keys[i]] = properties[keys[i]];
+                                    }
+
+                                    /**
+                                     * Protocol tenderdash.
+                                     * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.ITenderdash|null|undefined} tenderdash
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @instance
+                                     */
+                                    Protocol.prototype.tenderdash = null;
+
+                                    /**
+                                     * Protocol drive.
+                                     * @member {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.IDrive|null|undefined} drive
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @instance
+                                     */
+                                    Protocol.prototype.drive = null;
+
+                                    /**
+                                     * Creates a new Protocol instance using the specified properties.
+                                     * @function create
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.IProtocol=} [properties] Properties to set
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol} Protocol instance
+                                     */
+                                    Protocol.create = function create(properties) {
+                                        return new Protocol(properties);
+                                    };
+
+                                    /**
+                                     * Encodes the specified Protocol message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.verify|verify} messages.
+                                     * @function encode
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.IProtocol} message Protocol message or plain object to encode
+                                     * @param {$protobuf.Writer} [writer] Writer to encode to
+                                     * @returns {$protobuf.Writer} Writer
+                                     */
+                                    Protocol.encode = function encode(message, writer) {
+                                        if (!writer)
+                                            writer = $Writer.create();
+                                        if (message.tenderdash != null && Object.hasOwnProperty.call(message, "tenderdash"))
+                                            $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.encode(message.tenderdash, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                        if (message.drive != null && Object.hasOwnProperty.call(message, "drive"))
+                                            $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.encode(message.drive, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                        return writer;
+                                    };
+
+                                    /**
+                                     * Encodes the specified Protocol message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.verify|verify} messages.
+                                     * @function encodeDelimited
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.IProtocol} message Protocol message or plain object to encode
+                                     * @param {$protobuf.Writer} [writer] Writer to encode to
+                                     * @returns {$protobuf.Writer} Writer
+                                     */
+                                    Protocol.encodeDelimited = function encodeDelimited(message, writer) {
+                                        return this.encode(message, writer).ldelim();
+                                    };
+
+                                    /**
+                                     * Decodes a Protocol message from the specified reader or buffer.
+                                     * @function decode
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                     * @param {number} [length] Message length if known beforehand
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol} Protocol
+                                     * @throws {Error} If the payload is not a reader or valid buffer
+                                     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                     */
+                                    Protocol.decode = function decode(reader, length) {
+                                        if (!(reader instanceof $Reader))
+                                            reader = $Reader.create(reader);
+                                        var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol();
+                                        while (reader.pos < end) {
+                                            var tag = reader.uint32();
+                                            switch (tag >>> 3) {
+                                            case 1:
+                                                message.tenderdash = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.decode(reader, reader.uint32());
+                                                break;
+                                            case 2:
+                                                message.drive = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.decode(reader, reader.uint32());
+                                                break;
+                                            default:
+                                                reader.skipType(tag & 7);
+                                                break;
+                                            }
+                                        }
+                                        return message;
+                                    };
+
+                                    /**
+                                     * Decodes a Protocol message from the specified reader or buffer, length delimited.
+                                     * @function decodeDelimited
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol} Protocol
+                                     * @throws {Error} If the payload is not a reader or valid buffer
+                                     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                     */
+                                    Protocol.decodeDelimited = function decodeDelimited(reader) {
+                                        if (!(reader instanceof $Reader))
+                                            reader = new $Reader(reader);
+                                        return this.decode(reader, reader.uint32());
+                                    };
+
+                                    /**
+                                     * Verifies a Protocol message.
+                                     * @function verify
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {Object.<string,*>} message Plain object to verify
+                                     * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                     */
+                                    Protocol.verify = function verify(message) {
+                                        if (typeof message !== "object" || message === null)
+                                            return "object expected";
+                                        if (message.tenderdash != null && message.hasOwnProperty("tenderdash")) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.verify(message.tenderdash);
+                                            if (error)
+                                                return "tenderdash." + error;
+                                        }
+                                        if (message.drive != null && message.hasOwnProperty("drive")) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.verify(message.drive);
+                                            if (error)
+                                                return "drive." + error;
+                                        }
+                                        return null;
+                                    };
+
+                                    /**
+                                     * Creates a Protocol message from a plain object. Also converts values to their respective internal types.
+                                     * @function fromObject
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {Object.<string,*>} object Plain object
+                                     * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol} Protocol
+                                     */
+                                    Protocol.fromObject = function fromObject(object) {
+                                        if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol)
+                                            return object;
+                                        var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol();
+                                        if (object.tenderdash != null) {
+                                            if (typeof object.tenderdash !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.tenderdash: object expected");
+                                            message.tenderdash = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.fromObject(object.tenderdash);
+                                        }
+                                        if (object.drive != null) {
+                                            if (typeof object.drive !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.drive: object expected");
+                                            message.drive = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.fromObject(object.drive);
+                                        }
+                                        return message;
+                                    };
+
+                                    /**
+                                     * Creates a plain object from a Protocol message. Also converts values to other types if specified.
+                                     * @function toObject
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @static
+                                     * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol} message Protocol
+                                     * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                     * @returns {Object.<string,*>} Plain object
+                                     */
+                                    Protocol.toObject = function toObject(message, options) {
+                                        if (!options)
+                                            options = {};
+                                        var object = {};
+                                        if (options.defaults) {
+                                            object.tenderdash = null;
+                                            object.drive = null;
+                                        }
+                                        if (message.tenderdash != null && message.hasOwnProperty("tenderdash"))
+                                            object.tenderdash = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.toObject(message.tenderdash, options);
+                                        if (message.drive != null && message.hasOwnProperty("drive"))
+                                            object.drive = $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.toObject(message.drive, options);
+                                        return object;
+                                    };
+
+                                    /**
+                                     * Converts this Protocol to JSON.
+                                     * @function toJSON
+                                     * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                     * @instance
+                                     * @returns {Object.<string,*>} JSON object
+                                     */
+                                    Protocol.prototype.toJSON = function toJSON() {
+                                        return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                    };
+
+                                    Protocol.Tenderdash = (function() {
+
+                                        /**
+                                         * Properties of a Tenderdash.
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                         * @interface ITenderdash
+                                         * @property {number|null} [p2p] Tenderdash p2p
+                                         * @property {number|null} [block] Tenderdash block
+                                         */
+
+                                        /**
+                                         * Constructs a new Tenderdash.
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                         * @classdesc Represents a Tenderdash.
+                                         * @implements ITenderdash
+                                         * @constructor
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.ITenderdash=} [properties] Properties to set
+                                         */
+                                        function Tenderdash(properties) {
+                                            if (properties)
+                                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                                    if (properties[keys[i]] != null)
+                                                        this[keys[i]] = properties[keys[i]];
+                                        }
+
+                                        /**
+                                         * Tenderdash p2p.
+                                         * @member {number} p2p
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @instance
+                                         */
+                                        Tenderdash.prototype.p2p = 0;
+
+                                        /**
+                                         * Tenderdash block.
+                                         * @member {number} block
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @instance
+                                         */
+                                        Tenderdash.prototype.block = 0;
+
+                                        /**
+                                         * Creates a new Tenderdash instance using the specified properties.
+                                         * @function create
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.ITenderdash=} [properties] Properties to set
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash} Tenderdash instance
+                                         */
+                                        Tenderdash.create = function create(properties) {
+                                            return new Tenderdash(properties);
+                                        };
+
+                                        /**
+                                         * Encodes the specified Tenderdash message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.verify|verify} messages.
+                                         * @function encode
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.ITenderdash} message Tenderdash message or plain object to encode
+                                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                                         * @returns {$protobuf.Writer} Writer
+                                         */
+                                        Tenderdash.encode = function encode(message, writer) {
+                                            if (!writer)
+                                                writer = $Writer.create();
+                                            if (message.p2p != null && Object.hasOwnProperty.call(message, "p2p"))
+                                                writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.p2p);
+                                            if (message.block != null && Object.hasOwnProperty.call(message, "block"))
+                                                writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.block);
+                                            return writer;
+                                        };
+
+                                        /**
+                                         * Encodes the specified Tenderdash message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash.verify|verify} messages.
+                                         * @function encodeDelimited
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.ITenderdash} message Tenderdash message or plain object to encode
+                                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                                         * @returns {$protobuf.Writer} Writer
+                                         */
+                                        Tenderdash.encodeDelimited = function encodeDelimited(message, writer) {
+                                            return this.encode(message, writer).ldelim();
+                                        };
+
+                                        /**
+                                         * Decodes a Tenderdash message from the specified reader or buffer.
+                                         * @function decode
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                         * @param {number} [length] Message length if known beforehand
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash} Tenderdash
+                                         * @throws {Error} If the payload is not a reader or valid buffer
+                                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                         */
+                                        Tenderdash.decode = function decode(reader, length) {
+                                            if (!(reader instanceof $Reader))
+                                                reader = $Reader.create(reader);
+                                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash();
+                                            while (reader.pos < end) {
+                                                var tag = reader.uint32();
+                                                switch (tag >>> 3) {
+                                                case 1:
+                                                    message.p2p = reader.uint32();
+                                                    break;
+                                                case 2:
+                                                    message.block = reader.uint32();
+                                                    break;
+                                                default:
+                                                    reader.skipType(tag & 7);
+                                                    break;
+                                                }
+                                            }
+                                            return message;
+                                        };
+
+                                        /**
+                                         * Decodes a Tenderdash message from the specified reader or buffer, length delimited.
+                                         * @function decodeDelimited
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash} Tenderdash
+                                         * @throws {Error} If the payload is not a reader or valid buffer
+                                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                         */
+                                        Tenderdash.decodeDelimited = function decodeDelimited(reader) {
+                                            if (!(reader instanceof $Reader))
+                                                reader = new $Reader(reader);
+                                            return this.decode(reader, reader.uint32());
+                                        };
+
+                                        /**
+                                         * Verifies a Tenderdash message.
+                                         * @function verify
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {Object.<string,*>} message Plain object to verify
+                                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                         */
+                                        Tenderdash.verify = function verify(message) {
+                                            if (typeof message !== "object" || message === null)
+                                                return "object expected";
+                                            if (message.p2p != null && message.hasOwnProperty("p2p"))
+                                                if (!$util.isInteger(message.p2p))
+                                                    return "p2p: integer expected";
+                                            if (message.block != null && message.hasOwnProperty("block"))
+                                                if (!$util.isInteger(message.block))
+                                                    return "block: integer expected";
+                                            return null;
+                                        };
+
+                                        /**
+                                         * Creates a Tenderdash message from a plain object. Also converts values to their respective internal types.
+                                         * @function fromObject
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {Object.<string,*>} object Plain object
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash} Tenderdash
+                                         */
+                                        Tenderdash.fromObject = function fromObject(object) {
+                                            if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash)
+                                                return object;
+                                            var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash();
+                                            if (object.p2p != null)
+                                                message.p2p = object.p2p >>> 0;
+                                            if (object.block != null)
+                                                message.block = object.block >>> 0;
+                                            return message;
+                                        };
+
+                                        /**
+                                         * Creates a plain object from a Tenderdash message. Also converts values to other types if specified.
+                                         * @function toObject
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash} message Tenderdash
+                                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                         * @returns {Object.<string,*>} Plain object
+                                         */
+                                        Tenderdash.toObject = function toObject(message, options) {
+                                            if (!options)
+                                                options = {};
+                                            var object = {};
+                                            if (options.defaults) {
+                                                object.p2p = 0;
+                                                object.block = 0;
+                                            }
+                                            if (message.p2p != null && message.hasOwnProperty("p2p"))
+                                                object.p2p = message.p2p;
+                                            if (message.block != null && message.hasOwnProperty("block"))
+                                                object.block = message.block;
+                                            return object;
+                                        };
+
+                                        /**
+                                         * Converts this Tenderdash to JSON.
+                                         * @function toJSON
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash
+                                         * @instance
+                                         * @returns {Object.<string,*>} JSON object
+                                         */
+                                        Tenderdash.prototype.toJSON = function toJSON() {
+                                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                        };
+
+                                        return Tenderdash;
+                                    })();
+
+                                    Protocol.Drive = (function() {
+
+                                        /**
+                                         * Properties of a Drive.
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                         * @interface IDrive
+                                         * @property {number|null} [latest] Drive latest
+                                         * @property {number|null} [current] Drive current
+                                         */
+
+                                        /**
+                                         * Constructs a new Drive.
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol
+                                         * @classdesc Represents a Drive.
+                                         * @implements IDrive
+                                         * @constructor
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.IDrive=} [properties] Properties to set
+                                         */
+                                        function Drive(properties) {
+                                            if (properties)
+                                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                                    if (properties[keys[i]] != null)
+                                                        this[keys[i]] = properties[keys[i]];
+                                        }
+
+                                        /**
+                                         * Drive latest.
+                                         * @member {number} latest
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @instance
+                                         */
+                                        Drive.prototype.latest = 0;
+
+                                        /**
+                                         * Drive current.
+                                         * @member {number} current
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @instance
+                                         */
+                                        Drive.prototype.current = 0;
+
+                                        /**
+                                         * Creates a new Drive instance using the specified properties.
+                                         * @function create
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.IDrive=} [properties] Properties to set
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive} Drive instance
+                                         */
+                                        Drive.create = function create(properties) {
+                                            return new Drive(properties);
+                                        };
+
+                                        /**
+                                         * Encodes the specified Drive message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.verify|verify} messages.
+                                         * @function encode
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.IDrive} message Drive message or plain object to encode
+                                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                                         * @returns {$protobuf.Writer} Writer
+                                         */
+                                        Drive.encode = function encode(message, writer) {
+                                            if (!writer)
+                                                writer = $Writer.create();
+                                            if (message.latest != null && Object.hasOwnProperty.call(message, "latest"))
+                                                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.latest);
+                                            if (message.current != null && Object.hasOwnProperty.call(message, "current"))
+                                                writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.current);
+                                            return writer;
+                                        };
+
+                                        /**
+                                         * Encodes the specified Drive message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.verify|verify} messages.
+                                         * @function encodeDelimited
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.IDrive} message Drive message or plain object to encode
+                                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                                         * @returns {$protobuf.Writer} Writer
+                                         */
+                                        Drive.encodeDelimited = function encodeDelimited(message, writer) {
+                                            return this.encode(message, writer).ldelim();
+                                        };
+
+                                        /**
+                                         * Decodes a Drive message from the specified reader or buffer.
+                                         * @function decode
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                         * @param {number} [length] Message length if known beforehand
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive} Drive
+                                         * @throws {Error} If the payload is not a reader or valid buffer
+                                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                         */
+                                        Drive.decode = function decode(reader, length) {
+                                            if (!(reader instanceof $Reader))
+                                                reader = $Reader.create(reader);
+                                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive();
+                                            while (reader.pos < end) {
+                                                var tag = reader.uint32();
+                                                switch (tag >>> 3) {
+                                                case 3:
+                                                    message.latest = reader.uint32();
+                                                    break;
+                                                case 4:
+                                                    message.current = reader.uint32();
+                                                    break;
+                                                default:
+                                                    reader.skipType(tag & 7);
+                                                    break;
+                                                }
+                                            }
+                                            return message;
+                                        };
+
+                                        /**
+                                         * Decodes a Drive message from the specified reader or buffer, length delimited.
+                                         * @function decodeDelimited
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive} Drive
+                                         * @throws {Error} If the payload is not a reader or valid buffer
+                                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                         */
+                                        Drive.decodeDelimited = function decodeDelimited(reader) {
+                                            if (!(reader instanceof $Reader))
+                                                reader = new $Reader(reader);
+                                            return this.decode(reader, reader.uint32());
+                                        };
+
+                                        /**
+                                         * Verifies a Drive message.
+                                         * @function verify
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {Object.<string,*>} message Plain object to verify
+                                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                         */
+                                        Drive.verify = function verify(message) {
+                                            if (typeof message !== "object" || message === null)
+                                                return "object expected";
+                                            if (message.latest != null && message.hasOwnProperty("latest"))
+                                                if (!$util.isInteger(message.latest))
+                                                    return "latest: integer expected";
+                                            if (message.current != null && message.hasOwnProperty("current"))
+                                                if (!$util.isInteger(message.current))
+                                                    return "current: integer expected";
+                                            return null;
+                                        };
+
+                                        /**
+                                         * Creates a Drive message from a plain object. Also converts values to their respective internal types.
+                                         * @function fromObject
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {Object.<string,*>} object Plain object
+                                         * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive} Drive
+                                         */
+                                        Drive.fromObject = function fromObject(object) {
+                                            if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive)
+                                                return object;
+                                            var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive();
+                                            if (object.latest != null)
+                                                message.latest = object.latest >>> 0;
+                                            if (object.current != null)
+                                                message.current = object.current >>> 0;
+                                            return message;
+                                        };
+
+                                        /**
+                                         * Creates a plain object from a Drive message. Also converts values to other types if specified.
+                                         * @function toObject
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @static
+                                         * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive} message Drive
+                                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                         * @returns {Object.<string,*>} Plain object
+                                         */
+                                        Drive.toObject = function toObject(message, options) {
+                                            if (!options)
+                                                options = {};
+                                            var object = {};
+                                            if (options.defaults) {
+                                                object.latest = 0;
+                                                object.current = 0;
+                                            }
+                                            if (message.latest != null && message.hasOwnProperty("latest"))
+                                                object.latest = message.latest;
+                                            if (message.current != null && message.hasOwnProperty("current"))
+                                                object.current = message.current;
+                                            return object;
+                                        };
+
+                                        /**
+                                         * Converts this Drive to JSON.
+                                         * @function toJSON
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @instance
+                                         * @returns {Object.<string,*>} JSON object
+                                         */
+                                        Drive.prototype.toJSON = function toJSON() {
+                                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                        };
+
+                                        return Drive;
+                                    })();
+
+                                    return Protocol;
+                                })();
+
+                                return Version;
+                            })();
+
+                            GetStatusResponseV0.Time = (function() {
+
+                                /**
+                                 * Properties of a Time.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @interface ITime
+                                 * @property {number|Long|null} [local] Time local
+                                 * @property {number|Long|null} [block] Time block
+                                 * @property {number|Long|null} [genesis] Time genesis
+                                 * @property {number|null} [epoch] Time epoch
+                                 */
+
+                                /**
+                                 * Constructs a new Time.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @classdesc Represents a Time.
+                                 * @implements ITime
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.ITime=} [properties] Properties to set
+                                 */
+                                function Time(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Time local.
+                                 * @member {number|Long} local
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @instance
+                                 */
+                                Time.prototype.local = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Time block.
+                                 * @member {number|Long} block
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @instance
+                                 */
+                                Time.prototype.block = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Time genesis.
+                                 * @member {number|Long} genesis
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @instance
+                                 */
+                                Time.prototype.genesis = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Time epoch.
+                                 * @member {number} epoch
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @instance
+                                 */
+                                Time.prototype.epoch = 0;
+
+                                /**
+                                 * Creates a new Time instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.ITime=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} Time instance
+                                 */
+                                Time.create = function create(properties) {
+                                    return new Time(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Time message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.ITime} message Time message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Time.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.local != null && Object.hasOwnProperty.call(message, "local"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.local);
+                                    if (message.block != null && Object.hasOwnProperty.call(message, "block"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.block);
+                                    if (message.genesis != null && Object.hasOwnProperty.call(message, "genesis"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.genesis);
+                                    if (message.epoch != null && Object.hasOwnProperty.call(message, "epoch"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.epoch);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Time message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.ITime} message Time message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Time.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Time message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} Time
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Time.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.local = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.block = reader.uint64();
+                                            break;
+                                        case 3:
+                                            message.genesis = reader.uint64();
+                                            break;
+                                        case 4:
+                                            message.epoch = reader.uint32();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Time message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} Time
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Time.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Time message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Time.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.local != null && message.hasOwnProperty("local"))
+                                        if (!$util.isInteger(message.local) && !(message.local && $util.isInteger(message.local.low) && $util.isInteger(message.local.high)))
+                                            return "local: integer|Long expected";
+                                    if (message.block != null && message.hasOwnProperty("block"))
+                                        if (!$util.isInteger(message.block) && !(message.block && $util.isInteger(message.block.low) && $util.isInteger(message.block.high)))
+                                            return "block: integer|Long expected";
+                                    if (message.genesis != null && message.hasOwnProperty("genesis"))
+                                        if (!$util.isInteger(message.genesis) && !(message.genesis && $util.isInteger(message.genesis.low) && $util.isInteger(message.genesis.high)))
+                                            return "genesis: integer|Long expected";
+                                    if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                        if (!$util.isInteger(message.epoch))
+                                            return "epoch: integer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Time message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} Time
+                                 */
+                                Time.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time();
+                                    if (object.local != null)
+                                        if ($util.Long)
+                                            (message.local = $util.Long.fromValue(object.local)).unsigned = true;
+                                        else if (typeof object.local === "string")
+                                            message.local = parseInt(object.local, 10);
+                                        else if (typeof object.local === "number")
+                                            message.local = object.local;
+                                        else if (typeof object.local === "object")
+                                            message.local = new $util.LongBits(object.local.low >>> 0, object.local.high >>> 0).toNumber(true);
+                                    if (object.block != null)
+                                        if ($util.Long)
+                                            (message.block = $util.Long.fromValue(object.block)).unsigned = true;
+                                        else if (typeof object.block === "string")
+                                            message.block = parseInt(object.block, 10);
+                                        else if (typeof object.block === "number")
+                                            message.block = object.block;
+                                        else if (typeof object.block === "object")
+                                            message.block = new $util.LongBits(object.block.low >>> 0, object.block.high >>> 0).toNumber(true);
+                                    if (object.genesis != null)
+                                        if ($util.Long)
+                                            (message.genesis = $util.Long.fromValue(object.genesis)).unsigned = true;
+                                        else if (typeof object.genesis === "string")
+                                            message.genesis = parseInt(object.genesis, 10);
+                                        else if (typeof object.genesis === "number")
+                                            message.genesis = object.genesis;
+                                        else if (typeof object.genesis === "object")
+                                            message.genesis = new $util.LongBits(object.genesis.low >>> 0, object.genesis.high >>> 0).toNumber(true);
+                                    if (object.epoch != null)
+                                        message.epoch = object.epoch >>> 0;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Time message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time} message Time
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Time.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.local = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.local = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.block = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.block = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.genesis = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.genesis = options.longs === String ? "0" : 0;
+                                        object.epoch = 0;
+                                    }
+                                    if (message.local != null && message.hasOwnProperty("local"))
+                                        if (typeof message.local === "number")
+                                            object.local = options.longs === String ? String(message.local) : message.local;
+                                        else
+                                            object.local = options.longs === String ? $util.Long.prototype.toString.call(message.local) : options.longs === Number ? new $util.LongBits(message.local.low >>> 0, message.local.high >>> 0).toNumber(true) : message.local;
+                                    if (message.block != null && message.hasOwnProperty("block"))
+                                        if (typeof message.block === "number")
+                                            object.block = options.longs === String ? String(message.block) : message.block;
+                                        else
+                                            object.block = options.longs === String ? $util.Long.prototype.toString.call(message.block) : options.longs === Number ? new $util.LongBits(message.block.low >>> 0, message.block.high >>> 0).toNumber(true) : message.block;
+                                    if (message.genesis != null && message.hasOwnProperty("genesis"))
+                                        if (typeof message.genesis === "number")
+                                            object.genesis = options.longs === String ? String(message.genesis) : message.genesis;
+                                        else
+                                            object.genesis = options.longs === String ? $util.Long.prototype.toString.call(message.genesis) : options.longs === Number ? new $util.LongBits(message.genesis.low >>> 0, message.genesis.high >>> 0).toNumber(true) : message.genesis;
+                                    if (message.epoch != null && message.hasOwnProperty("epoch"))
+                                        object.epoch = message.epoch;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Time to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Time.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Time;
+                            })();
+
+                            GetStatusResponseV0.Node = (function() {
+
+                                /**
+                                 * Properties of a Node.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @interface INode
+                                 * @property {Uint8Array|null} [id] Node id
+                                 * @property {Uint8Array|null} [proTxHash] Node proTxHash
+                                 */
+
+                                /**
+                                 * Constructs a new Node.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @classdesc Represents a Node.
+                                 * @implements INode
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INode=} [properties] Properties to set
+                                 */
+                                function Node(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Node id.
+                                 * @member {Uint8Array} id
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @instance
+                                 */
+                                Node.prototype.id = $util.newBuffer([]);
+
+                                /**
+                                 * Node proTxHash.
+                                 * @member {Uint8Array} proTxHash
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @instance
+                                 */
+                                Node.prototype.proTxHash = $util.newBuffer([]);
+
+                                /**
+                                 * Creates a new Node instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INode=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node} Node instance
+                                 */
+                                Node.create = function create(properties) {
+                                    return new Node(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Node message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INode} message Node message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Node.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.id != null && Object.hasOwnProperty.call(message, "id"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.id);
+                                    if (message.proTxHash != null && Object.hasOwnProperty.call(message, "proTxHash"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.proTxHash);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Node message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INode} message Node message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Node.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Node message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node} Node
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Node.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.id = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.proTxHash = reader.bytes();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Node message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node} Node
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Node.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Node message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Node.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.id != null && message.hasOwnProperty("id"))
+                                        if (!(message.id && typeof message.id.length === "number" || $util.isString(message.id)))
+                                            return "id: buffer expected";
+                                    if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                        if (!(message.proTxHash && typeof message.proTxHash.length === "number" || $util.isString(message.proTxHash)))
+                                            return "proTxHash: buffer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Node message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node} Node
+                                 */
+                                Node.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node();
+                                    if (object.id != null)
+                                        if (typeof object.id === "string")
+                                            $util.base64.decode(object.id, message.id = $util.newBuffer($util.base64.length(object.id)), 0);
+                                        else if (object.id.length >= 0)
+                                            message.id = object.id;
+                                    if (object.proTxHash != null)
+                                        if (typeof object.proTxHash === "string")
+                                            $util.base64.decode(object.proTxHash, message.proTxHash = $util.newBuffer($util.base64.length(object.proTxHash)), 0);
+                                        else if (object.proTxHash.length >= 0)
+                                            message.proTxHash = object.proTxHash;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Node message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node} message Node
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Node.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.id = "";
+                                        else {
+                                            object.id = [];
+                                            if (options.bytes !== Array)
+                                                object.id = $util.newBuffer(object.id);
+                                        }
+                                        if (options.bytes === String)
+                                            object.proTxHash = "";
+                                        else {
+                                            object.proTxHash = [];
+                                            if (options.bytes !== Array)
+                                                object.proTxHash = $util.newBuffer(object.proTxHash);
+                                        }
+                                    }
+                                    if (message.id != null && message.hasOwnProperty("id"))
+                                        object.id = options.bytes === String ? $util.base64.encode(message.id, 0, message.id.length) : options.bytes === Array ? Array.prototype.slice.call(message.id) : message.id;
+                                    if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                        object.proTxHash = options.bytes === String ? $util.base64.encode(message.proTxHash, 0, message.proTxHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.proTxHash) : message.proTxHash;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Node to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Node.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Node;
+                            })();
+
+                            GetStatusResponseV0.Chain = (function() {
+
+                                /**
+                                 * Properties of a Chain.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @interface IChain
+                                 * @property {boolean|null} [catchingUp] Chain catchingUp
+                                 * @property {Uint8Array|null} [latestBlockHash] Chain latestBlockHash
+                                 * @property {Uint8Array|null} [latestAppHash] Chain latestAppHash
+                                 * @property {number|Long|null} [latestBlockHeight] Chain latestBlockHeight
+                                 * @property {Uint8Array|null} [earliestBlockHash] Chain earliestBlockHash
+                                 * @property {Uint8Array|null} [earliestAppHash] Chain earliestAppHash
+                                 * @property {number|Long|null} [earliestBlockHeight] Chain earliestBlockHeight
+                                 * @property {number|Long|null} [maxPeerBlockHeight] Chain maxPeerBlockHeight
+                                 * @property {number|null} [coreChainLockedHeight] Chain coreChainLockedHeight
+                                 */
+
+                                /**
+                                 * Constructs a new Chain.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @classdesc Represents a Chain.
+                                 * @implements IChain
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IChain=} [properties] Properties to set
+                                 */
+                                function Chain(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Chain catchingUp.
+                                 * @member {boolean} catchingUp
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.catchingUp = false;
+
+                                /**
+                                 * Chain latestBlockHash.
+                                 * @member {Uint8Array} latestBlockHash
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.latestBlockHash = $util.newBuffer([]);
+
+                                /**
+                                 * Chain latestAppHash.
+                                 * @member {Uint8Array} latestAppHash
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.latestAppHash = $util.newBuffer([]);
+
+                                /**
+                                 * Chain latestBlockHeight.
+                                 * @member {number|Long} latestBlockHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.latestBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Chain earliestBlockHash.
+                                 * @member {Uint8Array} earliestBlockHash
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.earliestBlockHash = $util.newBuffer([]);
+
+                                /**
+                                 * Chain earliestAppHash.
+                                 * @member {Uint8Array} earliestAppHash
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.earliestAppHash = $util.newBuffer([]);
+
+                                /**
+                                 * Chain earliestBlockHeight.
+                                 * @member {number|Long} earliestBlockHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.earliestBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Chain maxPeerBlockHeight.
+                                 * @member {number|Long} maxPeerBlockHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.maxPeerBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Chain coreChainLockedHeight.
+                                 * @member {number} coreChainLockedHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 */
+                                Chain.prototype.coreChainLockedHeight = 0;
+
+                                /**
+                                 * Creates a new Chain instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IChain=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} Chain instance
+                                 */
+                                Chain.create = function create(properties) {
+                                    return new Chain(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Chain message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IChain} message Chain message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Chain.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.catchingUp != null && Object.hasOwnProperty.call(message, "catchingUp"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).bool(message.catchingUp);
+                                    if (message.latestBlockHash != null && Object.hasOwnProperty.call(message, "latestBlockHash"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.latestBlockHash);
+                                    if (message.latestAppHash != null && Object.hasOwnProperty.call(message, "latestAppHash"))
+                                        writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.latestAppHash);
+                                    if (message.latestBlockHeight != null && Object.hasOwnProperty.call(message, "latestBlockHeight"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.latestBlockHeight);
+                                    if (message.earliestBlockHash != null && Object.hasOwnProperty.call(message, "earliestBlockHash"))
+                                        writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.earliestBlockHash);
+                                    if (message.earliestAppHash != null && Object.hasOwnProperty.call(message, "earliestAppHash"))
+                                        writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.earliestAppHash);
+                                    if (message.earliestBlockHeight != null && Object.hasOwnProperty.call(message, "earliestBlockHeight"))
+                                        writer.uint32(/* id 7, wireType 0 =*/56).uint64(message.earliestBlockHeight);
+                                    if (message.maxPeerBlockHeight != null && Object.hasOwnProperty.call(message, "maxPeerBlockHeight"))
+                                        writer.uint32(/* id 9, wireType 0 =*/72).uint64(message.maxPeerBlockHeight);
+                                    if (message.coreChainLockedHeight != null && Object.hasOwnProperty.call(message, "coreChainLockedHeight"))
+                                        writer.uint32(/* id 10, wireType 0 =*/80).uint32(message.coreChainLockedHeight);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Chain message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IChain} message Chain message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Chain.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Chain message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} Chain
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Chain.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.catchingUp = reader.bool();
+                                            break;
+                                        case 2:
+                                            message.latestBlockHash = reader.bytes();
+                                            break;
+                                        case 3:
+                                            message.latestAppHash = reader.bytes();
+                                            break;
+                                        case 4:
+                                            message.latestBlockHeight = reader.uint64();
+                                            break;
+                                        case 5:
+                                            message.earliestBlockHash = reader.bytes();
+                                            break;
+                                        case 6:
+                                            message.earliestAppHash = reader.bytes();
+                                            break;
+                                        case 7:
+                                            message.earliestBlockHeight = reader.uint64();
+                                            break;
+                                        case 9:
+                                            message.maxPeerBlockHeight = reader.uint64();
+                                            break;
+                                        case 10:
+                                            message.coreChainLockedHeight = reader.uint32();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Chain message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} Chain
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Chain.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Chain message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Chain.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.catchingUp != null && message.hasOwnProperty("catchingUp"))
+                                        if (typeof message.catchingUp !== "boolean")
+                                            return "catchingUp: boolean expected";
+                                    if (message.latestBlockHash != null && message.hasOwnProperty("latestBlockHash"))
+                                        if (!(message.latestBlockHash && typeof message.latestBlockHash.length === "number" || $util.isString(message.latestBlockHash)))
+                                            return "latestBlockHash: buffer expected";
+                                    if (message.latestAppHash != null && message.hasOwnProperty("latestAppHash"))
+                                        if (!(message.latestAppHash && typeof message.latestAppHash.length === "number" || $util.isString(message.latestAppHash)))
+                                            return "latestAppHash: buffer expected";
+                                    if (message.latestBlockHeight != null && message.hasOwnProperty("latestBlockHeight"))
+                                        if (!$util.isInteger(message.latestBlockHeight) && !(message.latestBlockHeight && $util.isInteger(message.latestBlockHeight.low) && $util.isInteger(message.latestBlockHeight.high)))
+                                            return "latestBlockHeight: integer|Long expected";
+                                    if (message.earliestBlockHash != null && message.hasOwnProperty("earliestBlockHash"))
+                                        if (!(message.earliestBlockHash && typeof message.earliestBlockHash.length === "number" || $util.isString(message.earliestBlockHash)))
+                                            return "earliestBlockHash: buffer expected";
+                                    if (message.earliestAppHash != null && message.hasOwnProperty("earliestAppHash"))
+                                        if (!(message.earliestAppHash && typeof message.earliestAppHash.length === "number" || $util.isString(message.earliestAppHash)))
+                                            return "earliestAppHash: buffer expected";
+                                    if (message.earliestBlockHeight != null && message.hasOwnProperty("earliestBlockHeight"))
+                                        if (!$util.isInteger(message.earliestBlockHeight) && !(message.earliestBlockHeight && $util.isInteger(message.earliestBlockHeight.low) && $util.isInteger(message.earliestBlockHeight.high)))
+                                            return "earliestBlockHeight: integer|Long expected";
+                                    if (message.maxPeerBlockHeight != null && message.hasOwnProperty("maxPeerBlockHeight"))
+                                        if (!$util.isInteger(message.maxPeerBlockHeight) && !(message.maxPeerBlockHeight && $util.isInteger(message.maxPeerBlockHeight.low) && $util.isInteger(message.maxPeerBlockHeight.high)))
+                                            return "maxPeerBlockHeight: integer|Long expected";
+                                    if (message.coreChainLockedHeight != null && message.hasOwnProperty("coreChainLockedHeight"))
+                                        if (!$util.isInteger(message.coreChainLockedHeight))
+                                            return "coreChainLockedHeight: integer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Chain message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} Chain
+                                 */
+                                Chain.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain();
+                                    if (object.catchingUp != null)
+                                        message.catchingUp = Boolean(object.catchingUp);
+                                    if (object.latestBlockHash != null)
+                                        if (typeof object.latestBlockHash === "string")
+                                            $util.base64.decode(object.latestBlockHash, message.latestBlockHash = $util.newBuffer($util.base64.length(object.latestBlockHash)), 0);
+                                        else if (object.latestBlockHash.length >= 0)
+                                            message.latestBlockHash = object.latestBlockHash;
+                                    if (object.latestAppHash != null)
+                                        if (typeof object.latestAppHash === "string")
+                                            $util.base64.decode(object.latestAppHash, message.latestAppHash = $util.newBuffer($util.base64.length(object.latestAppHash)), 0);
+                                        else if (object.latestAppHash.length >= 0)
+                                            message.latestAppHash = object.latestAppHash;
+                                    if (object.latestBlockHeight != null)
+                                        if ($util.Long)
+                                            (message.latestBlockHeight = $util.Long.fromValue(object.latestBlockHeight)).unsigned = true;
+                                        else if (typeof object.latestBlockHeight === "string")
+                                            message.latestBlockHeight = parseInt(object.latestBlockHeight, 10);
+                                        else if (typeof object.latestBlockHeight === "number")
+                                            message.latestBlockHeight = object.latestBlockHeight;
+                                        else if (typeof object.latestBlockHeight === "object")
+                                            message.latestBlockHeight = new $util.LongBits(object.latestBlockHeight.low >>> 0, object.latestBlockHeight.high >>> 0).toNumber(true);
+                                    if (object.earliestBlockHash != null)
+                                        if (typeof object.earliestBlockHash === "string")
+                                            $util.base64.decode(object.earliestBlockHash, message.earliestBlockHash = $util.newBuffer($util.base64.length(object.earliestBlockHash)), 0);
+                                        else if (object.earliestBlockHash.length >= 0)
+                                            message.earliestBlockHash = object.earliestBlockHash;
+                                    if (object.earliestAppHash != null)
+                                        if (typeof object.earliestAppHash === "string")
+                                            $util.base64.decode(object.earliestAppHash, message.earliestAppHash = $util.newBuffer($util.base64.length(object.earliestAppHash)), 0);
+                                        else if (object.earliestAppHash.length >= 0)
+                                            message.earliestAppHash = object.earliestAppHash;
+                                    if (object.earliestBlockHeight != null)
+                                        if ($util.Long)
+                                            (message.earliestBlockHeight = $util.Long.fromValue(object.earliestBlockHeight)).unsigned = true;
+                                        else if (typeof object.earliestBlockHeight === "string")
+                                            message.earliestBlockHeight = parseInt(object.earliestBlockHeight, 10);
+                                        else if (typeof object.earliestBlockHeight === "number")
+                                            message.earliestBlockHeight = object.earliestBlockHeight;
+                                        else if (typeof object.earliestBlockHeight === "object")
+                                            message.earliestBlockHeight = new $util.LongBits(object.earliestBlockHeight.low >>> 0, object.earliestBlockHeight.high >>> 0).toNumber(true);
+                                    if (object.maxPeerBlockHeight != null)
+                                        if ($util.Long)
+                                            (message.maxPeerBlockHeight = $util.Long.fromValue(object.maxPeerBlockHeight)).unsigned = true;
+                                        else if (typeof object.maxPeerBlockHeight === "string")
+                                            message.maxPeerBlockHeight = parseInt(object.maxPeerBlockHeight, 10);
+                                        else if (typeof object.maxPeerBlockHeight === "number")
+                                            message.maxPeerBlockHeight = object.maxPeerBlockHeight;
+                                        else if (typeof object.maxPeerBlockHeight === "object")
+                                            message.maxPeerBlockHeight = new $util.LongBits(object.maxPeerBlockHeight.low >>> 0, object.maxPeerBlockHeight.high >>> 0).toNumber(true);
+                                    if (object.coreChainLockedHeight != null)
+                                        message.coreChainLockedHeight = object.coreChainLockedHeight >>> 0;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Chain message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain} message Chain
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Chain.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.catchingUp = false;
+                                        if (options.bytes === String)
+                                            object.latestBlockHash = "";
+                                        else {
+                                            object.latestBlockHash = [];
+                                            if (options.bytes !== Array)
+                                                object.latestBlockHash = $util.newBuffer(object.latestBlockHash);
+                                        }
+                                        if (options.bytes === String)
+                                            object.latestAppHash = "";
+                                        else {
+                                            object.latestAppHash = [];
+                                            if (options.bytes !== Array)
+                                                object.latestAppHash = $util.newBuffer(object.latestAppHash);
+                                        }
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.latestBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.latestBlockHeight = options.longs === String ? "0" : 0;
+                                        if (options.bytes === String)
+                                            object.earliestBlockHash = "";
+                                        else {
+                                            object.earliestBlockHash = [];
+                                            if (options.bytes !== Array)
+                                                object.earliestBlockHash = $util.newBuffer(object.earliestBlockHash);
+                                        }
+                                        if (options.bytes === String)
+                                            object.earliestAppHash = "";
+                                        else {
+                                            object.earliestAppHash = [];
+                                            if (options.bytes !== Array)
+                                                object.earliestAppHash = $util.newBuffer(object.earliestAppHash);
+                                        }
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.earliestBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.earliestBlockHeight = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.maxPeerBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.maxPeerBlockHeight = options.longs === String ? "0" : 0;
+                                        object.coreChainLockedHeight = 0;
+                                    }
+                                    if (message.catchingUp != null && message.hasOwnProperty("catchingUp"))
+                                        object.catchingUp = message.catchingUp;
+                                    if (message.latestBlockHash != null && message.hasOwnProperty("latestBlockHash"))
+                                        object.latestBlockHash = options.bytes === String ? $util.base64.encode(message.latestBlockHash, 0, message.latestBlockHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.latestBlockHash) : message.latestBlockHash;
+                                    if (message.latestAppHash != null && message.hasOwnProperty("latestAppHash"))
+                                        object.latestAppHash = options.bytes === String ? $util.base64.encode(message.latestAppHash, 0, message.latestAppHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.latestAppHash) : message.latestAppHash;
+                                    if (message.latestBlockHeight != null && message.hasOwnProperty("latestBlockHeight"))
+                                        if (typeof message.latestBlockHeight === "number")
+                                            object.latestBlockHeight = options.longs === String ? String(message.latestBlockHeight) : message.latestBlockHeight;
+                                        else
+                                            object.latestBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.latestBlockHeight) : options.longs === Number ? new $util.LongBits(message.latestBlockHeight.low >>> 0, message.latestBlockHeight.high >>> 0).toNumber(true) : message.latestBlockHeight;
+                                    if (message.earliestBlockHash != null && message.hasOwnProperty("earliestBlockHash"))
+                                        object.earliestBlockHash = options.bytes === String ? $util.base64.encode(message.earliestBlockHash, 0, message.earliestBlockHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.earliestBlockHash) : message.earliestBlockHash;
+                                    if (message.earliestAppHash != null && message.hasOwnProperty("earliestAppHash"))
+                                        object.earliestAppHash = options.bytes === String ? $util.base64.encode(message.earliestAppHash, 0, message.earliestAppHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.earliestAppHash) : message.earliestAppHash;
+                                    if (message.earliestBlockHeight != null && message.hasOwnProperty("earliestBlockHeight"))
+                                        if (typeof message.earliestBlockHeight === "number")
+                                            object.earliestBlockHeight = options.longs === String ? String(message.earliestBlockHeight) : message.earliestBlockHeight;
+                                        else
+                                            object.earliestBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.earliestBlockHeight) : options.longs === Number ? new $util.LongBits(message.earliestBlockHeight.low >>> 0, message.earliestBlockHeight.high >>> 0).toNumber(true) : message.earliestBlockHeight;
+                                    if (message.maxPeerBlockHeight != null && message.hasOwnProperty("maxPeerBlockHeight"))
+                                        if (typeof message.maxPeerBlockHeight === "number")
+                                            object.maxPeerBlockHeight = options.longs === String ? String(message.maxPeerBlockHeight) : message.maxPeerBlockHeight;
+                                        else
+                                            object.maxPeerBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.maxPeerBlockHeight) : options.longs === Number ? new $util.LongBits(message.maxPeerBlockHeight.low >>> 0, message.maxPeerBlockHeight.high >>> 0).toNumber(true) : message.maxPeerBlockHeight;
+                                    if (message.coreChainLockedHeight != null && message.hasOwnProperty("coreChainLockedHeight"))
+                                        object.coreChainLockedHeight = message.coreChainLockedHeight;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Chain to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Chain.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Chain;
+                            })();
+
+                            GetStatusResponseV0.Network = (function() {
+
+                                /**
+                                 * Properties of a Network.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @interface INetwork
+                                 * @property {string|null} [chainId] Network chainId
+                                 * @property {number|null} [peersCount] Network peersCount
+                                 * @property {boolean|null} [listening] Network listening
+                                 */
+
+                                /**
+                                 * Constructs a new Network.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @classdesc Represents a Network.
+                                 * @implements INetwork
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork=} [properties] Properties to set
+                                 */
+                                function Network(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Network chainId.
+                                 * @member {string} chainId
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @instance
+                                 */
+                                Network.prototype.chainId = "";
+
+                                /**
+                                 * Network peersCount.
+                                 * @member {number} peersCount
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @instance
+                                 */
+                                Network.prototype.peersCount = 0;
+
+                                /**
+                                 * Network listening.
+                                 * @member {boolean} listening
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @instance
+                                 */
+                                Network.prototype.listening = false;
+
+                                /**
+                                 * Creates a new Network instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network} Network instance
+                                 */
+                                Network.create = function create(properties) {
+                                    return new Network(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Network message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork} message Network message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Network.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.chainId != null && Object.hasOwnProperty.call(message, "chainId"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).string(message.chainId);
+                                    if (message.peersCount != null && Object.hasOwnProperty.call(message, "peersCount"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.peersCount);
+                                    if (message.listening != null && Object.hasOwnProperty.call(message, "listening"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).bool(message.listening);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Network message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.INetwork} message Network message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Network.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Network message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network} Network
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Network.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.chainId = reader.string();
+                                            break;
+                                        case 2:
+                                            message.peersCount = reader.uint32();
+                                            break;
+                                        case 3:
+                                            message.listening = reader.bool();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Network message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network} Network
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Network.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Network message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Network.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.chainId != null && message.hasOwnProperty("chainId"))
+                                        if (!$util.isString(message.chainId))
+                                            return "chainId: string expected";
+                                    if (message.peersCount != null && message.hasOwnProperty("peersCount"))
+                                        if (!$util.isInteger(message.peersCount))
+                                            return "peersCount: integer expected";
+                                    if (message.listening != null && message.hasOwnProperty("listening"))
+                                        if (typeof message.listening !== "boolean")
+                                            return "listening: boolean expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Network message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network} Network
+                                 */
+                                Network.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network();
+                                    if (object.chainId != null)
+                                        message.chainId = String(object.chainId);
+                                    if (object.peersCount != null)
+                                        message.peersCount = object.peersCount >>> 0;
+                                    if (object.listening != null)
+                                        message.listening = Boolean(object.listening);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Network message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network} message Network
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Network.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object.chainId = "";
+                                        object.peersCount = 0;
+                                        object.listening = false;
+                                    }
+                                    if (message.chainId != null && message.hasOwnProperty("chainId"))
+                                        object.chainId = message.chainId;
+                                    if (message.peersCount != null && message.hasOwnProperty("peersCount"))
+                                        object.peersCount = message.peersCount;
+                                    if (message.listening != null && message.hasOwnProperty("listening"))
+                                        object.listening = message.listening;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Network to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Network.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Network;
+                            })();
+
+                            GetStatusResponseV0.StateSync = (function() {
+
+                                /**
+                                 * Properties of a StateSync.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @interface IStateSync
+                                 * @property {number|Long|null} [totalSyncedTime] StateSync totalSyncedTime
+                                 * @property {number|Long|null} [remainingTime] StateSync remainingTime
+                                 * @property {number|null} [totalSnapshots] StateSync totalSnapshots
+                                 * @property {number|Long|null} [chunkProcessAvgTime] StateSync chunkProcessAvgTime
+                                 * @property {number|Long|null} [snapshotHeight] StateSync snapshotHeight
+                                 * @property {number|Long|null} [snapshotChunksCount] StateSync snapshotChunksCount
+                                 * @property {number|Long|null} [backfilledBlocks] StateSync backfilledBlocks
+                                 * @property {number|Long|null} [backfillBlocksTotal] StateSync backfillBlocksTotal
+                                 */
+
+                                /**
+                                 * Constructs a new StateSync.
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0
+                                 * @classdesc Represents a StateSync.
+                                 * @implements IStateSync
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IStateSync=} [properties] Properties to set
+                                 */
+                                function StateSync(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * StateSync totalSyncedTime.
+                                 * @member {number|Long} totalSyncedTime
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.totalSyncedTime = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateSync remainingTime.
+                                 * @member {number|Long} remainingTime
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.remainingTime = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateSync totalSnapshots.
+                                 * @member {number} totalSnapshots
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.totalSnapshots = 0;
+
+                                /**
+                                 * StateSync chunkProcessAvgTime.
+                                 * @member {number|Long} chunkProcessAvgTime
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.chunkProcessAvgTime = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateSync snapshotHeight.
+                                 * @member {number|Long} snapshotHeight
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.snapshotHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateSync snapshotChunksCount.
+                                 * @member {number|Long} snapshotChunksCount
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.snapshotChunksCount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateSync backfilledBlocks.
+                                 * @member {number|Long} backfilledBlocks
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.backfilledBlocks = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * StateSync backfillBlocksTotal.
+                                 * @member {number|Long} backfillBlocksTotal
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 */
+                                StateSync.prototype.backfillBlocksTotal = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Creates a new StateSync instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IStateSync=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} StateSync instance
+                                 */
+                                StateSync.create = function create(properties) {
+                                    return new StateSync(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified StateSync message. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IStateSync} message StateSync message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                StateSync.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.totalSyncedTime != null && Object.hasOwnProperty.call(message, "totalSyncedTime"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.totalSyncedTime);
+                                    if (message.remainingTime != null && Object.hasOwnProperty.call(message, "remainingTime"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.remainingTime);
+                                    if (message.totalSnapshots != null && Object.hasOwnProperty.call(message, "totalSnapshots"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.totalSnapshots);
+                                    if (message.chunkProcessAvgTime != null && Object.hasOwnProperty.call(message, "chunkProcessAvgTime"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.chunkProcessAvgTime);
+                                    if (message.snapshotHeight != null && Object.hasOwnProperty.call(message, "snapshotHeight"))
+                                        writer.uint32(/* id 5, wireType 0 =*/40).uint64(message.snapshotHeight);
+                                    if (message.snapshotChunksCount != null && Object.hasOwnProperty.call(message, "snapshotChunksCount"))
+                                        writer.uint32(/* id 6, wireType 0 =*/48).uint64(message.snapshotChunksCount);
+                                    if (message.backfilledBlocks != null && Object.hasOwnProperty.call(message, "backfilledBlocks"))
+                                        writer.uint32(/* id 7, wireType 0 =*/56).uint64(message.backfilledBlocks);
+                                    if (message.backfillBlocksTotal != null && Object.hasOwnProperty.call(message, "backfillBlocksTotal"))
+                                        writer.uint32(/* id 8, wireType 0 =*/64).uint64(message.backfillBlocksTotal);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified StateSync message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.IStateSync} message StateSync message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                StateSync.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a StateSync message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} StateSync
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                StateSync.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.totalSyncedTime = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.remainingTime = reader.uint64();
+                                            break;
+                                        case 3:
+                                            message.totalSnapshots = reader.uint32();
+                                            break;
+                                        case 4:
+                                            message.chunkProcessAvgTime = reader.uint64();
+                                            break;
+                                        case 5:
+                                            message.snapshotHeight = reader.uint64();
+                                            break;
+                                        case 6:
+                                            message.snapshotChunksCount = reader.uint64();
+                                            break;
+                                        case 7:
+                                            message.backfilledBlocks = reader.uint64();
+                                            break;
+                                        case 8:
+                                            message.backfillBlocksTotal = reader.uint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a StateSync message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} StateSync
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                StateSync.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a StateSync message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                StateSync.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.totalSyncedTime != null && message.hasOwnProperty("totalSyncedTime"))
+                                        if (!$util.isInteger(message.totalSyncedTime) && !(message.totalSyncedTime && $util.isInteger(message.totalSyncedTime.low) && $util.isInteger(message.totalSyncedTime.high)))
+                                            return "totalSyncedTime: integer|Long expected";
+                                    if (message.remainingTime != null && message.hasOwnProperty("remainingTime"))
+                                        if (!$util.isInteger(message.remainingTime) && !(message.remainingTime && $util.isInteger(message.remainingTime.low) && $util.isInteger(message.remainingTime.high)))
+                                            return "remainingTime: integer|Long expected";
+                                    if (message.totalSnapshots != null && message.hasOwnProperty("totalSnapshots"))
+                                        if (!$util.isInteger(message.totalSnapshots))
+                                            return "totalSnapshots: integer expected";
+                                    if (message.chunkProcessAvgTime != null && message.hasOwnProperty("chunkProcessAvgTime"))
+                                        if (!$util.isInteger(message.chunkProcessAvgTime) && !(message.chunkProcessAvgTime && $util.isInteger(message.chunkProcessAvgTime.low) && $util.isInteger(message.chunkProcessAvgTime.high)))
+                                            return "chunkProcessAvgTime: integer|Long expected";
+                                    if (message.snapshotHeight != null && message.hasOwnProperty("snapshotHeight"))
+                                        if (!$util.isInteger(message.snapshotHeight) && !(message.snapshotHeight && $util.isInteger(message.snapshotHeight.low) && $util.isInteger(message.snapshotHeight.high)))
+                                            return "snapshotHeight: integer|Long expected";
+                                    if (message.snapshotChunksCount != null && message.hasOwnProperty("snapshotChunksCount"))
+                                        if (!$util.isInteger(message.snapshotChunksCount) && !(message.snapshotChunksCount && $util.isInteger(message.snapshotChunksCount.low) && $util.isInteger(message.snapshotChunksCount.high)))
+                                            return "snapshotChunksCount: integer|Long expected";
+                                    if (message.backfilledBlocks != null && message.hasOwnProperty("backfilledBlocks"))
+                                        if (!$util.isInteger(message.backfilledBlocks) && !(message.backfilledBlocks && $util.isInteger(message.backfilledBlocks.low) && $util.isInteger(message.backfilledBlocks.high)))
+                                            return "backfilledBlocks: integer|Long expected";
+                                    if (message.backfillBlocksTotal != null && message.hasOwnProperty("backfillBlocksTotal"))
+                                        if (!$util.isInteger(message.backfillBlocksTotal) && !(message.backfillBlocksTotal && $util.isInteger(message.backfillBlocksTotal.low) && $util.isInteger(message.backfillBlocksTotal.high)))
+                                            return "backfillBlocksTotal: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a StateSync message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} StateSync
+                                 */
+                                StateSync.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync();
+                                    if (object.totalSyncedTime != null)
+                                        if ($util.Long)
+                                            (message.totalSyncedTime = $util.Long.fromValue(object.totalSyncedTime)).unsigned = true;
+                                        else if (typeof object.totalSyncedTime === "string")
+                                            message.totalSyncedTime = parseInt(object.totalSyncedTime, 10);
+                                        else if (typeof object.totalSyncedTime === "number")
+                                            message.totalSyncedTime = object.totalSyncedTime;
+                                        else if (typeof object.totalSyncedTime === "object")
+                                            message.totalSyncedTime = new $util.LongBits(object.totalSyncedTime.low >>> 0, object.totalSyncedTime.high >>> 0).toNumber(true);
+                                    if (object.remainingTime != null)
+                                        if ($util.Long)
+                                            (message.remainingTime = $util.Long.fromValue(object.remainingTime)).unsigned = true;
+                                        else if (typeof object.remainingTime === "string")
+                                            message.remainingTime = parseInt(object.remainingTime, 10);
+                                        else if (typeof object.remainingTime === "number")
+                                            message.remainingTime = object.remainingTime;
+                                        else if (typeof object.remainingTime === "object")
+                                            message.remainingTime = new $util.LongBits(object.remainingTime.low >>> 0, object.remainingTime.high >>> 0).toNumber(true);
+                                    if (object.totalSnapshots != null)
+                                        message.totalSnapshots = object.totalSnapshots >>> 0;
+                                    if (object.chunkProcessAvgTime != null)
+                                        if ($util.Long)
+                                            (message.chunkProcessAvgTime = $util.Long.fromValue(object.chunkProcessAvgTime)).unsigned = true;
+                                        else if (typeof object.chunkProcessAvgTime === "string")
+                                            message.chunkProcessAvgTime = parseInt(object.chunkProcessAvgTime, 10);
+                                        else if (typeof object.chunkProcessAvgTime === "number")
+                                            message.chunkProcessAvgTime = object.chunkProcessAvgTime;
+                                        else if (typeof object.chunkProcessAvgTime === "object")
+                                            message.chunkProcessAvgTime = new $util.LongBits(object.chunkProcessAvgTime.low >>> 0, object.chunkProcessAvgTime.high >>> 0).toNumber(true);
+                                    if (object.snapshotHeight != null)
+                                        if ($util.Long)
+                                            (message.snapshotHeight = $util.Long.fromValue(object.snapshotHeight)).unsigned = true;
+                                        else if (typeof object.snapshotHeight === "string")
+                                            message.snapshotHeight = parseInt(object.snapshotHeight, 10);
+                                        else if (typeof object.snapshotHeight === "number")
+                                            message.snapshotHeight = object.snapshotHeight;
+                                        else if (typeof object.snapshotHeight === "object")
+                                            message.snapshotHeight = new $util.LongBits(object.snapshotHeight.low >>> 0, object.snapshotHeight.high >>> 0).toNumber(true);
+                                    if (object.snapshotChunksCount != null)
+                                        if ($util.Long)
+                                            (message.snapshotChunksCount = $util.Long.fromValue(object.snapshotChunksCount)).unsigned = true;
+                                        else if (typeof object.snapshotChunksCount === "string")
+                                            message.snapshotChunksCount = parseInt(object.snapshotChunksCount, 10);
+                                        else if (typeof object.snapshotChunksCount === "number")
+                                            message.snapshotChunksCount = object.snapshotChunksCount;
+                                        else if (typeof object.snapshotChunksCount === "object")
+                                            message.snapshotChunksCount = new $util.LongBits(object.snapshotChunksCount.low >>> 0, object.snapshotChunksCount.high >>> 0).toNumber(true);
+                                    if (object.backfilledBlocks != null)
+                                        if ($util.Long)
+                                            (message.backfilledBlocks = $util.Long.fromValue(object.backfilledBlocks)).unsigned = true;
+                                        else if (typeof object.backfilledBlocks === "string")
+                                            message.backfilledBlocks = parseInt(object.backfilledBlocks, 10);
+                                        else if (typeof object.backfilledBlocks === "number")
+                                            message.backfilledBlocks = object.backfilledBlocks;
+                                        else if (typeof object.backfilledBlocks === "object")
+                                            message.backfilledBlocks = new $util.LongBits(object.backfilledBlocks.low >>> 0, object.backfilledBlocks.high >>> 0).toNumber(true);
+                                    if (object.backfillBlocksTotal != null)
+                                        if ($util.Long)
+                                            (message.backfillBlocksTotal = $util.Long.fromValue(object.backfillBlocksTotal)).unsigned = true;
+                                        else if (typeof object.backfillBlocksTotal === "string")
+                                            message.backfillBlocksTotal = parseInt(object.backfillBlocksTotal, 10);
+                                        else if (typeof object.backfillBlocksTotal === "number")
+                                            message.backfillBlocksTotal = object.backfillBlocksTotal;
+                                        else if (typeof object.backfillBlocksTotal === "object")
+                                            message.backfillBlocksTotal = new $util.LongBits(object.backfillBlocksTotal.low >>> 0, object.backfillBlocksTotal.high >>> 0).toNumber(true);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a StateSync message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync} message StateSync
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                StateSync.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.totalSyncedTime = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.totalSyncedTime = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.remainingTime = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.remainingTime = options.longs === String ? "0" : 0;
+                                        object.totalSnapshots = 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.chunkProcessAvgTime = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.chunkProcessAvgTime = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.snapshotHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.snapshotHeight = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.snapshotChunksCount = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.snapshotChunksCount = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.backfilledBlocks = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.backfilledBlocks = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.backfillBlocksTotal = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.backfillBlocksTotal = options.longs === String ? "0" : 0;
+                                    }
+                                    if (message.totalSyncedTime != null && message.hasOwnProperty("totalSyncedTime"))
+                                        if (typeof message.totalSyncedTime === "number")
+                                            object.totalSyncedTime = options.longs === String ? String(message.totalSyncedTime) : message.totalSyncedTime;
+                                        else
+                                            object.totalSyncedTime = options.longs === String ? $util.Long.prototype.toString.call(message.totalSyncedTime) : options.longs === Number ? new $util.LongBits(message.totalSyncedTime.low >>> 0, message.totalSyncedTime.high >>> 0).toNumber(true) : message.totalSyncedTime;
+                                    if (message.remainingTime != null && message.hasOwnProperty("remainingTime"))
+                                        if (typeof message.remainingTime === "number")
+                                            object.remainingTime = options.longs === String ? String(message.remainingTime) : message.remainingTime;
+                                        else
+                                            object.remainingTime = options.longs === String ? $util.Long.prototype.toString.call(message.remainingTime) : options.longs === Number ? new $util.LongBits(message.remainingTime.low >>> 0, message.remainingTime.high >>> 0).toNumber(true) : message.remainingTime;
+                                    if (message.totalSnapshots != null && message.hasOwnProperty("totalSnapshots"))
+                                        object.totalSnapshots = message.totalSnapshots;
+                                    if (message.chunkProcessAvgTime != null && message.hasOwnProperty("chunkProcessAvgTime"))
+                                        if (typeof message.chunkProcessAvgTime === "number")
+                                            object.chunkProcessAvgTime = options.longs === String ? String(message.chunkProcessAvgTime) : message.chunkProcessAvgTime;
+                                        else
+                                            object.chunkProcessAvgTime = options.longs === String ? $util.Long.prototype.toString.call(message.chunkProcessAvgTime) : options.longs === Number ? new $util.LongBits(message.chunkProcessAvgTime.low >>> 0, message.chunkProcessAvgTime.high >>> 0).toNumber(true) : message.chunkProcessAvgTime;
+                                    if (message.snapshotHeight != null && message.hasOwnProperty("snapshotHeight"))
+                                        if (typeof message.snapshotHeight === "number")
+                                            object.snapshotHeight = options.longs === String ? String(message.snapshotHeight) : message.snapshotHeight;
+                                        else
+                                            object.snapshotHeight = options.longs === String ? $util.Long.prototype.toString.call(message.snapshotHeight) : options.longs === Number ? new $util.LongBits(message.snapshotHeight.low >>> 0, message.snapshotHeight.high >>> 0).toNumber(true) : message.snapshotHeight;
+                                    if (message.snapshotChunksCount != null && message.hasOwnProperty("snapshotChunksCount"))
+                                        if (typeof message.snapshotChunksCount === "number")
+                                            object.snapshotChunksCount = options.longs === String ? String(message.snapshotChunksCount) : message.snapshotChunksCount;
+                                        else
+                                            object.snapshotChunksCount = options.longs === String ? $util.Long.prototype.toString.call(message.snapshotChunksCount) : options.longs === Number ? new $util.LongBits(message.snapshotChunksCount.low >>> 0, message.snapshotChunksCount.high >>> 0).toNumber(true) : message.snapshotChunksCount;
+                                    if (message.backfilledBlocks != null && message.hasOwnProperty("backfilledBlocks"))
+                                        if (typeof message.backfilledBlocks === "number")
+                                            object.backfilledBlocks = options.longs === String ? String(message.backfilledBlocks) : message.backfilledBlocks;
+                                        else
+                                            object.backfilledBlocks = options.longs === String ? $util.Long.prototype.toString.call(message.backfilledBlocks) : options.longs === Number ? new $util.LongBits(message.backfilledBlocks.low >>> 0, message.backfilledBlocks.high >>> 0).toNumber(true) : message.backfilledBlocks;
+                                    if (message.backfillBlocksTotal != null && message.hasOwnProperty("backfillBlocksTotal"))
+                                        if (typeof message.backfillBlocksTotal === "number")
+                                            object.backfillBlocksTotal = options.longs === String ? String(message.backfillBlocksTotal) : message.backfillBlocksTotal;
+                                        else
+                                            object.backfillBlocksTotal = options.longs === String ? $util.Long.prototype.toString.call(message.backfillBlocksTotal) : options.longs === Number ? new $util.LongBits(message.backfillBlocksTotal.low >>> 0, message.backfillBlocksTotal.high >>> 0).toNumber(true) : message.backfillBlocksTotal;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this StateSync to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                StateSync.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return StateSync;
+                            })();
+
+                            return GetStatusResponseV0;
+                        })();
+
+                        return GetStatusResponse;
+                    })();
+
+                    v0.GetCurrentQuorumsInfoRequest = (function() {
+
+                        /**
+                         * Properties of a GetCurrentQuorumsInfoRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetCurrentQuorumsInfoRequest
+                         * @property {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.IGetCurrentQuorumsInfoRequestV0|null} [v0] GetCurrentQuorumsInfoRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetCurrentQuorumsInfoRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetCurrentQuorumsInfoRequest.
+                         * @implements IGetCurrentQuorumsInfoRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoRequest=} [properties] Properties to set
+                         */
+                        function GetCurrentQuorumsInfoRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetCurrentQuorumsInfoRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.IGetCurrentQuorumsInfoRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @instance
+                         */
+                        GetCurrentQuorumsInfoRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetCurrentQuorumsInfoRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetCurrentQuorumsInfoRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetCurrentQuorumsInfoRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest} GetCurrentQuorumsInfoRequest instance
+                         */
+                        GetCurrentQuorumsInfoRequest.create = function create(properties) {
+                            return new GetCurrentQuorumsInfoRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetCurrentQuorumsInfoRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoRequest} message GetCurrentQuorumsInfoRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetCurrentQuorumsInfoRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetCurrentQuorumsInfoRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoRequest} message GetCurrentQuorumsInfoRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetCurrentQuorumsInfoRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetCurrentQuorumsInfoRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest} GetCurrentQuorumsInfoRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetCurrentQuorumsInfoRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetCurrentQuorumsInfoRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest} GetCurrentQuorumsInfoRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetCurrentQuorumsInfoRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetCurrentQuorumsInfoRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetCurrentQuorumsInfoRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetCurrentQuorumsInfoRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest} GetCurrentQuorumsInfoRequest
+                         */
+                        GetCurrentQuorumsInfoRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetCurrentQuorumsInfoRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest} message GetCurrentQuorumsInfoRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetCurrentQuorumsInfoRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetCurrentQuorumsInfoRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetCurrentQuorumsInfoRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetCurrentQuorumsInfoRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                             * @interface IGetCurrentQuorumsInfoRequestV0
+                             */
+
+                            /**
+                             * Constructs a new GetCurrentQuorumsInfoRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest
+                             * @classdesc Represents a GetCurrentQuorumsInfoRequestV0.
+                             * @implements IGetCurrentQuorumsInfoRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.IGetCurrentQuorumsInfoRequestV0=} [properties] Properties to set
+                             */
+                            function GetCurrentQuorumsInfoRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * Creates a new GetCurrentQuorumsInfoRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.IGetCurrentQuorumsInfoRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0} GetCurrentQuorumsInfoRequestV0 instance
+                             */
+                            GetCurrentQuorumsInfoRequestV0.create = function create(properties) {
+                                return new GetCurrentQuorumsInfoRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetCurrentQuorumsInfoRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.IGetCurrentQuorumsInfoRequestV0} message GetCurrentQuorumsInfoRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetCurrentQuorumsInfoRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetCurrentQuorumsInfoRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.IGetCurrentQuorumsInfoRequestV0} message GetCurrentQuorumsInfoRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetCurrentQuorumsInfoRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetCurrentQuorumsInfoRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0} GetCurrentQuorumsInfoRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetCurrentQuorumsInfoRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetCurrentQuorumsInfoRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0} GetCurrentQuorumsInfoRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetCurrentQuorumsInfoRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetCurrentQuorumsInfoRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetCurrentQuorumsInfoRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetCurrentQuorumsInfoRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0} GetCurrentQuorumsInfoRequestV0
+                             */
+                            GetCurrentQuorumsInfoRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0)
+                                    return object;
+                                return new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0();
+                            };
+
+                            /**
+                             * Creates a plain object from a GetCurrentQuorumsInfoRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0} message GetCurrentQuorumsInfoRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetCurrentQuorumsInfoRequestV0.toObject = function toObject() {
+                                return {};
+                            };
+
+                            /**
+                             * Converts this GetCurrentQuorumsInfoRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetCurrentQuorumsInfoRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetCurrentQuorumsInfoRequestV0;
+                        })();
+
+                        return GetCurrentQuorumsInfoRequest;
+                    })();
+
+                    v0.GetCurrentQuorumsInfoResponse = (function() {
+
+                        /**
+                         * Properties of a GetCurrentQuorumsInfoResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetCurrentQuorumsInfoResponse
+                         * @property {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IGetCurrentQuorumsInfoResponseV0|null} [v0] GetCurrentQuorumsInfoResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetCurrentQuorumsInfoResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetCurrentQuorumsInfoResponse.
+                         * @implements IGetCurrentQuorumsInfoResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoResponse=} [properties] Properties to set
+                         */
+                        function GetCurrentQuorumsInfoResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetCurrentQuorumsInfoResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IGetCurrentQuorumsInfoResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @instance
+                         */
+                        GetCurrentQuorumsInfoResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetCurrentQuorumsInfoResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetCurrentQuorumsInfoResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetCurrentQuorumsInfoResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse} GetCurrentQuorumsInfoResponse instance
+                         */
+                        GetCurrentQuorumsInfoResponse.create = function create(properties) {
+                            return new GetCurrentQuorumsInfoResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetCurrentQuorumsInfoResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoResponse} message GetCurrentQuorumsInfoResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetCurrentQuorumsInfoResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetCurrentQuorumsInfoResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetCurrentQuorumsInfoResponse} message GetCurrentQuorumsInfoResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetCurrentQuorumsInfoResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetCurrentQuorumsInfoResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse} GetCurrentQuorumsInfoResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetCurrentQuorumsInfoResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetCurrentQuorumsInfoResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse} GetCurrentQuorumsInfoResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetCurrentQuorumsInfoResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetCurrentQuorumsInfoResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetCurrentQuorumsInfoResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetCurrentQuorumsInfoResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse} GetCurrentQuorumsInfoResponse
+                         */
+                        GetCurrentQuorumsInfoResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetCurrentQuorumsInfoResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse} message GetCurrentQuorumsInfoResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetCurrentQuorumsInfoResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetCurrentQuorumsInfoResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetCurrentQuorumsInfoResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetCurrentQuorumsInfoResponse.ValidatorV0 = (function() {
+
+                            /**
+                             * Properties of a ValidatorV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                             * @interface IValidatorV0
+                             * @property {Uint8Array|null} [proTxHash] ValidatorV0 proTxHash
+                             * @property {string|null} [nodeIp] ValidatorV0 nodeIp
+                             * @property {boolean|null} [isBanned] ValidatorV0 isBanned
+                             */
+
+                            /**
+                             * Constructs a new ValidatorV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                             * @classdesc Represents a ValidatorV0.
+                             * @implements IValidatorV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorV0=} [properties] Properties to set
+                             */
+                            function ValidatorV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * ValidatorV0 proTxHash.
+                             * @member {Uint8Array} proTxHash
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @instance
+                             */
+                            ValidatorV0.prototype.proTxHash = $util.newBuffer([]);
+
+                            /**
+                             * ValidatorV0 nodeIp.
+                             * @member {string} nodeIp
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @instance
+                             */
+                            ValidatorV0.prototype.nodeIp = "";
+
+                            /**
+                             * ValidatorV0 isBanned.
+                             * @member {boolean} isBanned
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @instance
+                             */
+                            ValidatorV0.prototype.isBanned = false;
+
+                            /**
+                             * Creates a new ValidatorV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0} ValidatorV0 instance
+                             */
+                            ValidatorV0.create = function create(properties) {
+                                return new ValidatorV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified ValidatorV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorV0} message ValidatorV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ValidatorV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.proTxHash != null && Object.hasOwnProperty.call(message, "proTxHash"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.proTxHash);
+                                if (message.nodeIp != null && Object.hasOwnProperty.call(message, "nodeIp"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.nodeIp);
+                                if (message.isBanned != null && Object.hasOwnProperty.call(message, "isBanned"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.isBanned);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified ValidatorV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorV0} message ValidatorV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ValidatorV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a ValidatorV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0} ValidatorV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ValidatorV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.proTxHash = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.nodeIp = reader.string();
+                                        break;
+                                    case 3:
+                                        message.isBanned = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a ValidatorV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0} ValidatorV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ValidatorV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a ValidatorV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            ValidatorV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                    if (!(message.proTxHash && typeof message.proTxHash.length === "number" || $util.isString(message.proTxHash)))
+                                        return "proTxHash: buffer expected";
+                                if (message.nodeIp != null && message.hasOwnProperty("nodeIp"))
+                                    if (!$util.isString(message.nodeIp))
+                                        return "nodeIp: string expected";
+                                if (message.isBanned != null && message.hasOwnProperty("isBanned"))
+                                    if (typeof message.isBanned !== "boolean")
+                                        return "isBanned: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a ValidatorV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0} ValidatorV0
+                             */
+                            ValidatorV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0();
+                                if (object.proTxHash != null)
+                                    if (typeof object.proTxHash === "string")
+                                        $util.base64.decode(object.proTxHash, message.proTxHash = $util.newBuffer($util.base64.length(object.proTxHash)), 0);
+                                    else if (object.proTxHash.length >= 0)
+                                        message.proTxHash = object.proTxHash;
+                                if (object.nodeIp != null)
+                                    message.nodeIp = String(object.nodeIp);
+                                if (object.isBanned != null)
+                                    message.isBanned = Boolean(object.isBanned);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a ValidatorV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0} message ValidatorV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            ValidatorV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.proTxHash = "";
+                                    else {
+                                        object.proTxHash = [];
+                                        if (options.bytes !== Array)
+                                            object.proTxHash = $util.newBuffer(object.proTxHash);
+                                    }
+                                    object.nodeIp = "";
+                                    object.isBanned = false;
+                                }
+                                if (message.proTxHash != null && message.hasOwnProperty("proTxHash"))
+                                    object.proTxHash = options.bytes === String ? $util.base64.encode(message.proTxHash, 0, message.proTxHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.proTxHash) : message.proTxHash;
+                                if (message.nodeIp != null && message.hasOwnProperty("nodeIp"))
+                                    object.nodeIp = message.nodeIp;
+                                if (message.isBanned != null && message.hasOwnProperty("isBanned"))
+                                    object.isBanned = message.isBanned;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this ValidatorV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            ValidatorV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return ValidatorV0;
+                        })();
+
+                        GetCurrentQuorumsInfoResponse.ValidatorSetV0 = (function() {
+
+                            /**
+                             * Properties of a ValidatorSetV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                             * @interface IValidatorSetV0
+                             * @property {Uint8Array|null} [quorumHash] ValidatorSetV0 quorumHash
+                             * @property {number|null} [coreHeight] ValidatorSetV0 coreHeight
+                             * @property {Array.<org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorV0>|null} [members] ValidatorSetV0 members
+                             * @property {Uint8Array|null} [thresholdPublicKey] ValidatorSetV0 thresholdPublicKey
+                             */
+
+                            /**
+                             * Constructs a new ValidatorSetV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                             * @classdesc Represents a ValidatorSetV0.
+                             * @implements IValidatorSetV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorSetV0=} [properties] Properties to set
+                             */
+                            function ValidatorSetV0(properties) {
+                                this.members = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * ValidatorSetV0 quorumHash.
+                             * @member {Uint8Array} quorumHash
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @instance
+                             */
+                            ValidatorSetV0.prototype.quorumHash = $util.newBuffer([]);
+
+                            /**
+                             * ValidatorSetV0 coreHeight.
+                             * @member {number} coreHeight
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @instance
+                             */
+                            ValidatorSetV0.prototype.coreHeight = 0;
+
+                            /**
+                             * ValidatorSetV0 members.
+                             * @member {Array.<org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorV0>} members
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @instance
+                             */
+                            ValidatorSetV0.prototype.members = $util.emptyArray;
+
+                            /**
+                             * ValidatorSetV0 thresholdPublicKey.
+                             * @member {Uint8Array} thresholdPublicKey
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @instance
+                             */
+                            ValidatorSetV0.prototype.thresholdPublicKey = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new ValidatorSetV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorSetV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0} ValidatorSetV0 instance
+                             */
+                            ValidatorSetV0.create = function create(properties) {
+                                return new ValidatorSetV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified ValidatorSetV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorSetV0} message ValidatorSetV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ValidatorSetV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.quorumHash != null && Object.hasOwnProperty.call(message, "quorumHash"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.quorumHash);
+                                if (message.coreHeight != null && Object.hasOwnProperty.call(message, "coreHeight"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.coreHeight);
+                                if (message.members != null && message.members.length)
+                                    for (var i = 0; i < message.members.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.encode(message.members[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.thresholdPublicKey != null && Object.hasOwnProperty.call(message, "thresholdPublicKey"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.thresholdPublicKey);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified ValidatorSetV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorSetV0} message ValidatorSetV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ValidatorSetV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a ValidatorSetV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0} ValidatorSetV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ValidatorSetV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.quorumHash = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.coreHeight = reader.uint32();
+                                        break;
+                                    case 3:
+                                        if (!(message.members && message.members.length))
+                                            message.members = [];
+                                        message.members.push($root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.decode(reader, reader.uint32()));
+                                        break;
+                                    case 4:
+                                        message.thresholdPublicKey = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a ValidatorSetV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0} ValidatorSetV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ValidatorSetV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a ValidatorSetV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            ValidatorSetV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.quorumHash != null && message.hasOwnProperty("quorumHash"))
+                                    if (!(message.quorumHash && typeof message.quorumHash.length === "number" || $util.isString(message.quorumHash)))
+                                        return "quorumHash: buffer expected";
+                                if (message.coreHeight != null && message.hasOwnProperty("coreHeight"))
+                                    if (!$util.isInteger(message.coreHeight))
+                                        return "coreHeight: integer expected";
+                                if (message.members != null && message.hasOwnProperty("members")) {
+                                    if (!Array.isArray(message.members))
+                                        return "members: array expected";
+                                    for (var i = 0; i < message.members.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.verify(message.members[i]);
+                                        if (error)
+                                            return "members." + error;
+                                    }
+                                }
+                                if (message.thresholdPublicKey != null && message.hasOwnProperty("thresholdPublicKey"))
+                                    if (!(message.thresholdPublicKey && typeof message.thresholdPublicKey.length === "number" || $util.isString(message.thresholdPublicKey)))
+                                        return "thresholdPublicKey: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a ValidatorSetV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0} ValidatorSetV0
+                             */
+                            ValidatorSetV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0();
+                                if (object.quorumHash != null)
+                                    if (typeof object.quorumHash === "string")
+                                        $util.base64.decode(object.quorumHash, message.quorumHash = $util.newBuffer($util.base64.length(object.quorumHash)), 0);
+                                    else if (object.quorumHash.length >= 0)
+                                        message.quorumHash = object.quorumHash;
+                                if (object.coreHeight != null)
+                                    message.coreHeight = object.coreHeight >>> 0;
+                                if (object.members) {
+                                    if (!Array.isArray(object.members))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.members: array expected");
+                                    message.members = [];
+                                    for (var i = 0; i < object.members.length; ++i) {
+                                        if (typeof object.members[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.members: object expected");
+                                        message.members[i] = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.fromObject(object.members[i]);
+                                    }
+                                }
+                                if (object.thresholdPublicKey != null)
+                                    if (typeof object.thresholdPublicKey === "string")
+                                        $util.base64.decode(object.thresholdPublicKey, message.thresholdPublicKey = $util.newBuffer($util.base64.length(object.thresholdPublicKey)), 0);
+                                    else if (object.thresholdPublicKey.length >= 0)
+                                        message.thresholdPublicKey = object.thresholdPublicKey;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a ValidatorSetV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0} message ValidatorSetV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            ValidatorSetV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.members = [];
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.quorumHash = "";
+                                    else {
+                                        object.quorumHash = [];
+                                        if (options.bytes !== Array)
+                                            object.quorumHash = $util.newBuffer(object.quorumHash);
+                                    }
+                                    object.coreHeight = 0;
+                                    if (options.bytes === String)
+                                        object.thresholdPublicKey = "";
+                                    else {
+                                        object.thresholdPublicKey = [];
+                                        if (options.bytes !== Array)
+                                            object.thresholdPublicKey = $util.newBuffer(object.thresholdPublicKey);
+                                    }
+                                }
+                                if (message.quorumHash != null && message.hasOwnProperty("quorumHash"))
+                                    object.quorumHash = options.bytes === String ? $util.base64.encode(message.quorumHash, 0, message.quorumHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.quorumHash) : message.quorumHash;
+                                if (message.coreHeight != null && message.hasOwnProperty("coreHeight"))
+                                    object.coreHeight = message.coreHeight;
+                                if (message.members && message.members.length) {
+                                    object.members = [];
+                                    for (var j = 0; j < message.members.length; ++j)
+                                        object.members[j] = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0.toObject(message.members[j], options);
+                                }
+                                if (message.thresholdPublicKey != null && message.hasOwnProperty("thresholdPublicKey"))
+                                    object.thresholdPublicKey = options.bytes === String ? $util.base64.encode(message.thresholdPublicKey, 0, message.thresholdPublicKey.length) : options.bytes === Array ? Array.prototype.slice.call(message.thresholdPublicKey) : message.thresholdPublicKey;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this ValidatorSetV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            ValidatorSetV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return ValidatorSetV0;
+                        })();
+
+                        GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetCurrentQuorumsInfoResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                             * @interface IGetCurrentQuorumsInfoResponseV0
+                             * @property {Array.<Uint8Array>|null} [quorumHashes] GetCurrentQuorumsInfoResponseV0 quorumHashes
+                             * @property {Uint8Array|null} [currentQuorumHash] GetCurrentQuorumsInfoResponseV0 currentQuorumHash
+                             * @property {Array.<org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorSetV0>|null} [validatorSets] GetCurrentQuorumsInfoResponseV0 validatorSets
+                             * @property {Uint8Array|null} [lastBlockProposer] GetCurrentQuorumsInfoResponseV0 lastBlockProposer
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetCurrentQuorumsInfoResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetCurrentQuorumsInfoResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse
+                             * @classdesc Represents a GetCurrentQuorumsInfoResponseV0.
+                             * @implements IGetCurrentQuorumsInfoResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IGetCurrentQuorumsInfoResponseV0=} [properties] Properties to set
+                             */
+                            function GetCurrentQuorumsInfoResponseV0(properties) {
+                                this.quorumHashes = [];
+                                this.validatorSets = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetCurrentQuorumsInfoResponseV0 quorumHashes.
+                             * @member {Array.<Uint8Array>} quorumHashes
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @instance
+                             */
+                            GetCurrentQuorumsInfoResponseV0.prototype.quorumHashes = $util.emptyArray;
+
+                            /**
+                             * GetCurrentQuorumsInfoResponseV0 currentQuorumHash.
+                             * @member {Uint8Array} currentQuorumHash
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @instance
+                             */
+                            GetCurrentQuorumsInfoResponseV0.prototype.currentQuorumHash = $util.newBuffer([]);
+
+                            /**
+                             * GetCurrentQuorumsInfoResponseV0 validatorSets.
+                             * @member {Array.<org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IValidatorSetV0>} validatorSets
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @instance
+                             */
+                            GetCurrentQuorumsInfoResponseV0.prototype.validatorSets = $util.emptyArray;
+
+                            /**
+                             * GetCurrentQuorumsInfoResponseV0 lastBlockProposer.
+                             * @member {Uint8Array} lastBlockProposer
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @instance
+                             */
+                            GetCurrentQuorumsInfoResponseV0.prototype.lastBlockProposer = $util.newBuffer([]);
+
+                            /**
+                             * GetCurrentQuorumsInfoResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @instance
+                             */
+                            GetCurrentQuorumsInfoResponseV0.prototype.metadata = null;
+
+                            /**
+                             * Creates a new GetCurrentQuorumsInfoResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IGetCurrentQuorumsInfoResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0} GetCurrentQuorumsInfoResponseV0 instance
+                             */
+                            GetCurrentQuorumsInfoResponseV0.create = function create(properties) {
+                                return new GetCurrentQuorumsInfoResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetCurrentQuorumsInfoResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IGetCurrentQuorumsInfoResponseV0} message GetCurrentQuorumsInfoResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetCurrentQuorumsInfoResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.quorumHashes != null && message.quorumHashes.length)
+                                    for (var i = 0; i < message.quorumHashes.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.quorumHashes[i]);
+                                if (message.currentQuorumHash != null && Object.hasOwnProperty.call(message, "currentQuorumHash"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.currentQuorumHash);
+                                if (message.validatorSets != null && message.validatorSets.length)
+                                    for (var i = 0; i < message.validatorSets.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.encode(message.validatorSets[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.lastBlockProposer != null && Object.hasOwnProperty.call(message, "lastBlockProposer"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.lastBlockProposer);
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetCurrentQuorumsInfoResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.IGetCurrentQuorumsInfoResponseV0} message GetCurrentQuorumsInfoResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetCurrentQuorumsInfoResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetCurrentQuorumsInfoResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0} GetCurrentQuorumsInfoResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetCurrentQuorumsInfoResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.quorumHashes && message.quorumHashes.length))
+                                            message.quorumHashes = [];
+                                        message.quorumHashes.push(reader.bytes());
+                                        break;
+                                    case 2:
+                                        message.currentQuorumHash = reader.bytes();
+                                        break;
+                                    case 3:
+                                        if (!(message.validatorSets && message.validatorSets.length))
+                                            message.validatorSets = [];
+                                        message.validatorSets.push($root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.decode(reader, reader.uint32()));
+                                        break;
+                                    case 4:
+                                        message.lastBlockProposer = reader.bytes();
+                                        break;
+                                    case 5:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetCurrentQuorumsInfoResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0} GetCurrentQuorumsInfoResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetCurrentQuorumsInfoResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetCurrentQuorumsInfoResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetCurrentQuorumsInfoResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.quorumHashes != null && message.hasOwnProperty("quorumHashes")) {
+                                    if (!Array.isArray(message.quorumHashes))
+                                        return "quorumHashes: array expected";
+                                    for (var i = 0; i < message.quorumHashes.length; ++i)
+                                        if (!(message.quorumHashes[i] && typeof message.quorumHashes[i].length === "number" || $util.isString(message.quorumHashes[i])))
+                                            return "quorumHashes: buffer[] expected";
+                                }
+                                if (message.currentQuorumHash != null && message.hasOwnProperty("currentQuorumHash"))
+                                    if (!(message.currentQuorumHash && typeof message.currentQuorumHash.length === "number" || $util.isString(message.currentQuorumHash)))
+                                        return "currentQuorumHash: buffer expected";
+                                if (message.validatorSets != null && message.hasOwnProperty("validatorSets")) {
+                                    if (!Array.isArray(message.validatorSets))
+                                        return "validatorSets: array expected";
+                                    for (var i = 0; i < message.validatorSets.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.verify(message.validatorSets[i]);
+                                        if (error)
+                                            return "validatorSets." + error;
+                                    }
+                                }
+                                if (message.lastBlockProposer != null && message.hasOwnProperty("lastBlockProposer"))
+                                    if (!(message.lastBlockProposer && typeof message.lastBlockProposer.length === "number" || $util.isString(message.lastBlockProposer)))
+                                        return "lastBlockProposer: buffer expected";
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetCurrentQuorumsInfoResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0} GetCurrentQuorumsInfoResponseV0
+                             */
+                            GetCurrentQuorumsInfoResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0();
+                                if (object.quorumHashes) {
+                                    if (!Array.isArray(object.quorumHashes))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.quorumHashes: array expected");
+                                    message.quorumHashes = [];
+                                    for (var i = 0; i < object.quorumHashes.length; ++i)
+                                        if (typeof object.quorumHashes[i] === "string")
+                                            $util.base64.decode(object.quorumHashes[i], message.quorumHashes[i] = $util.newBuffer($util.base64.length(object.quorumHashes[i])), 0);
+                                        else if (object.quorumHashes[i].length >= 0)
+                                            message.quorumHashes[i] = object.quorumHashes[i];
+                                }
+                                if (object.currentQuorumHash != null)
+                                    if (typeof object.currentQuorumHash === "string")
+                                        $util.base64.decode(object.currentQuorumHash, message.currentQuorumHash = $util.newBuffer($util.base64.length(object.currentQuorumHash)), 0);
+                                    else if (object.currentQuorumHash.length >= 0)
+                                        message.currentQuorumHash = object.currentQuorumHash;
+                                if (object.validatorSets) {
+                                    if (!Array.isArray(object.validatorSets))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.validatorSets: array expected");
+                                    message.validatorSets = [];
+                                    for (var i = 0; i < object.validatorSets.length; ++i) {
+                                        if (typeof object.validatorSets[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.validatorSets: object expected");
+                                        message.validatorSets[i] = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.fromObject(object.validatorSets[i]);
+                                    }
+                                }
+                                if (object.lastBlockProposer != null)
+                                    if (typeof object.lastBlockProposer === "string")
+                                        $util.base64.decode(object.lastBlockProposer, message.lastBlockProposer = $util.newBuffer($util.base64.length(object.lastBlockProposer)), 0);
+                                    else if (object.lastBlockProposer.length >= 0)
+                                        message.lastBlockProposer = object.lastBlockProposer;
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetCurrentQuorumsInfoResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0} message GetCurrentQuorumsInfoResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetCurrentQuorumsInfoResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults) {
+                                    object.quorumHashes = [];
+                                    object.validatorSets = [];
+                                }
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.currentQuorumHash = "";
+                                    else {
+                                        object.currentQuorumHash = [];
+                                        if (options.bytes !== Array)
+                                            object.currentQuorumHash = $util.newBuffer(object.currentQuorumHash);
+                                    }
+                                    if (options.bytes === String)
+                                        object.lastBlockProposer = "";
+                                    else {
+                                        object.lastBlockProposer = [];
+                                        if (options.bytes !== Array)
+                                            object.lastBlockProposer = $util.newBuffer(object.lastBlockProposer);
+                                    }
+                                    object.metadata = null;
+                                }
+                                if (message.quorumHashes && message.quorumHashes.length) {
+                                    object.quorumHashes = [];
+                                    for (var j = 0; j < message.quorumHashes.length; ++j)
+                                        object.quorumHashes[j] = options.bytes === String ? $util.base64.encode(message.quorumHashes[j], 0, message.quorumHashes[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.quorumHashes[j]) : message.quorumHashes[j];
+                                }
+                                if (message.currentQuorumHash != null && message.hasOwnProperty("currentQuorumHash"))
+                                    object.currentQuorumHash = options.bytes === String ? $util.base64.encode(message.currentQuorumHash, 0, message.currentQuorumHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.currentQuorumHash) : message.currentQuorumHash;
+                                if (message.validatorSets && message.validatorSets.length) {
+                                    object.validatorSets = [];
+                                    for (var j = 0; j < message.validatorSets.length; ++j)
+                                        object.validatorSets[j] = $root.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0.toObject(message.validatorSets[j], options);
+                                }
+                                if (message.lastBlockProposer != null && message.hasOwnProperty("lastBlockProposer"))
+                                    object.lastBlockProposer = options.bytes === String ? $util.base64.encode(message.lastBlockProposer, 0, message.lastBlockProposer.length) : options.bytes === Array ? Array.prototype.slice.call(message.lastBlockProposer) : message.lastBlockProposer;
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetCurrentQuorumsInfoResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetCurrentQuorumsInfoResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetCurrentQuorumsInfoResponseV0;
+                        })();
+
+                        return GetCurrentQuorumsInfoResponse;
                     })();
 
                     return v0;

@@ -1,7 +1,7 @@
 use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType::{ECDSA_HASH160, ECDSA_SECP256K1};
-use crate::identity::identity_public_key::Purpose::{AUTHENTICATION, VOTING};
+use crate::identity::identity_public_key::Purpose::{AUTHENTICATION, OWNER, TRANSFER, VOTING};
 use crate::identity::identity_public_key::SecurityLevel::{CRITICAL, HIGH, MASTER, MEDIUM};
 use crate::identity::{KeyCount, KeyID, KeyType, identity_public_key::{Purpose, SecurityLevel}};
 use crate::errors::ProtocolError;
@@ -228,6 +228,58 @@ impl IdentityPublicKeyV0 {
         let purpose = VOTING;
         let security_level = MEDIUM;
         let read_only = false;
+        let (data, private_data) =
+            key_type.random_public_and_private_key_data(rng, platform_version)?;
+        Ok((
+            IdentityPublicKeyV0 {
+                id,
+                key_type,
+                purpose,
+                security_level,
+                read_only,
+                disabled_at: None,
+                data: data.into(),
+                contract_bounds: None,
+            },
+            private_data,
+        ))
+    }
+
+    pub fn random_owner_key_with_rng(
+        id: KeyID,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        let key_type = ECDSA_HASH160;
+        let purpose = OWNER;
+        let security_level = CRITICAL;
+        let read_only = true;
+        let (data, private_data) =
+            key_type.random_public_and_private_key_data(rng, platform_version)?;
+        Ok((
+            IdentityPublicKeyV0 {
+                id,
+                key_type,
+                purpose,
+                security_level,
+                read_only,
+                disabled_at: None,
+                data: data.into(),
+                contract_bounds: None,
+            },
+            private_data,
+        ))
+    }
+
+    pub fn random_masternode_transfer_key_with_rng(
+        id: KeyID,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        let key_type = ECDSA_HASH160;
+        let purpose = TRANSFER;
+        let security_level = CRITICAL;
+        let read_only = true;
         let (data, private_data) =
             key_type.random_public_and_private_key_data(rng, platform_version)?;
         Ok((

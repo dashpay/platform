@@ -25,7 +25,7 @@ mod property_names {
     serde(rename_all = "camelCase")
 )]
 #[display(
-    fmt = "Base: {}, Revision: {}, Recipient: {:?}",
+    "Base: {}, Revision: {}, Recipient: {:?}",
     "base",
     "revision",
     "recipient_owner_id"

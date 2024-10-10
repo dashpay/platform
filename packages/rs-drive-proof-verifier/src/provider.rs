@@ -1,5 +1,6 @@
 use crate::error::ContextProviderError;
 use dpp::data_contract::DataContract;
+use dpp::prelude::CoreBlockHeight;
 use platform_value::Identifier;
 use drive::{error::proof::ProofError, query::ContractLookupFn};
 #[cfg(feature = "mocks")]
@@ -54,6 +55,14 @@ pub trait ContextProvider: Send + Sync {
         &self,
         id: &Identifier,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError>;
+
+    /// Gets the platform activation height from core. Once this has happened this can be hardcoded.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(CoreBlockHeight)`: On success, returns the platform activation height as defined by mn_rr
+    /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError>;
 }
 
 impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
@@ -72,6 +81,10 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
         id: &Identifier,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         self.as_ref().get_data_contract(id)
+    }
+
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        self.as_ref().get_platform_activation_height()
     }
 }
 
@@ -94,6 +107,11 @@ where
     ) -> Result<[u8; 48], ContextProviderError> {
         let lock = self.lock().expect("lock poisoned");
         lock.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        let lock = self.lock().expect("lock poisoned");
+        lock.get_platform_activation_height()
     }
 }
 
@@ -226,6 +244,10 @@ impl ContextProvider for MockContextProvider {
         let dc: DataContract = serde_json::from_reader(f).expect("cannot parse data contract");
 
         Ok(Some(Arc::new(dc)))
+    }
+
+    fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        Ok(1320) // This is the default activation height for a Regtest network
     }
 }
 

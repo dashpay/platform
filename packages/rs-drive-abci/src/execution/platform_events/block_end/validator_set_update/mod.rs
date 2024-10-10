@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -52,9 +53,14 @@ where
                 platform_state,
                 block_execution_context,
             ),
+            1 => self.validator_set_update_v1(
+                proposer_pro_tx_hash,
+                platform_state,
+                block_execution_context,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "validator_set_update".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

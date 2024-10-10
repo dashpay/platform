@@ -23,7 +23,7 @@ pub use v0::DocumentCreateTransitionV0;
 )]
 #[ferment_macro::export]
 pub enum DocumentCreateTransition {
-    #[display(fmt = "V0({})", "_0")]
+    #[display("V0({})", "_0")]
     V0(DocumentCreateTransitionV0),
 }
 

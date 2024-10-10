@@ -26,6 +26,8 @@
 @class GetContestedResourceVotersForIdentityResponse;
 @class GetContestedResourcesRequest;
 @class GetContestedResourcesResponse;
+@class GetCurrentQuorumsInfoRequest;
+@class GetCurrentQuorumsInfoResponse;
 @class GetDataContractHistoryRequest;
 @class GetDataContractHistoryResponse;
 @class GetDataContractRequest;
@@ -36,6 +38,11 @@
 @class GetDocumentsResponse;
 @class GetEpochsInfoRequest;
 @class GetEpochsInfoResponse;
+@class GetEvonodesProposedEpochBlocksByIdsRequest;
+@class GetEvonodesProposedEpochBlocksByRangeRequest;
+@class GetEvonodesProposedEpochBlocksResponse;
+@class GetIdentitiesBalancesRequest;
+@class GetIdentitiesBalancesResponse;
 @class GetIdentitiesContractKeysRequest;
 @class GetIdentitiesContractKeysResponse;
 @class GetIdentityBalanceAndRevisionRequest;
@@ -62,6 +69,10 @@
 @class GetProtocolVersionUpgradeStateResponse;
 @class GetProtocolVersionUpgradeVoteStatusRequest;
 @class GetProtocolVersionUpgradeVoteStatusResponse;
+@class GetStatusRequest;
+@class GetStatusResponse;
+@class GetTotalCreditsInPlatformRequest;
+@class GetTotalCreditsInPlatformResponse;
 @class GetVotePollsByEndDateRequest;
 @class GetVotePollsByEndDateResponse;
 @class WaitForStateTransitionResultRequest;
@@ -124,9 +135,21 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getIdentityBalanceWithMessage:(GetIdentityBalanceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark getIdentitiesBalances(GetIdentitiesBalancesRequest) returns (GetIdentitiesBalancesResponse)
+
+- (GRPCUnaryProtoCall *)getIdentitiesBalancesWithMessage:(GetIdentitiesBalancesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 #pragma mark getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest) returns (GetIdentityBalanceAndRevisionResponse)
 
 - (GRPCUnaryProtoCall *)getIdentityBalanceAndRevisionWithMessage:(GetIdentityBalanceAndRevisionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getEvonodesProposedEpochBlocksByIds(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse)
+
+- (GRPCUnaryProtoCall *)getEvonodesProposedEpochBlocksByIdsWithMessage:(GetEvonodesProposedEpochBlocksByIdsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getEvonodesProposedEpochBlocksByRange(GetEvonodesProposedEpochBlocksByRangeRequest) returns (GetEvonodesProposedEpochBlocksResponse)
+
+- (GRPCUnaryProtoCall *)getEvonodesProposedEpochBlocksByRangeWithMessage:(GetEvonodesProposedEpochBlocksByRangeRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
 
@@ -211,9 +234,21 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getPrefundedSpecializedBalanceWithMessage:(GetPrefundedSpecializedBalanceRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
+#pragma mark getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse)
+
+- (GRPCUnaryProtoCall *)getTotalCreditsInPlatformWithMessage:(GetTotalCreditsInPlatformRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
 #pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
 
 - (GRPCUnaryProtoCall *)getPathElementsWithMessage:(GetPathElementsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getStatus(GetStatusRequest) returns (GetStatusResponse)
+
+- (GRPCUnaryProtoCall *)getStatusWithMessage:(GetStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse)
+
+- (GRPCUnaryProtoCall *)getCurrentQuorumsInfoWithMessage:(GetCurrentQuorumsInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -272,11 +307,32 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetIdentityBalanceWithRequest:(GetIdentityBalanceRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
+#pragma mark getIdentitiesBalances(GetIdentitiesBalancesRequest) returns (GetIdentitiesBalancesResponse)
+
+- (void)getIdentitiesBalancesWithRequest:(GetIdentitiesBalancesRequest *)request handler:(void(^)(GetIdentitiesBalancesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentitiesBalancesWithRequest:(GetIdentitiesBalancesRequest *)request handler:(void(^)(GetIdentitiesBalancesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
 #pragma mark getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest) returns (GetIdentityBalanceAndRevisionResponse)
 
 - (void)getIdentityBalanceAndRevisionWithRequest:(GetIdentityBalanceAndRevisionRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetIdentityBalanceAndRevisionWithRequest:(GetIdentityBalanceAndRevisionRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getEvonodesProposedEpochBlocksByIds(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse)
+
+- (void)getEvonodesProposedEpochBlocksByIdsWithRequest:(GetEvonodesProposedEpochBlocksByIdsRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetEvonodesProposedEpochBlocksByIdsWithRequest:(GetEvonodesProposedEpochBlocksByIdsRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getEvonodesProposedEpochBlocksByRange(GetEvonodesProposedEpochBlocksByRangeRequest) returns (GetEvonodesProposedEpochBlocksResponse)
+
+- (void)getEvonodesProposedEpochBlocksByRangeWithRequest:(GetEvonodesProposedEpochBlocksByRangeRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetEvonodesProposedEpochBlocksByRangeWithRequest:(GetEvonodesProposedEpochBlocksByRangeRequest *)request handler:(void(^)(GetEvonodesProposedEpochBlocksResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
@@ -448,11 +504,32 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetPrefundedSpecializedBalanceWithRequest:(GetPrefundedSpecializedBalanceRequest *)request handler:(void(^)(GetPrefundedSpecializedBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
+#pragma mark getTotalCreditsInPlatform(GetTotalCreditsInPlatformRequest) returns (GetTotalCreditsInPlatformResponse)
+
+- (void)getTotalCreditsInPlatformWithRequest:(GetTotalCreditsInPlatformRequest *)request handler:(void(^)(GetTotalCreditsInPlatformResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetTotalCreditsInPlatformWithRequest:(GetTotalCreditsInPlatformRequest *)request handler:(void(^)(GetTotalCreditsInPlatformResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
 #pragma mark getPathElements(GetPathElementsRequest) returns (GetPathElementsResponse)
 
 - (void)getPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetPathElementsWithRequest:(GetPathElementsRequest *)request handler:(void(^)(GetPathElementsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getStatus(GetStatusRequest) returns (GetStatusResponse)
+
+- (void)getStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetStatusWithRequest:(GetStatusRequest *)request handler:(void(^)(GetStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse)
+
+- (void)getCurrentQuorumsInfoWithRequest:(GetCurrentQuorumsInfoRequest *)request handler:(void(^)(GetCurrentQuorumsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetCurrentQuorumsInfoWithRequest:(GetCurrentQuorumsInfoRequest *)request handler:(void(^)(GetCurrentQuorumsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

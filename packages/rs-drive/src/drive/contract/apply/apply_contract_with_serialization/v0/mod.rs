@@ -111,7 +111,7 @@ impl Drive {
         };
 
         // We can do a get direct because there are no references involved
-        match self.grove_get_raw(
+        match self.grove_get_raw_optional(
             (&contract_root_path(contract.id_ref().as_bytes())).into(),
             &[0],
             direct_query_type,

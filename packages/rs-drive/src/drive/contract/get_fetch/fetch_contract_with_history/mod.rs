@@ -256,7 +256,7 @@ mod tests {
 
         TestData {
             data_contract,
-            drive: setup_drive_with_initial_state_structure(),
+            drive: setup_drive_with_initial_state_structure(None),
         }
     }
 

@@ -78,22 +78,22 @@ pub trait DocumentTransitionV0Methods {
 )]
 #[ferment_macro::export]
 pub enum DocumentTransition {
-    #[display(fmt = "CreateDocumentTransition({})", "_0")]
+    #[display("CreateDocumentTransition({})", "_0")]
     Create(DocumentCreateTransition),
 
-    #[display(fmt = "ReplaceDocumentTransition({})", "_0")]
+    #[display("ReplaceDocumentTransition({})", "_0")]
     Replace(DocumentReplaceTransition),
 
-    #[display(fmt = "DeleteDocumentTransition({})", "_0")]
+    #[display("DeleteDocumentTransition({})", "_0")]
     Delete(DocumentDeleteTransition),
 
-    #[display(fmt = "TransferDocumentTransition({})", "_0")]
+    #[display("TransferDocumentTransition({})", "_0")]
     Transfer(DocumentTransferTransition),
 
-    #[display(fmt = "UpdatePriceDocumentTransition({})", "_0")]
+    #[display("UpdatePriceDocumentTransition({})", "_0")]
     UpdatePrice(DocumentUpdatePriceTransition),
 
-    #[display(fmt = "PurchaseDocumentTransition({})", "_0")]
+    #[display("PurchaseDocumentTransition({})", "_0")]
     Purchase(DocumentPurchaseTransition),
 }
 

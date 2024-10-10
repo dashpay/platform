@@ -9,12 +9,14 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
     fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.modified_data_ids(),
+            IdentityCreditWithdrawalTransition::V1(transition) => transition.modified_data_ids(),
         }
     }
 
     fn state_transition_protocol_version(&self) -> FeatureVersion {
         match self {
             IdentityCreditWithdrawalTransition::V0(_) => 0,
+            IdentityCreditWithdrawalTransition::V1(_) => 0,
         }
     }
     /// returns the type of State Transition
@@ -23,18 +25,25 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
             IdentityCreditWithdrawalTransition::V0(transition) => {
                 transition.state_transition_type()
             }
+            IdentityCreditWithdrawalTransition::V1(transition) => {
+                transition.state_transition_type()
+            }
         }
     }
     /// returns the signature as a byte-array
     fn signature(&self) -> &BinaryData {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.signature(),
+            IdentityCreditWithdrawalTransition::V1(transition) => transition.signature(),
         }
     }
     /// set a new signature
     fn set_signature(&mut self, signature: BinaryData) {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => {
+                transition.set_signature(signature)
+            }
+            IdentityCreditWithdrawalTransition::V1(transition) => {
                 transition.set_signature(signature)
             }
         }
@@ -44,12 +53,16 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
     fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.user_fee_increase(),
+            IdentityCreditWithdrawalTransition::V1(transition) => transition.user_fee_increase(),
         }
     }
     /// set a fee multiplier
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => {
+                transition.set_user_fee_increase(user_fee_increase)
+            }
+            IdentityCreditWithdrawalTransition::V1(transition) => {
                 transition.set_user_fee_increase(user_fee_increase)
             }
         }
@@ -60,18 +73,23 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
             IdentityCreditWithdrawalTransition::V0(transition) => {
                 transition.set_signature_bytes(signature)
             }
+            IdentityCreditWithdrawalTransition::V1(transition) => {
+                transition.set_signature_bytes(signature)
+            }
         }
     }
 
     fn owner_id(&self) -> Identifier {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.owner_id(),
+            IdentityCreditWithdrawalTransition::V1(transition) => transition.owner_id(),
         }
     }
 
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.unique_identifiers(),
+            IdentityCreditWithdrawalTransition::V1(transition) => transition.unique_identifiers(),
         }
     }
 }

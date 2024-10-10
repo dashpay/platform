@@ -21,7 +21,7 @@ mod tests {
 
         #[test]
         fn should_add_one_new_key_to_identity() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -61,7 +61,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 14202000,
-                    processing_fee: 1097520,
+                    processing_fee: 1098260,
                     ..Default::default()
                 }
             );
@@ -81,7 +81,7 @@ mod tests {
 
         #[test]
         fn should_add_two_dozen_new_keys_to_identity() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -121,7 +121,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 347382000,
-                    processing_fee: 6818480,
+                    processing_fee: 6819220,
                     ..Default::default()
                 }
             );
@@ -141,7 +141,7 @@ mod tests {
 
         #[test]
         fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -200,7 +200,7 @@ mod tests {
 
         #[test]
         fn should_disable_a_few_keys() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -255,7 +255,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 513000,
-                    processing_fee: 499220,
+                    processing_fee: 869380,
                     ..Default::default()
                 }
             );
@@ -279,7 +279,7 @@ mod tests {
 
         #[test]
         fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -320,7 +320,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 486000,
-                    processing_fee: 2429120,
+                    processing_fee: 3216860,
                     ..Default::default()
                 }
             );
@@ -328,7 +328,7 @@ mod tests {
 
         #[test]
         fn estimated_costs_should_have_same_storage_cost() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -374,7 +374,7 @@ mod tests {
                 )
                 .expect("should get the cost of the disabling a few keys");
 
-            assert_eq!(expected_fee_result.storage_fee, fee_result.storage_fee,);
+            assert_eq!(expected_fee_result.storage_fee, fee_result.storage_fee);
         }
     }
 
@@ -387,7 +387,7 @@ mod tests {
 
         #[test]
         fn should_update_revision() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 
@@ -447,7 +447,7 @@ mod tests {
 
         #[test]
         fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::first();
 

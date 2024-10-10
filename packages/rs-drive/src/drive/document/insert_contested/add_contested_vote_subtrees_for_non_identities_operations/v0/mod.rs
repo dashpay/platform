@@ -92,7 +92,7 @@ impl Drive {
 
         // here we are the tree that will contain the voting tree
         let inserted = self.batch_insert_empty_tree_if_not_exists(
-            votes_path_key_info,
+            votes_path_key_info.clone(),
             true,
             storage_flags,
             apply_type,
@@ -104,7 +104,7 @@ impl Drive {
 
         if !inserted {
             return Err(Error::Drive(DriveError::CorruptedContractIndexes(
-                "contested votes tree already exists for a non identity (abstain or lock)",
+                format!("contested votes tree already exists for a non identity (abstain or lock), trying to insert empty tree at path {}", votes_path_key_info),
             )));
         }
 

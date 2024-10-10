@@ -39,6 +39,8 @@ pub mod tests;
 pub mod asset_lock;
 pub mod balances;
 pub mod block;
+/// Core subsidy
+pub mod core_subsidy;
 pub mod fee;
 pub mod nft;
 pub mod prefunded_specialized_balance;
@@ -51,6 +53,9 @@ pub mod signing;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
 pub mod voting;
+
+#[cfg(feature = "core-types")]
+pub mod core_types;
 pub mod withdrawal;
 
 pub use async_trait;

@@ -23,7 +23,7 @@ mod property_names {
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[display(fmt = "Base: {}, Revision: {}, Price: {}", "base", "revision", "price")]
+#[display("Base: {}, Revision: {}, Price: {}", "base", "revision", "price")]
 #[ferment_macro::export]
 pub struct DocumentUpdatePriceTransitionV0 {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]

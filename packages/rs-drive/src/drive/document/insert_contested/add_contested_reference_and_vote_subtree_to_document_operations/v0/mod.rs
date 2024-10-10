@@ -177,7 +177,7 @@ impl Drive {
 
         if !inserted {
             return Err(Error::Drive(DriveError::CorruptedContractIndexes(
-                "contested votes tree already exists",
+                "contested votes tree already exists".to_string(),
             )));
         }
 

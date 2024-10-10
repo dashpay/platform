@@ -4,6 +4,7 @@ use clap::Parser;
 use dash_sdk::{mock::provider::GrpcContextProvider, platform::Fetch, Sdk, SdkBuilder};
 use dpp::prelude::{DataContract, Identifier};
 use rs_dapi_client::AddressList;
+use zeroize::Zeroizing;
 
 #[derive(clap::Parser, Debug)]
 #[command(version)]
@@ -22,7 +23,7 @@ pub struct Config {
 
     // Dash Core RPC password
     #[arg(short = 'p', long)]
-    pub core_password: String,
+    pub core_password: Zeroizing<String>,
 
     /// Dash Platform DAPI port
     #[arg(short = 'd', long)]
@@ -48,7 +49,7 @@ async fn main() {
     // Convert bytes to identifier object that can be used as a Query
     let id = Identifier::from_bytes(&DATA_CONTRACT_ID_BYTES).expect("parse data contract id");
 
-    // Fetch identity from the Platform
+    // Fetch identity from Platform
     let contract: Option<DataContract> =
         DataContract::fetch(&sdk, id).await.expect("fetch identity");
 
@@ -86,7 +87,7 @@ fn setup_sdk(config: &Config) -> Sdk {
     .expect("parse uri");
 
     // Now, we create the Sdk with the wallet and context provider.
-    let mut sdk = SdkBuilder::new(AddressList::from_iter([uri]))
+    let sdk = SdkBuilder::new(AddressList::from_iter([uri]))
         .build()
         .expect("cannot build sdk");
 

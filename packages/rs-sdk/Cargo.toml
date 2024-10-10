@@ -1,9 +1,10 @@
 [package]
 name = "dash-sdk"
-version = "1.0.0-rc.2"
+version = "1.4.0"
 edition = "2021"
 
 [dependencies]
+
 arc-swap = { version = "1.7.1" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
@@ -15,32 +16,32 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
-thiserror = "1.0.58"
-tokio = { version = "1.36.0", features = ["macros"] }
-tokio-util = { version = "0.7.10" }
-async-trait = { version = "0.1.79" }
-http = { version = "0.2.12" }
+http = { version = "1.1" }
+thiserror = "1.0.64"
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+tokio-util = { version = "0.7.12" }
+async-trait = { version = "0.1.83" }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
 serde = { version = "1.0.197", default-features = false, features = [
   "rc",
 ], optional = true }
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 tracing = { version = "0.1.40" }
-hex = { version = "0.4.3", optional = true }
+hex = { version = "0.4.3" }
 dotenvy = { version = "0.15.7", optional = true }
 envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.30" }
-derive_more = { version = "0.99.17" }
+derive_more = { version = "1.0", features = ["from"] }
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.2" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.4" }
 lru = { version = "0.12.3", optional = true }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
-pollster = { version = "0.3.0" }
+zeroize = { version = "1.8", features = ["derive"] }
 ferment-macro = { path = "../../../ferment/ferment-macro" }
 ferment = { path = "../../../ferment/ferment" }
 
 [dev-dependencies]
-tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks"] }
 base64 = { version = "0.22.1" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
@@ -58,6 +59,7 @@ test-case = { version = "3.3.1" }
 
 [features]
 default = ["mocks", "offline-testing"]
+tokio-sleep = ["rs-dapi-client/tokio-sleep"]
 
 mocks = [
   "dep:serde",
@@ -68,10 +70,10 @@ mocks = [
   "dpp/random-identities",
   "drive/serde",
   "drive-proof-verifier/mocks",
-  "dep:hex",
   "dep:dotenvy",
   "dep:envy",
   "dep:lru",
+  "zeroize/serde",
 ]
 
 # Run integration tests using test vectors from `tests/vectors/` instead of connecting to live Dash Platform.

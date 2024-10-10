@@ -7,11 +7,16 @@ use crate::mock::MockResponse;
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
+use arc_swap::{ArcSwapAny, ArcSwapOption};
 use dapi_grpc::mock::Mockable;
-use dapi_grpc::platform::v0::ResponseMetadata;
+use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+use dpp::bincode;
+use dpp::bincode::error::DecodeError;
+use dpp::dashcore::Network;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use drive::grovedb::operations::proof::GroveDBProof;
 use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::MockContextProvider;
@@ -36,6 +41,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
+use zeroize::Zeroizing;
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
@@ -78,8 +84,10 @@ pub type LastQueryTimestamp = u64;
 #[derive(Clone)]
 #[ferment_macro::opaque]
 pub struct Sdk {
+    /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)  
+    pub network: Network,
     inner: SdkInstance,
-    /// Use proofs when retrieving data from the platform.
+    /// Use proofs when retrieving data from Platform.
     ///
     /// This is set to `true` by default. `false` is not implemented yet.
     proofs: bool,
@@ -92,13 +100,27 @@ pub struct Sdk {
     /// ## Panics
     ///
     /// Note that setting this to None can panic.
-    context_provider: Option<Arc<Box<dyn ContextProvider>>>,
+    context_provider: ArcSwapOption<Box<dyn ContextProvider>>,
 
     /// Cancellation token; once cancelled, all pending requests should be aborted.
     pub(crate) cancel_token: CancellationToken,
 
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
+}
+impl Clone for Sdk {
+    fn clone(&self) -> Self {
+        Self {
+            network: self.network,
+            inner: self.inner.clone(),
+            proofs: self.proofs,
+            internal_cache: Arc::clone(&self.internal_cache),
+            context_provider: ArcSwapOption::new(self.context_provider.load_full()),
+            cancel_token: self.cancel_token.clone(),
+            #[cfg(feature = "mocks")]
+            dump_dir: self.dump_dir.clone(),
+        }
+    }
 }
 
 impl Debug for Sdk {
@@ -198,14 +220,56 @@ impl Sdk {
         O::Request: Mockable,
     {
         let provider = self
-            .context_provider
-            .as_ref()
+            .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
         match self.inner {
-            SdkInstance::Dapi { .. } => {
-                O::maybe_from_proof_with_metadata(request, response, self.version(), &provider)
+            SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
+                request,
+                response,
+                self.network,
+                self.version(),
+                &provider,
+            )
+            .map(|(a, b, _)| (a, b)),
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { ref mock, .. } => {
+                let guard = mock.lock().await;
+                guard
+                    .parse_proof_with_metadata(request, response)
+                    .map(|(a, b, _)| (a, b))
             }
+        }
+    }
+
+    /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
+    ///
+    /// This method is used to retrieve objects from proofs returned by Dash Platform.
+    ///
+    /// ## Generic Parameters
+    ///
+    /// - `R`: Type of the request that was used to fetch the proof.
+    /// - `O`: Type of the object to be retrieved from the proof.
+    pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
+        &self,
+        request: O::Request,
+        response: O::Response,
+    ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
+    where
+        O::Request: Mockable,
+    {
+        let provider = self
+            .context_provider()
+            .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
+
+        match self.inner {
+            SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
+                request,
+                response,
+                self.network,
+                self.version(),
+                &provider,
+            ),
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
                 let guard = mock.lock().await;
@@ -213,8 +277,13 @@ impl Sdk {
             }
         }
     }
+
+    /// Return [ContextProvider] used by the SDK.
     pub fn context_provider(&self) -> Option<impl ContextProvider> {
-        self.context_provider.as_ref().map(Arc::clone)
+        let provider_guard = self.context_provider.load();
+        let provider = provider_guard.as_ref().map(Arc::clone);
+
+        provider
     }
 
     /// Returns a mutable reference to the `MockDashPlatformSdk` instance.
@@ -444,9 +513,9 @@ impl Sdk {
     /// [ContextProvider] is used to access state information, like data contracts and quorum public keys.
     ///
     /// Note that this will overwrite any previous context provider.
-    pub fn set_context_provider<C: ContextProvider + 'static>(&mut self, context_provider: C) {
+    pub fn set_context_provider<C: ContextProvider + 'static>(&self, context_provider: C) {
         self.context_provider
-            .replace(Arc::new(Box::new(context_provider)));
+            .swap(Some(Arc::new(Box::new(context_provider))));
     }
 
     /// Returns a future that resolves when the Sdk is cancelled (eg. shutdown was requested).
@@ -457,6 +526,23 @@ impl Sdk {
     /// Request shutdown of the Sdk and all related operation.
     pub fn shutdown(&self) {
         self.cancel_token.cancel();
+    }
+
+    /// Return the [DapiClient] address list
+    pub fn address_list(&self) -> Result<AddressList, String> {
+        match &self.inner {
+            SdkInstance::Dapi { dapi, version: _ } => {
+                let address_list_arc = dapi.address_list();
+                let address_list_lock = address_list_arc
+                    .read()
+                    .map_err(|e| format!("Failed to read address list: {e}"))?;
+                Ok(address_list_lock.clone())
+            }
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { .. } => {
+                unimplemented!("mock Sdk does not have address list")
+            }
+        }
     }
 }
 
@@ -475,17 +561,6 @@ impl DapiRequestExecutor for Sdk {
                 dapi_guard.execute(request, settings).await
             }
         }
-    }
-}
-
-#[async_trait::async_trait]
-impl DapiRequestExecutor for &Sdk {
-    async fn execute<R: TransportRequest>(
-        &self,
-        request: R,
-        settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
-        DapiRequestExecutor::execute(self, request, settings).await
     }
 }
 
@@ -508,10 +583,12 @@ pub struct SdkBuilder {
     addresses: Option<AddressList>,
     settings: RequestSettings,
 
+    network: Network,
+
     core_ip: String,
     core_port: u16,
     core_user: String,
-    core_password: String,
+    core_password: Zeroizing<String>,
 
     /// If true, request and verify proofs of the responses.
     proofs: bool,
@@ -544,9 +621,10 @@ impl Default for SdkBuilder {
         Self {
             addresses: None,
             settings: RequestSettings::default(),
+            network: Network::Dash,
             core_ip: "".to_string(),
             core_port: 0,
-            core_password: "".to_string(),
+            core_password: "".to_string().into(),
             core_user: "".to_string(),
 
             proofs: true,
@@ -605,6 +683,14 @@ impl SdkBuilder {
         )
     }
 
+    /// Configure network type.
+    ///
+    /// Defaults to Network::Dash which is mainnet.
+    pub fn with_network(mut self, network: Network) -> Self {
+        self.network = network;
+        self
+    }
+
     /// Configure request settings.
     ///
     /// Tune request settings used to connect to the Dash Platform.
@@ -661,7 +747,7 @@ impl SdkBuilder {
         self.core_ip = ip.to_string();
         self.core_port = port;
         self.core_user = user.to_string();
-        self.core_password = password.to_string();
+        self.core_password = Zeroizing::from(password.to_string());
 
         self
     }
@@ -703,21 +789,21 @@ impl SdkBuilder {
 
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
+                    network: self.network,
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
-                    context_provider: self.context_provider.map(Arc::new),
+                    context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
                     cancel_token: self.cancel_token,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                     internal_cache: Default::default(),
                 };
                 // if context provider is not set correctly (is None), it means we need to fallback to core wallet
-                if  sdk.context_provider.is_none() {
+                if  sdk.context_provider.load().is_none() {
                     #[cfg(feature = "mocks")]
                     if !self.core_ip.is_empty() {
-                        tracing::warn!("ContextProvider not set; mocking with Dash Core. \
-                        Please provide your own ContextProvider with SdkBuilder::with_context_provider().");
-
+                        tracing::warn!(
+                            "ContextProvider not set, falling back to a mock one; use SdkBuilder::with_context_provider() to set it up");
                         let mut context_provider = GrpcContextProvider::new(None,
                             &self.core_ip, self.core_port, &self.core_user, &self.core_password,
                             self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
@@ -728,15 +814,19 @@ impl SdkBuilder {
                         // We have cyclical dependency Sdk <-> GrpcContextProvider, so we just do some
                         // workaround using additional Arc.
                         let context_provider= Arc::new(context_provider);
-                        sdk.context_provider.replace(Arc::new(Box::new(context_provider.clone())));
+                        sdk.context_provider.swap(Some(Arc::new(Box::new(context_provider.clone()))));
                         context_provider.set_sdk(Some(sdk.clone()));
                     } else{
-                        tracing::warn!(
-                            "Configure ContextProvider with Sdk::with_context_provider(); otherwise Sdk will fail");
+                        return Err(Error::Config(concat!(
+                            "context provider is not set, configure it with SdkBuilder::with_context_provider() ",
+                            "or configure Core access with SdkBuilder::with_core() to use mock context provider")
+                            .to_string()));
                     }
                     #[cfg(not(feature = "mocks"))]
-                    tracing::warn!(
-                        "Configure ContextProvider with Sdk::with_context_provider(); otherwise Sdk will fail");
+                    return Err(Error::Config(concat!(
+                        "context provider is not set, configure it with SdkBuilder::with_context_provider() ",
+                        "or enable `mocks` feature to use mock context provider")
+                        .to_string()));
                 };
 
                 sdk
@@ -746,20 +836,37 @@ impl SdkBuilder {
             None => {
                 let dapi =Arc::new(tokio::sync::Mutex::new(  MockDapiClient::new()));
                 // We create mock context provider that will use the mock DAPI client to retrieve data contracts.
-                let  context_provider = self.context_provider.unwrap_or(Box::new(MockContextProvider::new()));
-
-                Sdk {
+                let  context_provider = self.context_provider.unwrap_or_else(||{
+                    let mut cp=MockContextProvider::new();
+                    if let Some(ref dump_dir) = self.dump_dir {
+                        cp.quorum_keys_dir(Some(dump_dir.clone()));
+                    }
+                    Box::new(cp)
+                }
+                );
+                let mock_sdk = MockDashPlatformSdk::new(self.version, Arc::clone(&dapi));
+                let mock_sdk = Arc::new(Mutex::new(mock_sdk));
+                let sdk= Sdk {
+                    network: self.network,
                     inner:SdkInstance::Mock {
-                        mock:Arc::new(Mutex::new( MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs))),
+                        mock:mock_sdk.clone(),
                         dapi,
                         version:self.version,
+
                     },
-                    dump_dir: self.dump_dir,
+                    dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     internal_cache: Default::default(),
-                    context_provider:Some(Arc::new(context_provider)),
+                    context_provider:ArcSwapAny::new( Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
-                }
+                };
+                let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and connot be reconfigured");
+                guard.set_sdk(sdk.clone());
+                if let Some(ref dump_dir) = self.dump_dir {
+                    guard.load_expectations_sync(dump_dir)?;
+                };
+
+                sdk
             },
             #[cfg(not(feature = "mocks"))]
             None => return Err(Error::Config("Mock mode is not available. Please enable `mocks` feature or provide address list.".to_string())),
@@ -767,4 +874,33 @@ impl SdkBuilder {
 
         Ok(sdk)
     }
+}
+
+pub fn prettify_proof(proof: &Proof) -> String {
+    let config = bincode::config::standard()
+        .with_big_endian()
+        .with_no_limit();
+    let grovedb_proof: Result<GroveDBProof, DecodeError> =
+        bincode::decode_from_slice(&proof.grovedb_proof, config).map(|(a, _)| a);
+
+    let grovedb_proof_string = match grovedb_proof {
+        Ok(proof) => format!("{}", proof),
+        Err(_) => "Invalid GroveDBProof".to_string(),
+    };
+    format!(
+        "Proof {{
+            grovedb_proof: {},
+            quorum_hash: 0x{},
+            signature: 0x{},
+            round: {},
+            block_id_hash: 0x{},
+            quorum_type: {},
+        }}",
+        grovedb_proof_string,
+        hex::encode(&proof.quorum_hash),
+        hex::encode(&proof.signature),
+        proof.round,
+        hex::encode(&proof.block_id_hash),
+        proof.quorum_type,
+    )
 }

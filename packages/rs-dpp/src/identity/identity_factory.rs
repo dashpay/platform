@@ -43,6 +43,8 @@ use crate::state_transition::state_transitions::identity::identity_credit_transf
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
+use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::state_transitions::identity::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
@@ -233,22 +235,61 @@ impl IdentityFactory {
         amount: u64,
         core_fee_per_byte: u32,
         pooling: Pooling,
-        output_script: CoreScript,
+        output_script: Option<CoreScript>,
         identity_nonce: IdentityNonce,
     ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
-        let identity_credit_withdrawal_transition = IdentityCreditWithdrawalTransitionV0 {
-            identity_id,
-            amount,
-            core_fee_per_byte,
-            pooling,
-            output_script,
-            nonce: identity_nonce,
-            ..Default::default()
+        let platform_version = PlatformVersion::get(self.protocol_version)?;
+
+        let identity_credit_withdrawal_transition = match platform_version
+            .dpp
+            .state_transitions
+            .identities
+            .credit_withdrawal
+            .default_constructor
+        {
+            0 => {
+                let output_script = output_script.ok_or_else(|| {
+                    ProtocolError::Generic(
+                        "Output script is required for IdentityCreditWithdrawalTransitionV0"
+                            .to_string(),
+                    )
+                })?;
+
+                let transition = IdentityCreditWithdrawalTransitionV0 {
+                    identity_id,
+                    amount,
+                    core_fee_per_byte,
+                    pooling,
+                    output_script,
+                    nonce: identity_nonce,
+                    ..Default::default()
+                };
+
+                IdentityCreditWithdrawalTransition::from(transition)
+            }
+            1 => {
+                let transition = IdentityCreditWithdrawalTransitionV1 {
+                    identity_id,
+                    amount,
+                    core_fee_per_byte,
+                    pooling,
+                    output_script,
+                    nonce: identity_nonce,
+                    ..Default::default()
+                };
+
+                IdentityCreditWithdrawalTransition::from(transition)
+            }
+            version => {
+                return Err(ProtocolError::UnknownVersionMismatch {
+                    method: "create_identity_credit_withdrawal_transition".to_string(),
+                    known_versions: vec![0, 1],
+                    received: version,
+                });
+            }
         };
 
-        Ok(IdentityCreditWithdrawalTransition::from(
-            identity_credit_withdrawal_transition,
-        ))
+        Ok(identity_credit_withdrawal_transition)
     }
 
     #[cfg(all(feature = "state-transitions", feature = "client"))]

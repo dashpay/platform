@@ -124,7 +124,7 @@ impl IdentityFacade {
         amount: u64,
         core_fee_per_byte: u32,
         pooling: Pooling,
-        output_script: CoreScript,
+        output_script: Option<CoreScript>,
         identity_nonce: u64,
     ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
         self.factory.create_identity_credit_withdrawal_transition(

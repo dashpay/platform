@@ -1,7 +1,7 @@
 mod v0;
 
 use dpp::version::PlatformVersion;
-use drive::grovedb::Transaction;
+use drive::grovedb::TransactionArg;
 use drive::util::batch::DriveOperation;
 
 use crate::error::Error;
@@ -42,7 +42,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         &self,
         block_execution_context: &BlockExecutionContext,
         block_fees: &BlockFees,
-        transaction: &Transaction,
+        transaction: TransactionArg,
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome>, Error>

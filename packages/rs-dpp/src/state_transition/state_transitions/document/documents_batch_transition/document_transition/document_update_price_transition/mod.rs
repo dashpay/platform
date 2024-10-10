@@ -15,6 +15,6 @@ pub use v0::DocumentUpdatePriceTransitionV0;
 )]
 #[ferment_macro::export]
 pub enum DocumentUpdatePriceTransition {
-    #[display(fmt = "V0({})", "_0")]
+    #[display("V0({})", "_0")]
     V0(DocumentUpdatePriceTransitionV0),
 }

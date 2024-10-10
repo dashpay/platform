@@ -139,11 +139,8 @@ export default function setupLocalPresetTaskFactory(
                 config.set('docker.network.subnet', subnet.join('.'));
 
                 // Setup Core debug logs
-                const coreLogFilePath = homeDir.joinPath('logs', config.getName(), 'core.log');
-                config.set('core.log.file.path', coreLogFilePath);
-
                 if (ctx.debugLogs) {
-                  config.set('core.log.file.categories', ['all']);
+                  config.set('core.log.debug.enabled', true);
                 }
 
                 // Although not all nodes are miners, all nodes should be aware of
@@ -156,10 +153,12 @@ export default function setupLocalPresetTaskFactory(
                   config.set('description', 'seed node for local network');
 
                   config.set('core.masternode.enable', false);
-                  config.set('core.miner.enable', true);
 
                   // Enable miner for the seed node
                   config.set('core.miner.enable', true);
+
+                  // We need them to register masternodes
+                  config.set('core.indexes', ['tx', 'address', 'timestamp', 'spent']);
 
                   // Disable platform for the seed node
                   config.set('platform.enable', false);

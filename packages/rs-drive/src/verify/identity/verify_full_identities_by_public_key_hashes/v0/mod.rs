@@ -40,7 +40,7 @@ impl Drive {
     /// - Any of the public key hashes do not correspond to a valid identity ID.
     /// - Any of the identity IDs do not correspond to a valid full identity.
     ///
-    pub(crate) fn verify_full_identities_by_public_key_hashes_v0<
+    pub(super) fn verify_full_identities_by_public_key_hashes_v0<
         T: FromIterator<([u8; 20], Option<Identity>)>,
     >(
         proof: &[u8],

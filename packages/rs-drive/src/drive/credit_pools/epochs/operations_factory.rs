@@ -19,7 +19,7 @@ use dpp::block::epoch::Epoch;
 use dpp::balances::credits::Credits;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
-use grovedb::batch::GroveDbOp;
+use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::{Element, TransactionArg};
 
 /// Operations on Epochs
@@ -32,7 +32,7 @@ pub trait EpochOperations {
         cached_previous_block_count: Option<u64>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<GroveDbOp, Error>;
+    ) -> Result<QualifiedGroveDbOp, Error>;
     /// Adds to the groveDB op batch operations to insert an empty tree into the epoch
     fn add_init_empty_without_storage_operations(&self, batch: &mut GroveDbOpBatch);
     /// Adds to the groveDB op batch operations to insert an empty tree into the epoch
@@ -51,36 +51,45 @@ pub trait EpochOperations {
     /// Adds to the groveDB op batch operations signifying that the epoch distribution fees were paid out.
     fn add_mark_as_paid_operations(&self, batch: &mut GroveDbOpBatch);
     /// Update Epoch's protocol version
-    fn update_protocol_version_operation(&self, protocol_version: ProtocolVersion) -> GroveDbOp;
+    fn update_protocol_version_operation(
+        &self,
+        protocol_version: ProtocolVersion,
+    ) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the epoch start time.
-    fn update_start_time_operation(&self, time_ms: u64) -> GroveDbOp;
+    fn update_start_time_operation(&self, time_ms: u64) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the epoch start block height.
-    fn update_start_block_height_operation(&self, start_block_height: u64) -> GroveDbOp;
+    fn update_start_block_height_operation(&self, start_block_height: u64) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the epoch start block height.
-    fn update_start_block_core_height_operation(&self, start_block_core_height: u32) -> GroveDbOp;
+    fn update_start_block_core_height_operation(
+        &self,
+        start_block_core_height: u32,
+    ) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the epoch fee multiplier.
-    fn update_fee_multiplier_operation(&self, multiplier_permille: u64) -> GroveDbOp;
+    fn update_fee_multiplier_operation(&self, multiplier_permille: u64) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the epoch processing credits for distribution.
     fn update_processing_fee_pool_operation(
         &self,
         processing_fee: Credits,
-    ) -> Result<GroveDbOp, Error>;
+    ) -> Result<QualifiedGroveDbOp, Error>;
     /// Returns a groveDB op which deletes the epoch processing credits for distribution tree.
-    fn delete_processing_credits_for_distribution_operation(&self) -> GroveDbOp;
+    fn delete_processing_credits_for_distribution_operation(&self) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the epoch storage credits for distribution.
-    fn update_storage_fee_pool_operation(&self, storage_fee: Credits) -> Result<GroveDbOp, Error>;
+    fn update_storage_fee_pool_operation(
+        &self,
+        storage_fee: Credits,
+    ) -> Result<QualifiedGroveDbOp, Error>;
     /// Returns a groveDB op which deletes the epoch storage credits for distribution tree.
-    fn delete_storage_credits_for_distribution_operation(&self) -> GroveDbOp;
+    fn delete_storage_credits_for_distribution_operation(&self) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which updates the given epoch proposer's block count.
     fn update_proposer_block_count_operation(
         &self,
         proposer_pro_tx_hash: &[u8; 32],
         block_count: u64,
-    ) -> GroveDbOp;
+    ) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which inserts an empty tree into the epoch proposers path.
-    fn init_proposers_tree_operation(&self) -> GroveDbOp;
+    fn init_proposers_tree_operation(&self) -> QualifiedGroveDbOp;
     /// Returns a groveDB op which deletes the epoch proposers tree.
-    fn delete_proposers_tree_operation(&self) -> GroveDbOp;
+    fn delete_proposers_tree_operation(&self) -> QualifiedGroveDbOp;
     /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.
     fn add_delete_proposers_operations(
         &self,
@@ -98,7 +107,7 @@ impl EpochOperations for Epoch {
         cached_previous_block_count: Option<u64>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<GroveDbOp, Error> {
+    ) -> Result<QualifiedGroveDbOp, Error> {
         // get current proposer's block count
         let proposed_block_count = if let Some(block_count) = cached_previous_block_count {
             block_count
@@ -171,8 +180,11 @@ impl EpochOperations for Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch start time.
-    fn update_protocol_version_operation(&self, protocol_version: ProtocolVersion) -> GroveDbOp {
-        GroveDbOp::insert_op(
+    fn update_protocol_version_operation(
+        &self,
+        protocol_version: ProtocolVersion,
+    ) -> QualifiedGroveDbOp {
+        QualifiedGroveDbOp::insert_or_replace_op(
             self.get_path_vec(),
             KEY_PROTOCOL_VERSION.to_vec(),
             Element::Item(protocol_version.to_be_bytes().to_vec(), None),
@@ -180,8 +192,8 @@ impl EpochOperations for Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch start time.
-    fn update_start_time_operation(&self, time_ms: u64) -> GroveDbOp {
-        GroveDbOp::insert_op(
+    fn update_start_time_operation(&self, time_ms: u64) -> QualifiedGroveDbOp {
+        QualifiedGroveDbOp::insert_or_replace_op(
             self.get_path_vec(),
             KEY_START_TIME.to_vec(),
             Element::Item(time_ms.to_be_bytes().to_vec(), None),
@@ -189,8 +201,8 @@ impl EpochOperations for Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch start block height.
-    fn update_start_block_height_operation(&self, start_block_height: u64) -> GroveDbOp {
-        GroveDbOp::insert_op(
+    fn update_start_block_height_operation(&self, start_block_height: u64) -> QualifiedGroveDbOp {
+        QualifiedGroveDbOp::insert_or_replace_op(
             self.get_path_vec(),
             KEY_START_BLOCK_HEIGHT.to_vec(),
             Element::Item(start_block_height.to_be_bytes().to_vec(), None),
@@ -198,8 +210,11 @@ impl EpochOperations for Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch start block core height.
-    fn update_start_block_core_height_operation(&self, start_block_core_height: u32) -> GroveDbOp {
-        GroveDbOp::insert_op(
+    fn update_start_block_core_height_operation(
+        &self,
+        start_block_core_height: u32,
+    ) -> QualifiedGroveDbOp {
+        QualifiedGroveDbOp::insert_or_replace_op(
             self.get_path_vec(),
             KEY_START_BLOCK_CORE_HEIGHT.to_vec(),
             Element::Item(start_block_core_height.to_be_bytes().to_vec(), None),
@@ -207,8 +222,8 @@ impl EpochOperations for Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch fee multiplier.
-    fn update_fee_multiplier_operation(&self, multiplier_permille: u64) -> GroveDbOp {
-        GroveDbOp::insert_op(
+    fn update_fee_multiplier_operation(&self, multiplier_permille: u64) -> QualifiedGroveDbOp {
+        QualifiedGroveDbOp::insert_or_replace_op(
             self.get_path_vec(),
             KEY_FEE_MULTIPLIER.to_vec(),
             Element::Item(multiplier_permille.to_be_bytes().to_vec(), None),
@@ -219,8 +234,8 @@ impl EpochOperations for Epoch {
     fn update_processing_fee_pool_operation(
         &self,
         processing_fee: Credits,
-    ) -> Result<GroveDbOp, Error> {
-        Ok(GroveDbOp::insert_op(
+    ) -> Result<QualifiedGroveDbOp, Error> {
+        Ok(QualifiedGroveDbOp::insert_or_replace_op(
             self.get_path_vec(),
             KEY_POOL_PROCESSING_FEES.to_vec(),
             Element::new_sum_item(processing_fee.to_signed()?),
@@ -228,13 +243,16 @@ impl EpochOperations for Epoch {
     }
 
     /// Returns a groveDB op which deletes the epoch processing credits for distribution tree.
-    fn delete_processing_credits_for_distribution_operation(&self) -> GroveDbOp {
-        GroveDbOp::delete_op(self.get_path_vec(), KEY_POOL_PROCESSING_FEES.to_vec())
+    fn delete_processing_credits_for_distribution_operation(&self) -> QualifiedGroveDbOp {
+        QualifiedGroveDbOp::delete_op(self.get_path_vec(), KEY_POOL_PROCESSING_FEES.to_vec())
     }
 
     /// Returns a groveDB op which updates the epoch storage credits for distribution.
-    fn update_storage_fee_pool_operation(&self, storage_fee: Credits) -> Result<GroveDbOp, Error> {
-        Ok(GroveDbOp::insert_op(
+    fn update_storage_fee_pool_operation(
+        &self,
+        storage_fee: Credits,
+    ) -> Result<QualifiedGroveDbOp, Error> {
+        Ok(QualifiedGroveDbOp::insert_or_replace_op(
             self.get_path_vec(),
             KEY_POOL_STORAGE_FEES.to_vec(),
             Element::new_sum_item(storage_fee.to_signed()?),
@@ -242,8 +260,8 @@ impl EpochOperations for Epoch {
     }
 
     /// Returns a groveDB op which deletes the epoch storage credits for distribution tree.
-    fn delete_storage_credits_for_distribution_operation(&self) -> GroveDbOp {
-        GroveDbOp::delete_op(self.get_path_vec(), KEY_POOL_STORAGE_FEES.to_vec())
+    fn delete_storage_credits_for_distribution_operation(&self) -> QualifiedGroveDbOp {
+        QualifiedGroveDbOp::delete_op(self.get_path_vec(), KEY_POOL_STORAGE_FEES.to_vec())
     }
 
     /// Returns a groveDB op which updates the given epoch proposer's block count.
@@ -251,8 +269,8 @@ impl EpochOperations for Epoch {
         &self,
         proposer_pro_tx_hash: &[u8; 32],
         block_count: u64,
-    ) -> GroveDbOp {
-        GroveDbOp::insert_op(
+    ) -> QualifiedGroveDbOp {
+        QualifiedGroveDbOp::insert_or_replace_op(
             self.get_proposers_path_vec(),
             proposer_pro_tx_hash.to_vec(),
             Element::Item(block_count.to_be_bytes().to_vec(), None),
@@ -260,8 +278,8 @@ impl EpochOperations for Epoch {
     }
 
     /// Returns a groveDB op which inserts an empty tree into the epoch proposers path.
-    fn init_proposers_tree_operation(&self) -> GroveDbOp {
-        GroveDbOp::insert_op(
+    fn init_proposers_tree_operation(&self) -> QualifiedGroveDbOp {
+        QualifiedGroveDbOp::insert_or_replace_op(
             self.get_path_vec(),
             KEY_PROPOSERS.to_vec(),
             Element::empty_tree(),
@@ -269,8 +287,8 @@ impl EpochOperations for Epoch {
     }
 
     /// Returns a groveDB op which deletes the epoch proposers tree.
-    fn delete_proposers_tree_operation(&self) -> GroveDbOp {
-        GroveDbOp::delete_tree_op(self.get_path_vec(), KEY_PROPOSERS.to_vec(), false)
+    fn delete_proposers_tree_operation(&self) -> QualifiedGroveDbOp {
+        QualifiedGroveDbOp::delete_tree_op(self.get_path_vec(), KEY_PROPOSERS.to_vec(), false)
     }
 
     /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.
@@ -297,7 +315,7 @@ mod tests {
 
         #[test]
         fn test_increment_block_count_to_1_if_proposers_tree_is_not_committed() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -340,7 +358,7 @@ mod tests {
 
         #[test]
         fn test_existing_block_count_is_incremented() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -427,7 +445,7 @@ mod tests {
 
         #[test]
         fn test_values_are_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -458,10 +476,11 @@ mod tests {
 
     mod add_init_current_operations {
         use super::*;
+        use crate::query::proposer_block_count_query::ProposerQueryType;
 
         #[test]
         fn test_values_are_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -525,7 +544,12 @@ mod tests {
                 .expect_err("should not get processing fee");
 
             let proposers = drive
-                .get_epoch_proposers(&epoch, Some(1), Some(&transaction), platform_version)
+                .fetch_epoch_proposers(
+                    &epoch,
+                    ProposerQueryType::ByRange(Some(1), None),
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get proposers");
 
             assert_eq!(proposers, vec!());
@@ -537,7 +561,7 @@ mod tests {
 
         #[test]
         fn test_values_are_deleted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -609,7 +633,7 @@ mod tests {
 
         #[test]
         fn test_value_is_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -644,7 +668,7 @@ mod tests {
 
     #[test]
     fn test_update_start_time() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::first();
@@ -670,7 +694,7 @@ mod tests {
 
     #[test]
     fn test_update_epoch_start_block_height() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::first();
@@ -694,7 +718,7 @@ mod tests {
 
     #[test]
     fn test_update_epoch_start_block_core_height() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::first();
@@ -721,7 +745,7 @@ mod tests {
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -743,7 +767,7 @@ mod tests {
 
         #[test]
         fn test_value_is_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -777,7 +801,7 @@ mod tests {
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -799,7 +823,7 @@ mod tests {
 
         #[test]
         fn test_value_is_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -833,7 +857,7 @@ mod tests {
 
         #[test]
         fn test_values_has_been_deleted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -877,10 +901,11 @@ mod tests {
 
     mod delete_proposers {
         use super::*;
+        use crate::query::proposer_block_count_query::ProposerQueryType;
 
         #[test]
         fn test_values_are_being_deleted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let epoch = Epoch::new(0).unwrap();
@@ -910,7 +935,12 @@ mod tests {
                 .expect("should apply batch");
 
             let mut stored_proposers = drive
-                .get_epoch_proposers(&epoch, Some(20), Some(&transaction), platform_version)
+                .fetch_epoch_proposers(
+                    &epoch,
+                    ProposerQueryType::ByRange(Some(20), None),
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get proposers");
 
             let mut awaited_result = pro_tx_hashes
@@ -943,7 +973,12 @@ mod tests {
                 .expect("should apply batch");
 
             let stored_proposers = drive
-                .get_epoch_proposers(&epoch, Some(20), Some(&transaction), platform_version)
+                .fetch_epoch_proposers(
+                    &epoch,
+                    ProposerQueryType::ByRange(Some(20), None),
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get proposers");
 
             let mut stored_hexes: Vec<String> = stored_proposers

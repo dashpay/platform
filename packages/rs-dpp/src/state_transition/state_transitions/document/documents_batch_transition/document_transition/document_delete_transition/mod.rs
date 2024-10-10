@@ -15,6 +15,6 @@ pub use v0::DocumentDeleteTransitionV0;
 )]
 #[ferment_macro::export]
 pub enum DocumentDeleteTransition {
-    #[display(fmt = "V0({})", "_0")]
+    #[display("V0({})", "_0")]
     V0(DocumentDeleteTransitionV0),
 }

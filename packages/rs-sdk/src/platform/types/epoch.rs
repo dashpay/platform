@@ -1,25 +1,19 @@
 //! Epoch-related types and helpers
 use async_trait::async_trait;
-use dapi_grpc::platform::v0::{GetEpochsInfoRequest, ResponseMetadata};
+use dapi_grpc::platform::v0::{GetEpochsInfoRequest, Proof, ResponseMetadata};
 use dpp::block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo};
 
+use crate::platform::fetch_current_no_parameters::FetchCurrent;
 use crate::{
     platform::{Fetch, LimitQuery, Query},
     Error, Sdk,
 };
 
-#[async_trait]
-
-/// Helper trait for managing Epoch information
-pub trait ExtendedEpochInfoEx: Sized {
-    /// Fetch current (the latest) epoch from the platform.
-    async fn fetch_current(sdk: &Sdk) -> Result<Self, Error>;
-    /// Fetch current (the latest) epoch from the platform with metadata.
-    async fn fetch_current_with_metadata(sdk: &Sdk) -> Result<(Self, ResponseMetadata), Error>;
-}
+/// Epoch type used in the SDK.
+pub type Epoch = ExtendedEpochInfo;
 
 #[async_trait]
-impl ExtendedEpochInfoEx for ExtendedEpochInfo {
+impl FetchCurrent for ExtendedEpochInfo {
     async fn fetch_current(sdk: &Sdk) -> Result<Self, Error> {
         let (epoch, _) = Self::fetch_current_with_metadata(sdk).await?;
         Ok(epoch)
@@ -39,8 +33,26 @@ impl ExtendedEpochInfoEx for ExtendedEpochInfo {
 
         Ok((epoch.ok_or(Error::EpochNotFound)?, metadata))
     }
+
+    async fn fetch_current_with_metadata_and_proof(
+        sdk: &Sdk,
+    ) -> Result<(Self, ResponseMetadata, Proof), Error> {
+        let query = LimitQuery {
+            query: EpochQuery {
+                start: None,
+                ascending: false,
+            },
+            limit: Some(1),
+            start_info: None,
+        };
+
+        let (epoch, metadata, proof) =
+            Self::fetch_with_metadata_and_proof(sdk, query, None).await?;
+
+        Ok((epoch.ok_or(Error::EpochNotFound)?, metadata, proof))
+    }
 }
-/// Query used to fetch multiple epochs from the platform.
+/// Query used to fetch multiple epochs from Platform.
 #[derive(Clone, Debug)]
 pub struct EpochQuery {
     /// Starting number of epoch to fetch.
@@ -49,8 +61,8 @@ pub struct EpochQuery {
     ///
     /// Value of `None` has the following meaning:
     ///
-    /// * if ascending is true, then it is the first epoch on the Platform (eg. epoch 0).
-    /// * if ascending is false, then it is the last epoch on the Platform (eg. most recent epoch).
+    /// * if ascending is true, then it is the first epoch on Platform (eg. epoch 0).
+    /// * if ascending is false, then it is the last epoch on Platform (eg. most recent epoch).
     pub start: Option<EpochIndex>,
     /// Sort order. Default is ascending (true), which means that the first returned epoch is the oldest one.
     pub ascending: bool,

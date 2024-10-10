@@ -35,7 +35,7 @@ impl Drive {
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
     #[inline(always)]
-    pub(crate) fn verify_contract_v0(
+    pub(super) fn verify_contract_v0(
         proof: &[u8],
         contract_known_keeps_history: Option<bool>,
         is_proof_subset: bool,

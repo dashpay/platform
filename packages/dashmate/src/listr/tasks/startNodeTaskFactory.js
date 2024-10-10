@@ -29,19 +29,16 @@ export default function startNodeTaskFactory(
    * @return {Object}
    */
   function startNodeTask(config) {
-    // Check external IP is set
-    if (config.get('core.masternode.enable')) {
-      config.get('externalIp', true);
-    }
-
     const isMinerEnabled = config.get('core.miner.enable');
 
     if (isMinerEnabled === true && config.get('network') !== NETWORK_LOCAL) {
       throw new Error(`'core.miner.enable' option only works with local network. Your network is ${config.get('network')}.`);
     }
 
-    const coreLogFilePath = config.get('core.log.file.path');
-    ensureFileMountExists(coreLogFilePath, 0o666);
+    const coreLogFilePath = config.get('core.log.filePath');
+    if (coreLogFilePath !== null) {
+      ensureFileMountExists(coreLogFilePath, 0o666);
+    }
 
     // Check Drive log files are created
     if (config.get('platform.enable')) {

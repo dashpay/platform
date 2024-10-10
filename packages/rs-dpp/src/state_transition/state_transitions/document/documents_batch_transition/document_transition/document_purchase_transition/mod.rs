@@ -15,6 +15,6 @@ pub use v0::DocumentPurchaseTransitionV0;
 )]
 #[ferment_macro::export]
 pub enum DocumentPurchaseTransition {
-    #[display(fmt = "V0({})", "_0")]
+    #[display("V0({})", "_0")]
     V0(DocumentPurchaseTransitionV0),
 }

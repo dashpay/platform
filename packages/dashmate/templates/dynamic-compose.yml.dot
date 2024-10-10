@@ -1,4 +1,4 @@
-version: '3.7'
+---
 
 services:
   core:
@@ -7,6 +7,10 @@ services:
       {{~ it.core.docker.commandArgs :arg }}
       - {{=arg}}
       {{~}}
+    {{? it.core.log.filePath !== null }}
+    volumes:
+      - {{=it.core.log.filePath}}:/var/log/dash/debug.log
+    {{?}}
 
   {{ driveLogs = Object.entries(it.platform.drive.abci.logs).filter(([, settings]) => settings.destination !== 'stderr' && settings.destination !== 'stdout'); }}
   {{? driveLogs.length > 0 }}
@@ -16,6 +20,12 @@ services:
       {{ [name, settings] = logger; }}
       - {{=settings.destination}}:/var/log/dash/drive/{{=name}}/{{=settings.destination.split('/').reverse()[0]}}
       {{~}}
+  {{?}}
+
+  {{? it.platform.drive.tenderdash.log.path !== null }}
+  drive_tenderdash:
+    volumes:
+      - {{=it.platform.drive.tenderdash.log.path}}:/var/log/tenderdash/tenderdash.log
   {{?}}
 
   {{ gatewayLogs = it.platform.gateway.log.accessLogs.filter((l) => l.type === 'file'); }}

@@ -37,7 +37,7 @@ impl Drive {
     /// - The GroveDb query fails.
     /// - The contract serialization fails.
     #[inline(always)]
-    pub(crate) fn verify_contract_history_v0(
+    pub(super) fn verify_contract_history_v0(
         proof: &[u8],
         contract_id: [u8; 32],
         start_at_date: u64,

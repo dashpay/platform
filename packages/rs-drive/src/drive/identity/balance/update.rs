@@ -22,7 +22,7 @@ mod tests {
 
         #[test]
         fn should_add_to_balance() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -89,7 +89,7 @@ mod tests {
 
         #[test]
         fn should_fail_if_balance_is_not_persisted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -111,7 +111,7 @@ mod tests {
 
         #[test]
         fn should_deduct_from_debt_if_balance_is_nil() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let platform_version = PlatformVersion::latest();
 
             let identity = create_test_identity(&drive, [0; 32], Some(1), None, platform_version)
@@ -194,7 +194,7 @@ mod tests {
 
         #[test]
         fn should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let platform_version = PlatformVersion::latest();
             let identity = create_test_identity(&drive, [0; 32], Some(1), None, platform_version)
                 .expect("expected an identity");
@@ -273,7 +273,7 @@ mod tests {
 
         #[test]
         fn should_estimate_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -337,7 +337,7 @@ mod tests {
 
         #[test]
         fn should_remove_from_balance() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -405,7 +405,7 @@ mod tests {
 
         #[test]
         fn should_estimated_costs_without_state() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -474,14 +474,14 @@ mod tests {
         use dpp::fee::fee_result::FeeResult;
         use dpp::fee::{Credits, SignedCredits};
         use dpp::version::PlatformVersion;
-        use grovedb::batch::Op;
+        use grovedb::batch::GroveOp;
         use grovedb::Element;
         use nohash_hasher::IntMap;
         use std::collections::BTreeMap;
 
         #[test]
         fn should_do_nothing_if_there_is_no_balance_change() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -505,7 +505,7 @@ mod tests {
 
         #[test]
         fn should_add_to_balance() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -549,15 +549,15 @@ mod tests {
                 [
                     _,
                     _,
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::SumItem(refund_amount, None),
                         },
                         ..
                     }),
                     ..,
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::SumItem(other_refund_amount, None),
                         },
                         ..
@@ -570,7 +570,7 @@ mod tests {
 
         #[test]
         fn should_fail_if_balance_is_not_persisted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -590,7 +590,7 @@ mod tests {
 
         #[test]
         fn should_deduct_from_debt_if_balance_is_nil() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -645,14 +645,14 @@ mod tests {
                 [
                     _,
                     _,
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::SumItem(refund_amount, None),
                         },
                     ..
                     }),
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..
@@ -665,7 +665,7 @@ mod tests {
 
         #[test]
         fn should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -720,8 +720,8 @@ mod tests {
                 [
                     _,
                     _,
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..
@@ -734,7 +734,7 @@ mod tests {
 
         #[test]
         fn should_remove_from_balance_less_amount() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -775,8 +775,8 @@ mod tests {
 
             assert!(matches!(
                 drive_operations[..],
-                [_, LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                    op: Op::Replace {
+                [_, LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                    op: GroveOp::Replace {
                         element: Element::SumItem(balance, None),
                     },
                     ..
@@ -788,7 +788,7 @@ mod tests {
 
         #[test]
         fn should_remove_from_balance_bigger_amount_and_get_into_debt() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 
@@ -834,14 +834,14 @@ mod tests {
                 &drive_operations[..],
                 [
                     _,
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::SumItem(balance, None),
                         },
                         ..
                     }),
-                    LowLevelDriveOperation::GroveOperation(grovedb::batch::GroveDbOp {
-                        op: Op::Replace {
+                    LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
+                        op: GroveOp::Replace {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..
@@ -861,7 +861,7 @@ mod tests {
 
         #[test]
         fn should_return_error_if_required_amount_bigger_than_balance() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let platform_version = PlatformVersion::latest();
 

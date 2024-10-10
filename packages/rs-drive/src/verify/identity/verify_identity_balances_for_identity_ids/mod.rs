@@ -38,7 +38,8 @@ impl Drive {
     /// - Any other error as documented in the specific versioned function.
     ///
     pub fn verify_identity_balances_for_identity_ids<
-        T: FromIterator<([u8; 32], Option<Credits>)>,
+        T: FromIterator<(I, Option<Credits>)>,
+        I: From<[u8; 32]>,
     >(
         proof: &[u8],
         is_proof_subset: bool,
@@ -52,7 +53,7 @@ impl Drive {
             .identity
             .verify_identity_balances_for_identity_ids
         {
-            0 => Self::verify_identity_balances_for_identity_ids_v0::<T>(
+            0 => Self::verify_identity_balances_for_identity_ids_v0::<T, I>(
                 proof,
                 is_proof_subset,
                 identity_ids,

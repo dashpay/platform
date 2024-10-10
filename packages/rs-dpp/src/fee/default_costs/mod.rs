@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Fee costs
 //!
 //! Fee costs for Known Platform operations
@@ -34,13 +5,22 @@
 
 use crate::block::epoch::{Epoch, EpochIndex};
 use crate::balances::credits::Credits;
-use platform_version::version::fee::FeeVersion;
-use platform_version::version::PlatformVersion;
+use platform_version::version::fee::{
+    FeeVersion, FeeVersionFieldsBeforeVersion4, FeeVersionNumber,
+};
 use std::collections::BTreeMap;
 
 pub mod constants;
 
-pub type CachedEpochIndexFeeVersions = BTreeMap<EpochIndex, FeeVersion>;
+pub type CachedEpochIndexFeeVersions = BTreeMap<EpochIndex, &'static FeeVersion>;
+pub type EpochIndexFeeVersionsForStorage = BTreeMap<EpochIndex, FeeVersionNumber>;
+
+// This is type only meant for deserialization because of an issue
+// The issue was that the platform state was stored with FeeVersions in it before version 1.4
+// When we would add new fields we would be unable to deserialize
+// This FeeProcessingVersionFieldsBeforeVersion4 is how things were before version 1.4 was released
+pub type CachedEpochIndexFeeVersionsFieldsBeforeVersion4 =
+    BTreeMap<EpochIndex, FeeVersionFieldsBeforeVersion4>;
 
 /// A Known Cost Item is an item that changes costs depending on the Epoch
 #[derive(Eq, PartialEq, Copy, Clone, Hash)]
@@ -143,7 +123,10 @@ impl KnownCostItem {
 pub trait EpochCosts {
     /// Get the closest epoch in the past that has a cost table
     /// This is where the base costs last changed
-    fn active_fee_version(&self, cached_fee_version: &CachedEpochIndexFeeVersions) -> FeeVersion;
+    fn active_fee_version(
+        &self,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
+    ) -> &'static FeeVersion;
     /// Get the cost for the known cost item
     fn cost_for_known_cost_item(
         &self,
@@ -154,18 +137,20 @@ pub trait EpochCosts {
 
 impl EpochCosts for Epoch {
     /// Get the active fee version for an epoch
-    fn active_fee_version(&self, cached_fee_version: &CachedEpochIndexFeeVersions) -> FeeVersion {
+    fn active_fee_version(
+        &self,
+        cached_fee_version: &CachedEpochIndexFeeVersions,
+    ) -> &'static FeeVersion {
         // If the exact EpochIndex is matching to a FeeVersion update
         if let Some(fee_version) = cached_fee_version.get(&self.index) {
-            return fee_version.clone();
+            return fee_version;
         }
         // else return the FeeVersion at  lower adjacent EpochIndex (if available, else the FeeVersion of first PlatformVersion)
         cached_fee_version
             .range(..=self.index)
             .next_back()
-            .map(|(_, fee_version)| fee_version)
-            .unwrap_or_else(|| &PlatformVersion::first().fee_version)
-            .clone()
+            .map(|(_, fee_version)| *fee_version)
+            .unwrap_or_else(|| FeeVersion::first())
     }
 
     /// Get the cost for the known cost item

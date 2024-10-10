@@ -105,6 +105,7 @@ impl Drive {
                 let storage_flags = cost_return_on_error_no_add!(
                     &cost,
                     StorageFlags::map_some_element_flags_ref(&element_flag)
+                        .map_err(Error::StorageFlags)
                 );
                 let contract_fetch_info = Arc::new(DataContractFetchInfo {
                     contract,
@@ -161,6 +162,7 @@ impl Drive {
                         let storage_flags = cost_return_on_error_no_add!(
                             &cost,
                             StorageFlags::map_some_element_flags_ref(&element_flag)
+                                .map_err(Error::StorageFlags)
                         );
 
                         let contract_fetch_info = Arc::new(DataContractFetchInfo {

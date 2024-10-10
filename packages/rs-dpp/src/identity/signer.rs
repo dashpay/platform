@@ -10,4 +10,7 @@ pub trait Signer: Sync + Debug {
         identity_public_key: &IdentityPublicKey,
         data: &[u8],
     ) -> Result<BinaryData, ProtocolError>;
+
+    /// do we have this identity public key in the signer?
+    fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool;
 }

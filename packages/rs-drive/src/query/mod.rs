@@ -50,13 +50,14 @@ pub use grovedb::{
     Element, Error as GroveError, TransactionArg,
 };
 
+use dpp::document;
 #[cfg(feature = "server")]
 use {
     crate::{drive::Drive, error::Error::GroveDB, fees::op::LowLevelDriveOperation},
     dpp::block::block_info::BlockInfo,
 };
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-
+use platform_value::Identifier;
 // Crate-local unconditional imports
 use crate::config::DriveConfig;
 // Crate-local unconditional imports
@@ -103,7 +104,7 @@ pub mod vote_polls_by_document_type_query;
 /// It should be implemented by the caller in order to provide data
 /// contract required for operations like proof verification.
 #[cfg(any(feature = "server", feature = "verify"))]
-pub type ContractLookupFn<'a> = dyn Fn(&dpp::identifier::Identifier) -> Result<Option<Arc<DataContract>>, crate::error::Error>
+pub type ContractLookupFn<'a> = dyn Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>
     + 'a;
 
 /// Creates a [ContractLookupFn] function that returns provided data contract when requested.
@@ -121,7 +122,7 @@ pub fn contract_lookup_fn_for_contract<'a>(
     data_contract: Arc<DataContract>,
 ) -> Box<ContractLookupFn<'a>> {
     let func = move
-        |id: &dpp::identifier::Identifier| -> Result<Option<Arc<DataContract>>, crate::error::Error> {
+        |id: &Identifier| -> Result<Option<Arc<DataContract>>, Error> {
             if data_contract.id().ne(id) {
                 return Ok(None);
             }
@@ -133,6 +134,13 @@ pub fn contract_lookup_fn_for_contract<'a>(
 #[cfg(any(feature = "server", feature = "verify"))]
 /// A query to get the votes given out by an identity
 pub mod contested_resource_votes_given_by_identity_query;
+#[cfg(any(feature = "server", feature = "verify"))]
+/// A query to get contested documents before they have been awarded
+pub mod drive_contested_document_query;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// A query to get the block counts of proposers in an epoch
+pub mod proposer_block_count_query;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Internal clauses struct
@@ -306,6 +314,36 @@ pub struct DriveDocumentQuery<'a> {
 }
 
 impl<'a> DriveDocumentQuery<'a> {
+    /// Gets a document by their primary key
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn new_primary_key_single_item_query(
+        contract: &'a DataContract,
+        document_type: DocumentTypeRef<'a>,
+        id: Identifier,
+    ) -> Self {
+        DriveDocumentQuery {
+            contract,
+            document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: Some(WhereClause {
+                    field: document::property_names::ID.to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(id.to_buffer()),
+                }),
+                in_clause: None,
+                range_clause: None,
+                equal_clauses: Default::default(),
+            },
+            offset: None,
+            limit: None,
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+        }
+    }
+
     #[cfg(feature = "server")]
     /// Returns any item
     pub fn any_item_query(contract: &'a DataContract, document_type: DocumentTypeRef<'a>) -> Self {
@@ -315,6 +353,26 @@ impl<'a> DriveDocumentQuery<'a> {
             internal_clauses: Default::default(),
             offset: None,
             limit: Some(1),
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: true,
+            block_time_ms: None,
+        }
+    }
+
+    #[cfg(feature = "server")]
+    /// Returns all items
+    pub fn all_items_query(
+        contract: &'a DataContract,
+        document_type: DocumentTypeRef<'a>,
+        limit: Option<u16>,
+    ) -> Self {
+        DriveDocumentQuery {
+            contract,
+            document_type,
+            internal_clauses: Default::default(),
+            offset: None,
+            limit,
             order_by: Default::default(),
             start_at: None,
             start_at_included: true,
@@ -1494,7 +1552,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 // There is no last_clause which means we are using an index most likely because of an order_by, however we have no
                 // clauses, in this case we should use the first value of the index.
                 let first_index = index.properties.first().ok_or(Error::Drive(
-                    DriveError::CorruptedContractIndexes("index must have properties"),
+                    DriveError::CorruptedContractIndexes("index must have properties".to_string()),
                 ))?; // Index must have properties
                 Self::recursive_insert_on_query(
                     None,
@@ -1548,7 +1606,7 @@ impl<'a> DriveDocumentQuery<'a> {
                             .iter()
                             .find(|field| where_clause.field == field.name)
                             .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(
-                                "index must have last_clause field",
+                                "index must have last_clause field".to_string(),
                             )))?;
                         Self::recursive_insert_on_query(
                             Some(&mut query),
@@ -1580,7 +1638,7 @@ impl<'a> DriveDocumentQuery<'a> {
                             .iter()
                             .find(|field| subquery_where_clause.field == field.name)
                             .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(
-                                "index must have subquery_clause field",
+                                "index must have subquery_clause field".to_string(),
                             )))?;
                         Self::recursive_insert_on_query(
                             Some(&mut subquery),
@@ -1812,7 +1870,6 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 
     #[cfg(feature = "server")]
-    #[allow(unused)]
     /// Executes an internal query with no proof and returns the values and skipped items.
     pub(crate) fn execute_no_proof_internal(
         &self,
@@ -1919,13 +1976,19 @@ mod tests {
 
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
+    use platform_value::Identifier;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
     use serde_json::json;
     use std::borrow::Cow;
+    use std::collections::BTreeMap;
     use std::option::Option::None;
     use tempfile::TempDir;
 
     use crate::drive::Drive;
-    use crate::query::DriveDocumentQuery;
+    use crate::query::{
+        DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator,
+    };
     use crate::util::storage_flags::StorageFlags;
 
     use dpp::data_contract::DataContract;
@@ -1936,7 +1999,9 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::platform_value::string_encoding::Encoding;
+    use dpp::platform_value::Value;
+    use dpp::tests::fixtures::{get_data_contract_fixture, get_dpns_data_contract_fixture};
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::util::cbor_serializer;
     use dpp::version::PlatformVersion;
@@ -1975,7 +2040,7 @@ mod tests {
     }
 
     fn setup_family_birthday_contract() -> (Drive, DataContract) {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -2189,6 +2254,70 @@ mod tests {
             &DriveConfig::default(),
         )
         .expect("query should be fine for a 255 byte long string");
+    }
+
+    #[test]
+    fn test_valid_query_drive_document_query() {
+        let platform_version = PlatformVersion::latest();
+        let mut rng = StdRng::seed_from_u64(5);
+        let contract =
+            get_dpns_data_contract_fixture(Some(Identifier::random_with_rng(&mut rng)), 0, 1)
+                .data_contract_owned();
+        let domain = contract
+            .document_type_for_name("domain")
+            .expect("expected to get domain");
+
+        let query_asc = DriveDocumentQuery {
+            contract: &contract,
+            document_type: domain,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clause: None,
+                range_clause: Some(WhereClause {
+                    field: "records.identity".to_string(),
+                    operator: WhereOperator::LessThan,
+                    value: Value::Identifier(
+                        Identifier::from_string(
+                            "AYN4srupPWDrp833iG5qtmaAsbapNvaV7svAdncLN5Rh",
+                            Encoding::Base58,
+                        )
+                        .unwrap()
+                        .to_buffer(),
+                    ),
+                }),
+                equal_clauses: BTreeMap::new(),
+            },
+            offset: None,
+            limit: Some(6),
+            order_by: vec![(
+                "records.identity".to_string(),
+                OrderClause {
+                    field: "records.identity".to_string(),
+                    ascending: false,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+        };
+
+        let path_query = query_asc
+            .construct_path_query(None, platform_version)
+            .expect("expected to create path query");
+
+        assert_eq!(path_query.to_string(), "PathQuery { path: [@, 0x1da29f488023e306ff9a680bc9837153fb0778c8ee9c934a87dc0de1d69abd3c, 0x01, domain, 0x7265636f7264732e6964656e74697479], query: SizedQuery { query: Query {\n  items: [\n    RangeTo(.. 8dc201fd7ad7905f8a84d66218e2b387daea7fe4739ae0e21e8c3ee755e6a2c0),\n  ],\n  default_subquery_branch: SubqueryBranch { subquery_path: [00], subquery: Query {\n  items: [\n    RangeFull,\n  ],\n  default_subquery_branch: SubqueryBranch { subquery_path: None subquery: None },\n  left_to_right: false,\n} },\n  conditional_subquery_branches: {\n    Key(): SubqueryBranch { subquery_path: [00], subquery: Query {\n  items: [\n    RangeFull,\n  ],\n  default_subquery_branch: SubqueryBranch { subquery_path: None subquery: None },\n  left_to_right: false,\n} },\n  },\n  left_to_right: false,\n}, limit: 6 } }");
+
+        // Serialize the PathQuery to a Vec<u8>
+        let encoded = bincode::encode_to_vec(&path_query, bincode::config::standard())
+            .expect("Failed to serialize PathQuery");
+
+        // Convert the encoded bytes to a hex string
+        let hex_string = hex::encode(encoded);
+
+        assert_eq!(hex_string, "050140201da29f488023e306ff9a680bc9837153fb0778c8ee9c934a87dc0de1d69abd3c010106646f6d61696e107265636f7264732e6964656e746974790105208dc201fd7ad7905f8a84d66218e2b387daea7fe4739ae0e21e8c3ee755e6a2c0010101000101030000000001010000010101000101030000000000010600");
     }
 
     #[test]

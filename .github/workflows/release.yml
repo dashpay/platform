@@ -9,6 +9,10 @@ on:
       tag:
         description: "Version (i.e. v0.22.3-pre.2)"
         required: true
+      only_drive:
+        type: boolean
+        description: Only build Drive image
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -17,7 +21,7 @@ concurrency:
 jobs:
   release-npm:
     name: Release NPM packages
-    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
     timeout-minutes: 15
     if: github.event_name != 'workflow_dispatch'
     steps:
@@ -81,7 +85,7 @@ jobs:
         with:
           result-encoding: string
           script: |
-            const fullTag = context.payload.release.tag_name;
+            const fullTag = "${{ inputs.tag }}" || context.payload.release.tag_name;
             if (fullTag.includes('-')) {
               const [, fullSuffix] = fullTag.split('-');
               const [suffix] = fullSuffix.split('.');
@@ -96,9 +100,14 @@ jobs:
         with:
           result-encoding: string
           script: |
-            const tag = context.payload.release.tag_name;
+            const tag = "${{ inputs.tag }}" || context.payload.release.tag_name;
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
             return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
+
+      - name: Show NPM release tag
+        run: |
+          echo "NPM suffix: ${{ steps.suffix.outputs.result }}"
+          echo "NPM release tag: ${{ steps.tag.outputs.result }}"
 
       - name: Configure NPM auth token
         run: yarn config set npmAuthToken ${{ secrets.NPM_TOKEN }}
@@ -136,9 +145,23 @@ jobs:
       image_org: dashpay
       image_name: drive
       target: drive-abci
+      tag: ${{ inputs.tag || github.event.release.tag_name }}
 
-  release-drive-dapi:
+  release-drive-image-debug:
+    name: Release Drive debug image
+    secrets: inherit
+    uses: ./.github/workflows/release-docker-image.yml
+    with:
+      name: Drive
+      image_org: dashpay
+      image_name: drive
+      target: drive-abci
+      cargo_profile: dev
+      tag: ${{ inputs.tag || github.event.release.tag_name }}-debug
+
+  release-dapi-image:
     name: Release DAPI image
+    if: ${{ !inputs.only_drive }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -146,9 +169,11 @@ jobs:
       image_org: dashpay
       image_name: dapi
       target: dapi
+      tag: ${{ inputs.tag || github.event.release.tag_name }}
 
   release-test-suite-image:
     name: Release Test Suite image
+    if: ${{ !inputs.only_drive }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -156,20 +181,24 @@ jobs:
       image_org: dashpay
       image_name: platform-test-suite
       target: test-suite
+      tag: ${{ inputs.tag || github.event.release.tag_name }}
 
   release-dashmate-helper-image:
     name: Release Dashmate Helper image
     secrets: inherit
+    if: ${{ !inputs.only_drive }}
     uses: ./.github/workflows/release-docker-image.yml
     with:
       name: Dashmate Helper
       image_org: dashpay
       image_name: dashmate-helper
       target: dashmate-helper
+      tag: ${{ inputs.tag || github.event.release.tag_name }}
 
   release-dashmate-packages:
     name: Release Dashmate packages
     runs-on: ${{ matrix.os }}
+    if: ${{ !inputs.only_drive }}
     needs: release-npm
     permissions:
       id-token: write # s3 cache
@@ -185,12 +214,12 @@ jobs:
           - package_type: deb
             os: ubuntu-22.04
           - package_type: macos
-            os: macos-12
+            os: macos-14
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
         with:
-            fetch-depth: 0
+          fetch-depth: 0
 
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
@@ -213,9 +242,11 @@ jobs:
       - name: Install macOS build deps
         if: runner.os == 'macOS'
         run: |
-          brew install llvm docker colima coreutils
-          colima start
-          echo "/usr/local/opt/llvm/bin" >> $GITHUB_PATH
+          brew install llvm coreutils
+
+      - name: Set up Docker for macOS
+        if: runner.os == 'macOS'
+        uses: docker-practice/actions-setup-docker@master
 
       - name: Install the Apple certificate
         if: runner.os == 'macOS'
@@ -249,7 +280,7 @@ jobs:
 
       - name: Create package
         env:
-          OSX_KEYCHAIN: $RUNNER_TEMP/app-signing.keychain-db
+          OSX_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
         run: "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh ${{ matrix.package_type }}"
 
       - name: Upload artifacts to action summary

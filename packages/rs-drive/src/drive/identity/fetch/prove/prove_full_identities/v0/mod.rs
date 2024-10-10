@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn should_prove_two_full_identities_query_no_tx() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let identities: BTreeMap<[u8; 32], Option<Identity>> =
@@ -111,7 +111,7 @@ mod tests {
 
     #[test]
     fn should_prove_ten_full_identities_query_no_tx() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let identities: BTreeMap<[u8; 32], Option<Identity>> =

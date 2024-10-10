@@ -2,6 +2,7 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::metrics::HistogramTiming;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
@@ -42,6 +43,8 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
+        proposing_state_transitions: bool,
+        timer: Option<&HistogramTiming>,
     ) -> Result<StateTransitionsProcessingResult, Error> {
         match platform_version
             .drive_abci
@@ -55,6 +58,8 @@ where
                 block_info,
                 transaction,
                 platform_version,
+                proposing_state_transitions,
+                timer,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "process_raw_state_transitions".to_string(),

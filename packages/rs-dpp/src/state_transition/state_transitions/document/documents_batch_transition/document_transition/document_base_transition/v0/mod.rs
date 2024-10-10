@@ -35,7 +35,7 @@ use crate::{data_contract::DataContract, errors::ProtocolError};
     serde(rename_all = "camelCase")
 )]
 #[display(
-    fmt = "ID: {}, Type: {}, Contract ID: {}",
+    "ID: {}, Type: {}, Contract ID: {}",
     "id",
     "document_type_name",
     "data_contract_id"

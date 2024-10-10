@@ -15,6 +15,7 @@ pub struct DPPVersion {
     pub identity_versions: IdentityVersions,
     pub voting_versions: VotingVersions,
     pub asset_lock_versions: AssetLockVersions,
+    pub methods: DPPMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -29,6 +30,12 @@ pub struct StateTransitionVersions {
 pub struct IdentityTransitionVersions {
     pub max_public_keys_in_creation: u16,
     pub asset_locks: IdentityTransitionAssetLockVersions,
+    pub credit_withdrawal: IdentityCreditWithdrawalTransitionVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct IdentityCreditWithdrawalTransitionVersions {
+    pub default_constructor: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -89,7 +96,9 @@ pub struct DataContractValidationVersions {
 #[ferment_macro::export]
 pub struct VotingValidationVersions {
     /// How long do we allow other contenders to join a contest after the first contender
-    pub allow_other_contenders_time_ms: u64,
+    pub allow_other_contenders_time_mainnet_ms: u64,
+    /// How long do we allow other contenders to join a contest after the first contender in a testing environment
+    pub allow_other_contenders_time_testing_ms: u64,
     /// How many votes do we allow from the same masternode?
     pub votes_allowed_per_masternode: u16,
 }
@@ -263,7 +272,8 @@ pub struct IdentityVersions {
 #[derive(Clone, Debug, Default)]
 #[ferment_macro::export]
 pub struct VotingVersions {
-    pub default_vote_poll_time_duration_ms: u64,
+    pub default_vote_poll_time_duration_mainnet_ms: u64,
+    pub default_vote_poll_time_duration_test_network_ms: u64,
     pub contested_document_vote_poll_stored_info_version: FeatureVersion,
 }
 
@@ -293,4 +303,11 @@ pub struct DocumentMethodVersions {
     pub hash: FeatureVersion,
     pub get_raw_for_contract: FeatureVersion,
     pub get_raw_for_document_type: FeatureVersion,
+    pub try_into_asset_unlock_base_transaction_info: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DPPMethodVersions {
+    pub epoch_core_reward_credits_for_distribution: FeatureVersion,
+    pub daily_withdrawal_limit: FeatureVersion,
 }

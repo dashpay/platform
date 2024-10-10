@@ -1,6 +1,7 @@
 import { Listr } from 'listr2';
 import fs from 'fs';
 import path from 'path';
+import chalk from 'chalk';
 import {
   NETWORK_TESTNET,
 } from '../../../../constants.js';
@@ -54,13 +55,6 @@ function validateCoreDataDirectoryPathFactory(config) {
       return 'dash.conf should be configured for mainnet';
     }
 
-    // Config file should contain masternodeblsprivkey in case of masternode
-    if (config.get('core.masternode.enable')) {
-      if (!configFileContent.includes('masternodeblsprivkey=')) {
-        return 'dash.conf should contain masternodeblsprivkey';
-      }
-    }
-
     return true;
   }
 
@@ -74,7 +68,11 @@ function validateCoreDataDirectoryPathFactory(config) {
  * @param {generateEnvs} generateEnvs
  * @return {importCoreDataTask}
  */
-export default function importCoreDataTaskFactory(docker, dockerPull, generateEnvs) {
+export default function importCoreDataTaskFactory(
+  docker,
+  dockerPull,
+  generateEnvs,
+) {
   /**
    * @typedef {function} importCoreDataTask
    * @returns {Listr}
@@ -115,10 +113,19 @@ export default function importCoreDataTaskFactory(docker, dockerPull, generateEn
           // Read configuration from dashd.conf
           const configPath = path.join(coreDataPath, 'dash.conf');
           const configFileContent = fs.readFileSync(configPath, 'utf8');
-          const masternodeOperatorPrivateKey = configFileContent.match(/^masternodeblsprivkey=([^ \n]+)/m)?.[1];
 
-          if (masternodeOperatorPrivateKey) {
-            ctx.config.set('core.masternode.operator.privateKey', masternodeOperatorPrivateKey);
+          // Config file should contain masternodeblsprivkey in case of masternode
+          if (ctx.config.get('core.masternode.enable')) {
+            const masternodeOperatorPrivateKey = configFileContent.match(/^masternodeblsprivkey=([^ \n]+)/m)?.[1];
+
+            if (masternodeOperatorPrivateKey) {
+              ctx.config.set('core.masternode.operator.privateKey', masternodeOperatorPrivateKey);
+              // txindex is enabled by default for masternodes
+              ctx.isReindexRequired = false;
+            } else {
+              // We need to reindex Core if there weren't all required indexed enabled before
+              ctx.isReindexRequired = !configFileContent.match(/^txindex=1/);
+            }
           }
 
           const host = configFileContent.match(/^bind=([^ \n]+)/m)?.[1];
@@ -193,11 +200,21 @@ export default function importCoreDataTaskFactory(docker, dockerPull, generateEn
             throw new Error('Cannot copy data dir to volume');
           }
 
-          // TODO: Wording needs to be updated
+          let header;
+          if (ctx.isReindexRequired) {
+            header = chalk`  {bold You existing Core node doesn't have indexes required to run ${ctx.nodeTypeName}.
+  Reindex of the Core data will be needed after you finish the node setup.}
+
+  Please stop your existing Dash Core node before reindexing.
+  Also, disable any automatic startup services (e.g., cron, systemd) for the existing Dash Core installation.\n`;
+          } else {
+            header = `  Please stop your existing Dash Core node before starting the new dashmate-based
+    node ("dashmate start"). Also, disable any automatic startup services (e.g., cron, systemd) for the existing Dash Core installation.\n`;
+          }
+
           await task.prompt({
             type: 'confirm',
-            header: `  Please stop your existing Dash Core node before starting the new dashmate-based
-    node ("dashmate start"). Also, disable any automatic startup services (e.g., cron, systemd) for the existing Dash Core installation.\n`,
+            header,
             message: 'Press any key to continue...',
             default: ' ',
             separator: () => '',

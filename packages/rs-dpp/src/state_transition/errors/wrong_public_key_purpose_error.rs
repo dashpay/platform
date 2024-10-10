@@ -2,28 +2,28 @@ use thiserror::Error;
 
 use crate::identity::identity_public_key::Purpose;
 use crate::errors::ProtocolError;
+use itertools::Itertools;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
-#[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {key_purpose_requirement}")]
-#[ferment_macro::export]
+#[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {}", allowed_key_purposes.iter().map(|s| s.to_string()).join(" | "))]
 pub struct WrongPublicKeyPurposeError {
-    pub public_key_purpose: Purpose,
-    pub key_purpose_requirement: Purpose,
+    public_key_purpose: Purpose,
+    allowed_key_purposes: Vec<Purpose>,
 }
 
 impl WrongPublicKeyPurposeError {
-    pub fn new(public_key_purpose: Purpose, key_purpose_requirement: Purpose) -> Self {
+    pub fn new(public_key_purpose: Purpose, allowed_key_purposes: Vec<Purpose>) -> Self {
         Self {
             public_key_purpose,
-            key_purpose_requirement,
+            allowed_key_purposes,
         }
     }
 
     pub fn public_key_purpose(&self) -> Purpose {
         self.public_key_purpose
     }
-    pub fn key_purpose_requirement(&self) -> Purpose {
-        self.key_purpose_requirement
+    pub fn allowed_key_purposes(&self) -> &Vec<Purpose> {
+        &self.allowed_key_purposes
     }
 }
 

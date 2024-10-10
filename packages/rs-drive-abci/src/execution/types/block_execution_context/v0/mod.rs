@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 use crate::execution::types::block_state_info::BlockStateInfo;
 
 use crate::platform_types::epoch_info::EpochInfo;
@@ -42,8 +13,6 @@ pub struct BlockExecutionContextV0 {
     pub block_state_info: BlockStateInfo,
     /// Epoch info
     pub epoch_info: EpochInfo,
-    /// Total hpmn count
-    pub hpmn_count: u32,
     /// Unsigned withdrawal transactions to be available for extend and verify votes handlers
     pub unsigned_withdrawal_transactions: UnsignedWithdrawalTxs,
     /// Block state
@@ -58,9 +27,6 @@ pub trait BlockExecutionContextV0Getters {
 
     /// Returns a reference of the epoch_info field.
     fn epoch_info(&self) -> &EpochInfo;
-
-    /// Returns the hpmn_count field.
-    fn hpmn_count(&self) -> u32;
 
     /// Returns a reference of the withdrawal_transactions field.
     fn unsigned_withdrawal_transactions(&self) -> &UnsignedWithdrawalTxs;
@@ -79,9 +45,6 @@ pub trait BlockExecutionContextV0Setters {
 
     /// Sets the epoch_info field.
     fn set_epoch_info(&mut self, info: EpochInfo);
-
-    /// Sets the hpmn_count field.
-    fn set_hpmn_count(&mut self, count: u32);
 
     /// Sets the withdrawal_transactions field.
     fn set_unsigned_withdrawal_transactions(&mut self, transactions: UnsignedWithdrawalTxs);
@@ -137,11 +100,6 @@ impl BlockExecutionContextV0Getters for BlockExecutionContextV0 {
         &self.epoch_info
     }
 
-    /// Returns the hpmn_count field.
-    fn hpmn_count(&self) -> u32 {
-        self.hpmn_count
-    }
-
     /// Returns a reference to the unsigned withdrawal transactions
     fn unsigned_withdrawal_transactions(&self) -> &UnsignedWithdrawalTxs {
         &self.unsigned_withdrawal_transactions
@@ -166,10 +124,6 @@ impl BlockExecutionContextV0Setters for BlockExecutionContextV0 {
     /// Sets the epoch_info field.
     fn set_epoch_info(&mut self, info: EpochInfo) {
         self.epoch_info = info;
-    }
-    /// Sets the hpmn_count field.
-    fn set_hpmn_count(&mut self, count: u32) {
-        self.hpmn_count = count;
     }
     /// Sets the withdrawal_transactions field.
     fn set_unsigned_withdrawal_transactions(&mut self, transactions: UnsignedWithdrawalTxs) {

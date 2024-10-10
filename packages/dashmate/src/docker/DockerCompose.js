@@ -42,6 +42,11 @@ export default class DockerCompose {
   #isDockerSetupVerified = false;
 
   /**
+   * @type {Error}
+   */
+  #dockerVerifiicationError;
+
+  /**
    * @type {HomeDir}
    */
   #homeDir;
@@ -414,15 +419,23 @@ export default class DockerCompose {
    * Down docker compose
    *
    * @param {Config} config
+   * @param {Object} [options]
+   * @param {Object} [options.removeVolumes=false]
    * @return {Promise<void>}
    */
-  async down(config) {
+  async down(config, options = {}) {
     await this.throwErrorIfNotInstalled();
+
+    const commandOptions = ['--remove-orphans'];
+
+    if (options.removeVolumes) {
+      commandOptions.push('-v');
+    }
 
     try {
       await dockerCompose.down({
         ...this.#createOptions(config),
-        commandOptions: ['-v', '--remove-orphans'],
+        commandOptions,
       });
     } catch (e) {
       throw new DockerComposeError(e);
@@ -471,18 +484,54 @@ export default class DockerCompose {
   }
 
   /**
+   * Logs
+   *
+   * @param {Config} config
+   * @param {string[]} services
+   * @param {Object} options
+   * @param {number} options.tail
+   * @return {Promise<{exitCode: number | null, out: string, err: string}>}
+   */
+  async logs(config, services = [], options = {}) {
+    await this.throwErrorIfNotInstalled();
+
+    const args = [...services];
+    if (options.tail) {
+      args.unshift('--tail', options.tail.toString());
+    }
+
+    const commandOptions = this.#createOptions(config);
+
+    try {
+      return await dockerCompose.logs(args, commandOptions);
+    } catch (e) {
+      throw new DockerComposeError(e);
+    }
+  }
+
+  /**
    * @return {Promise<void>}
    */
   async throwErrorIfNotInstalled() {
     if (this.#isDockerSetupVerified) {
-      return;
+      if (this.#dockerVerifiicationError) {
+        throw this.#dockerVerifiicationError;
+      } else {
+        return;
+      }
     }
 
-    this.#isDockerSetupVerified = true;
+    try {
+      await this.throwErrorIfDockerIsNotInstalled();
 
-    await this.throwErrorIfDockerIsNotInstalled();
+      await this.throwErrorIfDockerComposeIsNotInstalled();
+    } catch (e) {
+      this.#dockerVerifiicationError = e;
 
-    await this.throwErrorIfDockerComposeIsNotInstalled();
+      throw e;
+    } finally {
+      this.#isDockerSetupVerified = true;
+    }
   }
 
   /**

@@ -41,7 +41,7 @@ impl Drive {
     /// - The keys information is missing or incorrect.
     ///
     #[inline(always)]
-    pub(crate) fn verify_identity_keys_by_identity_id_v0(
+    pub(super) fn verify_identity_keys_by_identity_id_v0(
         proof: &[u8],
         key_request: IdentityKeysRequest,
         with_revision: bool,

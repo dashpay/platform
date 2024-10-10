@@ -15,6 +15,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const cbor = require('cbor');
+const UnavailableGrpcError = require('@dashevo/grpc-common/lib/server/error/UnavailableGrpcError');
 const TransactionWaitPeriodExceededError = require('../../../errors/TransactionWaitPeriodExceededError');
 const TransactionErrorResult = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/transactionResult/TransactionErrorResult');
 
@@ -34,7 +35,7 @@ function waitForStateTransitionResultHandlerFactory(
   blockchainListener,
   dpp,
   createGrpcErrorFromDriveResponse,
-  stateTransitionWaitTimeout = 80000,
+  stateTransitionWaitTimeout,
 ) {
   /**
    * @param {Object} txDeliverResult
@@ -62,6 +63,10 @@ function waitForStateTransitionResultHandlerFactory(
    */
   async function waitForStateTransitionResultHandler(call) {
     const { request } = call;
+
+    if (!blockchainListener.wsClient.isConnected) {
+      throw new UnavailableGrpcError('Tenderdash is not available');
+    }
 
     const stateTransitionHash = request.getV0().getStateTransitionHash();
     const prove = request.getV0().getProve();

@@ -13,6 +13,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
+use dpp::block::epoch::Epoch;
 use std::collections::HashMap;
 
 impl Drive {
@@ -84,6 +85,7 @@ impl Drive {
         identity_id: [u8; 32],
         key_ids: Vec<KeyID>,
         disable_at: TimestampMillis,
+        epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -101,6 +103,7 @@ impl Drive {
                 identity_id,
                 key_ids,
                 disable_at,
+                epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

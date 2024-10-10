@@ -1,41 +1,15 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
+use crate::logging::LogConfigs;
+use crate::utils::from_str_or_number;
+use crate::{abci::config::AbciConfig, error::Error};
 use bincode::{Decode, Encode};
 use dashcore_rpc::json::QuorumType;
-use std::path::PathBuf;
-
-use crate::logging::LogConfigs;
-use crate::{abci::config::AbciConfig, error::Error};
+use dpp::dashcore::Network;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use drive::config::DriveConfig;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
+use std::path::PathBuf;
+use std::str::FromStr;
 
 /// Configuration for Dash Core RPC client used in consensus logic
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -98,7 +72,7 @@ impl CheckTxCoreRpcConfig {
 }
 
 /// Configuration for Dash Core related things
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CoreConfig {
     /// Core RPC config for consensus
@@ -107,6 +81,15 @@ pub struct CoreConfig {
     /// Core RPC config for check tx
     #[serde(flatten)]
     pub check_tx_rpc: CheckTxCoreRpcConfig,
+}
+
+impl Default for CoreConfig {
+    fn default() -> Self {
+        Self {
+            consensus_rpc: Default::default(),
+            check_tx_rpc: Default::default(),
+        }
+    }
 }
 
 /// Configuration of the execution part of Dash Platform.
@@ -131,18 +114,6 @@ pub struct ExecutionConfig {
     pub epoch_time_length_s: u64,
 }
 
-fn from_str_or_number<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: serde::Deserialize<'de> + std::str::FromStr,
-    <T as std::str::FromStr>::Err: std::fmt::Display,
-{
-    use serde::de::Error;
-
-    let s = String::deserialize(deserializer)?;
-    s.parse::<T>().map_err(Error::custom)
-}
-
 /// Configuration of Dash Platform.
 ///
 /// All fields in this struct can be configured using environment variables.
@@ -158,10 +129,12 @@ where
 /// ``
 ///
 /// [`verify_sum_trees`]: PlatformConfig::verify_sum_trees
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 // NOTE: in renames, we use lower_snake_case, because uppercase does not work; see
 // https://github.com/softprops/envy/issues/61 and https://github.com/softprops/envy/pull/69
 pub struct PlatformConfig {
+    /// The network type
+    pub network: Network,
     /// Drive configuration
     #[serde(flatten)]
     pub drive: DriveConfig,
@@ -207,18 +180,13 @@ pub struct PlatformConfig {
     /// Approximately how often are blocks produced
     pub block_spacing_ms: u64,
 
-    /// Initial protocol version
-    #[serde(default = "PlatformConfig::default_initial_protocol_version")]
-    pub initial_protocol_version: ProtocolVersion,
-
     /// Path to data storage
     pub db_path: PathBuf,
 
     /// Path to store rejected / invalid items (like transactions).
-    /// Used mainly for debuggig.
+    /// Used mainly for debugging.
     ///
     /// If not set, rejected and invalid items will not be stored.
-    #[serde(default)]
     pub rejections_path: Option<PathBuf>,
 
     #[cfg(feature = "testing-config")]
@@ -231,12 +199,103 @@ pub struct PlatformConfig {
 
     // TODO: Use from_str_to_socket_address
     /// Tokio console address to connect to
-    #[serde(default = "PlatformConfig::default_tokio_console_address")]
     pub tokio_console_address: String,
 
     /// Number of seconds to store task information if there is no clients connected
+    pub tokio_console_retention_secs: u64,
+}
+
+// Define an intermediate struct that mirrors PlatformConfig
+#[derive(Deserialize)]
+struct PlatformConfigIntermediate {
+    /// The network type
+    #[serde(
+        default = "PlatformConfig::default_network",
+        deserialize_with = "from_str_to_network_with_aliases"
+    )]
+    pub network: Network,
+    /// Drive configuration
+    #[serde(flatten)]
+    pub drive: DriveConfig,
+    // Include all other fields
+    #[serde(flatten)]
+    pub core: CoreConfig,
+    #[serde(flatten)]
+    pub abci: AbciConfig,
+    pub prometheus_bind_address: Option<String>,
+    pub grpc_bind_address: String,
+    #[serde(flatten)]
+    pub execution: ExecutionConfig,
+    #[serde(flatten)]
+    pub validator_set: ValidatorSetConfig,
+    #[serde(flatten)]
+    pub chain_lock: ChainLockConfig,
+    #[serde(flatten)]
+    pub instant_lock: InstantLockConfig,
+    pub block_spacing_ms: u64,
+    #[serde(default = "PlatformConfig::default_initial_protocol_version")]
+    pub initial_protocol_version: ProtocolVersion,
+    pub db_path: PathBuf,
+    #[serde(default)]
+    pub rejections_path: Option<PathBuf>,
+    #[cfg(feature = "testing-config")]
+    #[serde(skip)]
+    pub testing_configs: PlatformTestConfig,
+    pub tokio_console_enabled: bool,
+    #[serde(default = "PlatformConfig::default_tokio_console_address")]
+    pub tokio_console_address: String,
     #[serde(default = "PlatformConfig::default_tokio_console_retention_secs")]
     pub tokio_console_retention_secs: u64,
+}
+
+impl<'de> Deserialize<'de> for PlatformConfig {
+    fn deserialize<D>(deserializer: D) -> Result<PlatformConfig, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // First, deserialize into an intermediate struct
+        let mut config = PlatformConfigIntermediate::deserialize(deserializer)?;
+
+        // Set drive.network = network
+        config.drive.network = config.network;
+
+        // Convert the intermediate struct into your actual PlatformConfig
+        Ok(PlatformConfig {
+            network: config.network,
+            drive: config.drive,
+            // Copy other fields
+            core: config.core,
+            abci: config.abci,
+            prometheus_bind_address: config.prometheus_bind_address,
+            grpc_bind_address: config.grpc_bind_address,
+            execution: config.execution,
+            validator_set: config.validator_set,
+            chain_lock: config.chain_lock,
+            instant_lock: config.instant_lock,
+            block_spacing_ms: config.block_spacing_ms,
+            db_path: config.db_path,
+            rejections_path: config.rejections_path,
+            #[cfg(feature = "testing-config")]
+            testing_configs: config.testing_configs,
+            tokio_console_enabled: config.tokio_console_enabled,
+            tokio_console_address: config.tokio_console_address,
+            tokio_console_retention_secs: config.tokio_console_retention_secs,
+        })
+    }
+}
+
+fn from_str_to_network_with_aliases<'de, D>(deserializer: D) -> Result<Network, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let network_name = String::deserialize(deserializer)?;
+
+    match network_name.as_str() {
+        "mainnet" => Ok(Network::Dash),
+        "local" => Ok(Network::Regtest),
+        _ => Network::from_str(network_name.as_str())
+            .map_err(|e| serde::de::Error::custom(format!("can't parse network name: {e}"))),
+    }
 }
 
 /// A config suitable for a quorum configuration
@@ -569,6 +628,10 @@ impl PlatformConfig {
         INITIAL_PROTOCOL_VERSION
     }
 
+    fn default_network() -> Network {
+        Network::Dash
+    }
+
     fn default_tokio_console_address() -> String {
         String::from("127.0.0.1:6669")
     }
@@ -617,10 +680,23 @@ impl Default for PlatformConfig {
     }
 }
 
-#[allow(missing_docs)]
+/// The platform config
 impl PlatformConfig {
+    /// The default depending on the network
+    pub fn default_for_network(network: Network) -> Self {
+        match network {
+            Network::Dash => Self::default_mainnet(),
+            Network::Testnet => Self::default_testnet(),
+            Network::Devnet => Self::default_devnet(),
+            Network::Regtest => Self::default_local(),
+            _ => Self::default_testnet(),
+        }
+    }
+
+    /// The default local config
     pub fn default_local() -> Self {
         Self {
+            network: Network::Regtest,
             validator_set: ValidatorSetConfig {
                 quorum_type: QuorumType::LlmqTestPlatform,
                 quorum_size: 3,
@@ -654,14 +730,57 @@ impl PlatformConfig {
             tokio_console_enabled: false,
             tokio_console_address: PlatformConfig::default_tokio_console_address(),
             tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
-            initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
             grpc_bind_address: "127.0.0.1:26670".to_string(),
         }
     }
 
+    /// The default devnet config
+    pub fn default_devnet() -> Self {
+        Self {
+            network: Network::Regtest,
+            validator_set: ValidatorSetConfig {
+                quorum_type: QuorumType::LlmqDevnetPlatform,
+                quorum_size: 12,
+                quorum_window: 24,
+                quorum_active_signers: 8,
+                quorum_rotation: false,
+            },
+            chain_lock: ChainLockConfig {
+                quorum_type: QuorumType::LlmqDevnetPlatform,
+                quorum_size: 12,
+                quorum_window: 24,
+                quorum_active_signers: 8,
+                quorum_rotation: false,
+            },
+            instant_lock: InstantLockConfig {
+                quorum_type: QuorumType::LlmqDevnetDip0024,
+                quorum_active_signers: 4,
+                quorum_size: 8,
+                quorum_window: 48,
+                quorum_rotation: true,
+            },
+            block_spacing_ms: 5000,
+            drive: Default::default(),
+            abci: Default::default(),
+            core: Default::default(),
+            execution: Default::default(),
+            db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
+            #[cfg(feature = "testing-config")]
+            testing_configs: PlatformTestConfig::default(),
+            tokio_console_enabled: false,
+            tokio_console_address: PlatformConfig::default_tokio_console_address(),
+            tokio_console_retention_secs: PlatformConfig::default_tokio_console_retention_secs(),
+            prometheus_bind_address: None,
+            grpc_bind_address: "127.0.0.1:26670".to_string(),
+        }
+    }
+
+    /// The default testnet config
     pub fn default_testnet() -> Self {
         Self {
+            network: Network::Testnet,
             validator_set: ValidatorSetConfig {
                 quorum_type: QuorumType::Llmq25_67,
                 quorum_size: 25,
@@ -684,7 +803,7 @@ impl PlatformConfig {
                 quorum_rotation: true,
             },
             block_spacing_ms: 5000,
-            drive: Default::default(),
+            drive: DriveConfig::default_testnet(),
             abci: Default::default(),
             core: Default::default(),
             execution: Default::default(),
@@ -692,7 +811,6 @@ impl PlatformConfig {
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             #[cfg(feature = "testing-config")]
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
             grpc_bind_address: "127.0.0.1:26670".to_string(),
             tokio_console_enabled: false,
@@ -701,8 +819,10 @@ impl PlatformConfig {
         }
     }
 
+    /// The default mainnet config
     pub fn default_mainnet() -> Self {
         Self {
+            network: Network::Dash,
             validator_set: ValidatorSetConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 100,
@@ -733,7 +853,6 @@ impl PlatformConfig {
             rejections_path: Some(PathBuf::from("/var/log/dash/rejected")),
             #[cfg(feature = "testing-config")]
             testing_configs: PlatformTestConfig::default(),
-            initial_protocol_version: Self::default_initial_protocol_version(),
             prometheus_bind_address: None,
             grpc_bind_address: "127.0.0.1:26670".to_string(),
             tokio_console_enabled: false,
@@ -755,6 +874,8 @@ pub struct PlatformTestConfig {
     pub block_commit_signature_verification: bool,
     /// Disable instant lock signature verification
     pub disable_instant_lock_signature_verification: bool,
+    /// Disable temporarily disabled contested documents validation
+    pub disable_contested_documents_is_allowed_validation: bool,
 }
 
 #[cfg(feature = "testing-config")]
@@ -766,6 +887,7 @@ impl PlatformTestConfig {
             store_platform_state: false,
             block_commit_signature_verification: false,
             disable_instant_lock_signature_verification: true,
+            disable_contested_documents_is_allowed_validation: true,
         }
     }
 }
@@ -778,6 +900,7 @@ impl Default for PlatformTestConfig {
             store_platform_state: true,
             block_commit_signature_verification: true,
             disable_instant_lock_signature_verification: false,
+            disable_contested_documents_is_allowed_validation: true,
         }
     }
 }
@@ -787,6 +910,7 @@ mod tests {
     use super::FromEnv;
     use crate::logging::LogDestination;
     use dashcore_rpc::dashcore_rpc_json::QuorumType;
+    use dpp::dashcore::Network;
     use std::env;
 
     #[test]
@@ -817,5 +941,23 @@ mod tests {
         for id in vectors {
             matches!(config.abci.log[id.0].destination, LogDestination::Bytes);
         }
+    }
+
+    #[test]
+    #[ignore]
+    //todo: re-enable
+    fn test_config_from_testnet_propagates_network() {
+        // ABCI log configs are parsed manually, so they deserve separate handling
+        // Note that STDOUT is also defined in .env.example, but env var should overwrite it.
+
+        let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.testnet");
+
+        dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
+
+        let config = super::PlatformConfig::from_env().expect("expected config from env");
+        assert!(config.execution.verify_sum_trees);
+        assert_eq!(config.validator_set.quorum_type, QuorumType::Llmq25_67);
+        assert_eq!(config.network, config.drive.network);
+        assert_eq!(config.network, Network::Testnet);
     }
 }

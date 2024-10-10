@@ -152,8 +152,8 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::DataContractCreate(st) => Some(st.$method($args)),
             StateTransition::DataContractUpdate(st) => Some(st.$method($args)),
             StateTransition::DocumentsBatch(st) => Some(st.$method($args)),
-            StateTransition::IdentityCreate(st) => None,
-            StateTransition::IdentityTopUp(st) => None,
+            StateTransition::IdentityCreate(_) => None,
+            StateTransition::IdentityTopUp(_) => None,
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method($args)),
             StateTransition::IdentityUpdate(st) => Some(st.$method($args)),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method($args)),
@@ -165,8 +165,8 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::DataContractCreate(st) => Some(st.$method()),
             StateTransition::DataContractUpdate(st) => Some(st.$method()),
             StateTransition::DocumentsBatch(st) => Some(st.$method()),
-            StateTransition::IdentityCreate(_st) => None,
-            StateTransition::IdentityTopUp(_st) => None,
+            StateTransition::IdentityCreate(_) => None,
+            StateTransition::IdentityTopUp(_) => None,
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method()),
             StateTransition::IdentityUpdate(st) => Some(st.$method()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method()),
@@ -401,12 +401,12 @@ impl StateTransition {
     }
 
     /// returns the key security level requirement for the state transition
-    pub fn security_level_requirement(&self) -> Option<Vec<SecurityLevel>> {
-        call_getter_method_identity_signed!(self, security_level_requirement)
+    pub fn security_level_requirement(&self, purpose: Purpose) -> Option<Vec<SecurityLevel>> {
+        call_getter_method_identity_signed!(self, security_level_requirement, purpose)
     }
 
     /// returns the key purpose requirement for the state transition
-    pub fn purpose_requirement(&self) -> Option<Purpose> {
+    pub fn purpose_requirement(&self) -> Option<Vec<Purpose>> {
         call_getter_method_identity_signed!(self, purpose_requirement)
     }
 
@@ -458,7 +458,7 @@ impl StateTransition {
                     return Err(ProtocolError::WrongPublicKeyPurposeError(
                         WrongPublicKeyPurposeError::new(
                             identity_public_key.purpose(),
-                            Purpose::AUTHENTICATION,
+                            vec![Purpose::AUTHENTICATION],
                         ),
                     ));
                 }

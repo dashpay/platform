@@ -12,6 +12,7 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+use drive::query::proposer_block_count_query::ProposerQueryType;
 use drive::util::batch::DriveOperation;
 use drive::util::batch::DriveOperation::IdentityOperation;
 use drive::util::batch::IdentityOperationType::AddToIdentityBalance;
@@ -56,9 +57,9 @@ impl<C> Platform<C> {
 
         let proposers = self
             .drive
-            .get_epoch_proposers(
+            .fetch_epoch_proposers(
                 &unpaid_epoch_tree,
-                None,
+                ProposerQueryType::ByRange(None, None),
                 Some(transaction),
                 platform_version,
             )

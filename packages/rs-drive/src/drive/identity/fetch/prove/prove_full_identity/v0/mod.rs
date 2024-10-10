@@ -37,7 +37,7 @@ mod tests {
     #[test]
     fn should_prove_full_identity_query_no_tx() {
         let platform_version = PlatformVersion::latest();
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let identity = Identity::random_identity(5, Some(14), platform_version)
             .expect("expected a random identity");

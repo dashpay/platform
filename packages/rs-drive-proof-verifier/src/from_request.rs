@@ -71,6 +71,12 @@ impl TryFromRequest<get_contested_resource_vote_state_request_v0::ResultType>
             DriveResultType::Documents => GrpcResultType::Documents,
             DriveResultType::DocumentsAndVoteTally => GrpcResultType::DocumentsAndVoteTally,
             DriveResultType::VoteTally => GrpcResultType::VoteTally,
+            DriveResultType::SingleDocumentByContender(_) => {
+                return Err(Error::RequestError {
+                    error: "can not perform a single document by contender query remotely"
+                        .to_string(),
+                })
+            }
         })
     }
 }
@@ -146,6 +152,9 @@ impl TryFromRequest<GetContestedResourceVoteStateRequest> for ContestedDocumentV
                 ContestedDocumentVotePollDriveQueryResultType::Documents => GrpcResultType::Documents.into(),
                 ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally => GrpcResultType::DocumentsAndVoteTally.into(),
                 ContestedDocumentVotePollDriveQueryResultType::VoteTally => GrpcResultType::VoteTally.into(),
+                ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(_) => return Err(Error::RequestError {
+                                                                                                                                                                           error: "can not perform a single document by contender query remotely".to_string(),
+                                                                                                                                                                       }),
             },
             start_at_identifier_info,
             allow_include_locked_and_abstaining_vote_tally: self.allow_include_locked_and_abstaining_vote_tally,
@@ -200,7 +209,7 @@ impl TryFromRequest<GetContestedResourceIdentityVotesRequest>
         }
 
         Ok(proto::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0 {
-                        prove: true,
+                    prove: true,
                     identity_id: self.identity_id.to_vec(),
                     offset: self.offset.map(|x| x as u32),
                     limit: self.limit.map(|x| x as u32),

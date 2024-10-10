@@ -30,7 +30,7 @@ impl SingleDocumentDriveQuery {
     /// - The GroveDb verification fails.
     /// - The elements returned are not items, the proof is incorrect.
     #[inline(always)]
-    pub(crate) fn verify_proof_keep_serialized_v0(
+    pub(super) fn verify_proof_keep_serialized_v0(
         &self,
         is_subset: bool,
         proof: &[u8],

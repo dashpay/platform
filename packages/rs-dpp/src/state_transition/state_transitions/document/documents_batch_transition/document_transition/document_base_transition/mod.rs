@@ -38,7 +38,7 @@ use std::collections::BTreeMap;
 )]
 #[ferment_macro::export]
 pub enum DocumentBaseTransition {
-    #[display(fmt = "V0({})", "_0")]
+    #[display("V0({})", "_0")]
     V0(DocumentBaseTransitionV0),
 }
 

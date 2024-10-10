@@ -1,5 +1,4 @@
-use crate::identity::identity_public_key::SecurityLevel;
-use crate::identity::identity_public_key::KeyID;
+use crate::identity::identity_public_key::{KeyID, Purpose, SecurityLevel};
 use crate::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::StateTransitionIdentitySigned;
 
@@ -18,9 +17,11 @@ impl StateTransitionIdentitySigned for IdentityUpdateTransition {
         }
     }
 
-    fn security_level_requirement(&self) -> Vec<SecurityLevel> {
+    fn security_level_requirement(&self, purpose: Purpose) -> Vec<SecurityLevel> {
         match self {
-            IdentityUpdateTransition::V0(transition) => transition.security_level_requirement(),
+            IdentityUpdateTransition::V0(transition) => {
+                transition.security_level_requirement(purpose)
+            }
         }
     }
 }

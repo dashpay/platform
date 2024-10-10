@@ -401,43 +401,86 @@ export default {
         log: {
           type: 'object',
           properties: {
-            file: {
+            filePath: {
+              type: ['null', 'string'],
+              minLength: 1,
+              description: 'Write logs only to stdout if null. Provide an absolute file path on'
+                + ' the host machine to also write to a log file there. Use a log file if logs must be'
+                + ' retained since stdout logs are stored inside the docker container'
+                + ' and removed if the container is removed.',
+            },
+            debug: {
               type: 'object',
               properties: {
-                categories: {
+                enabled: {
+                  type: 'boolean',
+                  description: 'Enable debug logging. Equivalent to setting "debug=1" in the Core configuration file)',
+                },
+                ips: {
+                  type: 'boolean',
+                  description: 'Include IP addresses in debug output',
+                },
+                sourceLocations: {
+                  type: 'boolean',
+                  description: 'Prepend debug output with name of the originating source'
+                    + ' location (source file, line number and function name)',
+                },
+                threadNames: {
+                  type: 'boolean',
+                  description: 'Prepend debug output with name of the originating thread (only'
+                    + ' available on platforms supporting thread_local)',
+                },
+                timeMicros: {
+                  type: 'boolean',
+                  description: 'Add microsecond precision to debug timestamps',
+                },
+                includeOnly: {
                   type: 'array',
                   uniqueItems: true,
+                  description: 'Log all categories if empty. Otherwise, log only the specified categories.',
                   items: {
                     type: 'string',
-                    enum: ['all', 'net', 'tor', 'mempool', 'http', 'bench', 'zmq', 'walletdb', 'rpc', 'estimatefee',
+                    enum: ['net', 'tor', 'mempool', 'http', 'bench', 'zmq', 'walletdb', 'rpc', 'estimatefee',
                       'addrman', 'selectcoins', 'reindex', 'cmpctblock', 'rand', 'prune', 'proxy', 'mempoolrej',
                       'libevent', 'coindb', 'qt', 'leveldb', 'chainlocks', 'gobject', 'instantsend', 'llmq',
                       'llmq-dkg', 'llmq-sigs', 'mnpayments', 'mnsync', 'coinjoin', 'spork', 'netconn',
                     ],
                   },
                 },
-                path: {
-                  type: 'string',
-                  minLength: 1,
+                exclude: {
+                  type: 'array',
+                  description: 'Exclude debugging information for one or more categories.',
+                  uniqueItems: true,
+                  items: {
+                    type: 'string',
+                    enum: ['net', 'tor', 'mempool', 'http', 'bench', 'zmq', 'walletdb', 'rpc', 'estimatefee',
+                      'addrman', 'selectcoins', 'reindex', 'cmpctblock', 'rand', 'prune', 'proxy', 'mempoolrej',
+                      'libevent', 'coindb', 'qt', 'leveldb', 'chainlocks', 'gobject', 'instantsend', 'llmq',
+                      'llmq-dkg', 'llmq-sigs', 'mnpayments', 'mnsync', 'coinjoin', 'spork', 'netconn',
+                    ],
+                  },
                 },
               },
               additionalProperties: false,
-              required: ['categories', 'path'],
+              required: ['enabled', 'ips', 'sourceLocations', 'threadNames', 'timeMicros', 'includeOnly', 'exclude'],
             },
           },
           additionalProperties: false,
-          required: ['file'],
-        },
-        logIps: {
-          type: 'integer',
-          enum: [0, 1],
+          required: ['filePath', 'debug'],
         },
         indexes: {
-          type: 'boolean',
+          type: ['array'],
+          uniqueItems: true,
+          items: {
+            type: 'string',
+            enum: ['address', 'tx', 'timestamp', 'spent'],
+          },
+          description: 'List of core indexes to enable. `platform.enable`, '
+            + ' `core.masternode.enable`, and `core.insight.enabled` add indexes dynamically',
         },
       },
       required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet', 'log',
-        'logIps', 'indexes', 'insight'],
+        'indexes', 'insight'],
       additionalProperties: false,
     },
     platform: {
@@ -512,6 +555,9 @@ export default {
                       additionalProperties: false,
                       required: ['maxConcurrentStreams'],
                     },
+                    waitForStResultTimeout: {
+                      $ref: '#/definitions/durationInSeconds',
+                    },
                     host: {
                       type: 'string',
                       minLength: 1,
@@ -521,7 +567,7 @@ export default {
                       $ref: '#/definitions/port',
                     },
                   },
-                  required: ['http2', 'host', 'port'],
+                  required: ['http2', 'host', 'port', 'waitForStResultTimeout'],
                   additionalProperties: false,
                 },
               },
@@ -621,10 +667,12 @@ export default {
               properties: {
                 level: {
                   type: 'string',
+                  description: 'Log level for gateway container logs',
                   enum: ['trace', 'debug', 'info', 'warn', 'error', 'critical', 'off'],
                 },
                 accessLogs: {
                   type: 'array',
+                  description: 'Envoy access logs',
                   items: {
                     oneOf: [
                       {
@@ -634,7 +682,8 @@ export default {
                             type: 'string',
                             minLength: 1,
                             enum: ['stdout', 'stderr'],
-                            description: 'Access log type: stdout, stderr or file',
+                            description: 'stdout, stderr or file (absolute file path on host'
+                              + ' machine)',
                           },
                           format: {
                             type: 'string',
@@ -660,7 +709,9 @@ export default {
                               additionalProperties: {
                                 type: 'string',
                               },
-                              description: 'JSON fields and values. If null, default template is used.',
+                              description: 'JSON fields and values. If null, default template is'
+                                + ' used. More info:'
+                                + ' https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage#format-dictionaries',
                             },
                           },
                           required: ['template'],
@@ -670,7 +721,9 @@ export default {
                           properties: {
                             template: {
                               type: ['null', 'string'],
-                              description: 'Template string. If null, default template is used.',
+                              description: 'Template string. If null, default template is used.'
+                                + ' More info:'
+                                + ' https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage#format-strings',
                             },
                           },
                           required: ['template'],
@@ -770,8 +823,13 @@ export default {
                   required: ['image', 'build', 'deploy'],
                   additionalProperties: false,
                 },
+                waitForStResultTimeout: {
+                  type: 'integer',
+                  minimum: 1,
+                  description: 'How many millis to wait for state transition result before timeout',
+                },
               },
-              required: ['docker'],
+              required: ['docker', 'waitForStResultTimeout'],
               additionalProperties: false,
             },
           },
@@ -789,6 +847,7 @@ export default {
                 },
                 logs: {
                   type: 'object',
+                  description: 'Define Drive logs',
                   propertyNames: {
                     type: 'string',
                     minLength: 1,
@@ -809,10 +868,13 @@ export default {
                       },
                       format: {
                         type: 'string',
+                        description: 'Log format:'
+                          + ' https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/format/index.html',
                         enum: ['full', 'compact', 'pretty', 'json'],
                       },
                       color: {
                         type: ['boolean', 'null'],
+                        description: 'Whether or not to use colorful output; defaults to autodetect',
                       },
                     },
                     required: ['destination', 'level', 'format', 'color'],
@@ -880,9 +942,20 @@ export default {
                 grovedbVisualizer: {
                   $ref: '#/definitions/enabledHostPort',
                 },
+                proposer: {
+                  type: 'object',
+                  properties: {
+                    txProcessingTimeLimit: {
+                      type: ['null', 'integer'],
+                      minimum: 0,
+                    },
+                  },
+                  required: ['txProcessingTimeLimit'],
+                  additionalProperties: false,
+                },
               },
               additionalProperties: false,
-              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics', 'grovedbVisualizer'],
+              required: ['docker', 'logs', 'tokioConsole', 'validatorSet', 'chainLock', 'epochTime', 'metrics', 'grovedbVisualizer', 'proposer'],
             },
             tenderdash: {
               type: 'object',
@@ -932,8 +1005,16 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    maxConnections: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
+                    maxOutgoingConnections: {
+                      type: 'integer',
+                      minimum: 1,
+                    },
                   },
-                  required: ['host', 'port', 'persistentPeers', 'seeds', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate'],
+                  required: ['host', 'port', 'persistentPeers', 'seeds', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate', 'maxConnections', 'maxOutgoingConnections'],
                   additionalProperties: false,
                 },
                 mempool: {
@@ -969,9 +1050,16 @@ export default {
                       type: 'integer',
                       minimum: 0,
                     },
+                    ttlDuration: {
+                      $ref: '#/definitions/duration',
+                    },
+                    ttlNumBlocks: {
+                      type: 'integer',
+                      minimum: 0,
+                    },
                   },
                   additionalProperties: false,
-                  required: ['size', 'maxTxsBytes', 'cacheSize', 'timeoutCheckTx', 'txEnqueueTimeout', 'txSendRateLimit', 'txRecvRateLimit', 'maxConcurrentCheckTx'],
+                  required: ['size', 'maxTxsBytes', 'cacheSize', 'timeoutCheckTx', 'txEnqueueTimeout', 'txSendRateLimit', 'txRecvRateLimit', 'maxConcurrentCheckTx', 'ttlDuration', 'ttlNumBlocks'],
                 },
                 consensus: {
                   type: 'object',
@@ -1051,17 +1139,21 @@ export default {
                     level: {
                       type: 'string',
                       enum: ['trace', 'debug', 'info', 'warn', 'error'],
+                      description: 'Log verbosity level',
                     },
                     format: {
                       type: 'string',
                       enum: ['plain', 'json'],
+                      description: 'Log format: text or json',
                     },
                     path: {
                       type: ['string', 'null'],
                       minLength: 1,
+                      description: 'Write to stdout only if null or to stdout and specified log'
+                        + ' file (absolute file path on host machine)',
                     },
                   },
-                  required: ['level', 'format'],
+                  required: ['level', 'format', 'path'],
                   additionalProperties: false,
                 },
                 rpc: {

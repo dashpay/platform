@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn should_prove_multiple_identity_ids() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let identities: BTreeMap<[u8; 32], Identity> =

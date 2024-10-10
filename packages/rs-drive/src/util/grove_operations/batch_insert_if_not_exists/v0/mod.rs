@@ -15,7 +15,7 @@ use grovedb::{GroveDb, TransactionArg};
 
 impl Drive {
     /// Pushes an "insert element if the path key does not yet exist" operation to `drive_operations`.
-    /// Returns true if the path key already exists without references.
+    /// Returns true if we inserted.
     pub(crate) fn batch_insert_if_not_exists_v0<const N: usize>(
         &self,
         path_key_element_info: PathKeyElementInfo<N>,

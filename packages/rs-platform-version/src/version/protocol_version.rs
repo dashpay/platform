@@ -13,7 +13,12 @@ use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
 use crate::version::v1::PLATFORM_V1;
 #[cfg(feature = "mock-versions")]
 use std::sync::OnceLock;
+
+use crate::version::consensus_versions::ConsensusVersions;
 use crate::version::limits::SystemLimits;
+use crate::version::v2::PLATFORM_V2;
+use crate::version::v3::PLATFORM_V3;
+use crate::version::v4::PLATFORM_V4;
 use crate::version::ProtocolVersion;
 
 #[ferment_macro::export]
@@ -55,13 +60,15 @@ pub struct PlatformVersion {
     pub dpp: DPPVersion,
     pub drive: DriveVersion,
     pub drive_abci: DriveAbciVersion,
+    pub consensus: ConsensusVersions,
     pub fee_version: FeeVersion,
     pub platform_architecture: PlatformArchitectureVersion,
     pub system_data_contracts: SystemDataContractVersions,
     pub system_limits: SystemLimits,
 }
 
-pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[PLATFORM_V1];
+pub const PLATFORM_VERSIONS: &[PlatformVersion] =
+    &[PLATFORM_V1, PLATFORM_V2, PLATFORM_V3, PLATFORM_V4];
 
 #[cfg(feature = "mock-versions")]
 // We use OnceLock to be able to modify the version mocks
@@ -69,7 +76,9 @@ pub static PLATFORM_TEST_VERSIONS: OnceLock<Vec<PlatformVersion>> = OnceLock::ne
 #[cfg(feature = "mock-versions")]
 const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, TEST_PLATFORM_V3];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V1;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V4;
+
+pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
 
 impl PlatformVersion {
     pub fn get<'a>(version: ProtocolVersion) -> Result<&'a Self, PlatformVersionError> {
@@ -97,6 +106,26 @@ impl PlatformVersion {
             Err(PlatformVersionError::UnknownVersionError(format!(
                 "no platform version {version}"
             )))
+        }
+    }
+
+    pub fn get_optional<'a>(version: ProtocolVersion) -> Option<&'a Self> {
+        if version > 0 {
+            #[cfg(feature = "mock-versions")]
+            {
+                if version >> TEST_PROTOCOL_VERSION_SHIFT_BYTES > 0 {
+                    let test_version = version - (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES);
+
+                    // Init default set of test versions
+                    let versions = PLATFORM_TEST_VERSIONS
+                        .get_or_init(|| vec![TEST_PLATFORM_V2, TEST_PLATFORM_V3]);
+
+                    return versions.get(test_version as usize - 2);
+                }
+            }
+            PLATFORM_VERSIONS.get(version as usize - 1)
+        } else {
+            None
         }
     }
 
@@ -146,6 +175,10 @@ impl PlatformVersion {
         PLATFORM_VERSIONS
             .last()
             .expect("expected to have a platform version")
+    }
+
+    pub fn desired<'a>() -> &'a Self {
+        DESIRED_PLATFORM_VERSION
     }
 
     #[cfg(feature = "mock-versions")]

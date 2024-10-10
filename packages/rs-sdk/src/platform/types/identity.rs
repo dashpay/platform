@@ -1,5 +1,12 @@
 //! Identity related types and functions
 
+use crate::delegate_enum;
+use crate::{
+    platform::{proto, Query},
+    Error,
+};
+
+use dapi_grpc::platform::v0::get_identities_balances_request::GetIdentitiesBalancesRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
@@ -7,19 +14,14 @@ use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityCon
 use dapi_grpc::platform::v0::get_identity_nonce_request::GetIdentityNonceRequestV0;
 use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
 use dapi_grpc::platform::v0::{
-    get_identity_balance_and_revision_request, get_identity_balance_request,
-    get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
-    get_identity_nonce_request, get_identity_request, GetIdentityBalanceAndRevisionRequest,
-    GetIdentityBalanceRequest, GetIdentityByPublicKeyHashRequest, GetIdentityContractNonceRequest,
-    GetIdentityNonceRequest, GetIdentityRequest, ResponseMetadata,
+    get_identities_balances_request, get_identity_balance_and_revision_request,
+    get_identity_balance_request, get_identity_by_public_key_hash_request,
+    get_identity_contract_nonce_request, get_identity_nonce_request, get_identity_request,
+    GetIdentitiesBalancesRequest, GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceRequest,
+    GetIdentityByPublicKeyHashRequest, GetIdentityContractNonceRequest, GetIdentityNonceRequest,
+    GetIdentityRequest, ResponseMetadata,
 };
-use dpp::platform_value;
 use dpp::identity::Identity;
-use crate::delegate_enum;
-use crate::{
-    platform::{proto, Query},
-    Error,
-};
 
 // Create enum [IdentityRequest] and [IdentityResponse] that will wrap all possible
 // request/response types for [Identity] object.
@@ -40,7 +42,7 @@ impl Query<IdentityRequest> for platform_value::Identifier {
         Ok(IdentityRequest::GetIdentity(GetIdentityRequest {
             version: Some(get_identity_request::Version::V0(GetIdentityRequestV0 {
                 id,
-                prove: true,
+                prove,
             })),
         }))
     }
@@ -140,6 +142,23 @@ impl Query<GetIdentityBalanceAndRevisionRequest> for platform_value::Identifier 
         let request: GetIdentityBalanceAndRevisionRequest = GetIdentityBalanceAndRevisionRequest {
             version: Some(get_identity_balance_and_revision_request::Version::V0(
                 GetIdentityBalanceAndRevisionRequestV0 { id, prove },
+            )),
+        };
+
+        Ok(request)
+    }
+}
+
+impl Query<GetIdentitiesBalancesRequest> for Vec<dpp::prelude::Identifier> {
+    fn query(self, prove: bool) -> Result<GetIdentitiesBalancesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        let ids = self.into_iter().map(|a| a.to_vec()).collect();
+
+        let request: GetIdentitiesBalancesRequest = GetIdentitiesBalancesRequest {
+            version: Some(get_identities_balances_request::Version::V0(
+                GetIdentitiesBalancesRequestV0 { ids, prove },
             )),
         };
 

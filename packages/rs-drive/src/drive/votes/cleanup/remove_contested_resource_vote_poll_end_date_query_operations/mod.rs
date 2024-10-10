@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use std::collections::BTreeMap;
@@ -36,6 +37,12 @@ impl Drive {
             .remove_contested_resource_vote_poll_end_date_query_operations
         {
             0 => self.remove_contested_resource_vote_poll_end_date_query_operations_v0(
+                vote_polls,
+                batch_operations,
+                transaction,
+                platform_version,
+            ),
+            1 => self.remove_contested_resource_vote_poll_end_date_query_operations_v1(
                 vote_polls,
                 batch_operations,
                 transaction,

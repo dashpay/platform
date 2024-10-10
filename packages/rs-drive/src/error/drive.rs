@@ -107,7 +107,7 @@ pub enum DriveError {
     CorruptedContractPath(&'static str),
     /// Error
     #[error("corrupted contract indexes error: {0}")]
-    CorruptedContractIndexes(&'static str),
+    CorruptedContractIndexes(String),
     /// Error
     #[error("corrupted document path error: {0}")]
     CorruptedDocumentPath(&'static str),

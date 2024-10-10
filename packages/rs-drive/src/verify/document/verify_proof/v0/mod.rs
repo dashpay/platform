@@ -30,7 +30,7 @@ impl<'a> DriveDocumentQuery<'a> {
     /// 1. The proof verification fails.
     /// 2. There is a deserialization error when parsing the serialized document(s) into `Document` struct(s).
     #[inline(always)]
-    pub(crate) fn verify_proof_v0(
+    pub(super) fn verify_proof_v0(
         &self,
         proof: &[u8],
         platform_version: &PlatformVersion,

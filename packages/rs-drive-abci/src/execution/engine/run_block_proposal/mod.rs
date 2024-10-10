@@ -1,11 +1,15 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform_types::epoch_info::v0::EpochInfoV0Methods;
+use crate::execution::types::block_state_info;
+use crate::execution::types::block_state_info::v0::BlockStateInfoV0Methods;
+use crate::metrics::HistogramTiming;
+use crate::platform_types::epoch_info::v0::{EpochInfoV0Getters, EpochInfoV0Methods};
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::{block_execution_outcome, block_proposal};
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::epoch::Epoch;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
@@ -46,6 +50,7 @@ where
         known_from_us: bool,
         platform_state: &PlatformState,
         transaction: &Transaction,
+        timer: Option<&HistogramTiming>,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
         // Epoch information is always calculated with the last committed platform version
@@ -89,8 +94,35 @@ Your software version: {}, latest supported protocol version: {}."#,
                 );
             };
 
-            // Set current protocol version to the block platform state
-            block_platform_state.set_current_protocol_version_in_consensus(next_protocol_version);
+            let old_protocol_version = block_platform_state.current_protocol_version_in_consensus();
+
+            if old_protocol_version != next_protocol_version {
+                // Set current protocol version to the block platform state
+                block_platform_state
+                    .set_current_protocol_version_in_consensus(next_protocol_version);
+
+                let last_block_time_ms = platform_state.last_committed_block_time_ms();
+
+                // Init block execution context
+                let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(
+                    &block_proposal,
+                    last_block_time_ms,
+                );
+
+                let block_info = block_state_info.to_block_info(
+                    Epoch::new(epoch_info.current_epoch_index())
+                        .expect("current epoch index should be in range"),
+                );
+
+                // This is for events like adding stuff to the root tree, or making structural changes/fixes
+                self.perform_events_on_first_block_of_protocol_change(
+                    platform_state,
+                    &block_info,
+                    transaction,
+                    old_protocol_version,
+                    next_platform_version,
+                )?;
+            }
 
             next_platform_version
         } else {
@@ -127,6 +159,7 @@ Your software version: {}, latest supported protocol version: {}."#,
                 platform_state,
                 block_platform_state,
                 block_platform_version,
+                timer,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "run_block_proposal".to_string(),

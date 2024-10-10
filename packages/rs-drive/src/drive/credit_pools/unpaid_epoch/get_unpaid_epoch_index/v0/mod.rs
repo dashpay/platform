@@ -71,7 +71,7 @@ mod tests {
         #[test]
         fn test_error_if_element_has_invalid_type() {
             let platform_version = PlatformVersion::latest();
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             // We need to first delete the item, because you can not replace an item with a tree
@@ -111,7 +111,7 @@ mod tests {
         #[test]
         fn test_error_if_value_has_invalid_length() {
             let platform_version = PlatformVersion::latest();
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             drive

@@ -37,7 +37,7 @@ impl Drive {
     /// - The keys information is missing or incorrect.
     ///
     #[inline(always)]
-    pub(crate) fn verify_identities_contract_keys_v0(
+    pub(super) fn verify_identities_contract_keys_v0(
         proof: &[u8],
         identity_ids: &[[u8; 32]],
         contract_id: &[u8; 32],

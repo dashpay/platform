@@ -15,9 +15,10 @@ use grovedb::batch::KeyInfoPath;
 
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use platform_value::Identifier;
 
 impl Drive {
-    /// Insert a non unique public key hash reference that contains an identity id
+    /// Insert a non-unique public key hash reference that contains an identity id
     /// Contrary to the name this is not a reference but an Item containing the identity
     /// identifier
     pub(super) fn insert_non_unique_public_key_hash_reference_to_identity_operations_v0(
@@ -74,7 +75,7 @@ impl Drive {
 
                 if already_exists_for_identity {
                     return Err(Error::Identity(IdentityError::IdentityKeyAlreadyExists(
-                        "the key already exists for this user",
+                        format!("the key with a public hash of {} already exists for this identity {} ({})", hex::encode(public_key_hash) , Identifier::new(identity_id), hex::encode(identity_id.as_slice()))
                     )));
                 }
             }

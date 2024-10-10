@@ -38,7 +38,7 @@ In order to build application that uses Dash Platform SDK, you need to:
 
 Dash Platform SDK supports mocking with `mocks` feature which provides a
 convenient way to define mock expectations and use the SDK without actual
-connection to the Platform.
+connection to Platform.
 
 You can see examples of mocking in [mock_fetch.rs](tests/fetch/mock_fetch.rs) and  [mock_fetch_many.rs](tests/fetch/mock_fetch_many.rs).
 
@@ -97,9 +97,9 @@ Run the offline test using the following command:
 cargo test -p dash-platform-sdk
 ```
 
-## Implementing Fetch and FetchAny on new objects
+## Implementing Fetch and FetchMany on new objects
 
-How to implement `Fetch` and `FetchAny` trait on new object types (`Object`).
+How to implement `Fetch` and `FetchMany` trait on new object types (`Object`).
 
 It's basically copy-paste and tweaking of existing implementation for another object type.
 
@@ -114,7 +114,7 @@ Definitions:
 Checklist:
 
 1. [ ] Ensure protobuf messages are defined in `packages/dapi-grpc/protos/platform/v0/platform.proto` and generated
-   correctly in `packages/dapi-grpc/src/platform/proto/org.dash.platform.dapi.v0.rs`.
+   correctly in `packages/dapi-grpc/src/platform/client/org.dash.platform.dapi.v0.rs`.
 2. [ ] In `packages/dapi-grpc/build.rs`, add `Request` to `VERSIONED_REQUESTS` and response `Response` to `VERSIONED_RESPONSES`.
    This should add derive of `VersionedGrpcMessage` (and some more) in `org.dash.platform.dapi.v0.rs`.
 3. [ ] Link request and response type to dapi-client by adding appropriate invocation of `impl_transport_request_grpc!` macro
@@ -123,7 +123,7 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
    used internally.
 
    If you intend to implement `FetchMany`, you should define type returned by `fetch_many()` using `RetrievedObjects`
-   that will store collection of  returned objects, indexd by some key.
+   that will store collection of  returned objects, indexed by some key.
 5. [ ] Implement `FromProof` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-drive-proof-verifier/src/proof.rs`.
 6. [ ] Implement `Query` trait for the `Request` in `packages/rs-sdk/src/platform/query.rs`.
 7. [ ] Implement `Fetch` trait for the `Object` (or type defined in `types.rs`), with inner type Request = `Request`,

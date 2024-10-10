@@ -30,7 +30,7 @@ impl<'a> DriveDocumentQuery<'a> {
     /// * If the proof is corrupted (wrong path, wrong key, etc.).
     /// * If the provided proof has an incorrect number of elements.
     #[inline(always)]
-    pub(crate) fn verify_start_at_document_in_proof_v0(
+    pub(super) fn verify_start_at_document_in_proof_v0(
         &self,
         proof: &[u8],
         is_proof_subset: bool,

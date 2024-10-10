@@ -18,6 +18,7 @@ mod tests {
     use platform_version::version;
     use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
     use platform_version::version::patches::PatchFn;
+    use platform_version::version::v1::PROTOCOL_VERSION_1;
     use platform_version::version::PlatformVersion;
 
     #[test]
@@ -105,6 +106,7 @@ mod tests {
 
                 let mut platform = TestPlatformBuilder::new()
                     .with_config(config.clone())
+                    .with_initial_protocol_version(PROTOCOL_VERSION_1)
                     .build_with_mock_rpc();
 
                 // Run chain before the first patch
@@ -179,13 +181,14 @@ mod tests {
                         proposers,
                         validator_quorums: quorums,
                         current_validator_quorum_hash: current_quorum_hash,
+                        instant_lock_quorums,
                         current_proposer_versions: Some(current_proposer_versions.clone()),
                         current_identity_nonce_counter: identity_nonce_counter,
                         current_identity_contract_nonce_counter: identity_contract_nonce_counter,
                         current_votes: BTreeMap::default(),
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
-                        instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy.clone(),
                     config.clone(),
@@ -246,6 +249,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy.clone(),
                     config.clone(),
@@ -310,6 +314,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy.clone(),
                     config.clone(),
@@ -370,6 +375,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
+                        current_identities: Vec::new(),
                     },
                     strategy,
                     config,

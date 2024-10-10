@@ -1,13 +1,13 @@
 [package]
 name = "withdrawals-contract"
 description = "Witdrawals data contract schema and tools"
-version = "1.0.0-rc.2"
+version = "1.4.0"
 edition = "2021"
-rust-version = "1.76"
+rust-version.workspace = true
 license = "MIT"
 
 [dependencies]
-thiserror = "1.0.58"
+thiserror = "1.0.64"
 platform-version = { path = "../rs-platform-version" }
 platform-value = { path = "../rs-platform-value" }
 num_enum = "0.5.7"

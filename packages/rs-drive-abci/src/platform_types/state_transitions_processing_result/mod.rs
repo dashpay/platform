@@ -4,8 +4,15 @@ use crate::error::Error;
 use crate::platform_types::event_execution_result::EstimatedFeeResult;
 use dpp::fee::fee_result::FeeResult;
 
+/// The reason the state transition was not executed
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NotExecutedReason {
+    /// The proposer ran out of time
+    ProposerRanOutOfTime,
+}
+
 /// State Transition Execution Result represents a result of the single state transition execution.
-/// There are four possible outcomes of the state transition execution described by this enum
+/// There are five possible outcomes of the state transition execution described by this enum
 #[derive(Debug, Clone, PartialEq)]
 pub enum StateTransitionExecutionResult {
     /// State Transition is invalid, but we have a proved identity associated with it,
@@ -21,6 +28,9 @@ pub enum StateTransitionExecutionResult {
     InternalError(String),
     /// State Transition was successfully executed
     SuccessfulExecution(Option<EstimatedFeeResult>, FeeResult),
+    /// State Transition was not executed at all.
+    /// The only current reason for this is that the proposer reached the maximum time limit
+    NotExecuted(NotExecutedReason),
 }
 
 /// State Transitions Processing Result produced by [process_raw_state_transitions] and represents
@@ -54,6 +64,9 @@ impl StateTransitionsProcessingResult {
                 self.valid_count += 1;
 
                 self.fees.checked_add_assign(actual_fees.clone())?;
+            }
+            StateTransitionExecutionResult::NotExecuted(_) => {
+                self.failed_count += 1;
             }
         }
 

@@ -2,9 +2,9 @@
 name = "platform-versioning"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "Version derivation"
-version = "1.0.0-rc.2"
+version = "1.4.0"
 edition = "2021"
-rust-version = "1.76"
+rust-version.workspace = true
 license = "MIT"
 
 [lib]
@@ -12,5 +12,5 @@ proc-macro = true
 
 [dependencies]
 proc-macro2 = "1.0.56"
-quote = "1.0.26"
-syn = "2.0.15"
+quote = "1.0.37"
+syn = "2.0.75"

@@ -3,10 +3,6 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::ProTxHash;
-
-use dashcore_rpc::json::DMNStateDiff;
 use dpp::block::block_info::BlockInfo;
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -19,26 +15,22 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use drive::util::batch::DriveOperation;
 use drive::util::batch::DriveOperation::IdentityOperation;
-use drive::util::batch::IdentityOperationType::{AddNewKeysToIdentity, DisableIdentityKeys};
+use drive::util::batch::IdentityOperationType::{
+    AddNewKeysToIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
+};
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
     pub(super) fn update_owner_withdrawal_address_v0(
         &self,
-        masternode: &(ProTxHash, DMNStateDiff),
+        owner_identifier: [u8; 32],
+        new_withdrawal_address: [u8; 20],
         block_info: &BlockInfo,
         transaction: &Transaction,
         drive_operations: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let (pro_tx_hash, state_diff) = masternode;
-        let Some(new_withdrawal_address) = state_diff.payout_address else {
-            return Ok(());
-        };
-
-        let owner_identifier: [u8; 32] = pro_tx_hash.to_byte_array();
-
         let key_request = IdentityKeysRequest {
             identity_id: owner_identifier,
             request_type: KeyRequestType::AllKeys,
@@ -60,15 +52,13 @@ where
             )));
         }
 
-        let last_key_id = *old_withdrawal_identity_keys.keys().max().unwrap(); //todo
-
         let key_ids_to_disable: Vec<KeyID> = old_withdrawal_identity_keys
-            .into_iter()
+            .iter()
             .filter_map(|(key_id, key)| {
-                if key.disabled_at().is_some() {
-                    None //No need to disable it again
+                if key.disabled_at().is_some() || key.data().as_slice() == &new_withdrawal_address {
+                    None //No need to disable it again or if we are adding the same key we already had
                 } else {
-                    Some(key_id)
+                    Some(*key_id)
                 }
             })
             .collect();
@@ -88,25 +78,48 @@ where
             }));
         }
 
-        // add the new key
-        let new_owner_key = Self::get_owner_identity_key(
-            new_withdrawal_address,
-            last_key_id + 1,
-            platform_version,
-        )?;
+        if let Some((key_id, previously_disabled_old_key)) = old_withdrawal_identity_keys
+            .iter()
+            .find(|(_, key)| key.data().as_slice() == new_withdrawal_address)
+        {
+            // there might be a situation where we should do nothing as well
+            if previously_disabled_old_key.is_disabled() {
+                // We need to re-enable the withdrawal key
+                tracing::trace!(
+                    identity_id = ?owner_identifier,
+                    withdrawal_key = ?previously_disabled_old_key,
+                    method = "update_owner_withdrawal_address_v0",
+                    "re-enabled withdrawal key to owner identity"
+                );
 
-        tracing::trace!(
-            identity_id = ?owner_identifier,
-            withdrawal_key = ?new_owner_key,
-            method = "update_owner_withdrawal_address_v0",
-            "add new withdrawal key to owner identity"
-        );
+                drive_operations.push(IdentityOperation(ReEnableIdentityKeys {
+                    identity_id: owner_identifier,
+                    keys_ids: vec![*key_id],
+                }));
+            }
+        } else {
+            let last_key_id = *old_withdrawal_identity_keys.keys().max().unwrap(); //todo
 
-        drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
-            identity_id: owner_identifier,
-            unique_keys_to_add: vec![],
-            non_unique_keys_to_add: vec![new_owner_key],
-        }));
+            // add the new key
+            let new_owner_withdrawal_key = Self::get_owner_identity_withdrawal_key(
+                new_withdrawal_address,
+                last_key_id + 1,
+                platform_version,
+            )?;
+
+            tracing::trace!(
+                identity_id = ?owner_identifier,
+                withdrawal_key = ?new_owner_withdrawal_key,
+                method = "update_owner_withdrawal_address_v0",
+                "add new withdrawal key to owner identity"
+            );
+
+            drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
+                identity_id: owner_identifier,
+                unique_keys_to_add: vec![],
+                non_unique_keys_to_add: vec![new_owner_withdrawal_key],
+            }));
+        }
 
         Ok(())
     }

@@ -94,7 +94,7 @@ mod tests {
 
         #[test]
         fn should_return_some_if_genesis_time_is_persisted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
 
             let genesis_time_ms = 100;
 

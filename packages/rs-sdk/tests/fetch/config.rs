@@ -9,6 +9,7 @@ use rs_dapi_client::AddressList;
 use serde::Deserialize;
 use std::{path::PathBuf, str::FromStr};
 use dash_sdk::platform::Identifier;
+use zeroize::Zeroizing;
 
 /// Existing document ID
 ///
@@ -41,7 +42,7 @@ pub struct Config {
     pub core_user: String,
     /// Password for Dash Core RPC interface
     #[serde(default)]
-    pub core_password: String,
+    pub core_password: Zeroizing<String>,
     /// When true, use SSL for the Dash Platform node grpc interface
     #[serde(default)]
     pub platform_ssl: bool,
@@ -69,9 +70,10 @@ pub struct Config {
     /// ID of document of the type [`existing_document_type_name`](Config::existing_document_type_name)
     /// in [`existing_data_contract_id`](Config::existing_data_contract_id).
     #[serde(default = "Config::default_document_id")]
+    #[allow(unused)]
     pub existing_document_id: Identifier,
     // Hex-encoded ProTxHash of the existing HP masternode
-    #[serde(default)]
+    #[serde(default = "Config::default_protxhash")]
     pub masternode_owner_pro_reg_tx_hash: String,
 }
 
@@ -138,15 +140,15 @@ impl Config {
     ///
     /// ## Feature flags
     ///
-    /// * `offline-testing` is not set - connect to the platform and generate
-    /// new test vectors during execution
+    /// * `offline-testing` is not set - connect to Platform and generate
+    ///   new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
-    /// load existing test vectors from disk
+    ///   load existing test vectors from disk
     ///
     /// ## Arguments
     ///
     /// * namespace - namespace to use when storing mock expectations; this is used to separate
-    /// expectations from different tests.
+    ///   expectations from different tests.
     ///
     /// When empty string is provided, expectations are stored in the root of the dump directory.
     pub async fn setup_api(&self, namespace: &str) -> dash_sdk::Sdk {
@@ -206,18 +208,10 @@ impl Config {
         // offline testing takes precedence over network testing
         #[cfg(feature = "offline-testing")]
         let sdk = {
-            let mut mock_sdk = dash_sdk::SdkBuilder::new_mock()
+            dash_sdk::SdkBuilder::new_mock()
+                .with_dump_dir(&dump_dir)
                 .build()
-                .expect("initialize api");
-
-            mock_sdk
-                .mock()
-                .quorum_info_dir(&dump_dir)
-                .load_expectations(&dump_dir)
-                .await
-                .expect("load expectations");
-
-            mock_sdk
+                .expect("initialize api")
         };
 
         sdk
@@ -229,11 +223,10 @@ impl Config {
         //  Next time we need to do it again and update this value :(. This is terrible.
         //  We should automate creation of identity for SDK tests when we have time.
         Identifier::from_string(
-            "J2aTnrrc8eea3pQBY91QisM3QH5FM9JK11mQCVwxeMqj",
-            Encoding::Base58,
+            "a1534e47f60be71e823a9dbc9ceb6d3ea9f1ebde7a3773f03e49ef31c7d9c044",
+            Encoding::Hex,
         )
         .unwrap()
-        .into()
     }
 
     fn default_data_contract_id() -> Identifier {
@@ -251,6 +244,13 @@ impl Config {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("vectors")
+    }
+
+    /// Existing masternode proTxHash. Must be updated every time test vectors are regenerated.
+    ///
+    /// See documentation of [contested_resource_identity_votes_ok](super::contested_resource_identity_votes::contested_resource_identity_votes_ok).
+    fn default_protxhash() -> String {
+        String::from("d10bf435af7c75f5b07b09486af1212469d69fdc787589548e315776bc1052a1")
     }
 
     /// Return ProTxHash of an existing evo node, or None if not set

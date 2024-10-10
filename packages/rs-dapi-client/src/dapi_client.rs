@@ -112,6 +112,11 @@ impl DapiClient {
             dump_dir: None,
         }
     }
+
+    /// Return the [DapiClient] address list.
+    pub fn address_list(&self) -> &Arc<RwLock<AddressList>> {
+        &self.address_list
+    }
 }
 
 #[async_trait]
@@ -194,7 +199,13 @@ impl DapiRequestExecutor for DapiClient {
                     address.uri().clone(),
                     &applied_settings,
                     &pool,
-                );
+                )
+                .map_err(|e| {
+                    DapiClientError::<<R::Client as TransportClient>::Error>::Transport(
+                        e,
+                        address.clone(),
+                    )
+                })?;
 
                 let response = transport_request
                     .execute_transport(&mut transport_client, &applied_settings)
@@ -245,7 +256,7 @@ impl DapiRequestExecutor for DapiClient {
         // Start the routine with retry policy applied:
         // We allow let_and_return because `result` is used later if dump feature is enabled
         let result = routine
-            .retry(&retry_settings)
+            .retry(retry_settings)
             .notify(|error, duration| {
                 tracing::warn!(
                     ?error,

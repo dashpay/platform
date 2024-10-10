@@ -23,7 +23,7 @@ impl Drive {
     /// * `drive_version`: The drive version to select the correct function version to run.
     ///
     /// # Returns
-    /// * `Ok(bool)` if the operation was successful. Returns true if the path key already exists without references.
+    /// * `Ok(bool)` if the operation was successful. Returns true if we were able to insert.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     /// * `Err(DriveError::CorruptedCodeExecution)` if the operation is not supported.
     pub fn batch_insert_if_not_exists<const N: usize>(

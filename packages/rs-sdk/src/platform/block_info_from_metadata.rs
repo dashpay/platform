@@ -12,8 +12,8 @@ use drive::error::proof::ProofError;
 ///
 /// # Parameters
 /// - `response_metadata`: A reference to `ResponseMetadata` obtained from a platform response.
-/// This metadata includes various block-related information such as time in milliseconds,
-/// height, core chain locked height, and epoch.
+///   This metadata includes various block-related information such as time in milliseconds,
+///   height, core chain locked height, and epoch.
 ///
 /// # Returns
 /// If successful, returns `Ok(BlockInfo)` where `BlockInfo` contains:
@@ -24,7 +24,7 @@ use drive::error::proof::ProofError;
 ///
 /// # Errors
 /// Returns an error if:
-/// - The `epoch` value in the response metadata exceeds the maximum value that can be represented by a 16-bit integer. This is considered a data validity error as it indicates the platform returned an unexpectedly high epoch number.
+/// - The `epoch` value in the response metadata exceeds the maximum value that can be represented by a 16-bit integer. This is considered a data validity error as it indicates Platform returned an unexpectedly high epoch number.
 ///
 /// The function encapsulates errors into the application's own `Error` type, providing a unified interface for error handling across the application.
 pub fn block_info_from_metadata(response_metadata: &ResponseMetadata) -> Result<BlockInfo, Error> {

@@ -30,6 +30,7 @@ impl InvalidIdentityCreditWithdrawalTransitionOutputScriptError {
     }
 
     pub fn output_script(&self) -> CoreScript {
+        // TODO: We shouldn't clone in getter 🤦
         self.output_script.clone()
     }
 }

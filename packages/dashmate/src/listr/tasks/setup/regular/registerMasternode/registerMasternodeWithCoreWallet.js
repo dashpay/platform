@@ -222,38 +222,16 @@ export default function registerMasternodeWithCoreWalletFactory(createIpAndPorts
 
       let command;
       if (ctx.isHP) {
-        command = `dash-cli protx register_evo \\
-  ${state.collateral.txId} \\
-  ${state.collateral.outputIndex} \\
-  ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort} \\
-  ${state.keys.ownerAddress} \\
-  ${operatorPublicKeyHex} \\
-  ${state.keys.votingAddress} \\
-  ${state.operator.rewardShare} \\
-  ${state.keys.payoutAddress} \\
-  ${deriveTenderdashNodeId(state.platformNodeKey)} \\
-  ${platformP2PPort} \\
-  ${platformHTTPPort}`;
+        command = `protx register_evo ${state.collateral.txId} ${state.collateral.outputIndex} ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort} ${state.keys.ownerAddress} ${operatorPublicKeyHex} ${state.keys.votingAddress} ${state.operator.rewardShare} ${state.keys.payoutAddress} ${deriveTenderdashNodeId(state.platformNodeKey)} ${platformP2PPort} ${platformHTTPPort}`;
       } else {
-        command = `dash-cli protx register \\
-  ${state.collateral.txId} \\
-  ${state.collateral.outputIndex} \\
-  ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort} \\
-  ${state.keys.ownerAddress} \\
-  ${operatorPublicKeyHex} \\
-  ${state.keys.votingAddress} \\
-  ${state.operator.rewardShare} \\
-  ${state.keys.payoutAddress}`;
+        command = `protx register ${state.collateral.txId} ${state.collateral.outputIndex} ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort} ${state.keys.ownerAddress} ${operatorPublicKeyHex} ${state.keys.votingAddress} ${state.operator.rewardShare} ${state.keys.payoutAddress}`;
       }
 
       // Wrap the command to fit the terminal width (listr uses new lines to wrap the text)
       if (!ctx.isVerbose) {
-        command = command.replace(/\\/g, '');
         command = wrapAnsi(command, process.stdout.columns - 3, {
-          hard: true,
           trim: false,
         });
-        command = command.replace(/\n/g, '\\\n');
       }
 
       // TODO: We need to give more info on how to run this command

@@ -24,20 +24,11 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
         },
       },
       core: {
-        docker: {
-          image: 'dashpay/dashd:21.0.0-rc.2',
-          commandArgs: [],
-        },
         p2p: {
           port: 19999,
         },
         rpc: {
           port: 19998,
-        },
-        log: {
-          file: {
-            path: homeDir.joinPath('logs', 'testnet', 'core.log'),
-          },
         },
         spork: {
           address: 'yjPtiKh2uwk3bDutTEA2q9mCtXyiZRWn55',
@@ -78,6 +69,9 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
                 rotation: true,
               },
             },
+            proposer: {
+              txProcessingTimeLimit: 5000,
+            },
           },
           tenderdash: {
             p2p: {
@@ -96,10 +90,12 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
               port: 36656,
             },
             mempool: {
-              timeoutCheckTx: '1s',
-              txEnqueueTimeout: '10ms',
-              txSendRateLimit: 10,
-              txRecvRateLimit: 12,
+              timeoutCheckTx: '3s',
+              txEnqueueTimeout: '30ms',
+              txSendRateLimit: 100,
+              txRecvRateLimit: 120,
+              ttlDuration: '24h',
+              ttlNumBlocks: 0,
             },
             rpc: {
               port: 36657,
@@ -112,8 +108,13 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
               port: 36660,
             },
             genesis: {
-              chain_id: 'dash-testnet-49',
+              chain_id: 'dash-testnet-51',
               validator_quorum_type: 6,
+              consensus_params: {
+                version: {
+                  app_version: '1',
+                },
+              },
             },
           },
         },

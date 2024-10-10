@@ -65,11 +65,12 @@ mod tests {
     use dpp::fee::fee_result::FeeResult;
     use dpp::platform_value;
     use dpp::tests::json_document::json_document_to_document;
+    use dpp::version::fee::FeeVersion;
     use once_cell::sync::Lazy;
     use platform_version::version::PlatformVersion;
 
     static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
@@ -514,7 +515,7 @@ mod tests {
 
     #[test]
     fn test_create_update_and_delete_document() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -673,7 +674,7 @@ mod tests {
 
     #[test]
     fn test_modify_dashpay_contact_request() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -762,7 +763,7 @@ mod tests {
 
     #[test]
     fn test_update_dashpay_profile_with_history() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -1815,7 +1816,7 @@ mod tests {
 
     #[test]
     fn test_update_document_without_apply_should_calculate_storage_fees() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 

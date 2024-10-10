@@ -32,7 +32,7 @@ mod tests {
 
     #[test]
     fn should_prove_a_single_identity_id() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(3, Some(14), platform_version)
             .expect("expected a random identity");

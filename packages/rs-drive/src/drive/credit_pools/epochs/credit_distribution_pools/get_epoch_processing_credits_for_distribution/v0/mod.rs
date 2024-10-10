@@ -54,7 +54,7 @@ mod tests {
     #[test]
     fn test_error_if_value_has_wrong_element_type() {
         let platform_version = PlatformVersion::latest();
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let transaction = drive.grove.start_transaction();
 
         let epoch = Epoch::new(0).unwrap();

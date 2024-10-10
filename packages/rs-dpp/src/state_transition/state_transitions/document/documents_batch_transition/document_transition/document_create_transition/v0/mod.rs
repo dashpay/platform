@@ -52,7 +52,7 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[display(fmt = "Base: {}, Entropy: {:?}, Data: {:?}", "base", "entropy", "data")]
+#[display("Base: {}, Entropy: {:?}, Data: {:?}", "base", "entropy", "data")]
 #[ferment_macro::export]
 pub struct DocumentCreateTransitionV0 {
     /// Document Base Transition
