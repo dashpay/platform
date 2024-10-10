@@ -257,9 +257,8 @@ impl Sdk {
     where
         O::Request: Mockable,
     {
-        let provider_guard = self.context_provider.load();
-        let provider = provider_guard
-            .as_ref()
+        let provider = self
+            .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
         match self.inner {
@@ -277,9 +276,12 @@ impl Sdk {
             }
         }
     }
+
+    /// Return [ContextProvider] used by the SDK.
     pub fn context_provider(&self) -> Option<impl ContextProvider> {
         let provider_guard = self.context_provider.load();
         let provider = provider_guard.as_ref().map(Arc::clone);
+
         provider
     }
 
