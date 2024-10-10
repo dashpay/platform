@@ -106,6 +106,10 @@ pub enum ContextProviderError {
     /// Core Fork Error
     #[error("activation fork error: {0}")]
     ActivationForkError(String),
+
+    /// Async error, eg. when tokio runtime fails
+    #[error("async error: {0}")]
+    AsyncError(String),
 }
 
 impl From<drive::error::Error> for Error {

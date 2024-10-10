@@ -19,7 +19,6 @@ use drive::query::{
     vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery,
 };
 use drive_proof_verifier::types::ContestedResource;
-use std::panic::catch_unwind;
 
 /// Test that we can fetch contested resources
 ///
@@ -304,33 +303,35 @@ async fn contested_resources_fields(
 
     tracing::debug!(?expect, "Running test case");
     // handle panics to not stop other test cases from running
-    let unwinded = catch_unwind(|| {
-        {
-            pollster::block_on(async {
-                let mut query = base_query(&cfg);
-                query_mut_fn(&mut query);
+    let join_handle = tokio::task::spawn(async move {
+        let mut query = base_query(&cfg);
+        query_mut_fn(&mut query);
 
-                let (test_case_id, sdk) =
-                    setup_sdk_for_test_case(cfg, query.clone(), "contested_resources_fields").await;
-                tracing::debug!(test_case_id, ?query, "Executing query");
+        let (test_case_id, sdk) =
+            setup_sdk_for_test_case(cfg, query.clone(), "contested_resources_fields").await;
+        tracing::debug!(test_case_id, ?query, "Executing query");
 
-                ContestedResource::fetch_many(&sdk, query).await
-            })
-        }
-    });
-    let result = match unwinded {
+        ContestedResource::fetch_many(&sdk, query).await
+    })
+    .await;
+    let result = match join_handle {
         Ok(r) => r,
         Err(e) => {
-            let msg = if let Some(s) = e.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = e.downcast_ref::<String>() {
-                s.to_string()
-            } else {
-                format!("unknown panic type: {:?}", std::any::type_name_of_val(&e))
-            };
+            if e.is_panic() {
+                let e = e.into_panic();
+                let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = e.downcast_ref::<String>() {
+                    s.to_string()
+                } else {
+                    format!("unknown panic type: {:?}", std::any::type_name_of_val(&e))
+                };
 
-            tracing::error!("PANIC: {}", msg);
-            Err(Error::Generic(msg))
+                tracing::error!("PANIC: {}", msg);
+                Err(Error::Generic(msg))
+            } else {
+                Err(Error::Generic(format!("JoinError: {:?}", e)))
+            }
         }
     };
 

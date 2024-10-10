@@ -4,7 +4,6 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
-use dpp::prelude::UserFeeIncrease;
 
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
@@ -47,9 +46,7 @@ impl WithdrawFromIdentity for Identity {
     ) -> Result<u64, Error> {
         let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let script = address.map(|address| CoreScript::new(address.script_pubkey()));
-        let user_fee_increase = settings
-            .map(|settings| settings.user_fee_increase)
-            .flatten();
+        let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
         let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             self,
             script,
