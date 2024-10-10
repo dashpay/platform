@@ -15,6 +15,7 @@
 * **platform:** withdrawals polishing and fixes for mainnet ([#2166](https://github.com/dashpay/platform/issues/2166))
 * **sdk:** change default network to mainnet ([#2161](https://github.com/dashpay/platform/issues/2161))
 
+
 ### Bug Fixes
 
 * **sdk:** added signing_withdrawal_key_to_use to withdraw sdk call ([#2234](https://github.com/dashpay/platform/issues/2234))
@@ -36,6 +37,7 @@
 * **dashmate:** doctor fails collecting to big logs ([#2158](https://github.com/dashpay/platform/issues/2158))
 * **dashmate:** port marks as closed if ipv6 is not disabled ([#2162](https://github.com/dashpay/platform/issues/2162))
 * **dashmate:** remove confusing short flag name ([#2165](https://github.com/dashpay/platform/issues/2165))
+
 
 ### Miscellaneous Chores
 
@@ -77,6 +79,7 @@
 ### Documentation
 
 * **dashmate:** document logging configuration ([#2156](https://github.com/dashpay/platform/issues/2156))
+* update README ([#2219](https://github.com/dashpay/platform/issues/2219))
 
 
 ### ⚠ BREAKING CHANGES
