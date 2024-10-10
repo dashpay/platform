@@ -4,7 +4,7 @@ version = "1.0.0-rc.2"
 edition = "2021"
 rust-version = "1.76"
 
-crate-type = ["cdylib"]
+#crate-type = ["cdylib"]
 
 [features]
 default = ["mocks"]
