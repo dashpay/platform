@@ -124,3 +124,136 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::identity::{Purpose, SecurityLevel};
+    use dashcore::Network;
+    use dpp::version::PlatformVersion;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    #[cfg(feature = "random-public-keys")]
+    #[test]
+    fn test_validate_private_key_bytes_with_random_keys() {
+        let platform_version = PlatformVersion::latest();
+        let mut rng = StdRng::from_entropy();
+
+        // Test for ECDSA_SECP256K1
+        let key_type = KeyType::ECDSA_SECP256K1;
+        let (public_key_data, private_key_data) = key_type
+            .random_public_and_private_key_data(&mut rng, &platform_version)
+            .expect("expected to generate random keys");
+
+        let identity_public_key = IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type,
+            data: public_key_data.into(),
+            read_only: false,
+            disabled_at: None,
+        };
+
+        // Validate that the private key matches the public key
+        assert_eq!(
+            identity_public_key
+                .validate_private_key_bytes(&private_key_data, Network::Testnet)
+                .unwrap(),
+            true
+        );
+
+        // Test with an invalid private key
+        let invalid_private_key_bytes = vec![0u8; private_key_data.len()];
+        assert_eq!(
+            identity_public_key
+                .validate_private_key_bytes(&invalid_private_key_bytes, Network::Testnet)
+                .unwrap(),
+            false
+        );
+    }
+
+    #[cfg(all(feature = "random-public-keys", feature = "bls-signatures"))]
+    #[test]
+    fn test_validate_private_key_bytes_with_random_keys_bls12_381() {
+        let platform_version = PlatformVersion::latest();
+        let mut rng = StdRng::from_entropy();
+
+        // Test for BLS12_381
+        let key_type = KeyType::BLS12_381;
+        let (public_key_data, private_key_data) = key_type
+            .random_public_and_private_key_data(&mut rng, &platform_version)
+            .expect("expected to generate random keys");
+
+        let identity_public_key = IdentityPublicKeyV0 {
+            id: 2,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type,
+            data: public_key_data.into(),
+            read_only: false,
+            disabled_at: None,
+        };
+
+        // Validate that the private key matches the public key
+        assert_eq!(
+            identity_public_key
+                .validate_private_key_bytes(&private_key_data, Network::Testnet)
+                .unwrap(),
+            true
+        );
+
+        // Test with an invalid private key
+        let invalid_private_key_bytes = vec![0u8; private_key_data.len()];
+        assert_eq!(
+            identity_public_key
+                .validate_private_key_bytes(&invalid_private_key_bytes, Network::Testnet)
+                .unwrap(),
+            false
+        );
+    }
+
+    #[cfg(all(feature = "random-public-keys", feature = "ed25519-dalek"))]
+    #[test]
+    fn test_validate_private_key_bytes_with_random_keys_eddsa_25519_hash160() {
+        let platform_version = PlatformVersion::latest();
+        let mut rng = StdRng::from_entropy();
+
+        // Test for EDDSA_25519_HASH160
+        let key_type = KeyType::EDDSA_25519_HASH160;
+        let (public_key_data, private_key_data) = key_type
+            .random_public_and_private_key_data(&mut rng, &platform_version)
+            .expect("expected to generate random keys");
+
+        let identity_public_key = IdentityPublicKeyV0 {
+            id: 3,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type,
+            data: public_key_data.into(),
+            read_only: false,
+            disabled_at: None,
+        };
+
+        // Validate that the private key matches the public key
+        assert_eq!(
+            identity_public_key
+                .validate_private_key_bytes(&private_key_data, Network::Testnet)
+                .unwrap(),
+            true
+        );
+
+        // Test with an invalid private key
+        let invalid_private_key_bytes = vec![0u8; private_key_data.len()];
+        assert_eq!(
+            identity_public_key
+                .validate_private_key_bytes(&invalid_private_key_bytes, Network::Testnet)
+                .unwrap(),
+            false
+        );
+    }
+}
