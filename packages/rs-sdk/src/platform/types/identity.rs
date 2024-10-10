@@ -51,6 +51,7 @@ impl Query<IdentityRequest> for platform_value::Identifier {
 /// You can use [`Fetch::fetch(PublicKeyHash)`](crate::platform::Fetch::fetch()) to fetch an identity
 /// by its public key hash.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[ferment_macro::export]
 pub struct PublicKeyHash(pub [u8; 20]);
 
 impl Query<IdentityRequest> for PublicKeyHash {

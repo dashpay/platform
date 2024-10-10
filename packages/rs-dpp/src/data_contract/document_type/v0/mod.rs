@@ -65,8 +65,8 @@ pub struct DocumentTypeV0 {
     /// Decryption key storage requirements
     pub requires_identity_decryption_bounded_key: Option<StorageKeyRequirements>,
     pub security_level_requirement: SecurityLevel,
-    #[cfg(feature = "validation")]
-    pub json_schema_validator: StatelessJsonSchemaLazyValidator,
+    // #[cfg(feature = "validation")]
+    // pub json_schema_validator: StatelessJsonSchemaLazyValidator,
 }
 
 impl DocumentTypeV0 {

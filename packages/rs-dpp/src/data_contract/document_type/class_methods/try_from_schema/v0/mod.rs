@@ -578,8 +578,8 @@ impl DocumentTypeV0 {
             requires_identity_encryption_bounded_key,
             requires_identity_decryption_bounded_key,
             security_level_requirement,
-            #[cfg(feature = "validation")]
-            json_schema_validator,
+            // #[cfg(feature = "validation")]
+            // json_schema_validator,
         })
     }
 }

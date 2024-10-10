@@ -444,8 +444,8 @@ impl DocumentTypeV0 {
             requires_identity_encryption_bounded_key: None,
             requires_identity_decryption_bounded_key: None,
             security_level_requirement: SecurityLevel::HIGH,
-            #[cfg(feature = "validation")]
-            json_schema_validator: StatelessJsonSchemaLazyValidator::new(),
+            // #[cfg(feature = "validation")]
+            // json_schema_validator: StatelessJsonSchemaLazyValidator::new(),
         })
     }
 
@@ -619,8 +619,8 @@ impl DocumentTypeV0 {
             requires_identity_encryption_bounded_key: None,
             requires_identity_decryption_bounded_key: None,
             security_level_requirement: SecurityLevel::HIGH,
-            #[cfg(feature = "validation")]
-            json_schema_validator: StatelessJsonSchemaLazyValidator::new(),
+            // #[cfg(feature = "validation")]
+            // json_schema_validator: StatelessJsonSchemaLazyValidator::new(),
         })
     }
 }

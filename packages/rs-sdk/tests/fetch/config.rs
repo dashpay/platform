@@ -4,13 +4,11 @@
 //! It's mainly used for testing.
 
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::{
-    dashcore::{hashes::Hash, ProTxHash},
-    prelude::Identifier,
-};
+use dpp::dashcore::{hashes::Hash, ProTxHash};
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
 use std::{path::PathBuf, str::FromStr};
+use dash_sdk::platform::Identifier;
 
 /// Existing document ID
 ///

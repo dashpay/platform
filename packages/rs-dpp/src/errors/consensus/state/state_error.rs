@@ -197,7 +197,7 @@ pub enum TestStateError {
     Conditional,
 }
 pub mod fermented {
-    use ferment_interfaces::{boxed, FFIConversion};
+    use ferment::{boxed, FFIConversionFrom, FFIConversionTo};
 
     #[repr(C)]
     #[derive(Clone)]
@@ -207,7 +207,7 @@ pub mod fermented {
         Conditional,
     }
 
-    impl FFIConversion<super::TestStateError> for TestStateError {
+    impl FFIConversionFrom<super::TestStateError> for TestStateError {
         unsafe fn ffi_from_const(ffi: *const Self) -> super::TestStateError {
             let ffi_ref = &*ffi;
             match ffi_ref {
@@ -216,7 +216,8 @@ pub mod fermented {
                 TestStateError::Conditional => super::TestStateError::Conditional
             }
         }
-
+    }
+    impl FFIConversionTo<super::TestStateError> for TestStateError {
         unsafe fn ffi_to_const(obj: super::TestStateError) -> *const Self {
             boxed (match obj {
                 super::TestStateError::Empty => TestStateError::Empty,

@@ -86,6 +86,7 @@ pub enum Error {
 
 /// Errors returned by the context provider
 #[derive(Debug, thiserror::Error)]
+#[ferment_macro::export]
 pub enum ContextProviderError {
     /// Generic Context provider error
     #[error("Context provider error: {0}")]

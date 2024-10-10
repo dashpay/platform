@@ -11,6 +11,7 @@ pub use drive_proof_verifier::error::ContextProviderError;
 
 /// Error type for the SDK
 #[derive(Debug, thiserror::Error)]
+#[ferment_macro::opaque]
 pub enum Error {
     /// SDK is not configured properly
     #[error("SDK misconfigured: {0}")]

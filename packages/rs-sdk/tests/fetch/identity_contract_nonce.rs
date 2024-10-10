@@ -1,5 +1,4 @@
-use dash_sdk::platform::Fetch;
-use dpp::prelude::Identifier;
+use dash_sdk::platform::{Fetch, Identifier};
 use drive_proof_verifier::types::IdentityContractNonceFetcher;
 
 use super::{common::setup_logs, config::Config};
@@ -10,9 +9,9 @@ async fn test_identity_contract_no_nonce_read() {
     setup_logs();
 
     let cfg = Config::new();
-    let identity_id: dpp::prelude::Identifier = cfg.existing_identity_id;
+    let identity_id = cfg.existing_identity_id;
     // We are putting a contract id that does not exist, hence we will never get a nonce
-    let contract_id: dpp::prelude::Identifier = Identifier::from_bytes(&[5u8; 32]).unwrap();
+    let contract_id = Identifier::from_bytes(&[5u8; 32]).unwrap();
 
     let sdk = cfg.setup_api("test_identity_contract_no_nonce_read").await;
 

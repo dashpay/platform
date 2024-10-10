@@ -1,6 +1,8 @@
 use dash_sdk::{mock::Mockable, platform::Query, Sdk};
-use dpp::{data_contract::DataContractFactory, prelude::Identifier};
+use dpp::data_contract::DataContractFactory;
 use hex::ToHex;
+use dash_sdk::platform::Identifier;
+use dpp::version::PlatformVersion;
 use rs_dapi_client::transport::TransportRequest;
 
 use super::config::Config;
@@ -48,12 +50,11 @@ pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
 /// Create a mock data contract for testing of mock API
 pub fn mock_data_contract(
     document_type: Option<&dpp::data_contract::document_type::DocumentType>,
-) -> dpp::prelude::DataContract {
+) -> dpp::data_contract::DataContract {
     use dpp::{
         data_contract::document_type::accessors::DocumentTypeV0Getters,
         platform_value::{platform_value, Value},
     };
-    use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
 
     let platform_version = PlatformVersion::latest();

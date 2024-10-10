@@ -44,3 +44,5 @@ serde_json = { version = "1.0.103", features = [
 ], optional = true }
 hex = { version = "0.4.3" }
 derive_more = { version = "0.99.11" }
+ferment-macro = { path = "../../../ferment/ferment-macro" }
+ferment = { path = "../../../ferment/ferment" }

@@ -31,11 +31,13 @@ impl DataValidator for JsonSchemaValidator {
 pub struct dpp_validation_JsonSchemaValidator {
     validator: RwLock<Option<jsonschema::JSONSchema>>,
 }
-impl ferment_interfaces::FFIConversion<JsonSchemaValidator> for dpp_validation_JsonSchemaValidator {
+impl ferment::FFIConversionFrom<JsonSchemaValidator> for dpp_validation_JsonSchemaValidator {
     unsafe fn ffi_from_const(_ffi: *const Self) -> JsonSchemaValidator {
         JsonSchemaValidator::new()
     }
+}
+impl ferment::FFIConversionTo<JsonSchemaValidator> for dpp_validation_JsonSchemaValidator {
     unsafe fn ffi_to_const(obj: JsonSchemaValidator) -> *const Self {
-        ferment_interfaces::boxed(dpp_validation_JsonSchemaValidator { validator: obj.validator })
+        ferment::boxed(dpp_validation_JsonSchemaValidator { validator: obj.validator })
     }
 }

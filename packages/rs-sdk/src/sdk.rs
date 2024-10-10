@@ -76,6 +76,7 @@ pub type LastQueryTimestamp = u64;
 ///
 /// See tests/ for examples of using the SDK.
 #[derive(Clone)]
+#[ferment_macro::opaque]
 pub struct Sdk {
     inner: SdkInstance,
     /// Use proofs when retrieving data from the platform.
