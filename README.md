@@ -25,8 +25,6 @@ If you are looking for how to contribute to the project or need any help with
 building an app on the Dash Platform - message us on the [Devs
 Discord](https://chat.dashdevs.org/)!
 
-## Note: Dash Platform is currently available on the Dash Testnet only
-
 ## Intro
 
 This is a multi-package repository - sometimes also known as monorepository -
@@ -41,9 +39,9 @@ Dash Platform is currently undergoing testing and final development necessary to
 support its release on the Dash production network (mainnet). The packages in
 this repository may be used on the following networks:
 
-- [x] **Development networks** ([**devnets**](https://dashplatform.readme.io/docs/reference-glossary#devnet))
-- [x] [**Testnet**](https://dashplatform.readme.io/docs/reference-glossary#testnet)
-- [x] [Mainnet](https://dashplatform.readme.io/docs/reference-glossary#mainnet)
+- [x] **Development networks** ([**devnets**](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#devnet))
+- [x] [**Testnet**](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#testnet)
+- [x] [Mainnet](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#mainnet)
 
 ## FAQ
 
@@ -89,7 +87,7 @@ Discord](https://chat.dashdevs.org/)
 ### Where are the docs?
 
 Our docs are hosted on
-[readme.io](https://dashplatform.readme.io/docs/introduction-what-is-dash-platform).
+[docs.dash.org](https://docs.dash.org/projects/platform/en/stable/docs/intro/what-is-dash-platform.html).
 You can create issues and feature requests in the
 [issues](https://github.com/dashpay/platform/issues) for this repository.
 
