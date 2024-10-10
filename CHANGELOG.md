@@ -4,131 +4,57 @@
 ### Features
 
 * **dpp:** added identity public key private key validation methods ([#2235](https://github.com/dashpay/platform/issues/2235))
-
+* **sdk:** fix client tls connections ([#2223](https://github.com/dashpay/platform/issues/2223))
+* **dpp:** add a convenience method to get the public key data for a private key depending on the key type ([#2214](https://github.com/dashpay/platform/issues/2214))
+* **platform:** add owner keys to identities, fixed verification of use of owner keys ([#2215](https://github.com/dashpay/platform/issues/2215))
+* **sdk:** enable withdrawals v1 in JS SDK ([#2201](https://github.com/dashpay/platform/issues/2201))
+* start network with latest version if genesis version not set ([#2206](https://github.com/dashpay/platform/issues/2206))
+* **dashmate:** confirm a node reset ([#2160](https://github.com/dashpay/platform/issues/2160))
+* **platform:** do not switch to oldest quorums in validator set update ([#2167](https://github.com/dashpay/platform/issues/2167))
+* **platform:** get current quorum info  ([#2168](https://github.com/dashpay/platform/issues/2168))
+* **platform:** withdrawals polishing and fixes for mainnet ([#2166](https://github.com/dashpay/platform/issues/2166))
+* **sdk:** change default network to mainnet ([#2161](https://github.com/dashpay/platform/issues/2161))
 
 ### Bug Fixes
 
 * **sdk:** added signing_withdrawal_key_to_use to withdraw sdk call ([#2234](https://github.com/dashpay/platform/issues/2234))
-
-
-### Miscellaneous Chores
-
-* **dpp:** add method for decoding identifier with unknown string encoding ([#2230](https://github.com/dashpay/platform/issues/2230))
-
-
-### Code Refactoring
-
-* **sdk:** contested resource as struct type ([#2225](https://github.com/dashpay/platform/issues/2225))
-
-## [1.4.0-dev.8](https://github.com/dashpay/platform/compare/v1.4.0-dev.7...v1.4.0-dev.8) (2024-10-08)
-
-
-### Features
-
-* **sdk:** fix client tls connections ([#2223](https://github.com/dashpay/platform/issues/2223))
-
-
-### Bug Fixes
-
 * **platform:** fixed Platform State deserialization issue ([#2227](https://github.com/dashpay/platform/issues/2227))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 1.4.0-dev.8 ([#2229](https://github.com/dashpay/platform/issues/2229))
-
-## [1.4.0-dev.7](https://github.com/dashpay/platform/compare/v1.4.0-dev.6...v1.4.0-dev.7) (2024-10-07)
-
-
-### Miscellaneous Chores
-
-* **drive:** log invalid state on deserialisation ([#2220](https://github.com/dashpay/platform/issues/2220))
-* **release:** update changelog and bump version to 1.4.0-dev.7 ([#2221](https://github.com/dashpay/platform/issues/2221))
-
-## [1.4.0-dev.6](https://github.com/dashpay/platform/compare/v1.4.0-dev.5...v1.4.0-dev.6) (2024-10-07)
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 1.4.0-dev.6 ([#2218](https://github.com/dashpay/platform/issues/2218))
-* **sdk:** expose drive module in public API for rs-sdk ([#2217](https://github.com/dashpay/platform/issues/2217))
-* update dependences ([#2072](https://github.com/dashpay/platform/issues/2072))
-
-## [1.4.0-dev.5](https://github.com/dashpay/platform/compare/v1.4.0-dev.4...v1.4.0-dev.5) (2024-10-07)
-
-
-### ⚠ BREAKING CHANGES
-
-* **platform:** add owner keys to identities, fixed verification of use of owner keys (#2215)
-
-### Features
-
-* **dpp:** add a convenience method to get the public key data for a private key depending on the key type ([#2214](https://github.com/dashpay/platform/issues/2214))
-* **platform:** add owner keys to identities, fixed verification of use of owner keys ([#2215](https://github.com/dashpay/platform/issues/2215))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 1.4.0-dev.5 ([#2216](https://github.com/dashpay/platform/issues/2216))
-
-## [1.4.0-dev.4](https://github.com/dashpay/platform/compare/v1.4.0-dev.3...v1.4.0-dev.4) (2024-10-05)
-
-
-### Features
-
-* **sdk:** enable withdrawals v1 in JS SDK ([#2201](https://github.com/dashpay/platform/issues/2201))
-* start network with latest version if genesis version not set ([#2206](https://github.com/dashpay/platform/issues/2206))
-
-
-### Bug Fixes
-
 * cookie accepts cookie name, path, and domain with out of bounds characters ([#2211](https://github.com/dashpay/platform/issues/2211))
 * **drive:** set sign height when rebroadcasting ([#2210](https://github.com/dashpay/platform/issues/2210))
 * **sdk:** small sdk improvements and fixes for v1.4 ([#2200](https://github.com/dashpay/platform/issues/2200))
-
-
-### Code Refactoring
-
-* **drive:** remove duplicated withdrawal amount validation ([#2191](https://github.com/dashpay/platform/issues/2191))
-
-
-### Tests
-
-* **test-suite:** enable withdrawal tests ([#2202](https://github.com/dashpay/platform/issues/2202))
-
-
-### Miscellaneous Chores
-
-* bump GroveDB dependency ([#2196](https://github.com/dashpay/platform/issues/2196))
-* **drive:** improve withdrawal logging ([#2203](https://github.com/dashpay/platform/issues/2203))
-* **drive:** logs and metrics for withdrawal daily limit ([#2192](https://github.com/dashpay/platform/issues/2192))
-* **release:** replace colima with native docker in macOS builds ([#2188](https://github.com/dashpay/platform/issues/2188))
-* **release:** update changelog and bump version to 1.4.0-dev.4 ([#2213](https://github.com/dashpay/platform/issues/2213))
-
-## [1.4.0-dev.3](https://github.com/dashpay/platform/compare/v1.4.0-dev.2...v1.4.0-dev.3) (2024-10-01)
-
-
-### Bug Fixes
-
 * **drive-abci:** fix network upgrade to version 4 ([#2189](https://github.com/dashpay/platform/issues/2189))
-
-## [1.4.0-dev.2](https://github.com/dashpay/platform/compare/v1.4.0-dev.1...v1.4.0-dev.2) (2024-09-30)
-
-
-### ⚠ BREAKING CHANGES
-
-* **platform:** matched withdrawal fees to actual processing cost (#2186)
-* **platform:** withdrawal automatic retries after core rejection (#2185)
-* **platform:** withdrawal limits (#2182)
-
-### Features
-
 * **dashmate:** collect docker stats in the doctor command ([#2180](https://github.com/dashpay/platform/issues/2180))
 * **dashmate:** validate external IP ([#2183](https://github.com/dashpay/platform/issues/2183))
 * **platform:** matched withdrawal fees to actual processing cost ([#2186](https://github.com/dashpay/platform/issues/2186))
 * **platform:** withdrawal automatic retries after core rejection ([#2185](https://github.com/dashpay/platform/issues/2185))
 * **platform:** withdrawal limits ([#2182](https://github.com/dashpay/platform/issues/2182))
 * **sdk:** get node status ([#2139](https://github.com/dashpay/platform/issues/2139))
+* **dapi:** getStatus cache invalidation ([#2155](https://github.com/dashpay/platform/issues/2155))
+* **dapi:** invalid mainnet seed ports ([#2173](https://github.com/dashpay/platform/issues/2173))
+* **dashmate:** cannot read properties of undefined (reading 'expires') ([#2164](https://github.com/dashpay/platform/issues/2164))
+* **dashmate:** colors[updated] is not a function ([#2157](https://github.com/dashpay/platform/issues/2157))
+* **dashmate:** doctor fails collecting to big logs ([#2158](https://github.com/dashpay/platform/issues/2158))
+* **dashmate:** port marks as closed if ipv6 is not disabled ([#2162](https://github.com/dashpay/platform/issues/2162))
+* **dashmate:** remove confusing short flag name ([#2165](https://github.com/dashpay/platform/issues/2165))
+
+### Miscellaneous Chores
+
+* **dpp:** add method for decoding identifier with unknown string encoding ([#2230](https://github.com/dashpay/platform/issues/2230))
+* **drive:** log invalid state on deserialisation ([#2220](https://github.com/dashpay/platform/issues/2220))
+* **sdk:** expose drive module in public API for rs-sdk ([#2217](https://github.com/dashpay/platform/issues/2217))
+* update dependences ([#2072](https://github.com/dashpay/platform/issues/2072))
+* bump GroveDB dependency ([#2196](https://github.com/dashpay/platform/issues/2196))
+* **drive:** improve withdrawal logging ([#2203](https://github.com/dashpay/platform/issues/2203))
+* **drive:** logs and metrics for withdrawal daily limit ([#2192](https://github.com/dashpay/platform/issues/2192))
+* **release:** replace colima with native docker in macOS builds ([#2188](https://github.com/dashpay/platform/issues/2188))
+* **dashmate:** do not call mint on masternodes ([#2172](https://github.com/dashpay/platform/issues/2172))
+* **platform:** protocol version 4 creation ([#2153](https://github.com/dashpay/platform/issues/2153))
+
+
+### Code Refactoring
+
+* **sdk:** contested resource as struct type ([#2225](https://github.com/dashpay/platform/issues/2225))
+* **drive:** remove duplicated withdrawal amount validation ([#2191](https://github.com/dashpay/platform/issues/2191))
 
 
 ### Build System
@@ -139,41 +65,13 @@
 ### Continuous Integration
 
 * prebuild dev containers ([#2184](https://github.com/dashpay/platform/issues/2184))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 1.4.0-dev.2 ([#2187](https://github.com/dashpay/platform/issues/2187))
-
-## [1.4.0-dev.1](https://github.com/dashpay/platform/compare/v1.3.0...v1.4.0-dev.1) (2024-09-27)
-
-
-### ⚠ BREAKING CHANGES
-
-* **sdk:** change default network to mainnet (#2161)
-* **dashmate:** confirm a node reset (#2160)
-* **platform:** withdrawals polishing and fixes for mainnet (#2166)
-* **platform:** do not switch to oldest quorums in validator set update (#2167)
-
-### Features
-
-* **dashmate:** confirm a node reset ([#2160](https://github.com/dashpay/platform/issues/2160))
-* **platform:** do not switch to oldest quorums in validator set update ([#2167](https://github.com/dashpay/platform/issues/2167))
-* **platform:** get current quorum info  ([#2168](https://github.com/dashpay/platform/issues/2168))
-* **platform:** withdrawals polishing and fixes for mainnet ([#2166](https://github.com/dashpay/platform/issues/2166))
-* **sdk:** change default network to mainnet ([#2161](https://github.com/dashpay/platform/issues/2161))
-
-
-### Bug Fixes
-
 * build dashmate on macos14
-* **dapi:** getStatus cache invalidation ([#2155](https://github.com/dashpay/platform/issues/2155))
-* **dapi:** invalid mainnet seed ports ([#2173](https://github.com/dashpay/platform/issues/2173))
-* **dashmate:** cannot read properties of undefined (reading 'expires') ([#2164](https://github.com/dashpay/platform/issues/2164))
-* **dashmate:** colors[updated] is not a function ([#2157](https://github.com/dashpay/platform/issues/2157))
-* **dashmate:** doctor fails collecting to big logs ([#2158](https://github.com/dashpay/platform/issues/2158))
-* **dashmate:** port marks as closed if ipv6 is not disabled ([#2162](https://github.com/dashpay/platform/issues/2162))
-* **dashmate:** remove confusing short flag name ([#2165](https://github.com/dashpay/platform/issues/2165))
+
+
+### Tests
+
+* **test-suite:** enable withdrawal tests ([#2202](https://github.com/dashpay/platform/issues/2202))
+* **dashmate:** e2e tests failing due to DKG interval check ([#2171](https://github.com/dashpay/platform/issues/2171))
 
 
 ### Documentation
@@ -181,16 +79,17 @@
 * **dashmate:** document logging configuration ([#2156](https://github.com/dashpay/platform/issues/2156))
 
 
-### Tests
+### ⚠ BREAKING CHANGES
 
-* **dashmate:** e2e tests failing due to DKG interval check ([#2171](https://github.com/dashpay/platform/issues/2171))
+* **platform:** add owner keys to identities, fixed verification of use of owner keys. While these are breaking changes, they will only happen in Protocol V4. (#2215)
+* **platform:** matched withdrawal fees to actual processing cost. Since fees change it is is a breaking change that will take effect in v4 of the protocol. (#2186)
+* **platform:** withdrawal automatic retries after core rejection. This is a breaking change that will be marked as active in v1.4 (#2185)
+* **platform:** withdrawal limits. This is breaking, and will be activated in version 1.4 (#2182)
+* **sdk:** Now if network is not specified, JS SDK will connect to mainnet. (#2161)
+* **dashmate:** confirm a node reset. This change will break any non interactive execution of reset command so now the force flag must be provided to skip the reset confirmation. (#2160)
+* **platform:** withdrawals polishing and fixes for mainnet. Updating in V4 hard fork. (#2166)
+* **platform:** do not switch to oldest quorums in validator set update. This is included as a change in protocol version 4. (#2167)
 
-
-### Miscellaneous Chores
-
-* **dashmate:** do not call mint on masternodes ([#2172](https://github.com/dashpay/platform/issues/2172))
-* **platform:** protocol version 4 creation ([#2153](https://github.com/dashpay/platform/issues/2153))
-* **release:** update changelog and bump version to 1.4.0-dev.1 ([#2175](https://github.com/dashpay/platform/issues/2175))
 
 ## [1.4.0-dev.8](https://github.com/dashpay/platform/compare/v1.4.0-dev.7...v1.4.0-dev.8) (2024-10-08)
 
