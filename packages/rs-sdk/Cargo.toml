@@ -18,7 +18,7 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 http = { version = "1.1" }
 thiserror = "1.0.64"
-tokio = { version = "1.40", features = ["macros"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 tokio-util = { version = "0.7.12" }
 async-trait = { version = "0.1.83" }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }

@@ -72,6 +72,7 @@ pub struct Config {
     /// ID of document of the type [`existing_document_type_name`](Config::existing_document_type_name)
     /// in [`existing_data_contract_id`](Config::existing_data_contract_id).
     #[serde(default = "Config::default_document_id")]
+    #[allow(unused)]
     pub existing_document_id: Identifier,
     // Hex-encoded ProTxHash of the existing HP masternode
     #[serde(default = "Config::default_protxhash")]
