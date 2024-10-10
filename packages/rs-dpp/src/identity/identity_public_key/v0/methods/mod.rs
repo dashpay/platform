@@ -72,12 +72,12 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
                             Ok(secret_key) => secret_key,
                             Err(_) => return Ok(false),
                         };
-                    let public_key_bytes = private_key
-                        .g1_element()
-                        .expect("expected to get a public key from a bls private key")
-                        .to_bytes()
-                        .to_vec();
-                    Ok(public_key_bytes == self.data.as_slice())
+                    let g1_element = match private_key.g1_element() {
+                        Ok(g1_element) => g1_element,
+                        Err(_) => return Ok(false),
+                    };
+
+                    Ok(g1_element.to_bytes().as_slice() == self.data.as_slice())
                 }
                 #[cfg(not(feature = "bls-signatures"))]
                 return Err(ProtocolError::NotSupported(
