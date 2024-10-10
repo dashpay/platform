@@ -4,13 +4,32 @@
 //! inside a tokio runtime. This module spawns async futures in active tokio runtime, and retrieves the result
 //! using a channel.
 use drive_proof_verifier::error::ContextProviderError;
-use std::future::Future;
+use std::{future::Future, sync::mpsc::SendError};
+use tokio::runtime::TryCurrentError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AsyncError {
+    /// Not running inside tokio runtime
+    #[error("not running inside tokio runtime: {0}")]
+    NotInTokioRuntime(#[from] TryCurrentError),
+
+    /// Cannot receive response from async function
+    #[error("cannot receive response from async function: {0}")]
+    RecvError(#[from] std::sync::mpsc::RecvError),
+
+    /// Cannot send response from async function
+    #[error("cannot send response from async function: {0}")]
+    SendError(String),
+
     #[error("asynchronous call from synchronous context failed: {0}")]
     #[allow(unused)]
     Generic(String),
+}
+
+impl<T> From<SendError<T>> for AsyncError {
+    fn from(error: SendError<T>) -> Self {
+        Self::SendError(error.to_string())
+    }
 }
 
 impl From<AsyncError> for ContextProviderError {
@@ -32,30 +51,18 @@ impl From<AsyncError> for crate::Error {
 ///
 /// Due to limitations of tokio runtime, we cannot use `tokio::runtime::Runtime::block_on` if we are already inside a tokio runtime.
 /// This function is a workaround for that limitation.
-pub fn block_on<F>(fut: F) -> Result<F::Output, ContextProviderError>
+pub fn block_on<F>(fut: F) -> Result<F::Output, AsyncError>
 where
     F: Future + Send + 'static,
     F::Output: Send,
 {
     tracing::trace!("block_on: running async function from sync code");
-    let rt = tokio::runtime::Handle::try_current().map_err(|e| {
-        ContextProviderError::AsyncError(format!(
-            "sync-async error: cannot get current tokio runtime handle: {:?}",
-            e
-        ))
-    })?;
+    let rt = tokio::runtime::Handle::try_current()?;
     let (tx, rx) = std::sync::mpsc::channel();
     tracing::trace!("block_on: Spawning worker");
     let hdl = rt.spawn(worker(fut, tx));
     tracing::trace!("block_on: Worker spawned");
-    let recv = tokio::task::block_in_place(|| rx.recv());
-
-    let resp = recv.map_err(|e| {
-        ContextProviderError::AsyncError(format!(
-            "sync-async error: cannot receive response from async function: {:?}",
-            e
-        ))
-    })?;
+    let resp = tokio::task::block_in_place(|| rx.recv())?;
 
     tracing::trace!("Response received");
     if !hdl.is_finished() {
@@ -71,13 +78,11 @@ async fn worker<F: Future>(
     fut: F,
     // response: oneshot::Sender<F::Output>,
     response: std::sync::mpsc::Sender<F::Output>,
-) -> Result<(), drive_proof_verifier::error::ContextProviderError> {
+) -> Result<(), AsyncError> {
     tracing::trace!("Worker start");
     let result = fut.await;
     tracing::trace!("Worker async function completed, sending response");
-    response.send(result).map_err(|e| {
-        ContextProviderError::Generic(format!("sync-async error: response cannot be sent: {}", e))
-    })?;
+    response.send(result)?;
     tracing::trace!("Worker response sent");
 
     Ok(())
