@@ -305,7 +305,7 @@ impl KeyType {
             KeyType::EDDSA_25519_HASH160 => {
                 let key_pair = ed25519_dalek::SigningKey::generate(rng);
                 (
-                    key_pair.verifying_key().to_bytes().to_vec(),
+                    ripemd160_sha256(key_pair.verifying_key().to_bytes().as_slice()).to_vec(),
                     key_pair.to_bytes().to_vec(),
                 )
             }

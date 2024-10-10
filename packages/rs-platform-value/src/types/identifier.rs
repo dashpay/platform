@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "json")]
 use serde_json::Value as JsonValue;
 
-use crate::string_encoding::Encoding::Base58;
 use crate::string_encoding::{Encoding, ALL_ENCODINGS};
 use crate::types::encoding_string_to_encoding;
 use crate::{string_encoding, Error, Value};
