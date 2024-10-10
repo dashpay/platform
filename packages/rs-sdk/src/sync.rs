@@ -7,7 +7,7 @@ use drive_proof_verifier::error::ContextProviderError;
 use std::future::Future;
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum AsyncError {
+pub enum AsyncError {
     #[error("asynchronous call from synchronous context failed: {0}")]
     #[allow(unused)]
     Generic(String),
@@ -32,7 +32,7 @@ impl From<AsyncError> for crate::Error {
 ///
 /// Due to limitations of tokio runtime, we cannot use `tokio::runtime::Runtime::block_on` if we are already inside a tokio runtime.
 /// This function is a workaround for that limitation.
-pub(crate) fn block_on<F>(fut: F) -> Result<F::Output, ContextProviderError>
+pub fn block_on<F>(fut: F) -> Result<F::Output, ContextProviderError>
 where
     F: Future + Send + 'static,
     F::Output: Send,

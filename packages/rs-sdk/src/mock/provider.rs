@@ -1,8 +1,8 @@
 //! Example ContextProvider that uses the Core gRPC API to fetch data from Platform.
 
 use crate::core::LowLevelDashCoreClient;
-use crate::internal::sync::block_on;
 use crate::platform::Fetch;
+use crate::sync::block_on;
 use crate::{Error, Sdk};
 use arc_swap::ArcSwapAny;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};

@@ -2,11 +2,11 @@
 //!
 //! See [MockDashPlatformSdk] for more details.
 use crate::{
-    internal::sync::block_on,
     platform::{
         types::{evonode::EvoNode, identity::IdentityRequest},
         DocumentQuery, Fetch, FetchMany, Query,
     },
+    sync::block_on,
     Error, Sdk,
 };
 use arc_swap::ArcSwapOption;
