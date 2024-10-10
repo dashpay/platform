@@ -799,6 +799,8 @@ impl SdkBuilder {
                 if  sdk.context_provider.load().is_none() {
                     #[cfg(feature = "mocks")]
                     if !self.core_ip.is_empty() {
+                        tracing::warn!(
+                            "ContextProvider not set, falling back to a mock one; use SdkBuilder::with_context_provider() to set it up");
                         let mut context_provider = GrpcContextProvider::new(None,
                             &self.core_ip, self.core_port, &self.core_user, &self.core_password,
                             self.data_contract_cache_size, self.quorum_public_keys_cache_size)?;
@@ -812,12 +814,16 @@ impl SdkBuilder {
                         sdk.context_provider.swap(Some(Arc::new(Box::new(context_provider.clone()))));
                         context_provider.set_sdk(Some(sdk.clone()));
                     } else{
-                        tracing::warn!(
-                            "Configure ContextProvider with Sdk::with_context_provider(); otherwise Sdk will fail");
+                        return Err(Error::Config(concat!(
+                            "context provider is not set, configure it with SdkBuilder::with_context_provider() ",
+                            "or configure Core access with SdkBuilder::with_core() to use mock context provider")
+                            .to_string()));
                     }
                     #[cfg(not(feature = "mocks"))]
-                    tracing::warn!(
-                        "Configure ContextProvider with Sdk::with_context_provider(); otherwise Sdk will fail");
+                    return Err(Error::Config(concat!(
+                        "context provider is not set, configure it with SdkBuilder::with_context_provider() ",
+                        "or enable `mocks` feature to use mock context provider")
+                        .to_string()));
                 };
 
                 sdk
