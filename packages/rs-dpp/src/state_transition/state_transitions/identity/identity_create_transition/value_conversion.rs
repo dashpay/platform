@@ -11,7 +11,7 @@ use crate::state_transition::StateTransitionValueConvert;
 
 use crate::serialization::ValueConvertible;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::{FeatureVersion, PlatformVersion};
 
 impl<'a> ValueConvertible<'a> for IdentityCreateTransition {}
 

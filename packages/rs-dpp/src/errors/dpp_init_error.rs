@@ -1,4 +1,4 @@
-use platform_version::version::FeatureVersion;
+use platform_version::version::protocol_version::FeatureVersion;
 use thiserror::Error;
 
 #[derive(Error, Debug)]

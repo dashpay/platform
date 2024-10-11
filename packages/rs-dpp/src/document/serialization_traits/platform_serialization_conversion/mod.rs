@@ -7,7 +7,7 @@ use crate::document::{Document, DocumentV0};
 #[cfg(feature = "validation")]
 use crate::prelude::ConsensusValidationResult;
 use crate::errors::ProtocolError;
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::{FeatureVersion, PlatformVersion};
 pub use v0::*;
 
 impl DocumentPlatformConversionMethodsV0 for Document {

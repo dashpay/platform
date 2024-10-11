@@ -5,7 +5,7 @@ pub use platform_version::error::PlatformVersionError;
 // pub use platform_version::*;
 // pub use platform_version::version::*;
 // pub use platform_version::*;
-pub use platform_version::version::{FeatureVersion, FeatureVersionBounds, PlatformVersion};
+pub use platform_version::version::protocol_version::{FeatureVersion, FeatureVersionBounds, PlatformVersion};
 use std::sync::RwLock;
 
 lazy_static! {

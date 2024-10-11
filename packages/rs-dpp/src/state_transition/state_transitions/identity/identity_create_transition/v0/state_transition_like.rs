@@ -12,7 +12,7 @@ use crate::state_transition::state_transitions::identity::identity_create_transi
 use crate::state_transition::StateTransition;
 
 use crate::state_transition::StateTransitionType::IdentityCreate;
-use platform_version::version::FeatureVersion;
+use platform_version::version::protocol_version::FeatureVersion;
 
 impl From<IdentityCreateTransitionV0> for StateTransition {
     fn from(value: IdentityCreateTransitionV0) -> Self {

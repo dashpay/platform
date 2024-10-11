@@ -44,7 +44,7 @@ use crate::data_contract::serialized_version::{
 };
 use crate::util::hash::hash_double_to_vec;
 
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::{FeatureVersion, PlatformVersion};
 use crate::errors::ProtocolError;
 use crate::errors::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 

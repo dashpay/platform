@@ -1,4 +1,4 @@
-use crate::version::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
+use crate::version::protocol_version::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
 
 #[derive(Clone, Debug, Default)]
 #[ferment_macro::export]

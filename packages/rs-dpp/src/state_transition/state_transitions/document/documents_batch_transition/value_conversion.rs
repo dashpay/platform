@@ -11,7 +11,7 @@ use crate::state_transition::state_transitions::document::documents_batch_transi
 use crate::state_transition::StateTransitionValueConvert;
 
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::{FeatureVersion, PlatformVersion};
 
 impl<'a> StateTransitionValueConvert<'a> for DocumentsBatchTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

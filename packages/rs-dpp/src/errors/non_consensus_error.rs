@@ -1,7 +1,7 @@
 // use platform_value::Error as ValueError;
 use thiserror::Error as ThisError;
 use platform_value::Error;
-use platform_version::version::FeatureVersion;
+use platform_version::version::protocol_version::FeatureVersion;
 use crate::errors::dpp_error::DPPError;
 use crate::errors::invalid_vector_size_error::InvalidVectorSizeError;
 use crate::errors::compatible_protocol_version_is_not_defined_error::CompatibleProtocolVersionIsNotDefinedError;

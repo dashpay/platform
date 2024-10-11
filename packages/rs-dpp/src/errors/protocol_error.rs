@@ -34,7 +34,7 @@ use crate::state_transition::errors::wrong_public_key_purpose_error::WrongPublic
 //use dashcore::consensus::encode::Error as DashCoreError;
 
 use platform_value::{Error, Value};
-use platform_version::{error::PlatformVersionError, version::FeatureVersion};
+use platform_version::{error::PlatformVersionError, version::protocol_version::FeatureVersion};
 
 #[derive(ThisError, Debug)]
 #[ferment_macro::export]

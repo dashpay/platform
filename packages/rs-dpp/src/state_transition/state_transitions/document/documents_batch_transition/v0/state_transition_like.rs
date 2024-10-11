@@ -6,7 +6,7 @@ use crate::state_transition::state_transitions::document::documents_batch_transi
 };
 use crate::state_transition::StateTransitionType::DocumentsBatch;
 use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
-use platform_version::version::FeatureVersion;
+use platform_version::version::protocol_version::FeatureVersion;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use platform_value::{BinaryData, Identifier};

@@ -10,7 +10,7 @@ use crate::state_transition::state_transitions::contract::data_contract_update_t
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
 };
 use crate::state_transition::StateTransition;
-use platform_version::version::FeatureVersion;
+use platform_version::version::protocol_version::FeatureVersion;
 use crate::{errors::NonConsensusError, errors::ProtocolError};
 use platform_version::version::PlatformVersion;
 use platform_version::TryIntoPlatformVersioned;

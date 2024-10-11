@@ -8,7 +8,7 @@ use crate::state_transition::state_transitions::contract::data_contract_create_t
 use crate::state_transition::StateTransitionType::DataContractCreate;
 
 use platform_value::{BinaryData, Identifier};
-use platform_version::version::FeatureVersion;
+use platform_version::version::protocol_version::FeatureVersion;
 
 impl StateTransitionLike for DataContractCreateTransitionV0 {
     /// Returns ID of the created contract

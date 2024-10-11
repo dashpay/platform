@@ -26,7 +26,6 @@ use crate::{
 };
 
 use document_transition::DocumentTransitionWasm;
-use dpp::ed25519_dalek::ed25519::signature::SignerMut;
 use dpp::identifier::Identifier;
 use dpp::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 

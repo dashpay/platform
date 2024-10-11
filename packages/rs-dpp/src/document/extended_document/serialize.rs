@@ -6,7 +6,7 @@ use crate::errors::ProtocolError;
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 use platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode};
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_version::version::protocol_version::{FeatureVersion, PlatformVersion};
 
 impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocument {
     /// Serializes the document.
