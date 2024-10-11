@@ -5,7 +5,7 @@ use dpp::validation::SimpleValidationResult;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 
 use crate::error::Error;
-use dpp::consensus::state::data_trigger::DataTriggerError;
+use dpp::errors::consensus::state::data_trigger::DataTriggerError;
 use dpp::version::PlatformVersion;
 
 pub(super) use bindings::list::data_trigger_bindings_list;

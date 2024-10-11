@@ -1,7 +1,7 @@
 use crate::buffer::Buffer;
-use dpp::consensus::basic::document::InvalidDocumentTransitionIdError;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::basic::document::InvalidDocumentTransitionIdError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::ConsensusError;
 
 use wasm_bindgen::prelude::*;
 

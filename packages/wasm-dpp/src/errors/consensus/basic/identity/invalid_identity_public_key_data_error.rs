@@ -1,4 +1,4 @@
-use dpp::consensus::basic::identity::InvalidIdentityPublicKeyDataError;
+use dpp::errors::consensus::basic::identity::InvalidIdentityPublicKeyDataError;
 use dpp::errors::consensus::codes::ErrorWithCode;
 
 use dpp::errors::consensus::ConsensusError as DPPConsensusError;

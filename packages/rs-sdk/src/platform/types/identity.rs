@@ -29,8 +29,8 @@ delegate_enum! {
     IdentityRequest,
     IdentityResponse,
     Identity,
-    (GetIdentity,proto::GetIdentityRequest,proto::GetIdentityResponse),
-    (GetIdentityByPublicKeyHash, proto::GetIdentityByPublicKeyHashRequest, proto::GetIdentityByPublicKeyHashResponse)
+    (GetIdentity, GetIdentityRequest, proto::GetIdentityResponse),
+    (GetIdentityByPublicKeyHash, GetIdentityByPublicKeyHashRequest, proto::GetIdentityByPublicKeyHashResponse)
 }
 
 impl Query<IdentityRequest> for platform_value::Identifier {
@@ -149,7 +149,7 @@ impl Query<GetIdentityBalanceAndRevisionRequest> for platform_value::Identifier 
     }
 }
 
-impl Query<GetIdentitiesBalancesRequest> for Vec<dpp::prelude::Identifier> {
+impl Query<GetIdentitiesBalancesRequest> for Vec<platform_value::Identifier> {
     fn query(self, prove: bool) -> Result<GetIdentitiesBalancesRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");

@@ -1,6 +1,6 @@
 use crate::error::Error;
 
-use dpp::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
+use dpp::errors::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
 
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::platform_value::Identifier;

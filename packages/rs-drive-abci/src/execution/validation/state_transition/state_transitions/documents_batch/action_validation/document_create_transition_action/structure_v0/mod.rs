@@ -1,4 +1,4 @@
-use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, InvalidDocumentTypeError};
+use dpp::errors::consensus::basic::document::{DocumentCreationNotAllowedError, InvalidDocumentTypeError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;

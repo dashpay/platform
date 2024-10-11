@@ -1,8 +1,7 @@
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
-use dpp::identifier::MasternodeIdentifiers;
-use dpp::prelude::Identifier;
+use dpp::identifier::{Identifier, MasternodeIdentifiers};
 
 impl<C> Platform<C>
 where

@@ -98,11 +98,11 @@ impl RandomDocumentTypeParameters {
     }
 }
 
-use crate::data_contract::document_type::property::ArrayItemType;
+use crate::data_contract::document_type::property::array::ArrayItemType;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
-#[cfg(feature = "validation")]
-use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
+// #[cfg(feature = "validation")]
+// use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::document_type::{
     v0::DocumentTypeV0, DocumentProperty, DocumentPropertyType, DocumentType, Index,
 };

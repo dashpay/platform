@@ -2,7 +2,7 @@ use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use dpp::consensus::basic::identity::{
+use dpp::errors::consensus::basic::identity::{
     InvalidAssetLockProofCoreChainHeightError,
 };
 use dpp::balances::credits::Credits;

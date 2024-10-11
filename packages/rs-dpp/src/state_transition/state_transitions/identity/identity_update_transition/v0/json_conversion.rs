@@ -6,10 +6,10 @@ impl<'a> StateTransitionJsonConvert<'a> for IdentityUpdateTransitionV0 {}
 #[cfg(test)]
 mod test {
     use crate::identity::accessors::IdentityGettersV0;
-    use crate::state_transition::identity_update_transition::fields::property_names::*;
-    use crate::state_transition::identity_update_transition::fields::*;
-    use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-    use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+    use crate::state_transition::state_transition::identity::identity_update_transition::fields::property_names::*;
+    use crate::state_transition::state_transition::identity::identity_update_transition::fields::*;
+    use crate::state_transition::state_transition::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use crate::state_transition::state_transition::identity::identity_update_transition::IdentityUpdateTransition;
     use crate::state_transition::{
         JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
     };

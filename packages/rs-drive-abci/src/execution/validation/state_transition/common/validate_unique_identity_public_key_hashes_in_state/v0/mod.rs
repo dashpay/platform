@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dpp::consensus::basic::identity::DuplicatedIdentityPublicKeyIdBasicError;
-use dpp::consensus::basic::BasicError;
+use dpp::errors::consensus::basic::identity::DuplicatedIdentityPublicKeyIdBasicError;
+use dpp::errors::consensus::basic::BasicError;
 
 use dpp::identity::KeyID;
 
@@ -12,8 +12,8 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
-use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use dpp::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::version::PlatformVersion;
 use std::collections::HashMap;
 

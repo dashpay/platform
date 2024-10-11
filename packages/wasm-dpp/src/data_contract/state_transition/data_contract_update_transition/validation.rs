@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
-use dpp::consensus::basic::value_error::ValueError;
+use dpp::errors::consensus::basic::value_error::ValueError;
 use dpp::validation::{AsyncDataValidatorWithContext, SimpleConsensusValidationResult};
 use dpp::{
     data_contract::state_transition::data_contract_update_transition::validation::{

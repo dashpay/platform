@@ -39,6 +39,7 @@ use dpp::{
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
+use dpp::identity::IdentityPublicKey;
 use platform_version::version::PlatformVersion;
 
 pub use evonode_status::*;

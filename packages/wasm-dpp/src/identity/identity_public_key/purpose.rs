@@ -1,4 +1,4 @@
-use dpp::identity::Purpose;
+use dpp::identity::identity_public_key::Purpose;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name = KeyPurpose)]

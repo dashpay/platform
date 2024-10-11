@@ -6,7 +6,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{KeyID, Purpose};
+use dpp::identity::{KeyID, identity_public_key::Purpose};
 
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{

@@ -7,8 +7,7 @@ use crate::platform_types::platform::PlatformRef;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::dashcore::OutPoint;
 use dpp::balances::credits::Credits;
-
-use dpp::prelude::AssetLockProof;
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;

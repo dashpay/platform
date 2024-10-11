@@ -11,12 +11,12 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::DataContract;
 use dpp::document::transfer::Transferable;
 use dpp::nft::TradeMode;
-use dpp::prelude::{CoreBlockHeight, DataContract, TimestampMillis};
+use dpp::prelude::{CoreBlockHeight, TimestampMillis};
 use dpp::tests::json_document::json_document_to_contract;
-use dpp::version::PlatformVersion;
-use dpp::version::ProtocolVersion;
+use platform_version::version::{PlatformVersion, ProtocolVersion};
 use drive::util::storage_flags::StorageFlags;
 use tempfile::TempDir;
 

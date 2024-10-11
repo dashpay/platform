@@ -29,7 +29,7 @@ use crate::utils::{generic_of_js_val, WithJsError};
 use dpp::platform_value::string_encoding;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::PlatformSerializable;
-use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 use dpp::{
     identity::state_transition::asset_lock_proof::AssetLockProof,

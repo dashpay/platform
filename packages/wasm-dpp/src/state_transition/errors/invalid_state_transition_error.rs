@@ -1,4 +1,4 @@
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::ConsensusError;
 
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 

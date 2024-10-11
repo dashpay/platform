@@ -8,7 +8,6 @@ use std::fmt::{Debug, Formatter};
 #[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
 use arc_swap::ArcSwap;
-use dpp::version::INITIAL_PROTOCOL_VERSION;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::atomic::AtomicU64;
@@ -18,8 +17,8 @@ use dashcore_rpc::dashcore::BlockHash;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
-use dpp::version::ProtocolVersion;
-use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use platform_version::version::{INITIAL_PROTOCOL_VERSION, PlatformVersion, ProtocolVersion};
+use dpp::version::PlatformVersionCurrentVersion;
 use serde_json::json;
 
 /// Platform is not versioned as it holds the main logic, we could not switch from one structure

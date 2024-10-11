@@ -4,7 +4,7 @@ use crate::platform_types::platform::{Platform, PlatformRef};
 
 use crate::abci::AbciError;
 use crate::rpc::core::CoreRPCLike;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::fee::fee_result::FeeResult;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;

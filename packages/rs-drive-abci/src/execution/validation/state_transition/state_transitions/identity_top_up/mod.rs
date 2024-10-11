@@ -1,7 +1,7 @@
 pub(crate) mod identity_retrieval;
 mod structure;
 mod transform_into_action;
-use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
 

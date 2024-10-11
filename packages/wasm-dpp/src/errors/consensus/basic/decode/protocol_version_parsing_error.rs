@@ -1,6 +1,6 @@
 use crate::buffer::Buffer;
 
-use dpp::consensus::basic::decode::ProtocolVersionParsingError;
+use dpp::errors::consensus::basic::decode::ProtocolVersionParsingError;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::errors::consensus::ConsensusError;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;

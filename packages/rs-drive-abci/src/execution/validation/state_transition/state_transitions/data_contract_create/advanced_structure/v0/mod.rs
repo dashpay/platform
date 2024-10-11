@@ -3,14 +3,14 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use dpp::consensus::basic::data_contract::{
+use dpp::errors::consensus::basic::data_contract::{
     InvalidDataContractIdError, InvalidDataContractVersionError,
 };
-use dpp::consensus::basic::BasicError;
+use dpp::errors::consensus::basic::BasicError;
 use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
-use dpp::prelude::DataContract;
-use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
-use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::data_contract::DataContract;
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::ConsensusValidationResult;
 use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -78,10 +78,10 @@ mod tests {
 
     mod validate_advanced_structure {
         use super::*;
-        use dpp::consensus::ConsensusError;
+        use dpp::errors::consensus::ConsensusError;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
         use dpp::prelude::{Identifier, IdentityNonce};
-        use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
+        use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransitionV0;
         use dpp::tests::fixtures::get_data_contract_fixture;
         use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceActionAccessorsV0;
         use platform_version::version::PlatformVersion;

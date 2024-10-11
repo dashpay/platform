@@ -1,6 +1,6 @@
-use dpp::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::ConsensusError;
 
 use wasm_bindgen::prelude::*;
 

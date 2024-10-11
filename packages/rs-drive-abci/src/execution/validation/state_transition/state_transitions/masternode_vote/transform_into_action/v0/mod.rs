@@ -1,17 +1,17 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use dashcore_rpc::dashcore_rpc_json::MasternodeType;
-use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
-use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
-use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::state::state_error::StateError;
+use dpp::errors::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
+use dpp::errors::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
+use dpp::errors::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
 
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
-use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use drive::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 
 use crate::execution::validation::state_transition::ValidationMode;

@@ -8,7 +8,7 @@ use dapi_grpc::platform::v0::get_proofs_request::GetProofsRequestV0;
 use dapi_grpc::platform::v0::get_proofs_response::{get_proofs_response_v0, GetProofsResponseV0};
 use dpp::check_validation_result_with_data;
 use dpp::platform_value::Bytes32;
-use dpp::prelude::Identifier;
+use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;

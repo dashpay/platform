@@ -1,19 +1,18 @@
 //todo: move this file to transition
 use dpp::platform_value::{BinaryData, ReplacementType};
 use dpp::serialization::ValueConvertible;
-use dpp::state_transition::public_key_in_creation::accessors::{
+use dpp::state_transition::state_transitions::identity::public_key_in_creation::accessors::{
     IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
 };
 
-use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use js_sys::Reflect::delete_property;
 pub use serde::{Deserialize, Serialize};
 
-use dpp::identity::contract_bounds::ContractBounds;
+use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dpp::ProtocolError;
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
-
 use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
 use crate::utils::WithJsError;

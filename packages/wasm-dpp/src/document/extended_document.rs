@@ -3,8 +3,9 @@ use dpp::document::{
 };
 // use serde_json::Value as JsonValue;
 
+use dpp::identifier::Identifier;
 use dpp::platform_value::{Bytes32, Value};
-use dpp::prelude::{Identifier, Revision, TimestampMillis};
+use dpp::prelude::{Revision, TimestampMillis};
 
 use dpp::util::json_value::JsonValueExt;
 

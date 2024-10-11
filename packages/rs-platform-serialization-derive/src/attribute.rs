@@ -5,6 +5,7 @@ use virtue::utils::{parse_tagged_attribute, ParsedAttribute};
 pub struct ContainerAttributes {
     pub crate_name: String,
     pub untagged: bool,
+    #[allow(unused)]
     pub unversioned: bool,
     pub bounds: Option<(String, Literal)>,
     pub decode_bounds: Option<(String, Literal)>,
@@ -111,6 +112,7 @@ impl FromAttribute for ContainerAttributes {
 pub struct FieldAttributes {
     pub with_serde: bool,
     pub with_platform_version: bool,
+    #[allow(unused)]
     pub platform_version_path_bounds: String,
 }
 

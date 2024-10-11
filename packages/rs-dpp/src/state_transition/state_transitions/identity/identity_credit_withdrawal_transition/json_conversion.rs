@@ -27,7 +27,7 @@ impl<'a> StateTransitionJsonConvert<'a> for IdentityCreditWithdrawalTransition {
                 let map_value = value.as_object_mut().expect("expected an object");
                 map_value.insert(
                     STATE_TRANSITION_PROTOCOL_VERSION.to_string(),
-                    JsonValue::Number(Number::from(1)),
+                    serde_json::Value::Number(Number::from(1)),
                 );
                 Ok(value)
             }

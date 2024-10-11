@@ -1,6 +1,6 @@
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::identity::KeyID;
 
 use wasm_bindgen::prelude::*;

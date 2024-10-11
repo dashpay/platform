@@ -1,7 +1,7 @@
 use crate::buffer::Buffer;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
+use dpp::errors::consensus::ConsensusError;
 
 use js_sys::Number;
 use wasm_bindgen::prelude::*;

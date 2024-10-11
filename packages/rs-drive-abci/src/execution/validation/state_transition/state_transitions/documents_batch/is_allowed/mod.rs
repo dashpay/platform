@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::state_transition::processor::v0::StateTransitionIsAllowedValidationV0;
 use crate::platform_types::platform::PlatformRef;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransition;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 

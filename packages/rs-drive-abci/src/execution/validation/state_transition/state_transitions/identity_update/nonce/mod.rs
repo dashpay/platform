@@ -5,7 +5,7 @@ use crate::execution::validation::state_transition::identity_update::nonce::v0::
 use crate::execution::validation::state_transition::processor::v0::StateTransitionNonceValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
-use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;

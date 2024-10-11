@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{IdentityPublicKey, KeyID, KeyType, identity_public_key::{Purpose, SecurityLevel}};
 use dpp::platform_value::BinaryData;
 
 impl<C> Platform<C> {

@@ -4,32 +4,32 @@ use std::sync::Arc;
 
 use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
-use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
-use dpp::consensus::basic::BasicError;
+use dpp::errors::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
+use dpp::errors::consensus::basic::BasicError;
 
-use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
-use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
+use dpp::errors::consensus::state::document::document_not_found_error::DocumentNotFoundError;
+use dpp::errors::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
 
-use dpp::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
-use dpp::consensus::state::state_error::StateError;
+use dpp::errors::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
+use dpp::errors::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
-use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
+use dpp::errors::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
+use dpp::errors::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::document::property_names::PRICE;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::balances::credits::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::prelude::Revision;
 use dpp::validation::SimpleConsensusValidationResult;
-use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
-
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
-use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
-use dpp::state_transition::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
+use dpp::{errors::consensus::ConsensusError, validation::ConsensusValidationResult};
+use dpp::identifier::Identifier;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
 use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
@@ -42,9 +42,9 @@ use crate::execution::validation::state_transition::documents_batch::state::v0::
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
-use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::Drive;
 use drive::state_transition_action::document::documents_batch::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionAction;

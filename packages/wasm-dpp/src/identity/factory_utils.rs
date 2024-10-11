@@ -7,7 +7,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::serialization::ValueConvertible;
-use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use std::collections::BTreeMap;
 use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::{JsCast, JsValue};

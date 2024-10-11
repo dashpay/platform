@@ -1,14 +1,14 @@
-use dpp::consensus::basic::identity::{
+use dpp::errors::consensus::basic::identity::{
     InvalidIdentityCreditWithdrawalTransitionAmountError,
     InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
     InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
     NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
 };
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::ConsensusError;
 
 use crate::error::Error;
-use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_withdrawal_transition::{
+use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, MIN_CORE_FEE_PER_BYTE, MIN_WITHDRAWAL_AMOUNT,
 };
 use dpp::util::is_fibonacci_number::is_fibonacci_number;
@@ -84,7 +84,7 @@ mod tests {
     use super::*;
 
     use assert_matches::assert_matches;
-    use dpp::consensus::basic::BasicError;
+    use dpp::errors::consensus::basic::BasicError;
     use dpp::dashcore::ScriptBuf;
     use dpp::identity::core_script::CoreScript;
     use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;

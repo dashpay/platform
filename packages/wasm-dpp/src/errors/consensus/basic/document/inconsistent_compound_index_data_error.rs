@@ -1,6 +1,6 @@
-use dpp::consensus::basic::document::InconsistentCompoundIndexDataError;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::basic::document::InconsistentCompoundIndexDataError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::ConsensusError;
 
 use js_sys::JsString;
 use wasm_bindgen::prelude::*;

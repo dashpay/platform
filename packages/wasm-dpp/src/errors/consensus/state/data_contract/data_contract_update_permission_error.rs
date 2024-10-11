@@ -1,8 +1,8 @@
 use crate::identifier::IdentifierWrapper;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::ConsensusError;
 
-use dpp::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
+use dpp::errors::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractUpdatePermissionError)]

@@ -1,9 +1,9 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::basic::document::InvalidDocumentTypeError;
-use dpp::consensus::ConsensusError;
-use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
-use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
-use dpp::consensus::state::state_error::StateError;
+use dpp::errors::consensus::basic::document::InvalidDocumentTypeError;
+use dpp::errors::consensus::ConsensusError;
+use dpp::errors::consensus::state::document::document_not_found_error::DocumentNotFoundError;
+use dpp::errors::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
+use dpp::errors::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;

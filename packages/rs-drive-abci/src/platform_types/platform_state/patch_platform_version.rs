@@ -1,11 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::prelude::BlockHeight;
-use dpp::version::patches::PATCHES;
-use dpp::version::PlatformVersion;
-use dpp::version::INITIAL_PROTOCOL_VERSION;
+use platform_version::version::{INITIAL_PROTOCOL_VERSION, patches::PATCHES, PlatformVersion};
 use std::sync::atomic::{AtomicU32, Ordering};
-
 use crate::platform_types::platform_state::v0::{
     PlatformStateV0Methods, PlatformStateV0PrivateMethods,
 };

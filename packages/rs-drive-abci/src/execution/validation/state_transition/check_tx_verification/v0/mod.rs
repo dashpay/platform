@@ -10,7 +10,7 @@ use dpp::serialization::Signable;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::ProtocolError;
 use dpp::state_transition::StateTransition;
-use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
+use platform_version::{DefaultForPlatformVersion, version::PlatformVersion};
 use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;

@@ -1,8 +1,8 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::epoch::Epoch;
-use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
-use dpp::consensus::basic::BasicError;
+use dpp::errors::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
+use dpp::errors::consensus::basic::BasicError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -14,8 +14,8 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{Identifier, Value};
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::{
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
 use dpp::validation::ConsensusValidationResult;

@@ -3,8 +3,8 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::epoch::Epoch;
 
-use dpp::consensus::basic::document::DataContractNotPresentError;
-use dpp::consensus::basic::BasicError;
+use dpp::errors::consensus::basic::document::DataContractNotPresentError;
+use dpp::errors::consensus::basic::BasicError;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
@@ -13,7 +13,7 @@ use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
 
-use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::version::PlatformVersion;
 
 use crate::error::execution::ExecutionError;
@@ -193,7 +193,7 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
-    use dpp::consensus::ConsensusError;
+    use dpp::errors::consensus::ConsensusError;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::errors::contract::DataContractError;
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;

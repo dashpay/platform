@@ -46,6 +46,7 @@ use platform_value::Identifier;
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
+use dpp::data_contract::DataContract;
 
 /// Parse and verify the received proof and retrieve the requested object, if any.
 ///

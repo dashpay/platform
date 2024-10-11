@@ -1,4 +1,4 @@
-use dpp::consensus::basic::value_error::ValueError;
+use dpp::errors::consensus::basic::value_error::ValueError;
 use dpp::document::validation::basic::validate_documents_batch_transition_basic;
 use dpp::document::DocumentsBatchTransition;
 use dpp::validation::SimpleConsensusValidationResult;

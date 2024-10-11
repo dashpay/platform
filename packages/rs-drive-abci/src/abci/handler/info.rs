@@ -3,8 +3,8 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dpp::version::DESIRED_PLATFORM_VERSION;
 use tenderdash_abci::proto::abci as proto;
+use platform_version::version::DESIRED_PLATFORM_VERSION;
 
 pub fn info<A, C>(app: &A, request: proto::RequestInfo) -> Result<proto::ResponseInfo, Error>
 where

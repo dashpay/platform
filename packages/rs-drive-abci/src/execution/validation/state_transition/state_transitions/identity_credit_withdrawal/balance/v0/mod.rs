@@ -1,8 +1,8 @@
 use crate::error::Error;
-use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+use dpp::errors::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
 use crate::error::execution::ExecutionError;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -50,8 +50,8 @@ mod tests {
     use super::*;
 
     use assert_matches::assert_matches;
-    use dpp::consensus::state::state_error::StateError;
-    use dpp::consensus::ConsensusError;
+    use dpp::errors::consensus::state::state_error::StateError;
+    use dpp::errors::consensus::ConsensusError;
     use dpp::prelude::Identifier;
     use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
     use platform_version::version::v1::PLATFORM_V1;

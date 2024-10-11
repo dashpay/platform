@@ -424,7 +424,7 @@ mod test {
     }
 
     mod platform_serializable {
-        use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
+        use crate::data_contract::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
         use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 
         #[test]

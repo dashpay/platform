@@ -3,11 +3,11 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::epoch::Epoch;
 
-use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
-use dpp::consensus::state::state_error::StateError;
+use dpp::errors::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
+use dpp::errors::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
-use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
 use dpp::ProtocolError;
 
 use crate::error::execution::ExecutionError;
@@ -145,14 +145,14 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
-    use dpp::consensus::basic::BasicError;
-    use dpp::consensus::ConsensusError;
+    use dpp::errors::consensus::basic::BasicError;
+    use dpp::errors::consensus::ConsensusError;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::errors::contract::DataContractError;
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
     use dpp::platform_value::Value;
     use dpp::prelude::IdentityNonce;
-    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
+    use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransitionV0;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceActionAccessorsV0;
     use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};

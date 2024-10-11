@@ -7,7 +7,7 @@ use crate::document_facade::DocumentFacadeWasm;
 use dpp::dash_platform_protocol::DashPlatformProtocol;
 use dpp::data_contract::DataContractFacade;
 
-use dpp::version::LATEST_VERSION;
+use platform_version::version::LATEST_VERSION;
 
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::identity::identity_facade::IdentityFacadeWasm;

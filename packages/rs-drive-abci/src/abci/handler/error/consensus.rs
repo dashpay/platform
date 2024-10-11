@@ -1,5 +1,5 @@
 use crate::error::Error;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::platform_value::platform_value;
 use dpp::platform_value::string_encoding::{encode, Encoding};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;

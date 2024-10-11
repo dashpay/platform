@@ -17,8 +17,8 @@ use crate::{
     identity::state_transition::IdentityUpdateTransitionWasm, with_js_error,
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
-
-use dpp::prelude::{Identity, IdentityNonce};
+use dpp::identity::Identity;
+use dpp::prelude::IdentityNonce;
 
 use serde::Deserialize;
 use std::convert::TryInto;

@@ -6,7 +6,7 @@ use crate::sync::block_on;
 use crate::{Error, Sdk};
 use arc_swap::ArcSwapAny;
 use dpp::data_contract::DataContract;
-use dpp::prelude::{CoreBlockHeight, Identifier};
+use dpp::prelude::CoreBlockHeight;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
 use std::hash::Hash;

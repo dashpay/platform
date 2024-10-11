@@ -4,7 +4,7 @@ mod state;
 mod structure;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;

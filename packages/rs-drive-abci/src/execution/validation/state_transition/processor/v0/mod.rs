@@ -16,7 +16,7 @@ use crate::error::execution::ExecutionError;
 use dpp::serialization::Signable;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
-use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
+use platform_version::{DefaultForPlatformVersion, version::PlatformVersion};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;

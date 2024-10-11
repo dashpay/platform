@@ -1,23 +1,23 @@
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::consensus::basic::document::{
+use dpp::errors::consensus::basic::document::{
     DataContractNotPresentError, InvalidDocumentTypeError,
 };
-use dpp::consensus::basic::identity::DataContractBoundsNotPresentError;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
-use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
-use dpp::consensus::state::state_error::StateError;
+use dpp::errors::consensus::basic::identity::DataContractBoundsNotPresentError;
+use dpp::errors::consensus::basic::BasicError;
+use dpp::errors::consensus::ConsensusError;
+use dpp::errors::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
+use dpp::errors::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use dpp::identifier::Identifier;
-use dpp::identity::contract_bounds::ContractBounds;
+use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::Purpose::{DECRYPTION, ENCRYPTION};
-use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
-use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::identity::identity_public_key::Purpose::{DECRYPTION, ENCRYPTION};
+use dpp::state_transition::state_transitions::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use dpp::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;

@@ -1,6 +1,6 @@
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::state::identity::identity_public_key_is_read_only_error::IdentityPublicKeyIsReadOnlyError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::state::identity::identity_public_key_is_read_only_error::IdentityPublicKeyIsReadOnlyError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::identity::KeyID;
 
 use wasm_bindgen::prelude::*;

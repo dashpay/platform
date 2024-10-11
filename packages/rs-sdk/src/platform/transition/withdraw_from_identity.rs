@@ -8,7 +8,7 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
-use dpp::state_transition::identity_credit_withdrawal_transition::methods::{
+use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::methods::{
     IdentityCreditWithdrawalTransitionMethodsV0, PreferredKeyPurposeForSigningWithdrawal,
 };
 use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;

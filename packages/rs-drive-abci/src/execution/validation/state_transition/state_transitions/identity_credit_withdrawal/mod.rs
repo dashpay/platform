@@ -5,7 +5,7 @@ mod state;
 mod structure;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
@@ -140,8 +140,8 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
-    use dpp::consensus::basic::BasicError;
-    use dpp::consensus::ConsensusError;
+    use dpp::errors::consensus::basic::BasicError;
+    use dpp::errors::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::identity::core_script::CoreScript;
     use dpp::identity::KeyType::{ECDSA_HASH160, ECDSA_SECP256K1};
@@ -531,7 +531,7 @@ mod tests {
 
     mod errors {
         use super::*;
-        use dpp::consensus::state::state_error::StateError;
+        use dpp::errors::consensus::state::state_error::StateError;
         #[test]
         fn test_credit_withdrawal_without_withdrawal_address_with_a_non_payable_transfer_key() {
             let platform_version = PlatformVersion::latest();

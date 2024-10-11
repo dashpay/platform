@@ -1,6 +1,6 @@
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
+use dpp::errors::consensus::ConsensusError;
 
 use wasm_bindgen::prelude::*;
 

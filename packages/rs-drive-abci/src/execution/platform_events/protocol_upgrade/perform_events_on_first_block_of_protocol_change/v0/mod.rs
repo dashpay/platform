@@ -5,7 +5,6 @@ use crate::platform_types::platform_state::PlatformState;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::version::PlatformVersion;
-use dpp::version::ProtocolVersion;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
@@ -14,6 +13,7 @@ use drive::drive::identity::withdrawals::paths::{
     WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::grovedb::{Element, Transaction};
+use platform_version::version::ProtocolVersion;
 
 impl<C> Platform<C> {
     /// Executes protocol-specific events on the first block after a protocol version change.

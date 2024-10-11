@@ -18,7 +18,7 @@ use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::serialization::{PlatformDeserializableFromVersionedStructure, PlatformSerializable};
 use dpp::util::deserializer::ProtocolVersion;
 
-use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
+use platform_version::{version::PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use dpp::ProtocolError;
 use indexmap::IndexMap;
 

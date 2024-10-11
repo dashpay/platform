@@ -1,5 +1,5 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::grovedb::TransactionArg;
 use dpp::version::PlatformVersion;

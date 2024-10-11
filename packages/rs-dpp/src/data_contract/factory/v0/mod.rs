@@ -206,7 +206,7 @@ mod tests {
     use crate::data_contract::schema::DataContractSchemaMethodsV0;
 
     use crate::serialization::PlatformSerializableWithPlatformVersion;
-    use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+    use crate::state_transition::state_transitions::contract::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::StateTransitionLike;
     use crate::tests::fixtures::get_data_contract_fixture;
 

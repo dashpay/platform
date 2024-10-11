@@ -26,8 +26,8 @@ use crate::identity::state_transition::create_asset_lock_proof_from_wasm_instanc
 use dpp::platform_value::string_encoding;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::PlatformSerializable;
-use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
-use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::state_transitions::identity::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::StateTransition;
 use dpp::{
     identifier::Identifier, identity::state_transition::asset_lock_proof::AssetLockProof,

@@ -1,8 +1,8 @@
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::ConsensusError;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-use dpp::consensus::basic::document::DocumentTransitionsAreAbsentError;
+use dpp::errors::consensus::basic::document::DocumentTransitionsAreAbsentError;
 
 #[wasm_bindgen(js_name=DocumentTransitionsAreAbsentError)]
 pub struct DocumentTransitionsAreAbsentErrorWasm {

@@ -4,13 +4,13 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
-use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
+use dpp::errors::consensus::basic::BasicError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::identity::state_transition::AssetLockProved;
-use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::state_transitions::identity::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::state_transitions::identity::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;

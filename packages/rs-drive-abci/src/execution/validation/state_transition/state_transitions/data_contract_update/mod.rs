@@ -2,7 +2,7 @@ mod identity_contract_nonce;
 mod state;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::ConsensusValidationResult;
 
 use drive::grovedb::TransactionArg;
@@ -203,8 +203,8 @@ mod tests {
         use serde_json::json;
 
         use dpp::assert_state_consensus_errors;
-        use dpp::consensus::state::state_error::StateError;
-        use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
+        use dpp::errors::consensus::state::state_error::StateError;
+        use dpp::errors::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
 
         use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;

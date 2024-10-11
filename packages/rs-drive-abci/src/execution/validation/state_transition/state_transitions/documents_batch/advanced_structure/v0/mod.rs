@@ -1,16 +1,16 @@
 use crate::error::Error;
-use dpp::consensus::basic::document::InvalidDocumentTransitionIdError;
-use dpp::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
+use dpp::errors::consensus::basic::document::InvalidDocumentTransitionIdError;
+use dpp::errors::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
 use dpp::document::Document;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::{
+use dpp::state_transition::state_transitions::document::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
 
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::{StateTransitionIdentitySigned, StateTransitionLike};
 
 use dpp::validation::ConsensusValidationResult;
@@ -22,7 +22,7 @@ use drive::state_transition_action::document::documents_batch::DocumentsBatchTra
 use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
-use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;

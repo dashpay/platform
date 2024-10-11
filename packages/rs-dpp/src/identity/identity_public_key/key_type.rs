@@ -22,6 +22,7 @@ use rand::Rng;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::HashMap;
 use std::convert::TryFrom;
+#[cfg(feature = "ed25519-dalek")]
 use crate::InvalidVectorSizeError;
 
 #[allow(non_camel_case_types)]

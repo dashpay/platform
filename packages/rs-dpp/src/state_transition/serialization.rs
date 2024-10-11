@@ -23,20 +23,20 @@ mod tests {
     use crate::serialization::PlatformMessageSignable;
     use crate::serialization::Signable;
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
-    use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
-    use crate::state_transition::data_contract_update_transition::{
+    use crate::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
+    use crate::state_transition::state_transitions::contract::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
-    use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-    use crate::state_transition::documents_batch_transition::{
+    use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+    use crate::state_transition::state_transitions::document::documents_batch_transition::{
         DocumentsBatchTransition, DocumentsBatchTransitionV0,
     };
-    use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
-    use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-    use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
-    use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
-    use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-    use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+    use crate::state_transition::state_transition::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
+    use crate::state_transition::state_transition::identity::identity_create_transition::IdentityCreateTransition;
+    use crate::state_transition::state_transition::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+    use crate::state_transition::state_transition::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+    use crate::state_transition::state_transition::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use crate::state_transition::state_transition::identity::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
     use crate::state_transition::StateTransition;
     use crate::tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,

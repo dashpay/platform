@@ -2,7 +2,7 @@ pub(crate) mod v0;
 
 use crate::error::Error;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use crate::error::execution::ExecutionError;

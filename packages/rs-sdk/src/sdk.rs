@@ -81,7 +81,6 @@ pub type LastQueryTimestamp = u64;
 /// ## Examples
 ///
 /// See tests/ for examples of using the SDK.
-#[derive(Clone)]
 #[ferment_macro::opaque]
 pub struct Sdk {
     /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)  

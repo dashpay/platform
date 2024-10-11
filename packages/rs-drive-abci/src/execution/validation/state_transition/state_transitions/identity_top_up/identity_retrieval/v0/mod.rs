@@ -1,11 +1,11 @@
 use crate::error::Error;
 
-use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
+use dpp::errors::consensus::signature::{IdentityNotFoundError, SignatureError};
 
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
-use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::state_transitions::identity::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_topup_transition::IdentityTopUpTransition;
 use dpp::version::PlatformVersion;
 
 use crate::execution::types::execution_operation::{RetrieveIdentityInfo, ValidationOperation};

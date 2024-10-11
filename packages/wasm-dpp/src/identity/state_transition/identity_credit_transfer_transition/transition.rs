@@ -16,9 +16,9 @@ use dpp::identity::KeyType;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::serialization::PlatformSerializable;
-use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 
-use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::StateTransitionLike;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
 #[wasm_bindgen(js_name=IdentityCreditTransferTransition)]

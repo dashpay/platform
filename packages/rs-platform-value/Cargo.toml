@@ -23,7 +23,7 @@ lazy_static = "1.4.0"
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-version = { path = "../rs-platform-version" }
 indexmap = "2.0.2"
-ferment-macro = { path = "../../../ferment/ferment-macro"}
+ferment-macro = { git = "https://github.com/pankcuf/ferment", branch = "feat/reorg", package = "ferment-macro"}
 
 ### FEATURES #################################################################
 

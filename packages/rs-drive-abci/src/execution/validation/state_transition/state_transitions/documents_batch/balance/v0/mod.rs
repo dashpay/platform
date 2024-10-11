@@ -1,12 +1,12 @@
 use crate::error::Error;
-use dpp::consensus::basic::overflow_error::OverflowError;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::basic::overflow_error::OverflowError;
+use dpp::errors::consensus::basic::BasicError;
+use dpp::errors::consensus::state::identity::IdentityInsufficientBalanceError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransition;
 use dpp::ProtocolError;
 
 use dpp::validation::SimpleConsensusValidationResult;

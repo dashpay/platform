@@ -1,9 +1,9 @@
 use std::convert::TryFrom;
 
 use dpp::data_contract::created_data_contract::CreatedDataContract;
-use dpp::{data_contract::DataContractFactory, platform_value, prelude::Identifier, errors::ProtocolError};
+use dpp::{data_contract::DataContractFactory, platform_value, errors::ProtocolError};
 use wasm_bindgen::prelude::*;
-
+use dpp::identifier::Identifier;
 use crate::utils::{ToSerdeJSONExt, WithJsError};
 
 use crate::data_contract::{DataContractCreateTransitionWasm, DataContractWasm};

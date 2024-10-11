@@ -5,11 +5,11 @@ use bincode::{Decode, Encode};
 use dashcore_rpc::json::QuorumType;
 use dpp::dashcore::Network;
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::INITIAL_PROTOCOL_VERSION;
 use drive::config::DriveConfig;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use std::path::PathBuf;
 use std::str::FromStr;
+use platform_version::version::INITIAL_PROTOCOL_VERSION;
 
 /// Configuration for Dash Core RPC client used in consensus logic
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]

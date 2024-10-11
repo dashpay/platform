@@ -25,20 +25,20 @@ use dpp::data_contract::{DataContract, DataContractFactory};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, identity_public_key::{Purpose, SecurityLevel}};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
 };
-use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::state_transitions::contract::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+use dpp::state_transition::state_transitions::contract::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
@@ -55,14 +55,14 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::{BinaryData, Bytes32, Value};
 use dpp::{dash_to_duffs, ProtocolError};
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-use dpp::state_transition::documents_batch_transition::document_create_transition::{DocumentCreateTransition, DocumentCreateTransitionV0};
-use dpp::state_transition::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
-use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
-use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition, DocumentsBatchTransitionV0};
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransferTransition};
-use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
-use dpp::state_transition::documents_batch_transition::document_transition::document_transfer_transition::DocumentTransferTransitionV0;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_create_transition::{DocumentCreateTransition, DocumentCreateTransitionV0};
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::{DocumentsBatchTransition, DocumentsBatchTransitionV0};
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition, DocumentTransferTransition};
+use dpp::state_transition::state_transitions::contract::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
+use dpp::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_transfer_transition::DocumentTransferTransitionV0;
 use simple_signer::signer::SimpleSigner;
 
 pub mod frequency;

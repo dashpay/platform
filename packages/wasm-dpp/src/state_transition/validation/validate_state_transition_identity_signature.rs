@@ -4,9 +4,9 @@ use crate::utils::WithJsError;
 use crate::validation::ValidationResultWasm;
 
 use crate::errors::consensus::consensus_error::from_consensus_error;
-use dpp::consensus::basic::state_transition::InvalidStateTransitionTypeError;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use dpp::errors::consensus::basic::BasicError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::state_transition::state_transition_validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySignedV0};
 

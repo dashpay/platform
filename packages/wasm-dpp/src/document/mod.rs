@@ -1,5 +1,3 @@
-use dpp::prelude::Identifier;
-
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -40,6 +38,7 @@ use dpp::{platform_value, errors::ProtocolError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::serialization_traits::DocumentPlatformValueMethodsV0;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 // use serde_json::Value as JsonValue;
 

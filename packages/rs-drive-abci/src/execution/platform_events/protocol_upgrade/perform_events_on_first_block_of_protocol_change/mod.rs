@@ -6,7 +6,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
-use dpp::version::ProtocolVersion;
+use platform_version::version::ProtocolVersion;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {

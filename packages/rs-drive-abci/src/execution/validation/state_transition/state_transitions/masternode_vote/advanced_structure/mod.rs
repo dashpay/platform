@@ -5,7 +5,7 @@ use crate::execution::validation::state_transition::masternode_vote::advanced_st
 use crate::execution::validation::state_transition::processor::v0::StateTransitionStructureKnownInStateValidationV0;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 

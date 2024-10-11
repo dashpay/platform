@@ -3,7 +3,7 @@ use crate::errors::consensus::basic::{
     InvalidSignaturePublicKeyPurposeErrorWasm, JsonSchemaErrorWasm,
     UnsupportedProtocolVersionErrorWasm, UnsupportedVersionErrorWasm,
 };
-use dpp::consensus::ConsensusError as DPPConsensusError;
+use dpp::errors::consensus::ConsensusError as DPPConsensusError;
 
 use crate::errors::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyErrorWasm, DuplicatedIdentityPublicKeyIdErrorWasm,
@@ -32,8 +32,8 @@ use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
     InvalidIdentityNonceErrorWasm, MissingIdentityPublicKeyIdsErrorWasm,
 };
-use dpp::consensus::basic::decode::VersionError;
-use dpp::consensus::basic::BasicError::{
+use dpp::errors::consensus::basic::decode::VersionError;
+use dpp::errors::consensus::basic::BasicError::{
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
@@ -52,39 +52,39 @@ use dpp::consensus::basic::BasicError::{
     NotImplementedIdentityCreditWithdrawalTransitionPoolingError, ProtocolVersionParsingError,
     UnsupportedProtocolVersionError, UnsupportedVersionError,
 };
-use dpp::consensus::basic::{BasicError, UnsupportedFeatureError};
-use dpp::consensus::fee::fee_error::FeeError;
-use dpp::consensus::signature::SignatureError;
-use dpp::consensus::state::state_error::StateError;
+use dpp::errors::consensus::basic::{BasicError, UnsupportedFeatureError};
+use dpp::errors::consensus::fee::fee_error::FeeError;
+use dpp::errors::consensus::signature::SignatureError;
+use dpp::errors::consensus::state::state_error::StateError;
 
-use dpp::consensus::state::data_trigger::DataTriggerError::{
+use dpp::errors::consensus::state::data_trigger::DataTriggerError::{
   DataTriggerConditionError, DataTriggerExecutionError, DataTriggerInvalidResultError,
 };
 use wasm_bindgen::{JsError, JsValue};
-use dpp::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError, InvalidDocumentTypeRequiredSecurityLevelError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
-use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedError, DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
-use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
-use dpp::consensus::basic::overflow_error::OverflowError;
-use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
-use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
-use dpp::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
-use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
-use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
-use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
-use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
-use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
-use dpp::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
-use dpp::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
-use dpp::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
-use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
-use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
-use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
-use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
-use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
-use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
-use dpp::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
-use dpp::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
+use dpp::errors::consensus::basic::data_contract::{ContestedUniqueIndexOnMutableDocumentTypeError, ContestedUniqueIndexWithUniqueIndexError, InvalidDocumentTypeRequiredSecurityLevelError, UnknownDocumentCreationRestrictionModeError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError, UnknownTransferableTypeError};
+use dpp::errors::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedError, DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError, MaxDocumentsTransitionsExceededError, MissingPositionsInDocumentTypePropertiesError};
+use dpp::errors::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
+use dpp::errors::consensus::basic::overflow_error::OverflowError;
+use dpp::errors::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
+use dpp::errors::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
+use dpp::errors::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
+use dpp::errors::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
+use dpp::errors::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
+use dpp::errors::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
+use dpp::errors::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
+use dpp::errors::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
+use dpp::errors::consensus::state::identity::master_public_key_update_error::MasterPublicKeyUpdateError;
+use dpp::errors::consensus::state::identity::missing_transfer_key_error::MissingTransferKeyError;
+use dpp::errors::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
+use dpp::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
+use dpp::errors::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
+use dpp::errors::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
+use dpp::errors::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
+use dpp::errors::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
+use dpp::errors::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
+use dpp::errors::consensus::state::voting::masternode_voted_too_many_times::MasternodeVotedTooManyTimesError;
+use dpp::errors::consensus::state::voting::vote_poll_not_available_for_voting_error::VotePollNotAvailableForVotingError;
+use dpp::errors::consensus::state::voting::vote_poll_not_found_error::VotePollNotFoundError;
 
 use crate::errors::consensus::basic::data_contract::{
     DataContractErrorWasm, DataContractHaveNewUniqueIndexErrorWasm,

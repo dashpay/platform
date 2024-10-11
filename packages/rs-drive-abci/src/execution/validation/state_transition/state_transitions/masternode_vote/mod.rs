@@ -5,7 +5,7 @@ mod state;
 mod transform_into_action;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::validation::ConsensusValidationResult;
 use drive::state_transition_action::StateTransitionAction;
 

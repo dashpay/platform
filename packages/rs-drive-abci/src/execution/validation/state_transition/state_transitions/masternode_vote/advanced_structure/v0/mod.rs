@@ -4,14 +4,15 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
-use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
-use dpp::identifier::MasternodeIdentifiers;
-use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
+use dpp::errors::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
+use dpp::errors::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
+use dpp::identifier::{Identifier, MasternodeIdentifiers};
+use dpp::identity::identity_public_key::hash::IdentityPublicKeyHashMethodsV0;
+// use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::PartialIdentity;
-use dpp::prelude::{ConsensusValidationResult, Identifier};
-use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
-use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use drive::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 use drive::state_transition_action::StateTransitionAction;

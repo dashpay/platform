@@ -8,7 +8,7 @@ use dapi_grpc::platform::v0::get_identities_contract_keys_response::{
     get_identities_contract_keys_response_v0, GetIdentitiesContractKeysResponseV0,
 };
 use dpp::check_validation_result_with_data;
-use dpp::identity::Purpose;
+use dpp::identity::identity_public_key::Purpose;
 use dpp::platform_value::Bytes32;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;

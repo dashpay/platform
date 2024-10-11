@@ -38,6 +38,7 @@ use drive_proof_verifier::from_request::TryFromRequest;
 use drive_proof_verifier::types::{KeysInPath, NoParamQuery};
 use rs_dapi_client::transport::TransportRequest;
 use std::fmt::Debug;
+use dpp::identifier::Identifier;
 use dpp::version::PlatformVersionError;
 
 /// Default limit of epoch records returned by Platform.

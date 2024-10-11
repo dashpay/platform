@@ -1,4 +1,4 @@
-use dpp::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
+use dpp::errors::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=MissingIdentityPublicKeyIdsError)]

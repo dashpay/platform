@@ -9,7 +9,7 @@ use dpp::system_data_contracts::withdrawals_contract;
 use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
-use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
+use dpp::errors::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::{document, errors::ProtocolError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::DocumentV0Getters;

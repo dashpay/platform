@@ -4,7 +4,7 @@ mod nonce;
 mod state;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::state_transitions::identity::identity_update_transition::IdentityUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
@@ -120,7 +120,7 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
-    use dpp::consensus::ConsensusError;
+    use dpp::errors::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::dashcore::key::{KeyPair, Secp256k1};
     use dpp::data_contract::accessors::v0::DataContractV0Getters;

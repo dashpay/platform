@@ -5,8 +5,8 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
-use dpp::consensus::state::state_error::StateError;
+use dpp::errors::consensus::state::identity::IdentityInsufficientBalanceError;
+use dpp::errors::consensus::state::state_error::StateError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 

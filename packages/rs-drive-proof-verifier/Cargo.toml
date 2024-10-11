@@ -44,6 +44,6 @@ serde_json = { version = "1.0.103", features = [
   "preserve_order",
 ], optional = true }
 hex = { version = "0.4.3" }
-ferment-macro = { path = "../../../ferment/ferment-macro" }
-ferment = { path = "../../../ferment/ferment" }
+ferment-macro = { git = "https://github.com/pankcuf/ferment", branch = "feat/reorg", package = "ferment-macro" }
+ferment = { git = "https://github.com/pankcuf/ferment", branch = "feat/reorg", package = "ferment" }
 derive_more = { version = "1.0", features = ["from"] }

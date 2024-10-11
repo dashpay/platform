@@ -38,7 +38,7 @@ mod test {
 
     #[test]
     fn should_return_state_transition_in_json_format() {
-        let data = crate::state_transition::data_contract_create_transition::test::get_test_data();
+        let data = crate::state_transition::state_transitions::contract::data_contract_create_transition::test::get_test_data();
         let mut json_object = data
             .state_transition
             .to_json(JsonStateTransitionSerializationOptions {

@@ -36,7 +36,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use dpp::platform_value::Value;
-use dpp::prelude::Identifier;
+use dpp::identifier::Identifier;
 use drive::dpp::identity::Identity;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};

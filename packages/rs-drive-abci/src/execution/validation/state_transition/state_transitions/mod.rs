@@ -90,10 +90,10 @@ pub(in crate::execution) mod tests {
     use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::platform_value::{Bytes32, Value};
     use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
-    use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-    use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-    use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
+    use dpp::state_transition::state_transitions::document::documents_batch_transition::DocumentsBatchTransition;
+    use dpp::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+    use dpp::state_transition::state_transitions::identity::masternode_vote_transition::MasternodeVoteTransition;
+    use dpp::state_transition::state_transitions::identity::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
     use dpp::state_transition::StateTransition;
     use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;

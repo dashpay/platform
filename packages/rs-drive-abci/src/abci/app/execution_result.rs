@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use dpp::fee::SignedCredits;
 use dpp::version::PlatformVersion;
-use dpp::version::TryIntoPlatformVersioned;
+use platform_version::TryIntoPlatformVersioned;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
 impl TryIntoPlatformVersioned<Option<ExecTxResult>> for StateTransitionExecutionResult {

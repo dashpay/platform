@@ -1,4 +1,4 @@
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
 use dpp::ProtocolError;
 use std::time::Duration;

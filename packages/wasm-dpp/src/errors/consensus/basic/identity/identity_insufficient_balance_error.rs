@@ -1,7 +1,7 @@
 use crate::identifier::IdentifierWrapper;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::state::identity::IdentityInsufficientBalanceError;
+use dpp::errors::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IdentityInsufficientBalanceError)]

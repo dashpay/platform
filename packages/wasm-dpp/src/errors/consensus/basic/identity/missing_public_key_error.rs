@@ -1,6 +1,6 @@
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::signature::MissingPublicKeyError;
-use dpp::consensus::ConsensusError;
+use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::errors::consensus::signature::MissingPublicKeyError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::identity::KeyID;
 
 use wasm_bindgen::prelude::*;

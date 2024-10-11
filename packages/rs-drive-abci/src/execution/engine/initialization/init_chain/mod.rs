@@ -7,10 +7,9 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
-use dpp::version::PlatformVersion;
-use dpp::version::ProtocolVersion;
 use drive::grovedb::Transaction;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain};
+use platform_version::version::{PlatformVersion, ProtocolVersion};
 
 impl<C> Platform<C>
 where

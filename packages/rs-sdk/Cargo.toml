@@ -37,8 +37,9 @@ dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0
 lru = { version = "0.12.3", optional = true }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 zeroize = { version = "1.8", features = ["derive"] }
-ferment-macro = { path = "../../../ferment/ferment-macro" }
-ferment = { path = "../../../ferment/ferment" }
+platform-value = { path = "../rs-platform-value" }
+ferment-macro = { git = "https://github.com/pankcuf/ferment", branch = "feat/reorg", package = "ferment-macro" }
+ferment = { git = "https://github.com/pankcuf/ferment", branch = "feat/reorg", package = "ferment" }
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }

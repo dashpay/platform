@@ -36,28 +36,28 @@ impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
         if let Some(created_at_block_height) = self.created_at_block_height {
             value_mut.insert(
                 property_names::CREATED_AT_BLOCK_HEIGHT.to_string(),
-                JsonValue::Number(created_at_block_height.into()),
+                serde_json::Value::Number(created_at_block_height.into()),
             );
         }
 
         if let Some(updated_at_block_height) = self.updated_at_block_height {
             value_mut.insert(
                 property_names::UPDATED_AT_BLOCK_HEIGHT.to_string(),
-                JsonValue::Number(updated_at_block_height.into()),
+                serde_json::Value::Number(updated_at_block_height.into()),
             );
         }
 
         if let Some(created_at_core_block_height) = self.created_at_core_block_height {
             value_mut.insert(
                 property_names::CREATED_AT_CORE_BLOCK_HEIGHT.to_string(),
-                JsonValue::Number(created_at_core_block_height.into()),
+                serde_json::Value::Number(created_at_core_block_height.into()),
             );
         }
 
         if let Some(updated_at_core_block_height) = self.updated_at_core_block_height {
             value_mut.insert(
                 property_names::UPDATED_AT_CORE_BLOCK_HEIGHT.to_string(),
-                JsonValue::Number(updated_at_core_block_height.into()),
+                serde_json::Value::Number(updated_at_core_block_height.into()),
             );
         }
         if let Some(revision) = self.revision {
