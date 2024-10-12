@@ -29,7 +29,7 @@ const {
   },
 } = Dash;
 
-describe.only('Platform', () => {
+describe('Platform', () => {
   describe('Identity', function describeIdentity() {
     this.bail(true); // bail on first failure
 
