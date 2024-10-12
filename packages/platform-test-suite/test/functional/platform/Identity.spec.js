@@ -29,7 +29,7 @@ const {
   },
 } = Dash;
 
-describe.only('Platform', () => {
+describe('Platform', () => {
   describe('Identity', function describeIdentity() {
     this.bail(true); // bail on first failure
 
@@ -680,11 +680,6 @@ describe.only('Platform', () => {
             masternodeIdentityId,
           );
 
-          if (fetchedIdentity === null) {
-            console.log('missing owner identity', masternodeEntry.proRegTxHash);
-            continue;
-          }
-
           expect(fetchedIdentity).to.be.not.null();
 
           const { transaction: transactionBuffer } = await client.dapiClient.core.getTransaction(
@@ -709,11 +704,7 @@ describe.only('Platform', () => {
               operatorIdentityId,
             );
 
-            if (fetchedIdentity === null) {
-              console.log('missing operator identity', masternodeEntry.proRegTxHash);
-            }
-
-            // expect(fetchedIdentity).to.be.not.null();
+            expect(fetchedIdentity).to.be.not.null();
           }
 
           const publicKeyOwner = Buffer.from(transaction.extraPayload.keyIDOwner, 'hex').reverse();
@@ -733,11 +724,7 @@ describe.only('Platform', () => {
               votingIdentityId,
             );
 
-            if (fetchedIdentity === null) {
-              console.log('missing voting identity', masternodeEntry.proRegTxHash);
-            }
-
-            // expect(fetchedIdentity).to.be.not.null();
+            expect(fetchedIdentity).to.be.not.null();
           }
         }
       });
