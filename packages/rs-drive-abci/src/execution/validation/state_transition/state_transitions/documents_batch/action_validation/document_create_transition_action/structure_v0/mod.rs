@@ -46,7 +46,10 @@ impl DocumentCreateTransitionActionStructureValidationV0 for DocumentCreateTrans
 
         // Don't do the following validation on testnet before epoch 2080
         // As state transitions already happened that would break this validation
+        // We want to keep both if-s for better readability
+        #[allow(clippy::collapsible_if)]
         if !(network == Network::Testnet && block_info.epoch.index < 2080) {
+            // Only for contested documents
             if document_type
                 .contested_vote_poll_for_document_properties(self.data(), platform_version)?
                 .is_some()

@@ -1240,6 +1240,7 @@ mod tests {
                 .expect("expected a base transition"),
                 entropy: entropy.0,
                 data: document_1.clone().properties_consumed(),
+                // Sending 0 balance that should not be valid
                 prefunded_voting_balance: None,
             }
             .into();
@@ -1397,7 +1398,7 @@ mod tests {
                 .expect("expected to get back documents")
                 .documents_owned();
 
-            assert!(documents.get(0).is_none());
+            assert!(documents.first().is_none());
         }
 
         #[test]
@@ -1671,7 +1672,7 @@ mod tests {
                 .expect("expected to get back documents")
                 .documents_owned();
 
-            assert!(documents.get(0).is_some());
+            assert!(documents.first().is_some());
         }
 
         #[test]
