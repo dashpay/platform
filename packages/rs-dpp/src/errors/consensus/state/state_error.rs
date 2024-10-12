@@ -33,6 +33,7 @@ use crate::consensus::state::document::document_contest_currently_locked_error::
 use crate::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use crate::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
 use crate::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
+use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
@@ -80,6 +81,9 @@ pub enum StateError {
 
     #[error(transparent)]
     DocumentContestIdentityAlreadyContestantError(DocumentContestIdentityAlreadyContestantError),
+
+    #[error(transparent)]
+    DocumentContestNotPaidForError(DocumentContestNotPaidForError),
 
     #[error(transparent)]
     DocumentContestDocumentWithSameIdAlreadyPresentError(
