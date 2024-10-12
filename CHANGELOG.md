@@ -1,3 +1,25 @@
+### [1.4.1](https://github.com/dashpay/platform/compare/v1.4.0...v1.4.1) (2024-10-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** improve mock context provider async processing (#2232)
+
+### Bug Fixes
+
+* **sdk:** testnet chain sync failed ([#2236](https://github.com/dashpay/platform/issues/2236))
+
+
+### Miscellaneous Chores
+
+* add some extra unit tests
+
+
+### Code Refactoring
+
+* minor fixes and extra comments
+* **sdk:** improve mock context provider async processing ([#2232](https://github.com/dashpay/platform/issues/2232))
+
 ## [1.4.0](https://github.com/dashpay/platform/compare/v1.4.0-dev.8...v1.4.0) (2024-10-10)
 
 
