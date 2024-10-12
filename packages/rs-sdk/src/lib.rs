@@ -62,8 +62,6 @@
 #![allow(rustdoc::private_intra_doc_links)]
 
 pub mod core;
-#[cfg(feature = "mocks")]
-mod core_client;
 pub mod error;
 mod internal_cache;
 pub mod mock;
@@ -78,6 +76,7 @@ pub use dpp;
 pub use drive;
 pub use drive_proof_verifier::types as query_types;
 pub use rs_dapi_client as dapi_client;
+pub mod sync;
 
 /// Version of the SDK
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
