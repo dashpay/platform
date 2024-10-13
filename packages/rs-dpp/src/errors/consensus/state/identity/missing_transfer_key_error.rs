@@ -11,13 +11,14 @@ use thiserror::Error;
 )]
 #[error("Identity {identity_id} does not have a key for transferring funds")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct MissingTransferKeyError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    identity_id: Identifier,
+    pub identity_id: Identifier,
 }
 
 impl MissingTransferKeyError {

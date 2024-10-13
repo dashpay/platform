@@ -11,13 +11,14 @@ use thiserror::Error;
 )]
 #[error("There is no transfer key that can be used for a withdrawal")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct NoTransferKeyForCoreWithdrawalAvailableError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    identity_id: Identifier,
+    pub identity_id: Identifier,
 }
 
 impl NoTransferKeyForCoreWithdrawalAvailableError {

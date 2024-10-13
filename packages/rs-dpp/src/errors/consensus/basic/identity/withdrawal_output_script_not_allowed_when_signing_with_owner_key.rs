@@ -14,9 +14,10 @@ use bincode::{Decode, Encode};
 )]
 #[error("Withdrawal output script not allowed when signing with owner key {key_id}")]
 #[platform_serialize(unversioned)]
+#[ferment_macro::export]
 pub struct WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError {
-    output_script: CoreScript,
-    key_id: KeyID,
+    pub output_script: CoreScript,
+    pub key_id: KeyID,
 }
 
 /*
