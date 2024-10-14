@@ -66,7 +66,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         let document_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
                         Document::from_bytes(
                             document_bytes.as_slice(),
-                            self.document_type,
+                            self.document_type_ref(),
                             platform_version,
                         )
                         .map_err(Error::Protocol)

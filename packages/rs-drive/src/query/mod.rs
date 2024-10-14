@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -50,6 +51,7 @@ pub use grovedb::{
     Element, Error as GroveError, TransactionArg,
 };
 
+use dpp::data_contract::document_type::DocumentType;
 use dpp::document;
 use dpp::prelude::Identifier;
 #[cfg(feature = "server")]
@@ -287,15 +289,50 @@ impl From<InternalClauses> for Vec<WhereClause> {
         result
     }
 }
+#[cfg(any(feature = "server", feature = "verify"))]
+/// A wrapper that holds both a data contract and a document type reference.
+///
+/// This enum provides flexibility by supporting multiple ownership models for the data contract
+/// and allows document type names to be stored as `String` for the owned variants.
+///
+/// # Ownership Models
+/// - **Borrowed:** A borrowed reference to a `DataContract` with a `DocumentTypeRef`.
+/// - **Owned:** A fully owned `DataContract` with a document type name as a `String`.
+/// - **Arc:** A reference-counted (`Arc`) data contract with a document type name as a `String`.
+///
+/// # Variants
+/// - `Borrowed`:
+///   - Used for short-lived queries with borrowed references.
+///   - Both the data contract and document type are borrowed.
+///
+/// - `Owned`:
+///   - Takes ownership of the data contract.
+///   - Stores the document type name as a `String`.
+///
+/// - `Arc`:
+///   - Uses an `Arc` to share ownership of the data contract across threads or components.
+///   - Stores the document type name as a `String`.
+#[derive(Debug, PartialEq, Clone)]
+pub enum ContractAndDocumentTypeHolder<'a> {
+    /// A borrowed reference to a data contract and its document type.
+    Borrowed(&'a DataContract, DocumentTypeRef<'a>),
+
+    /// An owned data contract with a document type name.
+    Owned(DataContract, DocumentType),
+
+    /// A reference-counted (`Arc`) data contract with a document type name.
+    Arc(Arc<DataContract>, Arc<DocumentType>),
+}
 
 #[cfg(any(feature = "server", feature = "verify"))]
-/// Drive query struct
+/// A query struct to execute document queries within a data contract.
+///
+/// This struct holds the contract, document type, query clauses, and various query parameters.
+/// It supports filtering, ordering, and paginated retrieval of documents.
 #[derive(Debug, PartialEq, Clone)]
 pub struct DriveDocumentQuery<'a> {
-    ///DataContract
-    pub contract: &'a DataContract,
-    /// Document type
-    pub document_type: DocumentTypeRef<'a>,
+    /// A holder for the data contract and document type, with flexible ownership models.
+    pub contract_and_type: ContractAndDocumentTypeHolder<'a>,
     /// Internal clauses
     pub internal_clauses: InternalClauses,
     /// Offset
@@ -313,6 +350,82 @@ pub struct DriveDocumentQuery<'a> {
 }
 
 impl<'a> DriveDocumentQuery<'a> {
+    /// Returns a reference to the `DataContract` inside the `ContractAndDocumentTypeHolder`.
+    pub fn contract(&self) -> &DataContract {
+        match &self.contract_and_type {
+            ContractAndDocumentTypeHolder::Borrowed(contract, _) => contract,
+            ContractAndDocumentTypeHolder::Owned(contract, _) => contract,
+            ContractAndDocumentTypeHolder::Arc(contract, _) => contract.as_ref(),
+        }
+    }
+
+    /// Returns a reference to the document type name as a `DocumentTypeRef<'a>`.
+    ///
+    /// This handles the different ownership models of the document type.
+    pub fn document_type_ref(&self) -> DocumentTypeRef {
+        match &self.contract_and_type {
+            ContractAndDocumentTypeHolder::Borrowed(_, doc_type_ref) => *doc_type_ref,
+            ContractAndDocumentTypeHolder::Owned(_, document_type) => document_type.as_ref(),
+            ContractAndDocumentTypeHolder::Arc(_, doc_type) => doc_type.as_ref().as_ref(),
+        }
+    }
+
+    /// Returns a reference to the document type name as a `DocumentType`.
+    ///
+    /// This handles the different ownership models of the document type.
+    pub fn document_type(&'a self) -> &'a DocumentType {
+        match &self.contract_and_type {
+            ContractAndDocumentTypeHolder::Borrowed(contract, doc_type_ref) => contract
+                .document_type_borrowed_for_name(doc_type_ref.name())
+                .expect("expected to get document type"),
+            ContractAndDocumentTypeHolder::Owned(_, doc_type) => doc_type,
+            ContractAndDocumentTypeHolder::Arc(_, doc_type) => doc_type.as_ref(),
+        }
+    }
+
+    /// Retrieves the index for the specified types.
+    ///
+    /// This method looks up an index for a given combination of field names,
+    /// optional input field, order-by keys, and platform version.
+    /// It leverages the `Cow` (Copy-On-Write) pattern to handle both
+    /// borrowed and owned `Index` values, ensuring efficient memory usage.
+    ///
+    /// # Parameters
+    /// - `index_names`: A slice of field names to search within the index.
+    /// - `in_field_name`: An optional field name used for filtering the query.
+    /// - `order_by`: A slice of field names specifying the order in which the results should be returned.
+    /// - `platform_version`: The platform version to consider when determining the index configuration.
+    ///
+    /// # Returns
+    /// - `Ok(Some((Cow<Index>, u16)))`: The index (either borrowed or owned) and its position, if found.
+    /// - `Ok(None)`: No matching index was found.
+    /// - `Err(ProtocolError)`: An error occurred during the lookup.
+    ///
+    /// # Variants
+    /// This method supports different ownership models for the `DataContract` and `DocumentType`:
+    /// - **Borrowed**: Returns a `Cow::Borrowed` reference to the index.
+    /// - **Owned**: Clones the index and returns it as `Cow::Owned`.
+    /// - **Arc**: Clones the index from the shared reference and returns it as `Cow::Owned`.
+    pub fn index_for_types(
+        &'a self,
+        index_names: &[&str],
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<(Cow<Index>, u16)>, ProtocolError> {
+        match &self.contract_and_type {
+            ContractAndDocumentTypeHolder::Borrowed(_, doc_type_ref) => doc_type_ref
+                .index_for_types(index_names, in_field_name, order_by, platform_version)
+                .map(|maybe| maybe.map(|(index, pos)| (Cow::Borrowed(index), pos))),
+            ContractAndDocumentTypeHolder::Owned(_, doc_type) => doc_type
+                .index_for_types(index_names, in_field_name, order_by, platform_version)
+                .map(|maybe| maybe.map(|(index, pos)| (Cow::Owned(index.clone()), pos))),
+            ContractAndDocumentTypeHolder::Arc(_, doc_type) => doc_type
+                .as_ref()
+                .index_for_types(index_names, in_field_name, order_by, platform_version)
+                .map(|maybe| maybe.map(|(index, pos)| (Cow::Owned(index.clone()), pos))),
+        }
+    }
     /// Gets a document by their primary key
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn new_primary_key_single_item_query(
@@ -321,8 +434,7 @@ impl<'a> DriveDocumentQuery<'a> {
         id: Identifier,
     ) -> Self {
         DriveDocumentQuery {
-            contract,
-            document_type,
+            contract_and_type: ContractAndDocumentTypeHolder::Borrowed(contract, document_type),
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: Some(WhereClause {
@@ -347,8 +459,7 @@ impl<'a> DriveDocumentQuery<'a> {
     /// Returns any item
     pub fn any_item_query(contract: &'a DataContract, document_type: DocumentTypeRef<'a>) -> Self {
         DriveDocumentQuery {
-            contract,
-            document_type,
+            contract_and_type: ContractAndDocumentTypeHolder::Borrowed(contract, document_type),
             internal_clauses: Default::default(),
             offset: None,
             limit: Some(1),
@@ -367,8 +478,7 @@ impl<'a> DriveDocumentQuery<'a> {
         limit: Option<u16>,
     ) -> Self {
         DriveDocumentQuery {
-            contract,
-            document_type,
+            contract_and_type: ContractAndDocumentTypeHolder::Borrowed(contract, document_type),
             internal_clauses: Default::default(),
             offset: None,
             limit,
@@ -577,8 +687,7 @@ impl<'a> DriveDocumentQuery<'a> {
         }
 
         Ok(DriveDocumentQuery {
-            contract,
-            document_type,
+            contract_and_type: ContractAndDocumentTypeHolder::Borrowed(contract, document_type),
             internal_clauses,
             limit: Some(limit),
             offset,
@@ -658,8 +767,7 @@ impl<'a> DriveDocumentQuery<'a> {
             .collect::<Result<IndexMap<String, OrderClause>, Error>>()?;
 
         Ok(DriveDocumentQuery {
-            contract,
-            document_type,
+            contract_and_type: ContractAndDocumentTypeHolder::Borrowed(contract, document_type),
             internal_clauses,
             offset: None,
             limit: Some(limit),
@@ -820,8 +928,10 @@ impl<'a> DriveDocumentQuery<'a> {
             .transpose()?;
 
         Ok(DriveDocumentQuery {
-            contract,
-            document_type: document_type.as_ref(),
+            contract_and_type: ContractAndDocumentTypeHolder::Borrowed(
+                contract,
+                document_type.as_ref(),
+            ),
             internal_clauses,
             offset: None,
             limit: Some(limit),
@@ -850,11 +960,11 @@ impl<'a> DriveDocumentQuery<'a> {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Operations to construct a path query.
     pub fn start_at_document_path_and_key(&self, starts_at: &[u8; 32]) -> (Vec<Vec<u8>>, Vec<u8>) {
-        if self.document_type.documents_keep_history() {
-            let document_holding_path = self.contract.documents_with_history_primary_key_path(
-                self.document_type.name().as_str(),
-                starts_at,
-            );
+        let document_type = self.document_type_ref();
+        if document_type.documents_keep_history() {
+            let document_holding_path = self
+                .contract()
+                .documents_with_history_primary_key_path(document_type.name().as_str(), starts_at);
             (
                 document_holding_path
                     .into_iter()
@@ -864,8 +974,8 @@ impl<'a> DriveDocumentQuery<'a> {
             )
         } else {
             let document_holding_path = self
-                .contract
-                .documents_primary_key_path(self.document_type.name().as_str());
+                .contract()
+                .documents_primary_key_path(document_type.name().as_str());
             (
                 document_holding_path
                     .into_iter()
@@ -889,8 +999,8 @@ impl<'a> DriveDocumentQuery<'a> {
         let drive_version = &platform_version.drive;
         // First we should get the overall document_type_path
         let document_type_path = self
-            .contract
-            .document_type_path(self.document_type.name().as_str())
+            .contract()
+            .document_type_path(self.document_type_ref().name().as_str())
             .into_iter()
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
@@ -936,7 +1046,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 if let Element::Item(item, _) = start_at_document {
                     let document = Document::from_bytes(
                         item.as_slice(),
-                        self.document_type,
+                        self.document_type_ref(),
                         platform_version,
                     )?;
                     Ok((Some((document, self.start_at_included)), Some(path_query)))
@@ -987,8 +1097,8 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<PathQuery, Error> {
         // First we should get the overall document_type_path
         let document_type_path = self
-            .contract
-            .document_type_path(self.document_type.name().as_str())
+            .contract()
+            .document_type_path(self.document_type_ref().name().as_str())
             .into_iter()
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
@@ -1024,14 +1134,14 @@ impl<'a> DriveDocumentQuery<'a> {
 
         if let Some(primary_key_equal_clause) = &self.internal_clauses.primary_key_equal_clause {
             let mut query = Query::new();
-            let key = self.document_type.serialize_value_for_key(
+            let key = self.document_type_ref().serialize_value_for_key(
                 "$id",
                 &primary_key_equal_clause.value,
                 platform_version,
             )?;
             query.insert_key(key);
 
-            if self.document_type.documents_keep_history() {
+            if self.document_type_ref().documents_keep_history() {
                 // if the documents keep history then we should insert a subquery
                 if let Some(block_time) = self.block_time_ms {
                     let encoded_block_time = encode_u64(block_time);
@@ -1070,7 +1180,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     document
                         .get_raw_for_document_type(
                             "$id",
-                            self.document_type,
+                            self.document_type_ref(),
                             None,
                             platform_version,
                         )?
@@ -1084,7 +1194,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 match starts_at_key_option {
                     None => {
                         for value in in_values.iter() {
-                            let key = self.document_type.serialize_value_for_key(
+                            let key = self.document_type_ref().serialize_value_for_key(
                                 "$id",
                                 value,
                                 platform_version,
@@ -1094,7 +1204,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     }
                     Some((starts_at_key, included)) => {
                         for value in in_values.iter() {
-                            let key = self.document_type.serialize_value_for_key(
+                            let key = self.document_type_ref().serialize_value_for_key(
                                 "$id",
                                 value,
                                 platform_version,
@@ -1110,7 +1220,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     }
                 }
 
-                if self.document_type.documents_keep_history() {
+                if self.document_type_ref().documents_keep_history() {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {
                         //todo
@@ -1151,7 +1261,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     },
                 }
 
-                if self.document_type.documents_keep_history() {
+                if self.document_type_ref().documents_keep_history() {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {
                         return Err(Error::Query(QuerySyntaxError::Unsupported(
@@ -1179,7 +1289,7 @@ impl<'a> DriveDocumentQuery<'a> {
 
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Finds the best index for the query.
-    pub fn find_best_index(&self, platform_version: &PlatformVersion) -> Result<&Index, Error> {
+    pub fn find_best_index(&self, platform_version: &PlatformVersion) -> Result<Cow<Index>, Error> {
         let equal_fields = self
             .internal_clauses
             .equal_clauses
@@ -1218,7 +1328,6 @@ impl<'a> DriveDocumentQuery<'a> {
             .collect();
 
         let (index, difference) = self
-            .document_type
             .index_for_types(
                 fields.as_slice(),
                 in_field,
@@ -1228,7 +1337,7 @@ impl<'a> DriveDocumentQuery<'a> {
             .ok_or(Error::Query(
                 QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
                     "query must be for valid indexes, valid indexes are: {:?}",
-                    self.document_type.indexes()
+                    self.document_type_ref().indexes()
                 )),
             ))?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
@@ -1534,7 +1643,7 @@ impl<'a> DriveDocumentQuery<'a> {
                             //there is no need to give an intermediate value as the last clause is an equality
                             None
                         } else {
-                            Some(self.document_type.serialize_value_for_key(
+                            Some(self.document_type_ref().serialize_value_for_key(
                                 field.name.as_str(),
                                 &where_clause.value,
                                 platform_version,
@@ -1558,7 +1667,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     left_over_index_properties.as_slice(),
                     index.unique,
                     &starts_at_document.map(|(document, included)| {
-                        (document, self.document_type, first_index, included)
+                        (document, self.document_type_ref(), first_index, included)
                     }),
                     first_index.ascending,
                     None,
@@ -1590,7 +1699,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 };
 
                 let mut query = where_clause.to_path_query(
-                    self.document_type,
+                    self.document_type_ref(),
                     query_starts_at_document,
                     left_to_right,
                     platform_version,
@@ -1612,7 +1721,12 @@ impl<'a> DriveDocumentQuery<'a> {
                             left_over_index_properties.as_slice(),
                             index.unique,
                             &starts_at_document.map(|(document, included)| {
-                                (document, self.document_type, last_index_property, included)
+                                (
+                                    document,
+                                    self.document_type_ref(),
+                                    last_index_property,
+                                    included,
+                                )
                             }),
                             left_to_right,
                             Some(&self.order_by),
@@ -1627,7 +1741,7 @@ impl<'a> DriveDocumentQuery<'a> {
                                 "query must have an orderBy field for each range element",
                             )))?;
                         let mut subquery = subquery_where_clause.to_path_query(
-                            self.document_type,
+                            self.document_type_ref(),
                             &starts_at_document,
                             order_clause.ascending,
                             platform_version,
@@ -1644,7 +1758,12 @@ impl<'a> DriveDocumentQuery<'a> {
                             left_over_index_properties.as_slice(),
                             index.unique,
                             &starts_at_document.map(|(document, included)| {
-                                (document, self.document_type, last_index_property, included)
+                                (
+                                    document,
+                                    self.document_type_ref(),
+                                    last_index_property,
+                                    included,
+                                )
                             }),
                             left_to_right,
                             Some(&self.order_by),
@@ -1917,14 +2036,14 @@ impl<'a> From<&DriveDocumentQuery<'a>> for BTreeMap<String, Value> {
         // TODO: once contract can be serialized, maybe put full contract here instead of id
         response.insert(
             "contract_id".to_string(),
-            Value::Identifier(query.contract.id().to_buffer()),
+            Value::Identifier(query.contract().id().to_buffer()),
         );
 
         // document_type
         // TODO: once DocumentType can be serialized, maybe put full DocumentType instead of name
         response.insert(
             "document_type_name".to_string(),
-            Value::Text(query.document_type.name().to_string()),
+            Value::Text(query.document_type_ref().name().to_string()),
         );
 
         // Internal clauses
@@ -1986,7 +2105,8 @@ mod tests {
 
     use crate::drive::Drive;
     use crate::query::{
-        DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator,
+        ContractAndDocumentTypeHolder, DriveDocumentQuery, InternalClauses, OrderClause,
+        WhereClause, WhereOperator,
     };
     use crate::util::storage_flags::StorageFlags;
 
@@ -2266,8 +2386,7 @@ mod tests {
             .expect("expected to get domain");
 
         let query_asc = DriveDocumentQuery {
-            contract: &contract,
-            document_type: domain,
+            contract_and_type: ContractAndDocumentTypeHolder::Borrowed(&contract, domain),
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,

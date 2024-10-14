@@ -120,7 +120,7 @@ mod tests {
         let mut iter = document_type.indexes().iter();
         iter.next();
         iter.next();
-        assert_eq!(index, iter.next().unwrap().1); //position 2
+        assert_eq!(index.as_ref(), iter.next().unwrap().1); //position 2
 
         let query_value = json!({
             "where": [
@@ -139,7 +139,10 @@ mod tests {
         let index = query
             .find_best_index(platform_version)
             .expect("expected to find index");
-        assert_eq!(index, document_type.indexes().iter().next().unwrap().1);
+        assert_eq!(
+            index.as_ref(),
+            document_type.indexes().iter().next().unwrap().1
+        );
     }
 
     #[test]

@@ -92,7 +92,11 @@ impl Drive {
         let documents = items
             .into_iter()
             .map(|serialized| {
-                Document::from_bytes(serialized.as_slice(), query.document_type, platform_version)
+                Document::from_bytes(
+                    serialized.as_slice(),
+                    query.document_type_ref(),
+                    platform_version,
+                )
             })
             .collect::<Result<Vec<Document>, ProtocolError>>()?;
         let cost = if let Some(epoch) = epoch {

@@ -42,7 +42,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     .map(|serialized| {
                         Document::from_bytes(
                             serialized.as_slice(),
-                            self.document_type,
+                            self.document_type_ref(),
                             platform_version,
                         )
                         .map_err(Error::Protocol)

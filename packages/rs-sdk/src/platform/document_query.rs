@@ -21,7 +21,10 @@ use dpp::{
     prelude::{DataContract, Identifier},
     ProtocolError,
 };
-use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
+use drive::query::{
+    ContractAndDocumentTypeHolder, DriveDocumentQuery, InternalClauses, OrderClause, WhereClause,
+    WhereOperator,
+};
 use drive_proof_verifier::{types::Documents, ContextProvider, FromProof};
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
@@ -254,8 +257,8 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
 
 impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
     fn from(value: &'a DriveDocumentQuery<'a>) -> Self {
-        let data_contract = value.contract.clone();
-        let document_type_name = value.document_type.name();
+        let data_contract = value.contract().clone();
+        let document_type_name = value.document_type().name();
         let where_clauses = value.internal_clauses.clone().into();
         let order_by_clauses = value.order_by.iter().map(|(_, v)| v.clone()).collect();
         let limit = value.limit.unwrap_or(0) as u32;
@@ -282,8 +285,8 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
 
 impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
     fn from(value: DriveDocumentQuery<'a>) -> Self {
-        let data_contract = value.contract.clone();
-        let document_type_name = value.document_type.name();
+        let data_contract = value.contract().clone();
+        let document_type_name = value.document_type().name();
         let where_clauses = value.internal_clauses.clone().into();
         let order_by_clauses = value.order_by.iter().map(|(_, v)| v.clone()).collect();
         let limit = value.limit.unwrap_or(0) as u32;
@@ -327,8 +330,10 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
             None
         };
         let query = Self {
-            contract: &request.data_contract,
-            document_type,
+            contract_and_type: ContractAndDocumentTypeHolder::Borrowed(
+                &request.data_contract,
+                document_type,
+            ),
             internal_clauses,
             offset: None,
             limit,

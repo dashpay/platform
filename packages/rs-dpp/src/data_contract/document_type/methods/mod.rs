@@ -28,13 +28,13 @@ use platform_value::{Identifier, Value};
 
 // TODO: Some of those methods are only for tests. Hide under feature
 pub trait DocumentTypeV0Methods {
-    fn index_for_types(
-        &self,
+    fn index_for_types<'a>(
+        &'a self,
         index_names: &[&str],
         in_field_name: Option<&str>,
         order_by: &[&str],
         platform_version: &PlatformVersion,
-    ) -> Result<Option<(&Index, u16)>, ProtocolError>;
+    ) -> Result<Option<(&'a Index, u16)>, ProtocolError>;
 
     fn serialize_value_for_key(
         &self,

@@ -1,7 +1,9 @@
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause};
+use crate::query::{
+    ContractAndDocumentTypeHolder, DriveDocumentQuery, InternalClauses, OrderClause, WhereClause,
+};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
@@ -66,8 +68,7 @@ impl Drive {
         let document_type = contract.document_type_for_name(withdrawal::NAME)?;
 
         let drive_query = DriveDocumentQuery {
-            contract: &contract,
-            document_type,
+            contract_and_type: ContractAndDocumentTypeHolder::Borrowed(&contract, document_type),
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,

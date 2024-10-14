@@ -96,8 +96,11 @@ impl Drive {
             .into_iter()
             .map(|element| {
                 let serialized_item = element.as_item_bytes()?;
-                let document =
-                    Document::from_bytes(serialized_item, query.document_type, platform_version)?;
+                let document = Document::from_bytes(
+                    serialized_item,
+                    query.document_type_ref(),
+                    platform_version,
+                )?;
                 let storage_flags = StorageFlags::map_some_element_flags_ref(element.get_flags())?;
                 Ok((document, storage_flags))
             })

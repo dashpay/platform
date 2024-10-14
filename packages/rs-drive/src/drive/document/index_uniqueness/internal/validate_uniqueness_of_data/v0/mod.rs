@@ -3,7 +3,9 @@ use crate::drive::Drive;
 use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequest;
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::error::Error;
-use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+use crate::query::{
+    ContractAndDocumentTypeHolder, DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator,
+};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -170,8 +172,10 @@ impl Drive {
                         None
                     } else {
                         let query = DriveDocumentQuery {
-                            contract,
-                            document_type,
+                            contract_and_type: ContractAndDocumentTypeHolder::Borrowed(
+                                contract,
+                                document_type,
+                            ),
                             internal_clauses: InternalClauses {
                                 primary_key_in_clause: None,
                                 primary_key_equal_clause: None,

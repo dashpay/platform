@@ -8,7 +8,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{DataContract, Identifier};
-use drive::query::{DriveDocumentQuery, OrderClause, WhereClause};
+use drive::query::{ContractAndDocumentTypeHolder, DriveDocumentQuery, OrderClause, WhereClause};
 
 /// Given some data contract ID, document type and document ID, when I fetch it, then I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -122,8 +122,7 @@ async fn document_list_drive_query() {
         .expect("document type not found");
 
     let query = DriveDocumentQuery {
-        contract: &data_contract,
-        document_type: doctype,
+        contract_and_type: ContractAndDocumentTypeHolder::Borrowed(&data_contract, doctype),
         internal_clauses: Default::default(),
         offset: None,
         limit: Some(1),

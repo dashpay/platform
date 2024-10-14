@@ -27,7 +27,9 @@ use drive::grovedb::TransactionArg;
 use drive::query::drive_contested_document_query::{
     DriveContestedDocumentQuery, PrimaryContestedInternalClauses,
 };
-use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+use drive::query::{
+    ContractAndDocumentTypeHolder, DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator,
+};
 
 #[allow(dead_code)]
 #[deprecated(note = "This function is marked as unused.")]
@@ -142,8 +144,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
         .collect();
 
     let drive_query = DriveDocumentQuery {
-        contract,
-        document_type,
+        contract_and_type: ContractAndDocumentTypeHolder::Borrowed(contract, document_type),
         internal_clauses: InternalClauses {
             primary_key_in_clause: Some(WhereClause {
                 field: "$id".to_string(),
@@ -186,8 +187,7 @@ pub(crate) fn fetch_document_with_id(
     platform_version: &PlatformVersion,
 ) -> Result<(Option<Document>, FeeResult), Error> {
     let drive_query = DriveDocumentQuery {
-        contract,
-        document_type,
+        contract_and_type: ContractAndDocumentTypeHolder::Borrowed(contract, document_type),
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
             primary_key_equal_clause: Some(WhereClause {

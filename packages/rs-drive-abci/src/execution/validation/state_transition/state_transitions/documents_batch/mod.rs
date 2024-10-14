@@ -7797,7 +7797,9 @@ mod tests {
         use dpp::platform_value::Bytes32;
         use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
         use dpp::util::hash::hash_double;
-        use drive::query::{InternalClauses, OrderClause, WhereClause, WhereOperator};
+        use drive::query::{
+            ContractAndDocumentTypeHolder, InternalClauses, OrderClause, WhereClause, WhereOperator,
+        };
         use drive::util::test_helpers::setup_contract;
         use indexmap::IndexMap;
         use platform_version::version::PlatformVersion;
@@ -8176,8 +8178,7 @@ mod tests {
             );
 
             let drive_query = DriveDocumentQuery {
-                contract: &dpns_contract,
-                document_type: domain,
+                contract_and_type: ContractAndDocumentTypeHolder::Borrowed(&dpns_contract, domain),
                 internal_clauses: InternalClauses {
                     primary_key_in_clause: None,
                     primary_key_equal_clause: None,
@@ -8220,8 +8221,7 @@ mod tests {
                 .expect("expected to run is equal"));
 
             let drive_query = DriveDocumentQuery {
-                contract: &dpns_contract,
-                document_type: domain,
+                contract_and_type: ContractAndDocumentTypeHolder::Borrowed(&dpns_contract, domain),
                 internal_clauses: InternalClauses {
                     primary_key_in_clause: None,
                     primary_key_equal_clause: None,
@@ -8625,8 +8625,7 @@ mod tests {
             );
 
             let drive_query = DriveDocumentQuery {
-                contract: &dpns_contract,
-                document_type: domain,
+                contract_and_type: ContractAndDocumentTypeHolder::Borrowed(&dpns_contract, domain),
                 internal_clauses: InternalClauses {
                     primary_key_in_clause: None,
                     primary_key_equal_clause: None,
@@ -8656,8 +8655,7 @@ mod tests {
             assert_eq!(documents.len(), 3);
 
             let drive_query = DriveDocumentQuery {
-                contract: &dpns_contract,
-                document_type: domain,
+                contract_and_type: ContractAndDocumentTypeHolder::Borrowed(&dpns_contract, domain),
                 internal_clauses: InternalClauses {
                     primary_key_in_clause: None,
                     primary_key_equal_clause: None,
