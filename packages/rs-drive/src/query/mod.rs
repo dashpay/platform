@@ -40,7 +40,8 @@ use {
     },
     std::{collections::BTreeMap, ops::BitXor},
 };
-
+#[cfg(feature = "server")]
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 #[cfg(all(feature = "server", feature = "verify"))]
 use crate::verify::RootHash;
 
