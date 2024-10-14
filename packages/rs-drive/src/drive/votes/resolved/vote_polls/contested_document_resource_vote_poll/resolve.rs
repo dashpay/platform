@@ -4,11 +4,13 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
+#[cfg(feature = "server")]
 use crate::drive::Drive;
 use crate::error::contract::DataContractError;
 use crate::error::Error;
 #[cfg(feature = "verify")]
 use crate::query::ContractLookupFn;
+#[cfg(feature = "server")]
 use crate::util::object_size_info::DataContractOwnedResolvedInfo;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::util::object_size_info::DataContractResolvedInfo;
@@ -18,8 +20,9 @@ use dpp::data_contract::DataContract;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
+#[cfg(feature = "server")]
 use platform_version::version::PlatformVersion;
-#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg(any(feature = "server"))]
 use std::sync::Arc;
 
 /// A trait for resolving information related to a contested document resource vote poll.

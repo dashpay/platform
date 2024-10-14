@@ -41,7 +41,7 @@ use {
     std::{collections::BTreeMap, ops::BitXor},
 };
 
-#[cfg(feature = "verify")]
+#[cfg(all(feature = "server", feature = "verify"))]
 use crate::verify::RootHash;
 
 #[cfg(feature = "server")]
@@ -56,7 +56,6 @@ use {
     crate::{drive::Drive, error::Error::GroveDB, fees::op::LowLevelDriveOperation},
     dpp::block::block_info::BlockInfo,
 };
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use platform_value::Identifier;
 // Crate-local unconditional imports
 use crate::config::DriveConfig;

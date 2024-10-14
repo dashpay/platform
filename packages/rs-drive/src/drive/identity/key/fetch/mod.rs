@@ -12,7 +12,7 @@ use {
         },
         query::{Query, QueryItem},
     },
-    dpp::identity::identity_public_key::{KeyID, Purpose, accessors::v0::IdentityPublicKeyGettersV0},
+    dpp::identity::identity_public_key::{KeyID, Purpose},
     grovedb::{PathQuery, SizedQuery},
     integer_encoding::VarInt,
     std::{collections::BTreeMap, ops::RangeFull},
