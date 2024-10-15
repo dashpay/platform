@@ -832,7 +832,7 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
-        let maybe_contracts = contracts
+        let contracts = contracts
             .into_iter()
             .map(|(k, v)| {
                 Identifier::from_bytes(&k).map(|id| (id, v)).map_err(|e| {
@@ -841,8 +841,13 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
                     }
                 })
             })
-            .collect::<Result<DataContracts, Error>>()?
-            .into_option();
+            .collect::<Result<DataContracts, Error>>()?;
+
+        let maybe_contracts = if contracts.is_empty() {
+            None
+        } else {
+            Some(contracts)
+        };
 
         Ok((maybe_contracts, mtd.clone(), proof.clone()))
     }
@@ -1376,8 +1381,7 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        let resources: ContestedResources =
-            items.into_iter().map(|v| ContestedResource(v)).collect();
+        let resources: ContestedResources = items.into_iter().map(ContestedResource).collect();
 
         Ok((resources.into_option(), mtd.clone(), proof.clone()))
     }
@@ -1849,6 +1853,8 @@ fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
 pub trait Length {
     /// Return number of non-None elements in the data structure
     fn count_some(&self) -> usize;
+    /// Return number of all elements in the data structure, including None
+    fn count(&self) -> usize;
 }
 
 impl<T: Length> Length for Option<T> {
@@ -1858,11 +1864,21 @@ impl<T: Length> Length for Option<T> {
             Some(i) => i.count_some(),
         }
     }
+    fn count(&self) -> usize {
+        match self {
+            None => 0,
+            Some(i) => i.count(),
+        }
+    }
 }
 
 impl<T> Length for Vec<Option<T>> {
     fn count_some(&self) -> usize {
         self.iter().filter(|v| v.is_some()).count()
+    }
+
+    fn count(&self) -> usize {
+        self.len()
     }
 }
 
@@ -1870,17 +1886,29 @@ impl<K, T> Length for Vec<(K, Option<T>)> {
     fn count_some(&self) -> usize {
         self.iter().filter(|(_, v)| v.is_some()).count()
     }
+
+    fn count(&self) -> usize {
+        self.len()
+    }
 }
 
 impl<K, T> Length for BTreeMap<K, Option<T>> {
     fn count_some(&self) -> usize {
         self.values().filter(|v| v.is_some()).count()
     }
+
+    fn count(&self) -> usize {
+        self.len()
+    }
 }
 
 impl<K, T> Length for IndexMap<K, Option<T>> {
     fn count_some(&self) -> usize {
         self.values().filter(|v| v.is_some()).count()
+    }
+
+    fn count(&self) -> usize {
+        self.len()
     }
 }
 
@@ -1891,16 +1919,24 @@ impl<K, T> Length for IndexMap<K, Option<T>> {
 /// * `$object`: The type for which to implement Length trait
 /// * `$len`: A closure that returns the length of the object; if ommitted, defaults to 1
 macro_rules! define_length {
-    ($object:ty,$len:expr) => {
+    ($object:ty,$some:expr,$counter:expr) => {
         impl Length for $object {
             fn count_some(&self) -> usize {
                 #[allow(clippy::redundant_closure_call)]
-                $len(self)
+                $some(self)
+            }
+
+            fn count(&self) -> usize {
+                #[allow(clippy::redundant_closure_call)]
+                $counter(self)
             }
         }
     };
+    ($object:ty,$some:expr) => {
+        define_length!($object, $some, $some);
+    };
     ($object:ty) => {
-        define_length!($object, |_| 1);
+        define_length!($object, |_| 1, |_| 1);
     };
 }
 
@@ -1910,22 +1946,30 @@ define_length!(Document);
 define_length!(Identity);
 define_length!(IdentityBalance);
 define_length!(IdentityBalanceAndRevision);
-define_length!(IdentitiesContractKeys, |x: &IdentitiesContractKeys| x
-    .values()
-    .map(|v| v.count_some())
-    .sum());
+define_length!(
+    IdentitiesContractKeys,
+    |x: &IdentitiesContractKeys| x.values().map(|v| v.count_some()).sum(),
+    |x: &IdentitiesContractKeys| x.len()
+);
 define_length!(ContestedResources, |x: &ContestedResources| x.0.len());
 define_length!(Contenders, |x: &Contenders| x.contenders.len());
 define_length!(Voters, |x: &Voters| x.0.len());
 define_length!(
     VotePollsGroupedByTimestamp,
-    |x: &VotePollsGroupedByTimestamp| x.0.iter().map(|v| v.1.len()).sum()
+    |x: &VotePollsGroupedByTimestamp| x.0.iter().map(|v| v.1.len()).sum(),
+    |x: &VotePollsGroupedByTimestamp| x.0.len()
 );
+
+/// Convert a type into an Option
 trait IntoOption
 where
     Self: Sized,
 {
-    /// For zero-length data structures, return None, otherwise return Some(self)
+    /// For zero-length data structures, return None, otherwise return Some(self).
+    ///
+    /// In case of a zero-length data structure, the function returns None.
+    /// Otherwise, it returns Some(self), even it all values are None. This is to ensure that proof of absence
+    /// preserves the keys that are not present in the data structure.
     fn into_option(self) -> Option<Self>;
 }
 
@@ -1934,7 +1978,7 @@ impl<L: Length> IntoOption for L {
     where
         Self: Sized,
     {
-        if self.count_some() == 0 {
+        if self.count() == 0 {
             None
         } else {
             Some(self)

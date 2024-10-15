@@ -81,8 +81,6 @@ pub type RetrievedObjects<K, O> = IndexMap<K, Option<O>>;
 /// order of objects returned by Dash Drive, which is not always guaranteed to be correct.
 /// You can sort the objects by key if you need a specific order; see [`IndexMap::sort_keys`] and similar methods.
 ///
-/// The ordering of the objects is guaranteed to be the same as the order of objects returned by Dash Drive.
-///
 /// # Generic Type Parameters
 ///
 /// * `K`: The type of the keys in the map.
@@ -254,10 +252,9 @@ impl ContestedResource {
         )
     }
 }
-
-impl Into<Value> for ContestedResource {
-    fn into(self) -> Value {
-        self.0
+impl From<ContestedResource> for Value {
+    fn from(resource: ContestedResource) -> Self {
+        resource.0
     }
 }
 
