@@ -609,7 +609,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DriveAbciStructureVersions {
             platform_state_structure: 0,
-            platform_state_for_saving_structure: 0,
+            platform_state_for_saving_structure_default: 0,
             state_transition_execution_context: 0,
             commit: 0,
             masternode: 0,
@@ -621,7 +621,8 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                 check_tx: 0,
                 run_block_proposal: 0,
                 finalize_block_proposal: 0,
-                consensus_params_update: 0,
+                // Update app version if changed as well
+                consensus_params_update: 1,
             },
             initialization: DriveAbciInitializationMethodVersions {
                 initial_core_height_and_time: 0,
@@ -635,6 +636,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                     get_voter_identity_key: 0,
                     get_operator_identity_keys: 0,
                     get_owner_identity_withdrawal_key: 0,
+                    get_owner_identity_owner_key: 0,
                     get_voter_identifier_from_masternode_list_item: 0,
                     get_operator_identifier_from_masternode_list_item: 0,
                     create_operator_identity: 0,
@@ -775,6 +777,7 @@ pub const PLATFORM_V3: PlatformVersion = PlatformVersion {
                     state: 0,
                     transform_into_action: 0,
                 },
+                identity_credit_withdrawal_state_transition_purpose_matches_requirements: 0,
                 identity_credit_transfer_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),

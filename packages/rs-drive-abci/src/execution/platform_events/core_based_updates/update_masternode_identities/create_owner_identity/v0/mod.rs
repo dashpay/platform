@@ -25,7 +25,9 @@ where
         Ok(identity)
     }
 
-    fn get_owner_identifier(masternode: &MasternodeListItem) -> Result<Identifier, Error> {
+    pub(crate) fn get_owner_identifier(
+        masternode: &MasternodeListItem,
+    ) -> Result<Identifier, Error> {
         let masternode_identifier: [u8; 32] = masternode.pro_tx_hash.into();
         Ok(masternode_identifier.into())
     }

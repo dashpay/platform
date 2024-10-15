@@ -7,6 +7,8 @@ use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::types::ConsensusParams;
 
 mod v0;
+mod v1;
+
 pub(crate) fn consensus_params_update(
     network: Network,
     original_platform_version: &PlatformVersion,
@@ -25,9 +27,15 @@ pub(crate) fn consensus_params_update(
             new_platform_version,
             epoch_info,
         )),
+        1 => Ok(v1::consensus_params_update_v1(
+            network,
+            original_platform_version,
+            new_platform_version,
+            epoch_info,
+        )),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "consensus_params_update".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         })),
     }

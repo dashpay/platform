@@ -1377,7 +1377,7 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let resources: ContestedResources =
-            items.into_iter().map(ContestedResource::Value).collect();
+            items.into_iter().map(|v| ContestedResource(v)).collect();
 
         Ok((resources.into_option(), mtd.clone(), proof.clone()))
     }

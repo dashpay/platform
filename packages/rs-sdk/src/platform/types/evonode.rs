@@ -74,7 +74,16 @@ impl TransportRequest for EvoNode {
         // We also create a new client to use with this request, so that the user does not need to
         // reconfigure SDK to use a single node.
         let pool = ConnectionPool::new(1);
-        let mut client = Self::Client::with_uri_and_settings(uri.clone(), settings, &pool);
+        // We create a new client with the given URI and settings
+        let client_result = Self::Client::with_uri_and_settings(uri.clone(), settings, &pool);
+
+        // Handle the result manually to create a proper error response
+        let mut client = match client_result {
+            Ok(client) => client,
+            Err(e) => {
+                return async { Err(e) }.boxed();
+            }
+        };
         let mut grpc_request = GetStatusRequest {
             version: Some(get_status_request::Version::V0(GetStatusRequestV0 {})),
         }

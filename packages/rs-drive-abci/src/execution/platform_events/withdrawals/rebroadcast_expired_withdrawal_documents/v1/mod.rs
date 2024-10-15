@@ -71,6 +71,11 @@ where
                 WithdrawalStatus::BROADCASTED as u8,
             );
 
+            document.set_u64(
+                withdrawal::properties::TRANSACTION_SIGN_HEIGHT,
+                block_info.core_height as u64,
+            );
+
             document.set_updated_at(Some(block_info.time_ms));
 
             document.increment_revision().map_err(Error::Protocol)?;

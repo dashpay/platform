@@ -3,8 +3,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
-use dpp::identity::Identity;
-use dpp::prelude::UserFeeIncrease;
+use dpp::identity::{Identity, IdentityPublicKey};
 
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
@@ -19,13 +18,15 @@ use dpp::withdrawal::Pooling;
 #[async_trait::async_trait]
 pub trait WithdrawFromIdentity {
     /// Function to withdraw credits from an identity. Returns the final identity balance.
+    /// If signing_withdrawal_key_to_use is not set, we will try to use one in the signer that is
+    /// available for withdrawal
     async fn withdraw<S: Signer + Send>(
         &self,
         sdk: &Sdk,
         address: Option<Address>,
         amount: u64,
         core_fee_per_byte: Option<u32>,
-        user_fee_increase: Option<UserFeeIncrease>,
+        signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error>;
@@ -39,12 +40,13 @@ impl WithdrawFromIdentity for Identity {
         address: Option<Address>,
         amount: u64,
         core_fee_per_byte: Option<u32>,
-        user_fee_increase: Option<UserFeeIncrease>,
+        signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
         let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let script = address.map(|address| CoreScript::new(address.script_pubkey()));
+        let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
         let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
             self,
             script,
@@ -53,7 +55,7 @@ impl WithdrawFromIdentity for Identity {
             core_fee_per_byte.unwrap_or(1),
             user_fee_increase.unwrap_or_default(),
             signer,
-            None,
+            signing_withdrawal_key_to_use,
             PreferredKeyPurposeForSigningWithdrawal::TransferPreferred,
             new_identity_nonce,
             sdk.version(),

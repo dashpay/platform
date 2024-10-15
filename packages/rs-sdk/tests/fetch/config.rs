@@ -11,6 +11,7 @@ use dpp::{
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
 use std::{path::PathBuf, str::FromStr};
+use zeroize::Zeroizing;
 
 /// Existing document ID
 ///
@@ -43,7 +44,7 @@ pub struct Config {
     pub core_user: String,
     /// Password for Dash Core RPC interface
     #[serde(default)]
-    pub core_password: String,
+    pub core_password: Zeroizing<String>,
     /// When true, use SSL for the Dash Platform node grpc interface
     #[serde(default)]
     pub platform_ssl: bool,
@@ -71,6 +72,7 @@ pub struct Config {
     /// ID of document of the type [`existing_document_type_name`](Config::existing_document_type_name)
     /// in [`existing_data_contract_id`](Config::existing_data_contract_id).
     #[serde(default = "Config::default_document_id")]
+    #[allow(unused)]
     pub existing_document_id: Identifier,
     // Hex-encoded ProTxHash of the existing HP masternode
     #[serde(default = "Config::default_protxhash")]

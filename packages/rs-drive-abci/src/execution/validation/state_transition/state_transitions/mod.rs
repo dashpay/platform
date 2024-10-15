@@ -512,6 +512,111 @@ pub(in crate::execution) mod tests {
         );
     }
 
+    pub(in crate::execution) fn setup_masternode_owner_identity(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        seed: u64,
+        credits: Credits,
+        platform_version: &PlatformVersion,
+    ) -> (Identity, SimpleSigner, IdentityPublicKey, IdentityPublicKey) {
+        let mut signer = SimpleSigner::default();
+
+        platform
+            .drive
+            .add_to_system_credits(credits, None, platform_version)
+            .expect("expected to add to system credits");
+
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let (transfer_key, transfer_private_key) =
+            IdentityPublicKey::random_masternode_transfer_key_with_rng(
+                0,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        let (owner_key, owner_private_key) =
+            IdentityPublicKey::random_masternode_owner_key_with_rng(1, &mut rng, platform_version)
+                .expect("expected to get key pair");
+
+        let owner_address = owner_key
+            .public_key_hash()
+            .expect("expected a public key hash");
+
+        let payout_address = transfer_key
+            .public_key_hash()
+            .expect("expected a public key hash");
+
+        signer.add_key(transfer_key.clone(), transfer_private_key.clone());
+        signer.add_key(owner_key.clone(), owner_private_key.clone());
+
+        let pro_tx_hash_bytes: [u8; 32] = rng.gen();
+
+        let identity: Identity = IdentityV0 {
+            id: pro_tx_hash_bytes.into(),
+            public_keys: BTreeMap::from([(0, transfer_key.clone()), (1, owner_key.clone())]),
+            balance: credits,
+            revision: 0,
+        }
+        .into();
+
+        // We just add this identity to the system first
+
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                true,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new identity");
+
+        let mut platform_state = platform.state.load().clone().deref().clone();
+
+        let pro_tx_hash = ProTxHash::from_byte_array(pro_tx_hash_bytes);
+
+        let random_ip = Ipv4Addr::new(
+            rng.gen_range(0..255),
+            rng.gen_range(0..255),
+            rng.gen_range(0..255),
+            rng.gen_range(0..255),
+        );
+
+        platform_state.full_masternode_list_mut().insert(
+            pro_tx_hash,
+            MasternodeListItem {
+                node_type: MasternodeType::Regular,
+                pro_tx_hash,
+                collateral_hash: Txid::from_byte_array(rng.gen()),
+                collateral_index: 0,
+                collateral_address: rng.gen(),
+                operator_reward: 0.0,
+                state: DMNState {
+                    service: SocketAddr::new(IpAddr::V4(random_ip), 19999),
+                    registered_height: 0,
+                    pose_revived_height: None,
+                    pose_ban_height: None,
+                    revocation_reason: 0,
+                    owner_address,
+                    voting_address: rng.gen(),
+                    payout_address,
+                    pub_key_operator: vec![],
+                    operator_payout_address: None,
+                    platform_node_id: None,
+                    platform_p2p_port: None,
+                    platform_http_port: None,
+                },
+            },
+        );
+
+        platform.state.store(Arc::new(platform_state));
+
+        (identity, signer, owner_key, transfer_key)
+    }
+
     pub(in crate::execution) fn setup_masternode_voting_identity(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seed: u64,

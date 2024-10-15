@@ -16,12 +16,12 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 pub enum PreferredKeyPurposeForSigningWithdrawal {
     /// Use any key
     Any,
-    /// Use the master key, then the transfer key
-    MasterPreferred,
-    /// Use the transfer key, then the master key
+    /// Use the owner key, then the transfer key
+    OwnerPreferred,
+    /// Use the transfer key, then the owner key
     TransferPreferred,
-    /// Only use the master key
-    MasterOnly,
+    /// Only use the owner key
+    OwnerOnly,
     /// Only use the transfer key
     TransferOnly,
 }

@@ -47,7 +47,6 @@ mod tests {
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::query::QueryStrategy;
     use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy};
-    use assert_matches::assert_matches;
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::json::QuorumType;
@@ -87,6 +86,7 @@ mod tests {
     };
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::state_transition::StateTransition;
+    use platform_version::version::v1::PROTOCOL_VERSION_1;
     use platform_version::version::PlatformVersion;
     use simple_signer::signer::SimpleSigner;
     use strategy_tests::transitions::create_state_transitions_for_identities;
@@ -1159,6 +1159,7 @@ mod tests {
 
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
+            .with_initial_protocol_version(PROTOCOL_VERSION_1)
             .build_with_mock_rpc();
 
         let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15, &mut None);
@@ -1885,6 +1886,7 @@ mod tests {
         let block_count = 120;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
+            .with_initial_protocol_version(PROTOCOL_VERSION_1)
             .build_with_mock_rpc();
 
         let outcome =
@@ -2015,6 +2017,7 @@ mod tests {
         let block_count = 120;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
+            .with_initial_protocol_version(PROTOCOL_VERSION_1)
             .build_with_mock_rpc();
 
         let outcome =

@@ -29,6 +29,7 @@ pub use invalid_instant_asset_lock_proof_signature_error::*;
 pub use missing_master_public_key_error::*;
 pub use not_implemented_identity_credit_withdrawal_transition_pooling_error::*;
 pub use too_many_master_public_key_error::*;
+pub use withdrawal_output_script_not_allowed_when_signing_with_owner_key::*;
 
 mod data_contract_bounds_not_present_error;
 mod disabling_key_id_also_being_added_in_same_transition_error;
@@ -62,3 +63,4 @@ mod invalid_instant_asset_lock_proof_signature_error;
 mod missing_master_public_key_error;
 mod not_implemented_identity_credit_withdrawal_transition_pooling_error;
 mod too_many_master_public_key_error;
+mod withdrawal_output_script_not_allowed_when_signing_with_owner_key;

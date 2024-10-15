@@ -21,7 +21,7 @@ RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
 ARG TARGETARCH
-ARG PROTOC_VERSION=25.2
+ARG PROTOC_VERSION=27.3
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
     curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip \
     -o /tmp/protoc.zip && \
@@ -29,10 +29,10 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
     rm /tmp/protoc.zip && \
     ln -s /opt/protoc/bin/protoc /usr/bin/
 
-# Install protoc v25.2+
-RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v25.2/protoc-25.2-linux-x86_64.zip \
-    && unzip protoc-25.2-linux-x86_64.zip -d /usr/local \
-    && rm protoc-25.2-linux-x86_64.zip
+# Install protoc
+RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip \
+    && unzip protoc-${PROTOC_VERSION}-linux-x86_64.zip -d /usr/local \
+    && rm protoc-${PROTOC_VERSION}-linux-x86_64.zip
 
 # Switch to vscode user
 USER vscode

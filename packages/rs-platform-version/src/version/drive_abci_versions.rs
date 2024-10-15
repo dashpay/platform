@@ -77,7 +77,7 @@ pub struct DriveAbciQuerySystemVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciStructureVersions {
     pub platform_state_structure: FeatureVersion,
-    pub platform_state_for_saving_structure: FeatureVersion,
+    pub platform_state_for_saving_structure_default: FeatureVersion,
     pub state_transition_execution_context: FeatureVersion,
     pub commit: FeatureVersion,
     pub masternode: FeatureVersion,
@@ -200,6 +200,7 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub identity_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub identity_credit_withdrawal_state_transition_purpose_matches_requirements: FeatureVersion,
     pub identity_credit_transfer_state_transition: DriveAbciStateTransitionValidationVersion,
     pub masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
@@ -247,6 +248,7 @@ pub struct DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
     pub get_voter_identity_key: FeatureVersion,
     pub get_operator_identity_keys: FeatureVersion,
     pub get_owner_identity_withdrawal_key: FeatureVersion,
+    pub get_owner_identity_owner_key: FeatureVersion,
     pub get_voter_identifier_from_masternode_list_item: FeatureVersion,
     pub get_operator_identifier_from_masternode_list_item: FeatureVersion,
     pub create_operator_identity: FeatureVersion,

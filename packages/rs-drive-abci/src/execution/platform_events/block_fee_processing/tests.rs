@@ -795,7 +795,7 @@ mod refund_tests {
 
         platform_state
             .previous_fee_versions_mut()
-            .insert(5, platform_version_with_higher_fees.fee_version.clone());
+            .insert(5, platform_version_with_higher_fees.fee_version.as_static());
 
         let (mut fee_results, _) = process_state_transitions(
             &platform,
