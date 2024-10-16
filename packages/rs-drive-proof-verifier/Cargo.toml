@@ -15,6 +15,7 @@ mocks = [
   "dep:platform-serialization-derive",
   "dep:platform-serialization",
   "dpp/document-serde-conversion",
+  "indexmap/serde",
 ]
 
 [dependencies]
@@ -42,4 +43,5 @@ serde_json = { version = "1.0.103", features = [
   "preserve_order",
 ], optional = true }
 hex = { version = "0.4.3" }
+indexmap = { version = "2.6.0" }
 derive_more = { version = "1.0", features = ["from"] }
