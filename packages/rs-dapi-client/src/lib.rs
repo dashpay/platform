@@ -2,7 +2,7 @@
 
 #![deny(missing_docs)]
 
-mod address_list;
+pub mod address_list;
 mod connection_pool;
 mod dapi_client;
 #[cfg(feature = "dump")]
