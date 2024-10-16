@@ -32,7 +32,6 @@ export default class PlatformStatusCommand extends ConfigBaseCommand {
     flags,
     dockerCompose,
     createRpcClient,
-    getConnectionHost,
     config,
     getPlatformScope,
   ) {

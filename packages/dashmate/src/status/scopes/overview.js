@@ -57,8 +57,9 @@ export default function getOverviewScopeFactory(
     }
 
     if (config.get('platform.enable')) {
-      const { tenderdash } = await getPlatformScope(config);
+      const { drive, tenderdash } = await getPlatformScope(config);
 
+      platform.drive = drive;
       platform.tenderdash = tenderdash;
     }
 

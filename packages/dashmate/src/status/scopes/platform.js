@@ -174,6 +174,18 @@ export default function getPlatformScopeFactory(
         if (driveEchoResult.exitCode !== 0) {
           info.serviceStatus = ServiceStatusEnum.error;
         }
+
+        const driveVersionResult = await dockerCompose.execCommand(
+          config,
+          'drive_abci',
+          'drive-abci version',
+        );
+
+        console.dir(driveVersionResult);
+
+        if (driveVersionResult.exitCode === 0) {
+          info.version = driveVersionResult.stdout;
+        }
       }
 
       return info;
