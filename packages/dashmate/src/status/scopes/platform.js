@@ -1,4 +1,5 @@
 import prettyMs from 'pretty-ms';
+import DockerComposeError from '../../docker/errors/DockerComposeError.js';
 import providers from '../providers.js';
 import { DockerStatusEnum } from '../enums/dockerStatus.js';
 import { ServiceStatusEnum } from '../enums/serviceStatus.js';
@@ -162,30 +163,33 @@ export default function getPlatformScopeFactory(
 
     try {
       info.dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_abci');
-      info.serviceStatus = determineStatus.platform(info.dockerStatus, isCoreSynced, mnRRSoftFork);
+    } catch (e) {
+      if (e instanceof ContainerIsNotPresentError) {
+        info.dockerStatus = DockerStatusEnum.not_started;
+      }
 
-      if (info.serviceStatus === ServiceStatusEnum.up) {
-        const driveEchoResult = await dockerCompose.execCommand(
+      throw e;
+    }
+
+    info.serviceStatus = determineStatus.platform(info.dockerStatus, isCoreSynced, mnRRSoftFork);
+
+    // Get Drive status to make sure it's responding
+    if (info.serviceStatus === ServiceStatusEnum.up) {
+      try {
+        await dockerCompose.execCommand(
           config,
           'drive_abci',
           'drive-abci status',
         );
-
-        if (driveEchoResult.exitCode !== 0) {
+      } catch (e) {
+        if (e instanceof DockerComposeError
+          && e.dockerComposeExecutionResult
+          && e.dockerComposeExecutionResult.exitCode !== 0) {
           info.serviceStatus = ServiceStatusEnum.error;
         }
-      }
 
-      return info;
-    } catch (e) {
-      if (e instanceof ContainerIsNotPresentError) {
-        return {
-          dockerStatus: DockerStatusEnum.not_started,
-          serviceStatus: ServiceStatusEnum.stopped,
-        };
+        throw e;
       }
-
-      return info;
     }
   };
 
