@@ -85,7 +85,7 @@ export default {
         timeout: MAX_REQUEST_TIMEOUT,
       };
 
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         const req = https.request(options, (res) => {
           let data = '';
 
@@ -97,7 +97,7 @@ export default {
             }
             // Consume response data to free up memory
             res.resume();
-            resolve(PortStateEnum.ERROR);
+            reject(new Error(`Invalid status code ${res.statusCode}`));
             return;
           }
 
@@ -109,7 +109,7 @@ export default {
             data += chunk;
 
             if (data.length > MAX_RESPONSE_SIZE) {
-              resolve(PortStateEnum.ERROR);
+              reject(new Error('Response size exceeded'));
 
               if (process.env.DEBUG) {
                 // eslint-disable-next-line no-console
@@ -132,7 +132,7 @@ export default {
             console.warn(`Port check request failed: ${e}`);
           }
 
-          resolve(PortStateEnum.ERROR);
+          reject(e);
         });
 
         req.end();
