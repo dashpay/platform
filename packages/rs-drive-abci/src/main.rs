@@ -54,6 +54,10 @@ enum Commands {
     /// by creating `.fsck` file in database directory (`DB_PATH`).
     #[command()]
     Verify,
+
+    /// Print current software version
+    #[command()]
+    Version,
 }
 
 /// Server that accepts connections from Tenderdash, and
@@ -134,6 +138,7 @@ impl Cli {
             Commands::Config => dump_config(&config)?,
             Commands::Status => check_status(&config)?,
             Commands::Verify => verify_grovedb(&config.db_path, true)?,
+            Commands::Version => print_version(),
         };
 
         Ok(())
@@ -384,6 +389,11 @@ fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
             Err(e)
         }
     }
+}
+
+/// Print current software version.
+fn print_version() {
+    println!("{}", env!("CARGO_PKG_VERSION"));
 }
 
 fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
