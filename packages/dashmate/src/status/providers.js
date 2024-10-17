@@ -1,5 +1,4 @@
 import https from 'https';
-import { PortStateEnum } from './enums/portState.js';
 
 const MAX_REQUEST_TIMEOUT = 5000;
 const MAX_RESPONSE_SIZE = 1 * 1024 * 1024; // 1 MB
