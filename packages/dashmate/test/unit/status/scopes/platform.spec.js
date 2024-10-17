@@ -1,3 +1,5 @@
+import ContainerIsNotPresentError
+  from '../../../../src/docker/errors/ContainerIsNotPresentError.js';
 import providers from '../../../../src/status/providers.js';
 import determineStatus from '../../../../src/status/determineStatus.js';
 import getConfigMock from '../../../../src/test/mock/getConfigMock.js';
@@ -377,7 +379,7 @@ describe('getPlatformScopeFactory', () => {
       mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_tenderdash')
         .returns(DockerStatusEnum.running);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_abci')
-        .throws();
+        .throws(new ContainerIsNotPresentError('drive_abci'));
       mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
@@ -430,8 +432,8 @@ describe('getPlatformScopeFactory', () => {
           network: 'test',
         },
         drive: {
-          dockerStatus: null,
-          serviceStatus: null,
+          dockerStatus: DockerStatusEnum.not_started,
+          serviceStatus: ServiceStatusEnum.stopped,
         },
       };
 
