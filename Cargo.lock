@@ -451,18 +451,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb"
 
 [[package]]
-name = "bitcoin-private"
-version = "0.1.0"
+name = "bitcoin-io"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73290177011694f38ec25e165d0387ab7ea749a4b81cd4c80dae5988229f7a57"
+checksum = "340e09e8399c7bd8912f495af6aa58bea0c9214773417ffaa8f6460f93aaee56"
 
 [[package]]
 name = "bitcoin_hashes"
-version = "0.12.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d7066118b13d4b20b23645932dfb3a81ce7e29f95726c2036fa33cd7b092501"
+checksum = "bb18c03d0db0247e147a21a6faafd5a7eb851c743db062de72018b6b7e8e4d16"
 dependencies = [
- "bitcoin-private",
+ "bitcoin-io",
+ "hex-conservative",
 ]
 
 [[package]]
@@ -1145,7 +1146,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.30.0"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=master#a29315dbe56729be1be963fb6f7b60a22288663f"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=0.31.0#003b1aed973be7eb98591c6ec3c8f82eafab4645"
 dependencies = [
  "anyhow",
  "bech32",
@@ -1161,12 +1162,12 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=master#a29315dbe56729be1be963fb6f7b60a22288663f"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=0.31.0#003b1aed973be7eb98591c6ec3c8f82eafab4645"
 
 [[package]]
 name = "dashcore-rpc"
-version = "0.15.2"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.4#bd6efdb850151f1dcd8e3f38d4796d18c5be518c"
+version = "0.15.7"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.7#3a16a75496939e6855fc9c823a4d5de11c2f0ee8"
 dependencies = [
  "dashcore-private",
  "dashcore-rpc-json",
@@ -1180,8 +1181,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore-rpc-json"
-version = "0.15.2"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.4#bd6efdb850151f1dcd8e3f38d4796d18c5be518c"
+version = "0.15.7"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.7#3a16a75496939e6855fc9c823a4d5de11c2f0ee8"
 dependencies = [
  "bincode",
  "dashcore",
@@ -1195,10 +1196,9 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.12.0"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=master#a29315dbe56729be1be963fb6f7b60a22288663f"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=0.31.0#003b1aed973be7eb98591c6ec3c8f82eafab4645"
 dependencies = [
  "dashcore-private",
- "rs-x11-hash",
  "secp256k1",
  "serde",
 ]
@@ -2214,6 +2214,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "hex-conservative"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5313b072ce3c597065a808dbf612c4c8e8590bdbf8b579508bf7a762c5eae6cd"
+dependencies = [
+ "arrayvec",
 ]
 
 [[package]]
@@ -3883,17 +3892,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rs-x11-hash"
-version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94ea852806513d6f5fd7750423300375bc8481a18ed033756c1a836257893a30"
-dependencies = [
- "bindgen 0.65.1",
- "cc",
- "libc",
-]
-
-[[package]]
 name = "rust_decimal"
 version = "1.36.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4062,9 +4060,9 @@ checksum = "1c107b6f4780854c8b126e228ea8869f4d7b71260f962fefb57b996b8959ba6b"
 
 [[package]]
 name = "secp256k1"
-version = "0.27.0"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25996b82292a7a57ed3508f052cfff8640d38d32018784acd714758b43da9c8f"
+checksum = "b50c5943d326858130af85e049f2661ba3c78b26589b8ab98e65e80ae44a1252"
 dependencies = [
  "bitcoin_hashes",
  "rand",
@@ -4074,9 +4072,9 @@ dependencies = [
 
 [[package]]
 name = "secp256k1-sys"
-version = "0.8.1"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70a129b9e9efbfb223753b9163c4ab3b13cff7fd9c7f010fbac25ab4099fa07e"
+checksum = "d4387882333d3aa8cb20530a17c69a3752e97837832f34f6dccc760e715001d9"
 dependencies = [
  "cc",
 ]
