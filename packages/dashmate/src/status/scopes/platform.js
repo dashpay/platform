@@ -166,9 +166,9 @@ export default function getPlatformScopeFactory(
     } catch (e) {
       if (e instanceof ContainerIsNotPresentError) {
         info.dockerStatus = DockerStatusEnum.not_started;
+      } else {
+        throw e;
       }
-
-      throw e;
     }
 
     info.serviceStatus = determineStatus.platform(info.dockerStatus, isCoreSynced, mnRRSoftFork);
@@ -186,11 +186,13 @@ export default function getPlatformScopeFactory(
           && e.dockerComposeExecutionResult
           && e.dockerComposeExecutionResult.exitCode !== 0) {
           info.serviceStatus = ServiceStatusEnum.error;
+        } else {
+          throw e;
         }
-
-        throw e;
       }
     }
+
+    return info;
   };
 
   /**

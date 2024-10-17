@@ -11,7 +11,7 @@ use dpp::version::PlatformVersion;
 use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
 use drive_abci::logging::{LogBuilder, LogConfig, LogDestination, Loggers};
-use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
+use drive_abci::metrics::Prometheus;
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::DefaultCoreRPC;
 use drive_abci::{logging, server};
@@ -103,7 +103,6 @@ impl Cli {
     ) -> Result<(), String> {
         match self.command {
             Commands::Start => {
-                // Start runtime in the main thread
                 tracing::info!(
                     version = env!("CARGO_PKG_VERSION"),
                     features = list_enabled_features().join(","),
@@ -216,6 +215,7 @@ fn main() -> Result<(), ExitCode> {
 
     install_panic_hook(cancel.clone());
 
+    // Start runtime in the main thread
     let runtime_guard = runtime.enter();
 
     runtime.spawn(handle_signals(cancel.clone(), loggers));
@@ -226,7 +226,7 @@ fn main() -> Result<(), ExitCode> {
             Ok(())
         }
         Err(e) => {
-            tracing::error!(error = e, "drive-abci failed");
+            tracing::error!(error = e, "drive-abci failed: {e}");
             Err(ExitCode::FAILURE)
         }
     };
@@ -310,12 +310,13 @@ fn list_enabled_features() -> Vec<&'static str> {
 /// Check status of ABCI server.
 async fn check_status(config: &PlatformConfig) -> Result<(), String> {
     // Convert the gRPC bind address string to a Uri
-    let uri = Uri::from_str(&config.grpc_bind_address).map_err(|e| e.to_string())?;
+    let uri = Uri::from_str(&format!("http://{}", config.grpc_bind_address))
+        .map_err(|e| format!("invalid url: {e}"))?;
 
     // Connect to the gRPC server
-    let mut client = PlatformClient::connect(uri)
+    let mut client = PlatformClient::connect(uri.clone())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("can't connect to grpc server {uri}: {e}"))?;
 
     // Make a request to the server
     let request = dapi_grpc::platform::v0::GetStatusRequest {
@@ -327,7 +328,7 @@ async fn check_status(config: &PlatformConfig) -> Result<(), String> {
         .get_status(request)
         .await
         .map(|_| ())
-        .map_err(|e| e.to_string())
+        .map_err(|e| format!("can't request status: {e}"))
 }
 
 /// Verify GroveDB integrity.
@@ -415,7 +416,7 @@ fn configure_logging(cli: &Cli, config: &PlatformConfig) -> Result<Loggers, logg
     if configs.is_empty() || cli.verbose > 0 {
         let cli_config = LogConfig {
             destination: LogDestination::StdOut,
-            level: cli.verbose.try_into().unwrap(),
+            level: cli.verbose.try_into()?,
             color: cli.color,
             ..Default::default()
         };
@@ -445,13 +446,11 @@ mod test {
     use ::drive::{drive::Drive, query::Element};
     use dpp::block::epoch::Epoch;
     use drive::drive::credit_pools::epochs::epoch_key_constants;
-    use std::str::FromStr;
     use std::{
         fs,
         path::{Path, PathBuf},
     };
 
-    use dapi_grpc::tonic::transport::Uri;
     use dpp::version::PlatformVersion;
     use drive::drive::credit_pools::epochs::paths::EpochProposers;
     use drive_abci::logging::LogLevel;
@@ -541,10 +540,5 @@ mod test {
         );
 
         println!("db path: {:?}", &db_path);
-    }
-
-    #[test]
-    fn test_uri_conversion_from_server_bind_address() {
-        Uri::from_str("0.0.0.0:1324").expect("should parse");
     }
 }
