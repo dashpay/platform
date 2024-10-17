@@ -81,7 +81,6 @@ export default {
         path: ip ? `/${port}/?validateIp=${ip}` : `/${port}/`,
         method: 'GET',
         family: 4, // Force IPv4
-        timeout: MAX_REQUEST_TIMEOUT,
       };
 
       return new Promise((resolve, reject) => {
@@ -94,9 +93,12 @@ export default {
               // eslint-disable-next-line no-console
               console.warn(`Port check request failed with status code ${res.statusCode}`);
             }
-            // Consume response data to free up memory
-            res.resume();
-            reject(new Error(`Invalid status code ${res.statusCode}`));
+
+            const error = new Error(`Invalid status code ${res.statusCode}`);
+
+            res.destroy(error);
+
+            // Do not handle request further
             return;
           }
 
@@ -108,14 +110,14 @@ export default {
             data += chunk;
 
             if (data.length > MAX_RESPONSE_SIZE) {
-              reject(new Error('Response size exceeded'));
-
               if (process.env.DEBUG) {
                 // eslint-disable-next-line no-console
                 console.warn('Port check response size exceeded');
               }
 
-              req.destroy();
+              const error = new Error('Response size exceeded');
+
+              req.destroy(error);
             }
           });
 
@@ -123,6 +125,12 @@ export default {
           res.on('end', () => {
             resolve(data);
           });
+        });
+
+        req.setTimeout(MAX_REQUEST_TIMEOUT, () => {
+          const error = new Error('Port check timed out');
+
+          req.destroy(error);
         });
 
         req.on('error', (e) => {
