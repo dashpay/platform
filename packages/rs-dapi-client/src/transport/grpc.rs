@@ -117,12 +117,12 @@ impl TransportClient for CoreGrpcClient {
 }
 
 impl CanRetry for dapi_grpc::tonic::Status {
-    fn can_retry(&self) -> Option<bool> {
+    fn can_retry(&self) -> bool {
         let code = self.code();
 
         use dapi_grpc::tonic::Code::*;
 
-        let retry = !matches!(
+        !matches!(
             code,
             Ok | DataLoss
                 | Cancelled
@@ -132,13 +132,7 @@ impl CanRetry for dapi_grpc::tonic::Status {
                 | Aborted
                 | Internal
                 | Unavailable
-        );
-
-        if retry {
-            Some(true)
-        } else {
-            None
-        }
+        )
     }
 }
 

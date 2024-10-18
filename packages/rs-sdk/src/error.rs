@@ -82,19 +82,13 @@ impl From<PlatformVersionError> for Error {
 }
 
 impl CanRetry for Error {
-    fn can_retry(&self) -> Option<bool> {
-        let retry = matches!(
+    fn can_retry(&self) -> bool {
+        matches!(
             self,
             Error::Proof(drive_proof_verifier::Error::StaleNode(..))
                 | Error::DapiClientError(_)
                 | Error::CoreClientError(_)
                 | Error::TimeoutReached(_, _)
-        );
-
-        if retry {
-            Some(true)
-        } else {
-            None
-        }
+        )
     }
 }

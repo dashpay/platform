@@ -72,18 +72,15 @@ impl<T: transport::TransportRequest + Send> DapiRequest for T {
 }
 
 /// Returns true if the operation can be retried.
-/// `None` means unspecified - in this case, you should either inspect the error
-/// in more details, or assume `false`.
 pub trait CanRetry {
     /// Returns true if the operation can be retried safely.
-    /// None value means it's unspecified
-    fn can_retry(&self) -> Option<bool>;
+    fn can_retry(&self) -> bool;
 
     /// Get boolean flag that indicates if the error is retryable.
     ///
     /// Depreacted in favor of [CanRetry::can_retry].
     #[deprecated = "Use !can_retry() instead"]
     fn is_node_failure(&self) -> bool {
-        !self.can_retry().unwrap_or(false)
+        !self.can_retry()
     }
 }
