@@ -225,16 +225,11 @@ fn main() -> Result<(), ExitCode> {
 
     runtime.spawn(handle_signals(cancel.clone(), loggers));
 
-    let result = match cli.run(&runtime, config, cancel) {
-        Ok(()) => {
-            tracing::debug!("shutdown complete");
-            Ok(())
-        }
-        Err(e) => {
-            tracing::error!(error = e, "drive-abci failed: {e}");
-            Err(ExitCode::FAILURE)
-        }
-    };
+    let result = cli.run(&runtime, config, cancel).map_err(|e| {
+        tracing::error!(error = e, "drive-abci failed: {e}");
+
+        ExitCode::FAILURE
+    });
 
     drop(runtime_guard);
     runtime.shutdown_timeout(Duration::from_millis(SHUTDOWN_TIMEOUT_MILIS));
