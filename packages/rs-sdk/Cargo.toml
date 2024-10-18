@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 
 arc-swap = { version = "1.7.1" }
+chrono = { version = "0.4.38" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
 ] }
@@ -52,7 +53,6 @@ data-contracts = { path = "../data-contracts" }
 tokio-test = { version = "0.4.4" }
 clap = { version = "4.5.4", features = ["derive"] }
 sanitize-filename = { version = "0.5.0" }
-chrono = { version = "0.4.38" }
 test-case = { version = "3.3.1" }
 
 [features]
