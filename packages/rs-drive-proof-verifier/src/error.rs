@@ -93,10 +93,10 @@ pub enum Error {
 pub enum StaleProofError {
     /// Stale proof height
     #[error("stale proof height: expected height {expected_height}, received {received_height}, tolerance {tolerance_blocks}; try another server")]
-    StaleProofHeight {
+    Height {
         /// Expected height - last block height seen by the Sdk
         expected_height: u64,
-        /// Actual height - block height received from the server in the proof
+        /// Block height received from the server in the proof
         received_height: u64,
         /// Tolerance - how many blocks can be behind the expected height
         tolerance_blocks: u64,

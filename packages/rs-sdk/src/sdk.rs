@@ -648,14 +648,12 @@ fn verify_proof_height(
             tolerance,
             "received proof with stale height; you should retry with another server"
         );
-        return Err(
-            drive_proof_verifier::error::StaleProofError::StaleProofHeight {
-                expected_height: prev,
-                received_height: received,
-                tolerance_blocks: tolerance,
-            }
-            .into(),
-        );
+        return Err(drive_proof_verifier::error::StaleProofError::Height {
+            expected_height: prev,
+            received_height: received,
+            tolerance_blocks: tolerance,
+        }
+        .into());
     }
 
     // New proof is ahead of the previous proof, so we update the previous proof height.
