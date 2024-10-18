@@ -82,37 +82,6 @@ pub enum Error {
     /// Context provider error
     #[error("context provider error: {0}")]
     ContextProviderError(#[from] ContextProviderError),
-
-    /// Remote node is stale; try another server
-    #[error(transparent)]
-    StaleNode(#[from] StaleNodeError),
-}
-
-/// Server returned stale metadata
-#[derive(Debug, thiserror::Error)]
-pub enum StaleNodeError {
-    /// Server returned metadata with outdated height
-    #[error("received height is outdated: expected {expected_height}, received {received_height}, tolerance {tolerance_blocks}; try another server")]
-    Height {
-        /// Expected height - last block height seen by the Sdk
-        expected_height: u64,
-        /// Block height received from the server
-        received_height: u64,
-        /// Tolerance - how many blocks can be behind the expected height
-        tolerance_blocks: u64,
-    },
-    /// Server returned metadata with time outside of the tolerance
-    #[error(
-        "received invalid time: expected {expected_timestamp_ms}ms, received {received_timestamp_ms} ms, tolerance {tolerance_ms} ms; try another server"
-    )]
-    Time {
-        /// Expected time in milliseconds - is local time when the message was received
-        expected_timestamp_ms: u64,
-        /// Time received from the server in the message, in milliseconds
-        received_timestamp_ms: u64,
-        /// Tolerance in milliseconds
-        tolerance_ms: u64,
-    },
 }
 
 /// Errors returned by the context provider

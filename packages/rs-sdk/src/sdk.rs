@@ -1,6 +1,6 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use crate::error::Error;
+use crate::error::{Error, StaleNodeError};
 use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
@@ -211,7 +211,7 @@ impl Sdk {
         &self,
         request: O::Request,
         response: O::Response,
-    ) -> Result<Option<O>, drive_proof_verifier::Error>
+    ) -> Result<Option<O>, Error>
     where
         O::Request: Mockable,
     {
@@ -232,7 +232,7 @@ impl Sdk {
         &self,
         request: O::Request,
         response: O::Response,
-    ) -> Result<(Option<O>, ResponseMetadata), drive_proof_verifier::Error>
+    ) -> Result<(Option<O>, ResponseMetadata), Error>
     where
         O::Request: Mockable,
     {
@@ -244,10 +244,7 @@ impl Sdk {
     }
 
     /// Verify response metadata against the current state of the SDK.
-    fn verify_response_metadata(
-        &self,
-        metadata: &ResponseMetadata,
-    ) -> Result<(), drive_proof_verifier::Error> {
+    fn verify_response_metadata(&self, metadata: &ResponseMetadata) -> Result<(), Error> {
         if let Some(height_tolerance) = self.metadata_height_tolerance {
             verify_metadata_height(
                 metadata,
@@ -275,7 +272,7 @@ impl Sdk {
         &self,
         request: O::Request,
         response: O::Response,
-    ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
+    ) -> Result<(Option<O>, ResponseMetadata, Proof), Error>
     where
         O::Request: Mockable,
     {
@@ -581,7 +578,7 @@ fn verify_metadata_time(
     metadata: &ResponseMetadata,
     now_ms: u64,
     tolerance_ms: u64,
-) -> Result<(), drive_proof_verifier::Error> {
+) -> Result<(), Error> {
     let metadata_time = metadata.time_ms;
 
     // metadata_time - tolerance_ms <= now_ms <= metadata_time + tolerance_ms
@@ -592,7 +589,7 @@ fn verify_metadata_time(
             tolerance_ms,
             "received response with stale time; you should retry with another server"
         );
-        return Err(drive_proof_verifier::error::StaleNodeError::Time {
+        return Err(StaleNodeError::Time {
             expected_timestamp_ms: now_ms,
             received_timestamp_ms: metadata_time,
             tolerance_ms,
@@ -615,7 +612,7 @@ fn verify_metadata_height(
     metadata: &ResponseMetadata,
     tolerance: u64,
     last_seen_height: Arc<atomic::AtomicU64>,
-) -> Result<(), drive_proof_verifier::Error> {
+) -> Result<(), Error> {
     let mut expected_height = last_seen_height.load(Ordering::Relaxed);
     let received_height = metadata.height;
 
@@ -638,7 +635,7 @@ fn verify_metadata_height(
             tolerance,
             "received message with stale height; you should retry with another server"
         );
-        return Err(drive_proof_verifier::error::StaleNodeError::Height {
+        return Err(StaleNodeError::Height {
             expected_height,
             received_height,
             tolerance_blocks: tolerance,
