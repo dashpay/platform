@@ -1,4 +1,5 @@
 import prettyMs from 'pretty-ms';
+import { PortStateEnum } from '../enums/portState.js';
 import DockerComposeError from '../../docker/errors/DockerComposeError.js';
 import providers from '../providers.js';
 import { DockerStatusEnum } from '../enums/dockerStatus.js';
@@ -90,8 +91,10 @@ export default function getPlatformScopeFactory(
     // Collecting platform data fails if Tenderdash is waiting for core to sync
     if (info.serviceStatus === ServiceStatusEnum.up) {
       const portStatusResult = await Promise.allSettled([
-        providers.mnowatch.checkPortStatus(config.get('platform.gateway.listeners.dapiAndDrive.port'), config.get('externalIp')),
-        providers.mnowatch.checkPortStatus(config.get('platform.drive.tenderdash.p2p.port'), config.get('externalIp')),
+        providers.mnowatch.checkPortStatus(config.get('platform.gateway.listeners.dapiAndDrive.port'), config.get('externalIp'))
+          .catch(() => PortStateEnum.ERROR),
+        providers.mnowatch.checkPortStatus(config.get('platform.drive.tenderdash.p2p.port'), config.get('externalIp'))
+          .catch(() => PortStateEnum.ERROR),
       ]);
       const [httpPortState, p2pPortState] = portStatusResult.map((result) => (result.status === 'fulfilled' ? result.value : null));
 
