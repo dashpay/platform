@@ -36,7 +36,8 @@ use std::fmt::Debug;
 use std::num::NonZeroUsize;
 #[cfg(feature = "mocks")]
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::sync::{atomic, Arc};
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
@@ -49,6 +50,9 @@ pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// The default identity nonce stale time in seconds
 pub const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200; //20 mins
+
+/// How many blocks difference is allowed between the last proof height and the current proof height.
+const PROOF_HEIGHT_TOLERANCE: u64 = 1;
 
 /// a type to represent staleness in seconds
 pub type StalenessInSeconds = u64;
@@ -100,6 +104,11 @@ pub struct Sdk {
     /// Note that setting this to None can panic.
     context_provider: ArcSwapOption<Box<dyn ContextProvider>>,
 
+    /// Last proof height; used to determine if the proof is stale.
+    ///
+    /// This is clone-able and can be shared between threads.
+    previous_proof_height: Arc<atomic::AtomicU64>,
+
     /// Cancellation token; once cancelled, all pending requests should be aborted.
     pub(crate) cancel_token: CancellationToken,
 
@@ -115,6 +124,7 @@ impl Clone for Sdk {
             internal_cache: Arc::clone(&self.internal_cache),
             context_provider: ArcSwapOption::new(self.context_provider.load_full()),
             cancel_token: self.cancel_token.clone(),
+            previous_proof_height: self.previous_proof_height.clone(),
             #[cfg(feature = "mocks")]
             dump_dir: self.dump_dir.clone(),
         }
@@ -221,7 +231,7 @@ impl Sdk {
             .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
-        match self.inner {
+        let (object, mtd) = match self.inner {
             SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
                 request,
                 response,
@@ -237,9 +247,53 @@ impl Sdk {
                     .parse_proof_with_metadata(request, response)
                     .map(|(a, b, _)| (a, b))
             }
-        }
+        }?;
+
+        self.verify_metadata(&mtd)?;
+
+        Ok((object, mtd))
     }
 
+    /// Verify metadata contained in the response.
+    ///
+    /// This method is used to verify metadata contained in the response.
+    /// It also updates the last proof height.
+    fn verify_metadata(
+        &self,
+        metadata: &ResponseMetadata,
+    ) -> Result<(), drive_proof_verifier::Error> {
+        let mut prev = self.previous_proof_height.load(Ordering::Relaxed);
+        let received = metadata.height;
+
+        // Same height, no need to update.
+        if received == prev {
+            return Ok(());
+        }
+
+        // If received proof height is behind previous proof height by more than PROOF_HEIGHT_TOLERANCE, the proof is stale.
+        if received < prev - PROOF_HEIGHT_TOLERANCE {
+            return Err(drive_proof_verifier::Error::StaleProof {
+                expected_height: prev,
+                actual_height: metadata.height,
+            });
+        }
+
+        // New proof is ahead of the previous proof, so we update the previous proof height.
+        while let Err(stored) = self.previous_proof_height.compare_exchange(
+            prev,
+            received,
+            Ordering::SeqCst,
+            Ordering::Relaxed,
+        ) {
+            // The value was changed to a higher value by another thread, so we need to retry.
+            if stored >= metadata.height {
+                break;
+            }
+            prev = stored;
+        }
+
+        Ok(())
+    }
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
     ///
     /// This method is used to retrieve objects from proofs returned by Dash Platform.
@@ -792,9 +846,10 @@ impl SdkBuilder {
                     proofs:self.proofs,
                     context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
                     cancel_token: self.cancel_token,
+                    internal_cache: Default::default(),
+                    previous_proof_height: Arc::new(atomic::AtomicU64::new(0)),
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
-                    internal_cache: Default::default(),
                 };
                 // if context provider is not set correctly (is None), it means we need to fallback to core wallet
                 if  sdk.context_provider.load().is_none() {
@@ -850,13 +905,13 @@ impl SdkBuilder {
                         mock:mock_sdk.clone(),
                         dapi,
                         version:self.version,
-
                     },
                     dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     internal_cache: Default::default(),
                     context_provider:ArcSwapAny::new( Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
+                    previous_proof_height: Arc::new(atomic::AtomicU64::new(0)),
                 };
                 let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and connot be reconfigured");
                 guard.set_sdk(sdk.clone());

@@ -82,6 +82,13 @@ pub enum Error {
     /// Context provider error
     #[error("context provider error: {0}")]
     ContextProviderError(#[from] ContextProviderError),
+
+    /// Proof is stale; try another server
+    #[error("proof is stale; try another server")]
+    StaleProof {
+        expected_height: u64,
+        actual_height: u64,
+    },
 }
 
 /// Errors returned by the context provider
