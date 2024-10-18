@@ -59,6 +59,10 @@ enum Commands {
     /// by creating `.fsck` file in database directory (`DB_PATH`).
     #[command()]
     Verify,
+
+    /// Print current software version
+    #[command()]
+    Version,
 }
 
 /// Server that accepts connections from Tenderdash, and
@@ -148,6 +152,7 @@ impl Cli {
             Commands::Config => dump_config(&config)?,
             Commands::Status => runtime.block_on(check_status(&config))?,
             Commands::Verify => verify_grovedb(&config.db_path, true)?,
+            Commands::Version => print_version(),
         };
 
         Ok(())
@@ -220,16 +225,11 @@ fn main() -> Result<(), ExitCode> {
 
     runtime.spawn(handle_signals(cancel.clone(), loggers));
 
-    let result = match cli.run(&runtime, config, cancel) {
-        Ok(()) => {
-            tracing::debug!("shutdown complete");
-            Ok(())
-        }
-        Err(e) => {
-            tracing::error!(error = e, "drive-abci failed: {e}");
-            Err(ExitCode::FAILURE)
-        }
-    };
+    let result = cli.run(&runtime, config, cancel).map_err(|e| {
+        tracing::error!(error = e, "drive-abci failed: {e}");
+
+        ExitCode::FAILURE
+    });
 
     drop(runtime_guard);
     runtime.shutdown_timeout(Duration::from_millis(SHUTDOWN_TIMEOUT_MILIS));
@@ -385,6 +385,11 @@ fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
             Err(e)
         }
     }
+}
+
+/// Print current software version.
+fn print_version() {
+    println!("{}", env!("CARGO_PKG_VERSION"));
 }
 
 fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
