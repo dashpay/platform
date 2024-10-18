@@ -145,6 +145,11 @@ async fn test_data_contract_history_read() {
     let result = DataContractHistory::fetch(&sdk, LimitQuery::from((id, 10))).await;
 
     assert!(matches!(result, Ok(Some(_))), "result: {:?}", result);
-    let (_, contract) = result.unwrap().unwrap().pop_first().unwrap();
+    let (_, contract) = result
+        .expect("request should succeed")
+        .expect("data contract should exist")
+        .into_iter()
+        .next()
+        .expect("data contract");
     assert_eq!(contract.id(), id);
 }

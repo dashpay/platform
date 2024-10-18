@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use super::{common::setup_logs, config::Config};
 use dapi_grpc::platform::{
     v0::{get_identity_request::GetIdentityRequestV0, GetIdentityRequest},
@@ -15,6 +13,7 @@ use dash_sdk::{
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+use drive_proof_verifier::types::ExtendedEpochInfos;
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 
 /// Get current epoch index from DAPI response metadata
@@ -35,7 +34,7 @@ async fn get_current_epoch(sdk: &Sdk, cfg: &Config) -> EpochIndex {
 }
 /// Check some assertions on returned epochs list
 fn assert_epochs(
-    epochs: BTreeMap<u16, Option<ExtendedEpochInfo>>,
+    epochs: ExtendedEpochInfos,
     starting_epoch: EpochIndex,
     current_epoch: EpochIndex,
     limit: u16,
@@ -89,10 +88,9 @@ async fn test_epoch_list() {
     let current_epoch = get_current_epoch(&sdk, &cfg).await;
 
     // When we fetch epochs from the server, starting with `starting_epoch`
-    let epochs: BTreeMap<u16, Option<ExtendedEpochInfo>> =
-        ExtendedEpochInfo::fetch_many(&sdk, starting_epoch)
-            .await
-            .expect("list epochs");
+    let epochs: ExtendedEpochInfos = ExtendedEpochInfo::fetch_many(&sdk, starting_epoch)
+        .await
+        .expect("list epochs");
 
     assert_epochs(
         epochs,
