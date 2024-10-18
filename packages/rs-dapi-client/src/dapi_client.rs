@@ -42,9 +42,9 @@ impl<TE: CanRetry + Mockable> CanRetry for DapiClientError<TE> {
     fn can_retry(&self) -> bool {
         use DapiClientError::*;
         match self {
-            NoAvailableAddresses => true,
+            NoAvailableAddresses => false,
             Transport(transport_error, _) => transport_error.can_retry(),
-            AddressList(_) => true,
+            AddressList(_) => false,
             #[cfg(feature = "mocks")]
             Mock(_) => false,
         }
@@ -264,7 +264,7 @@ impl DapiRequestExecutor for DapiClient {
                     duration.as_secs_f32()
                 )
             })
-            .when(|e| !e.can_retry())
+            .when(|e| e.can_retry())
             .instrument(tracing::info_span!("request routine"))
             .await;
 
