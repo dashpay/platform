@@ -279,7 +279,8 @@ impl Sdk {
             )?;
         };
         if let Some(time_tolerance) = self.proof_time_tolerance_ms {
-            verify_proof_time(metadata, time_tolerance)?;
+            let now = chrono::Utc::now().timestamp_millis() as u64;
+            verify_proof_time(metadata, now, time_tolerance)?;
         };
 
         Ok(())
@@ -591,34 +592,39 @@ impl Sdk {
 
 /// If current proof time differs from local time by more than `tolerance`, the proof is considered stale.
 /// This is used to verify the freshness of the proof.
+///
+/// ## Parameters
+///
+/// - `metadata`: Metadata of the proof
+/// - `now_ms`: Current local time in milliseconds
+/// - `tolerance_ms`: Tolerance in milliseconds
 fn verify_proof_time(
     metadata: &ResponseMetadata,
-    tolerance: u64,
+    now_ms: u64,
+    tolerance_ms: u64,
 ) -> Result<(), drive_proof_verifier::Error> {
-    let now = chrono::Utc::now().timestamp_millis() as u64;
-
     let proof_time = metadata.time_ms;
 
     // proof_time - tolerance <= now <= proof_time + tolerance
-    if now.abs_diff(proof_time) > tolerance {
+    if now_ms.abs_diff(proof_time) > tolerance_ms {
         tracing::warn!(
-            expected_time = now,
+            expected_time = now_ms,
             actual_time = proof_time,
-            tolerance,
+            tolerance_ms,
             "received proof with stale time; you should retry with another server"
         );
         return Err(drive_proof_verifier::error::StaleProofError::Time {
-            expected_ms: now,
+            expected_ms: now_ms,
             actual_ms: proof_time,
-            tolerance_ms: tolerance,
+            tolerance_ms,
         }
         .into());
     }
 
     tracing::trace!(
-        expected_time = now,
+        expected_time = now_ms,
         actual_time = proof_time,
-        tolerance,
+        tolerance_ms,
         "received proof with valid time"
     );
     Ok(())
@@ -1090,3 +1096,130 @@ pub fn prettify_proof(proof: &Proof) -> String {
     )
 }
 
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use dapi_grpc::platform::v0::ResponseMetadata;
+    use test_case::test_matrix;
+
+    use crate::SdkBuilder;
+
+    #[test_matrix(97..102, 100, 2, false; "valid height")]
+    #[test_case(103, 100, 2, true; "invalid height")]
+    fn test_verify_proof_height(expected: u64, received: u64, tolerance: u64, expect_err: bool) {
+        let metadata = ResponseMetadata {
+            height: received,
+            ..Default::default()
+        };
+
+        let previous_proof_height =
+            std::sync::Arc::new(std::sync::atomic::AtomicU64::new(expected));
+
+        let result =
+            super::verify_proof_height(&metadata, tolerance, Arc::clone(&previous_proof_height));
+
+        assert_eq!(result.is_err(), expect_err);
+        if result.is_ok() {
+            assert_eq!(
+                previous_proof_height.load(std::sync::atomic::Ordering::Relaxed),
+                received,
+                "previous proof height should be updated"
+            );
+        }
+    }
+
+    #[test]
+    fn cloned_sdk_verify_proof_height() {
+        let sdk1 = SdkBuilder::new_mock()
+            .build()
+            .expect("mock Sdk should be created");
+
+        // First message verified, height 1.
+        let metadata = ResponseMetadata {
+            height: 1,
+            ..Default::default()
+        };
+
+        sdk1.verify_proof_metadata(&metadata)
+            .expect("proof should be valid");
+
+        assert_eq!(
+            sdk1.previous_proof_height
+                .load(std::sync::atomic::Ordering::Relaxed),
+            metadata.height,
+            "initial height"
+        );
+
+        // now, we clone sdk and do two requests.
+        let sdk2 = sdk1.clone();
+        let sdk3 = sdk1.clone();
+
+        // Second message verified, height 2.
+        let metadata = ResponseMetadata {
+            height: 2,
+            ..Default::default()
+        };
+        sdk2.verify_proof_metadata(&metadata)
+            .expect("proof should be valid");
+
+        assert_eq!(
+            sdk1.previous_proof_height
+                .load(std::sync::atomic::Ordering::Relaxed),
+            metadata.height,
+            "first sdk should see height from second sdk"
+        );
+        assert_eq!(
+            sdk3.previous_proof_height
+                .load(std::sync::atomic::Ordering::Relaxed),
+            metadata.height,
+            "third sdk should see height from second sdk"
+        );
+
+        // Third message verified, height 3.
+        let metadata = ResponseMetadata {
+            height: 3,
+            ..Default::default()
+        };
+        sdk3.verify_proof_metadata(&metadata)
+            .expect("proof should be valid");
+
+        assert_eq!(
+            sdk1.previous_proof_height
+                .load(std::sync::atomic::Ordering::Relaxed),
+            metadata.height,
+            "first sdk should see height from third sdk"
+        );
+
+        assert_eq!(
+            sdk2.previous_proof_height
+                .load(std::sync::atomic::Ordering::Relaxed),
+            metadata.height,
+            "second sdk should see height from third sdk"
+        );
+
+        // Now, using sdk1 for height 1 again should fail, as we are already at 3, with default tolerance 1.
+        let metadata = ResponseMetadata {
+            height: 1,
+            ..Default::default()
+        };
+
+        sdk1.verify_proof_metadata(&metadata)
+            .expect_err("proof should be invalid");
+    }
+
+    #[test_matrix([90,91,100,109,110], 100, 10, false; "valid time")]
+    #[test_matrix([0,89,111], 100, 10, true; "invalid time")]
+    #[test_matrix([0,100], [0,100], 100, false; "zero time")]
+    #[test_matrix([99,101], 100, 0, true; "zero tolerance")]
+    fn test_verify_proof_time(received: u64, now: u64, tolerance: u64, expect_err: bool) {
+        let metadata = ResponseMetadata {
+            time_ms: received,
+            ..Default::default()
+        };
+
+        let result = super::verify_proof_time(&metadata, now, tolerance);
+
+        assert_eq!(result.is_err(), expect_err);
+    }
+}
