@@ -1502,7 +1502,6 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
- "ureq",
  "url",
 ]
 
