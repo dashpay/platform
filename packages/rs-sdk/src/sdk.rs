@@ -240,29 +240,10 @@ impl Sdk {
     where
         O::Request: Mockable,
     {
-        let provider = self
-            .context_provider()
-            .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
+        let (object, mtd, _proof) = self
+            .parse_proof_with_metadata_and_proof(request, response)
+            .await?;
 
-        let (object, mtd) = match self.inner {
-            SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
-                request,
-                response,
-                self.network,
-                self.version(),
-                &provider,
-            )
-            .map(|(a, b, _)| (a, b)),
-            #[cfg(feature = "mocks")]
-            SdkInstance::Mock { ref mock, .. } => {
-                let guard = mock.lock().await;
-                guard
-                    .parse_proof_with_metadata(request, response)
-                    .map(|(a, b, _)| (a, b))
-            }
-        }?;
-
-        self.verify_proof_metadata(&mtd)?;
         Ok((object, mtd))
     }
 
@@ -306,7 +287,7 @@ impl Sdk {
             .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
-        match self.inner {
+        let (object, mtd, proof) = match self.inner {
             SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
                 request,
                 response,
@@ -319,7 +300,10 @@ impl Sdk {
                 let guard = mock.lock().await;
                 guard.parse_proof_with_metadata(request, response)
             }
-        }
+        }?;
+
+        self.verify_proof_metadata(&mtd)?;
+        Ok((object, mtd, proof))
     }
 
     /// Return [ContextProvider] used by the SDK.
