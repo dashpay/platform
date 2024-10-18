@@ -80,13 +80,21 @@ impl From<PlatformVersionError> for Error {
         Self::Protocol(value.into())
     }
 }
+
 impl CanRetry for Error {
-    /// Returns true if the operation can be retried, false means it's unspecified
-    /// False means
-    fn can_retry(&self) -> bool {
-        matches!(
+    fn can_retry(&self) -> Option<bool> {
+        let retry = matches!(
             self,
-            Error::CoreLockedHeightNotYetAvailable(_, _) | Error::QuorumNotFound { .. }
-        )
+            Error::Proof(drive_proof_verifier::Error::StaleProof { .. })
+                | Error::DapiClientError(_)
+                | Error::CoreClientError(_)
+                | Error::TimeoutReached(_, _)
+        );
+
+        if retry {
+            Some(true)
+        } else {
+            None
+        }
     }
 }
