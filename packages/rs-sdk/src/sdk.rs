@@ -101,24 +101,20 @@ pub struct Sdk {
     /// Note that setting this to None can panic.
     context_provider: ArcSwapOption<Box<dyn ContextProvider>>,
 
-    /// Last proof height; used to determine if the proof is stale.
+    /// Last seen height; used to determine if the remote node is stale.
     ///
     /// This is clone-able and can be shared between threads.
-    previous_proof_height: Arc<atomic::AtomicU64>,
+    metadata_last_seen_height: Arc<atomic::AtomicU64>,
 
-    /// How many blocks difference is allowed between the last proof height and the current proof height.
-    /// If current proof height is behind previous proof height by more than this value, the proof is stale.
-    /// If None, proof height is not checked.
+    /// How many blocks difference is allowed between the last height and the current height received in metadata.
     ///
-    /// This is set to `1` by default.
-    proof_height_tolerance: Option<u64>,
+    /// See [SdkBuilder::with_height_tolerance] for more information.
+    metadata_height_tolerance: Option<u64>,
 
-    /// How many milliseconds difference is allowed between the proof time and current local time.
-    /// If current proof time differs from local time by more than this value, the proof is stale.
-    /// If None, proof time is not checked.
+    /// How many milliseconds difference is allowed between the time received in response and current local time.
     ///
-    /// This is set to `None` by fefault.
-    proof_time_tolerance_ms: Option<u64>,
+    /// See [SdkBuilder::with_time_tolerance] for more information.
+    metadata_time_tolerance_ms: Option<u64>,
 
     /// Cancellation token; once cancelled, all pending requests should be aborted.
     pub(crate) cancel_token: CancellationToken,
@@ -135,9 +131,9 @@ impl Clone for Sdk {
             internal_cache: Arc::clone(&self.internal_cache),
             context_provider: ArcSwapOption::new(self.context_provider.load_full()),
             cancel_token: self.cancel_token.clone(),
-            previous_proof_height: Arc::clone(&self.previous_proof_height),
-            proof_height_tolerance: self.proof_height_tolerance,
-            proof_time_tolerance_ms: self.proof_time_tolerance_ms,
+            metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
+            metadata_height_tolerance: self.metadata_height_tolerance,
+            metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
             #[cfg(feature = "mocks")]
             dump_dir: self.dump_dir.clone(),
         }
@@ -240,28 +236,28 @@ impl Sdk {
     where
         O::Request: Mockable,
     {
-        let (object, mtd, _proof) = self
+        let (object, metadata, _proof) = self
             .parse_proof_with_metadata_and_proof(request, response)
             .await?;
 
-        Ok((object, mtd))
+        Ok((object, metadata))
     }
 
-    /// Verify proof metadata against the current state of the SDK.
-    fn verify_proof_metadata(
+    /// Verify response metadata against the current state of the SDK.
+    fn verify_response_metadata(
         &self,
         metadata: &ResponseMetadata,
     ) -> Result<(), drive_proof_verifier::Error> {
-        if let Some(height_tolerance) = self.proof_height_tolerance {
-            verify_proof_height(
+        if let Some(height_tolerance) = self.metadata_height_tolerance {
+            verify_metadata_height(
                 metadata,
                 height_tolerance,
-                Arc::clone(&(self.previous_proof_height)),
+                Arc::clone(&(self.metadata_last_seen_height)),
             )?;
         };
-        if let Some(time_tolerance) = self.proof_time_tolerance_ms {
+        if let Some(time_tolerance) = self.metadata_time_tolerance_ms {
             let now = chrono::Utc::now().timestamp_millis() as u64;
-            verify_proof_time(metadata, now, time_tolerance)?;
+            verify_metadata_time(metadata, now, time_tolerance)?;
         };
 
         Ok(())
@@ -287,7 +283,7 @@ impl Sdk {
             .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
 
-        let (object, mtd, proof) = match self.inner {
+        let (object, metadata, proof) = match self.inner {
             SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
                 request,
                 response,
@@ -302,8 +298,8 @@ impl Sdk {
             }
         }?;
 
-        self.verify_proof_metadata(&mtd)?;
-        Ok((object, mtd, proof))
+        self.verify_response_metadata(&metadata)?;
+        Ok((object, metadata, proof))
     }
 
     /// Return [ContextProvider] used by the SDK.
@@ -574,32 +570,31 @@ impl Sdk {
     }
 }
 
-/// If current proof time differs from local time by more than `tolerance`, the proof is considered stale.
-/// This is used to verify the freshness of the proof.
+/// If received metadata time differs from local time by more than `tolerance`, the remote node is considered stale.
 ///
 /// ## Parameters
 ///
-/// - `metadata`: Metadata of the proof
+/// - `metadata`: Metadata of the received response
 /// - `now_ms`: Current local time in milliseconds
 /// - `tolerance_ms`: Tolerance in milliseconds
-fn verify_proof_time(
+fn verify_metadata_time(
     metadata: &ResponseMetadata,
     now_ms: u64,
     tolerance_ms: u64,
 ) -> Result<(), drive_proof_verifier::Error> {
-    let proof_time = metadata.time_ms;
+    let metadata_time = metadata.time_ms;
 
-    // proof_time - tolerance <= now <= proof_time + tolerance
-    if now_ms.abs_diff(proof_time) > tolerance_ms {
+    // metadata_time - tolerance_ms <= now_ms <= metadata_time + tolerance_ms
+    if now_ms.abs_diff(metadata_time) > tolerance_ms {
         tracing::warn!(
             expected_time = now_ms,
-            received_time = proof_time,
+            received_time = metadata_time,
             tolerance_ms,
-            "received proof with stale time; you should retry with another server"
+            "received response with stale time; you should retry with another server"
         );
-        return Err(drive_proof_verifier::error::StaleProofError::Time {
+        return Err(drive_proof_verifier::error::StaleNodeError::Time {
             expected_timestamp_ms: now_ms,
-            received_timestamp_ms: proof_time,
+            received_timestamp_ms: metadata_time,
             tolerance_ms,
         }
         .into());
@@ -607,70 +602,68 @@ fn verify_proof_time(
 
     tracing::trace!(
         expected_time = now_ms,
-        received_time = proof_time,
+        received_time = metadata_time,
         tolerance_ms,
-        "received proof with valid time"
+        "received response with valid time"
     );
     Ok(())
 }
 
-/// If current proof height is behind previous proof height by more than `tolerance`, the proof is considered stale.
-/// This is used to verify the freshness of the proof.
-fn verify_proof_height(
+/// If current metadata height is behind previously seen height by more than `tolerance`, the remote node
+///  is considered stale.
+fn verify_metadata_height(
     metadata: &ResponseMetadata,
     tolerance: u64,
-    previous_proof_height: Arc<atomic::AtomicU64>,
+    last_seen_height: Arc<atomic::AtomicU64>,
 ) -> Result<(), drive_proof_verifier::Error> {
-    let mut prev = previous_proof_height.load(Ordering::Relaxed);
-    let received = metadata.height;
+    let mut expected_height = last_seen_height.load(Ordering::Relaxed);
+    let received_height = metadata.height;
 
     // Same height, no need to update.
-    if received == prev {
+    if received_height == expected_height {
         tracing::trace!(
-            expected_height = prev,
-            received_height = received,
+            expected_height,
+            received_height,
             tolerance,
-            "received proof with the same height as previous"
+            "received message has the same height as previously seen"
         );
         return Ok(());
     }
 
-    // If received proof height is behind previous proof height by more than PROOF_HEIGHT_TOLERANCE, the proof is stale.
-    //
-    // If prev is less than tolerance, then Sdk just started, so we just trust the proof, assuming we connected to a
-    // trusted node.
-    // FIXME: in future, we need to securely trust some node (like a seed) from which we will fetch list of nodes and
-    // initial height.
-    if prev > tolerance && received < prev - tolerance {
+    // If expected_height <= tolerance, then Sdk just started, so we just assume what we got is correct.
+    if expected_height > tolerance && received_height < expected_height - tolerance {
         tracing::warn!(
-            expected_height = prev,
-            received_height = received,
+            expected_height,
+            received_height,
             tolerance,
-            "received proof with stale height; you should retry with another server"
+            "received message with stale height; you should retry with another server"
         );
-        return Err(drive_proof_verifier::error::StaleProofError::Height {
-            expected_height: prev,
-            received_height: received,
+        return Err(drive_proof_verifier::error::StaleNodeError::Height {
+            expected_height,
+            received_height,
             tolerance_blocks: tolerance,
         }
         .into());
     }
 
-    // New proof is ahead of the previous proof, so we update the previous proof height.
+    // New height is ahead of the last seen height, so we update the last seen height.
     tracing::trace!(
-        expected_height = prev,
-        received_height = received,
+        expected_height = expected_height,
+        received_height = received_height,
         tolerance,
-        "received proof with new height"
+        "received message with new height"
     );
-    while let Err(stored) =
-        previous_proof_height.compare_exchange(prev, received, Ordering::SeqCst, Ordering::Relaxed)
-    {
+    while let Err(stored_height) = last_seen_height.compare_exchange(
+        expected_height,
+        received_height,
+        Ordering::SeqCst,
+        Ordering::Relaxed,
+    ) {
         // The value was changed to a higher value by another thread, so we need to retry.
-        if stored >= metadata.height {
+        if stored_height >= metadata.height {
             break;
         }
-        prev = stored;
+        expected_height = stored_height;
     }
 
     Ok(())
@@ -737,19 +730,16 @@ pub struct SdkBuilder {
     /// Context provider used by the SDK.
     context_provider: Option<Box<dyn ContextProvider>>,
 
-    /// How many blocks difference is allowed between the last proof height and the current proof height.
-    /// If current proof height is behind previous proof height by more than this value, the proof is stale.
-    /// If None, proof height is not checked.
+    /// How many blocks difference is allowed between the last seen metadata height and the height received in response
+    /// metadata.
     ///
-    /// This is set to `1` by default.
-    proof_height_tolerance: Option<u64>,
+    /// See [SdkBuilder::with_height_tolerance] for more information.
+    metadata_height_tolerance: Option<u64>,
 
-    /// How many milliseconds difference is allowed between the proof time and current local time.
-    /// If current proof time differs from local time by more than this value, the proof is stale.
-    /// If None, proof time is not checked.
+    /// How many milliseconds difference is allowed between the time received in response metadata and current local time.
     ///
-    /// This is set to `None` by fefault.
-    proof_time_tolerance_ms: Option<u64>,
+    /// See [SdkBuilder::with_time_tolerance] for more information.
+    metadata_time_tolerance_ms: Option<u64>,
 
     /// directory where dump files will be stored
     #[cfg(feature = "mocks")]
@@ -772,8 +762,8 @@ impl Default for SdkBuilder {
             core_user: "".to_string(),
 
             proofs: true,
-            proof_height_tolerance: Some(1),
-            proof_time_tolerance_ms: None,
+            metadata_height_tolerance: Some(1),
+            metadata_time_tolerance_ms: None,
 
             #[cfg(feature = "mocks")]
             data_contract_cache_size: NonZeroUsize::new(DEFAULT_CONTRACT_CACHE_SIZE)
@@ -898,20 +888,26 @@ impl SdkBuilder {
         self
     }
 
-    /// Change number of blocks difference allowed between the last proof height and the current proof height.
+    /// Change number of blocks difference allowed between the last height and the height received in current response.
     ///
-    /// If current proof height is behind previous proof height by more than this value, the proof is stale.
-    /// If None, proof height is not checked.
+    /// If height received in response metadata is behind previously seen height by more than this value, the node
+    /// is considered stale, and the request will fail.
+    ///
+    /// If None, the height is not checked.
+    ///
+    /// Note that this feature doesn't guarantee that you are getting latest data, but it significantly decreases
+    /// probability of getting old data.
     ///
     /// This is set to `1` by default.
-    pub fn with_proof_height_tolerance(mut self, tolerance: Option<u64>) -> Self {
-        self.proof_height_tolerance = tolerance;
+    pub fn with_height_tolerance(mut self, tolerance: Option<u64>) -> Self {
+        self.metadata_height_tolerance = tolerance;
         self
     }
 
-    /// How many milliseconds difference is allowed between the proof time and current local time.
-    /// If current proof time differs from local time by more than this value, the proof is stale.
-    /// If None, proof time is not checked.
+    /// How many milliseconds difference is allowed between the time received in response and current local time.
+    /// If the received time differs from local time by more than this value, the remote node is stale.
+    ///
+    /// If None, the time is not checked.
     ///
     /// This is set to `None` by default.
     ///
@@ -922,8 +918,8 @@ impl SdkBuilder {
     /// For example, if the network is configured to mine a block every maximum 3 minutes, setting this value
     /// to a bit more than 6 minutes (to account for misbehaving proposers, network delays and local time
     /// synchronization issues) should be safe.
-    pub fn with_proof_time_tolerance(mut self, tolerance_ms: Option<u64>) -> Self {
-        self.proof_time_tolerance_ms = tolerance_ms;
+    pub fn with_time_tolerance(mut self, tolerance_ms: Option<u64>) -> Self {
+        self.metadata_time_tolerance_ms = tolerance_ms;
         self
     }
 
@@ -970,9 +966,10 @@ impl SdkBuilder {
                     context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
                     cancel_token: self.cancel_token,
                     internal_cache: Default::default(),
-                    previous_proof_height: Arc::new(atomic::AtomicU64::new(0)),
-                    proof_height_tolerance: self.proof_height_tolerance,
-                    proof_time_tolerance_ms: self.proof_time_tolerance_ms,
+                    // Note: in future, we need to securely initialize initial height during Sdk bootstrap or first request.
+                    metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
+                    metadata_height_tolerance: self.metadata_height_tolerance,
+                    metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                 };
@@ -1036,9 +1033,9 @@ impl SdkBuilder {
                     internal_cache: Default::default(),
                     context_provider:ArcSwapAny::new( Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
-                    previous_proof_height: Arc::new(atomic::AtomicU64::new(0)),
-                    proof_height_tolerance: self.proof_height_tolerance,
-                    proof_time_tolerance_ms: self.proof_time_tolerance_ms,
+                    metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
+                    metadata_height_tolerance: self.metadata_height_tolerance,
+                    metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
                 };
                 let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and connot be reconfigured");
                 guard.set_sdk(sdk.clone());
@@ -1096,30 +1093,35 @@ mod test {
 
     #[test_matrix(97..102, 100, 2, false; "valid height")]
     #[test_case(103, 100, 2, true; "invalid height")]
-    fn test_verify_proof_height(expected: u64, received: u64, tolerance: u64, expect_err: bool) {
+    fn test_verify_metadata_height(
+        expected_height: u64,
+        received_height: u64,
+        tolerance: u64,
+        expect_err: bool,
+    ) {
         let metadata = ResponseMetadata {
-            height: received,
+            height: received_height,
             ..Default::default()
         };
 
-        let previous_proof_height =
-            std::sync::Arc::new(std::sync::atomic::AtomicU64::new(expected));
+        let last_seen_height =
+            std::sync::Arc::new(std::sync::atomic::AtomicU64::new(expected_height));
 
         let result =
-            super::verify_proof_height(&metadata, tolerance, Arc::clone(&previous_proof_height));
+            super::verify_metadata_height(&metadata, tolerance, Arc::clone(&last_seen_height));
 
         assert_eq!(result.is_err(), expect_err);
         if result.is_ok() {
             assert_eq!(
-                previous_proof_height.load(std::sync::atomic::Ordering::Relaxed),
-                received,
-                "previous proof height should be updated"
+                last_seen_height.load(std::sync::atomic::Ordering::Relaxed),
+                received_height,
+                "previous height should be updated"
             );
         }
     }
 
     #[test]
-    fn cloned_sdk_verify_proof_height() {
+    fn cloned_sdk_verify_metadata_height() {
         let sdk1 = SdkBuilder::new_mock()
             .build()
             .expect("mock Sdk should be created");
@@ -1130,11 +1132,11 @@ mod test {
             ..Default::default()
         };
 
-        sdk1.verify_proof_metadata(&metadata)
-            .expect("proof should be valid");
+        sdk1.verify_response_metadata(&metadata)
+            .expect("metadata should be valid");
 
         assert_eq!(
-            sdk1.previous_proof_height
+            sdk1.metadata_last_seen_height
                 .load(std::sync::atomic::Ordering::Relaxed),
             metadata.height,
             "initial height"
@@ -1149,17 +1151,17 @@ mod test {
             height: 2,
             ..Default::default()
         };
-        sdk2.verify_proof_metadata(&metadata)
-            .expect("proof should be valid");
+        sdk2.verify_response_metadata(&metadata)
+            .expect("metadata should be valid");
 
         assert_eq!(
-            sdk1.previous_proof_height
+            sdk1.metadata_last_seen_height
                 .load(std::sync::atomic::Ordering::Relaxed),
             metadata.height,
             "first sdk should see height from second sdk"
         );
         assert_eq!(
-            sdk3.previous_proof_height
+            sdk3.metadata_last_seen_height
                 .load(std::sync::atomic::Ordering::Relaxed),
             metadata.height,
             "third sdk should see height from second sdk"
@@ -1170,18 +1172,18 @@ mod test {
             height: 3,
             ..Default::default()
         };
-        sdk3.verify_proof_metadata(&metadata)
-            .expect("proof should be valid");
+        sdk3.verify_response_metadata(&metadata)
+            .expect("metadata should be valid");
 
         assert_eq!(
-            sdk1.previous_proof_height
+            sdk1.metadata_last_seen_height
                 .load(std::sync::atomic::Ordering::Relaxed),
             metadata.height,
             "first sdk should see height from third sdk"
         );
 
         assert_eq!(
-            sdk2.previous_proof_height
+            sdk2.metadata_last_seen_height
                 .load(std::sync::atomic::Ordering::Relaxed),
             metadata.height,
             "second sdk should see height from third sdk"
@@ -1193,21 +1195,26 @@ mod test {
             ..Default::default()
         };
 
-        sdk1.verify_proof_metadata(&metadata)
-            .expect_err("proof should be invalid");
+        sdk1.verify_response_metadata(&metadata)
+            .expect_err("metadata should be invalid");
     }
 
     #[test_matrix([90,91,100,109,110], 100, 10, false; "valid time")]
     #[test_matrix([0,89,111], 100, 10, true; "invalid time")]
     #[test_matrix([0,100], [0,100], 100, false; "zero time")]
     #[test_matrix([99,101], 100, 0, true; "zero tolerance")]
-    fn test_verify_proof_time(received: u64, now: u64, tolerance: u64, expect_err: bool) {
+    fn test_verify_metadata_time(
+        received_time: u64,
+        now_time: u64,
+        tolerance: u64,
+        expect_err: bool,
+    ) {
         let metadata = ResponseMetadata {
-            time_ms: received,
+            time_ms: received_time,
             ..Default::default()
         };
 
-        let result = super::verify_proof_time(&metadata, now, tolerance);
+        let result = super::verify_metadata_time(&metadata, now_time, tolerance);
 
         assert_eq!(result.is_err(), expect_err);
     }
