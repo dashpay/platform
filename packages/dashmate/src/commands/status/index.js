@@ -116,7 +116,7 @@ export default class StatusCommand extends ConfigBaseCommand {
         plain['Platform Status'] = colors.status(platformStatus)(platformStatus) || 'n/a';
 
         if (platform.tenderdash.serviceStatus === ServiceStatusEnum.up) {
-          plain['Platform Version'] = platform.tenderdash.version || 'n/a';
+          plain['Platform Version'] = platform.drive.version || 'n/a';
           plain['Platform Block Height'] = platform.tenderdash.latestBlockHeight || 'n/a';
           plain['Platform Peers'] = platform.tenderdash.peers || 'n/a';
           plain['Platform Network'] = platform.tenderdash.network || 'n/a';
