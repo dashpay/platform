@@ -47,6 +47,8 @@ export default class PlatformStatusCommand extends ConfigBaseCommand {
       'Drive Service Status': 'n/a',
       'Network': 'n/a',
       'Tenderdash Version': 'n/a',
+      'Protocol Version': 'n/a',
+      'Desired Protocol Version': 'n/a',
       'Block height': 'n/a',
       'Peer count': 'n/a',
       'App hash': 'n/a',
@@ -92,6 +94,8 @@ export default class PlatformStatusCommand extends ConfigBaseCommand {
       if (tenderdash.version) {
         const {
           version: tenderdashVersion,
+          protocolVersion,
+          desiredProtocolVersion,
           latestBlockHeight: platformBlockHeight,
           latestAppHash: platformLatestAppHash,
           peers: platformPeers,
@@ -100,6 +104,8 @@ export default class PlatformStatusCommand extends ConfigBaseCommand {
 
         plain['Network'] = tenderdashNetwork || 'n/a';
         plain['Tenderdash Version'] = tenderdashVersion || 'n/a';
+        plain['Protocol Version'] = protocolVersion || 'n/a';
+        plain['Desired Protocol Version'] = desiredProtocolVersion || 'n/a';
         plain['Block height'] = platformBlockHeight || 'n/a';
         plain['Peer count'] = platformPeers || 'n/a';
         plain['App hash'] = platformLatestAppHash || 'n/a';
