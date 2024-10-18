@@ -85,9 +85,33 @@ pub enum Error {
 
     /// Proof is stale; try another server
     #[error("proof is stale; try another server")]
-    StaleProof {
+    StaleProof(#[from] StaleProofError),
+}
+
+/// Received proof is stale; try another server
+#[derive(Debug, thiserror::Error)]
+pub enum StaleProofError {
+    /// Stale proof height
+    #[error("stale proof height: expected height {expected_height}, received {actual_height}, tolerance {tolerance}, try another server")]
+    StaleProofHeight {
+        /// Expected height - last block height seen by the Sdk
         expected_height: u64,
+        /// Actual height - block height received from the server in the proof
         actual_height: u64,
+        /// Tolerance - how many blocks can be behind the expected height
+        tolerance: u64,
+    },
+    /// Proof time is stale
+    #[error(
+        "received outdated proof time: expected {expected_ms} ms, received {actual_ms} ms, tolerance {tolerance_ms} ms, try another server"
+    )]
+    Time {
+        /// Expected time in milliseconds - is local time when the proof was received
+        expected_ms: u64,
+        /// Actual time in milliseconds - time received from the server in the proof
+        actual_ms: u64,
+        /// Tolerance in milliseconds
+        tolerance_ms: u64,
     },
 }
 

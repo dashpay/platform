@@ -51,9 +51,6 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// The default identity nonce stale time in seconds
 pub const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200; //20 mins
 
-/// How many blocks difference is allowed between the last proof height and the current proof height.
-const PROOF_HEIGHT_TOLERANCE: u64 = 1;
-
 /// a type to represent staleness in seconds
 pub type StalenessInSeconds = u64;
 
@@ -109,6 +106,20 @@ pub struct Sdk {
     /// This is clone-able and can be shared between threads.
     previous_proof_height: Arc<atomic::AtomicU64>,
 
+    /// How many blocks difference is allowed between the last proof height and the current proof height.
+    /// If current proof height is behind previous proof height by more than this value, the proof is stale.
+    /// If None, proof height is not checked.
+    ///
+    /// This is set to `1` by default.
+    proof_height_tolerance: Option<u64>,
+
+    /// How many milliseconds difference is allowed between the proof time and current local time.
+    /// If current proof time differs from local time by more than this value, the proof is stale.
+    /// If None, proof time is not checked.
+    ///
+    /// This is set to `None` by fefault.
+    proof_time_tolerance_ms: Option<u64>,
+
     /// Cancellation token; once cancelled, all pending requests should be aborted.
     pub(crate) cancel_token: CancellationToken,
 
@@ -125,6 +136,8 @@ impl Clone for Sdk {
             context_provider: ArcSwapOption::new(self.context_provider.load_full()),
             cancel_token: self.cancel_token.clone(),
             previous_proof_height: self.previous_proof_height.clone(),
+            proof_height_tolerance: self.proof_height_tolerance,
+            proof_time_tolerance_ms: self.proof_time_tolerance_ms,
             #[cfg(feature = "mocks")]
             dump_dir: self.dump_dir.clone(),
         }
@@ -249,51 +262,29 @@ impl Sdk {
             }
         }?;
 
-        self.verify_metadata(&mtd)?;
-
+        self.verify_proof_metadata(&mtd)?;
         Ok((object, mtd))
     }
 
-    /// Verify metadata contained in the response.
-    ///
-    /// This method is used to verify metadata contained in the response.
-    /// It also updates the last proof height.
-    fn verify_metadata(
+    /// Verify proof metadata against the current state of the SDK.
+    fn verify_proof_metadata(
         &self,
         metadata: &ResponseMetadata,
     ) -> Result<(), drive_proof_verifier::Error> {
-        let mut prev = self.previous_proof_height.load(Ordering::Relaxed);
-        let received = metadata.height;
-
-        // Same height, no need to update.
-        if received == prev {
-            return Ok(());
-        }
-
-        // If received proof height is behind previous proof height by more than PROOF_HEIGHT_TOLERANCE, the proof is stale.
-        if received < prev - PROOF_HEIGHT_TOLERANCE {
-            return Err(drive_proof_verifier::Error::StaleProof {
-                expected_height: prev,
-                actual_height: metadata.height,
-            });
-        }
-
-        // New proof is ahead of the previous proof, so we update the previous proof height.
-        while let Err(stored) = self.previous_proof_height.compare_exchange(
-            prev,
-            received,
-            Ordering::SeqCst,
-            Ordering::Relaxed,
-        ) {
-            // The value was changed to a higher value by another thread, so we need to retry.
-            if stored >= metadata.height {
-                break;
-            }
-            prev = stored;
-        }
+        if let Some(height_tolerance) = self.proof_height_tolerance {
+            verify_proof_height(
+                metadata,
+                height_tolerance,
+                Arc::clone(&(self.previous_proof_height)),
+            )?;
+        };
+        if let Some(time_tolerance) = self.proof_time_tolerance_ms {
+            verify_proof_time(metadata, time_tolerance)?;
+        };
 
         Ok(())
     }
+
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
     ///
     /// This method is used to retrieve objects from proofs returned by Dash Platform.
@@ -598,6 +589,103 @@ impl Sdk {
     }
 }
 
+/// If current proof time differs from local time by more than `tolerance`, the proof is considered stale.
+/// This is used to verify the freshness of the proof.
+fn verify_proof_time(
+    metadata: &ResponseMetadata,
+    tolerance: u64,
+) -> Result<(), drive_proof_verifier::Error> {
+    let now = chrono::Utc::now().timestamp_millis() as u64;
+
+    let proof_time = metadata.time_ms;
+
+    // proof_time - tolerance <= now <= proof_time + tolerance
+    if now.abs_diff(proof_time) > tolerance {
+        tracing::warn!(
+            expected_time = now,
+            actual_time = proof_time,
+            tolerance,
+            "received proof with stale time; you should retry with another server"
+        );
+        return Err(drive_proof_verifier::error::StaleProofError::Time {
+            expected_ms: now,
+            actual_ms: proof_time,
+            tolerance_ms: tolerance,
+        }
+        .into());
+    }
+
+    tracing::trace!(
+        expected_time = now,
+        actual_time = proof_time,
+        tolerance,
+        "received proof with valid time"
+    );
+    Ok(())
+}
+
+/// If current proof height is behind previous proof height by more than `tolerance`, the proof is considered stale.
+/// This is used to verify the freshness of the proof.
+fn verify_proof_height(
+    metadata: &ResponseMetadata,
+    tolerance: u64,
+    previous_proof_height: Arc<atomic::AtomicU64>,
+) -> Result<(), drive_proof_verifier::Error> {
+    let mut prev = previous_proof_height.load(Ordering::Relaxed);
+    let received = metadata.height;
+
+    // Same height, no need to update.
+    if received == prev {
+        tracing::trace!(
+            expected_height = prev,
+            actual_height = received,
+            tolerance,
+            "received proof with the same height as previous"
+        );
+        return Ok(());
+    }
+
+    // If received proof height is behind previous proof height by more than PROOF_HEIGHT_TOLERANCE, the proof is stale.
+    // If prev is less than tolerance, then Sdk just started, so we just trust the proof, assuming we connected to a
+    // trusted node.
+    // FIXME: in future, we need to implement t
+    if prev > tolerance && received < prev - tolerance {
+        tracing::warn!(
+            expected_height = prev,
+            actual_height = received,
+            tolerance,
+            "received proof with stale height; you should retry with another server"
+        );
+        return Err(
+            drive_proof_verifier::error::StaleProofError::StaleProofHeight {
+                expected_height: prev,
+                actual_height: received,
+                tolerance,
+            }
+            .into(),
+        );
+    }
+
+    // New proof is ahead of the previous proof, so we update the previous proof height.
+    tracing::trace!(
+        expected_height = prev,
+        actual_height = received,
+        tolerance,
+        "received proof with new height"
+    );
+    while let Err(stored) =
+        previous_proof_height.compare_exchange(prev, received, Ordering::SeqCst, Ordering::Relaxed)
+    {
+        // The value was changed to a higher value by another thread, so we need to retry.
+        if stored >= metadata.height {
+            break;
+        }
+        prev = stored;
+    }
+
+    Ok(())
+}
+
 #[async_trait::async_trait]
 impl DapiRequestExecutor for Sdk {
     async fn execute<R: TransportRequest>(
@@ -659,6 +747,20 @@ pub struct SdkBuilder {
     /// Context provider used by the SDK.
     context_provider: Option<Box<dyn ContextProvider>>,
 
+    /// How many blocks difference is allowed between the last proof height and the current proof height.
+    /// If current proof height is behind previous proof height by more than this value, the proof is stale.
+    /// If None, proof height is not checked.
+    ///
+    /// This is set to `1` by default.
+    proof_height_tolerance: Option<u64>,
+
+    /// How many milliseconds difference is allowed between the proof time and current local time.
+    /// If current proof time differs from local time by more than this value, the proof is stale.
+    /// If None, proof time is not checked.
+    ///
+    /// This is set to `None` by fefault.
+    proof_time_tolerance_ms: Option<u64>,
+
     /// directory where dump files will be stored
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
@@ -680,6 +782,8 @@ impl Default for SdkBuilder {
             core_user: "".to_string(),
 
             proofs: true,
+            proof_height_tolerance: Some(1),
+            proof_time_tolerance_ms: None,
 
             #[cfg(feature = "mocks")]
             data_contract_cache_size: NonZeroUsize::new(DEFAULT_CONTRACT_CACHE_SIZE)
@@ -804,6 +908,30 @@ impl SdkBuilder {
         self
     }
 
+    /// Change number of blocks difference allowed between the last proof height and the current proof height.
+    ///
+    /// If current proof height is behind previous proof height by more than this value, the proof is stale.
+    /// If None, proof height is not checked.
+    ///
+    /// This is set to `1` by default.
+    pub fn with_proof_height_tolerance(mut self, tolerance: Option<u64>) -> Self {
+        self.proof_height_tolerance = tolerance;
+        self
+    }
+
+    /// How many milliseconds difference is allowed between the proof time and current local time.
+    /// If current proof time differs from local time by more than this value, the proof is stale.
+    /// If None, proof time is not checked.
+    ///
+    /// Note that enabling this check can cause issues if the local time is not synchronized with the network time,
+    /// when the network is stalled or time between blocks increases significantly.
+    ///
+    /// This is set to `None` by fefault.
+    pub fn with_proof_time_tolerance(mut self, tolerance_ms: Option<u64>) -> Self {
+        self.proof_time_tolerance_ms = tolerance_ms;
+        self
+    }
+
     /// Configure directory where dumps of all requests and responses will be saved.
     /// Useful for debugging.
     ///
@@ -848,6 +976,8 @@ impl SdkBuilder {
                     cancel_token: self.cancel_token,
                     internal_cache: Default::default(),
                     previous_proof_height: Arc::new(atomic::AtomicU64::new(0)),
+                    proof_height_tolerance: self.proof_height_tolerance,
+                    proof_time_tolerance_ms: self.proof_time_tolerance_ms,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                 };
@@ -912,6 +1042,8 @@ impl SdkBuilder {
                     context_provider:ArcSwapAny::new( Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
                     previous_proof_height: Arc::new(atomic::AtomicU64::new(0)),
+                    proof_height_tolerance: self.proof_height_tolerance,
+                    proof_time_tolerance_ms: self.proof_time_tolerance_ms,
                 };
                 let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and connot be reconfigured");
                 guard.set_sdk(sdk.clone());
@@ -957,3 +1089,4 @@ pub fn prettify_proof(proof: &Proof) -> String {
         proof.quorum_type,
     )
 }
+

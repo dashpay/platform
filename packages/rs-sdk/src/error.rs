@@ -85,7 +85,7 @@ impl CanRetry for Error {
     fn can_retry(&self) -> Option<bool> {
         let retry = matches!(
             self,
-            Error::Proof(drive_proof_verifier::Error::StaleProof { .. })
+            Error::Proof(drive_proof_verifier::Error::StaleProof(..))
                 | Error::DapiClientError(_)
                 | Error::CoreClientError(_)
                 | Error::TimeoutReached(_, _)
