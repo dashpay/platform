@@ -87,13 +87,7 @@ impl From<PlatformVersionError> for Error {
 
 impl CanRetry for Error {
     fn can_retry(&self) -> bool {
-        matches!(
-            self,
-            Error::StaleNode(..)
-                | Error::DapiClientError(_)
-                | Error::CoreClientError(_)
-                | Error::TimeoutReached(_, _)
-        )
+        matches!(self, Error::StaleNode(..) | Error::TimeoutReached(_, _))
     }
 }
 
