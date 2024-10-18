@@ -191,22 +191,22 @@ export default function getPlatformScopeFactory(
           throw e;
         }
       }
+    }
 
-      try {
-        const driveVersionResult = await dockerCompose.execCommand(
-          config,
-          'drive_abci',
-          'drive-abci version',
-        );
+    try {
+      const driveVersionResult = await dockerCompose.execCommand(
+        config,
+        'drive_abci',
+        'drive-abci version',
+      );
 
-        info.version = driveVersionResult.out.trim();
-      } catch (e) {
-        // Throw an error if it's not a Drive issue
-        if (!(e instanceof DockerComposeError
-          && e.dockerComposeExecutionResult
-          && e.dockerComposeExecutionResult.exitCode !== 0)) {
-          throw e;
-        }
+      info.version = driveVersionResult.out.trim();
+    } catch (e) {
+      // Throw an error if it's not a Drive issue
+      if (!(e instanceof DockerComposeError
+        && e.dockerComposeExecutionResult
+        && e.dockerComposeExecutionResult.exitCode !== 0)) {
+        throw e;
       }
     }
 
