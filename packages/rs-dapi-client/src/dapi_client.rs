@@ -269,8 +269,13 @@ impl DapiRequestExecutor for DapiClient {
             .await;
 
         if let Err(error) = &result {
-            if !error.can_retry().unwrap_or(false) {
-                tracing::error!(?error, "request failed");
+            match error.can_retry() {
+                Some(false) | None => {
+                    tracing::error!(?error, "request failed");
+                }
+                Some(true) => {
+                    tracing::warn!(?error, "request failed, retrying");
+                }
             }
         }
 

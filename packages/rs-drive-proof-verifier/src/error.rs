@@ -84,7 +84,7 @@ pub enum Error {
     ContextProviderError(#[from] ContextProviderError),
 
     /// Proof is stale; try another server
-    #[error("proof is stale; try another server")]
+    #[error(transparent)]
     StaleProof(#[from] StaleProofError),
 }
 
@@ -92,24 +92,24 @@ pub enum Error {
 #[derive(Debug, thiserror::Error)]
 pub enum StaleProofError {
     /// Stale proof height
-    #[error("stale proof height: expected height {expected_height}, received {actual_height}, tolerance {tolerance}, try another server")]
+    #[error("stale proof height: expected height {expected_height}, received {received_height}, tolerance {tolerance_blocks}; try another server")]
     StaleProofHeight {
         /// Expected height - last block height seen by the Sdk
         expected_height: u64,
         /// Actual height - block height received from the server in the proof
-        actual_height: u64,
+        received_height: u64,
         /// Tolerance - how many blocks can be behind the expected height
-        tolerance: u64,
+        tolerance_blocks: u64,
     },
     /// Proof time is stale
     #[error(
-        "received outdated proof time: expected {expected_ms} ms, received {actual_ms} ms, tolerance {tolerance_ms} ms, try another server"
+        "stale proof time: expected {expected_timestamp_ms}ms, received {received_timestamp_ms} ms, tolerance {tolerance_ms} ms; try another server"
     )]
     Time {
         /// Expected time in milliseconds - is local time when the proof was received
-        expected_ms: u64,
-        /// Actual time in milliseconds - time received from the server in the proof
-        actual_ms: u64,
+        expected_timestamp_ms: u64,
+        /// Time received from the server in the proof, in milliseconds
+        received_timestamp_ms: u64,
         /// Tolerance in milliseconds
         tolerance_ms: u64,
     },

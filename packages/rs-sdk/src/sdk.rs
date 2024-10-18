@@ -135,7 +135,7 @@ impl Clone for Sdk {
             internal_cache: Arc::clone(&self.internal_cache),
             context_provider: ArcSwapOption::new(self.context_provider.load_full()),
             cancel_token: self.cancel_token.clone(),
-            previous_proof_height: self.previous_proof_height.clone(),
+            previous_proof_height: Arc::clone(&self.previous_proof_height),
             proof_height_tolerance: self.proof_height_tolerance,
             proof_time_tolerance_ms: self.proof_time_tolerance_ms,
             #[cfg(feature = "mocks")]
@@ -593,13 +593,13 @@ fn verify_proof_time(
     if now_ms.abs_diff(proof_time) > tolerance_ms {
         tracing::warn!(
             expected_time = now_ms,
-            actual_time = proof_time,
+            received_time = proof_time,
             tolerance_ms,
             "received proof with stale time; you should retry with another server"
         );
         return Err(drive_proof_verifier::error::StaleProofError::Time {
-            expected_ms: now_ms,
-            actual_ms: proof_time,
+            expected_timestamp_ms: now_ms,
+            received_timestamp_ms: proof_time,
             tolerance_ms,
         }
         .into());
@@ -607,7 +607,7 @@ fn verify_proof_time(
 
     tracing::trace!(
         expected_time = now_ms,
-        actual_time = proof_time,
+        received_time = proof_time,
         tolerance_ms,
         "received proof with valid time"
     );
@@ -628,7 +628,7 @@ fn verify_proof_height(
     if received == prev {
         tracing::trace!(
             expected_height = prev,
-            actual_height = received,
+            received_height = received,
             tolerance,
             "received proof with the same height as previous"
         );
@@ -636,21 +636,23 @@ fn verify_proof_height(
     }
 
     // If received proof height is behind previous proof height by more than PROOF_HEIGHT_TOLERANCE, the proof is stale.
+    //
     // If prev is less than tolerance, then Sdk just started, so we just trust the proof, assuming we connected to a
     // trusted node.
-    // FIXME: in future, we need to implement t
+    // FIXME: in future, we need to securely trust some node (like a seed) from which we will fetch list of nodes and
+    // initial height.
     if prev > tolerance && received < prev - tolerance {
         tracing::warn!(
             expected_height = prev,
-            actual_height = received,
+            received_height = received,
             tolerance,
             "received proof with stale height; you should retry with another server"
         );
         return Err(
             drive_proof_verifier::error::StaleProofError::StaleProofHeight {
                 expected_height: prev,
-                actual_height: received,
-                tolerance,
+                received_height: received,
+                tolerance_blocks: tolerance,
             }
             .into(),
         );
@@ -659,7 +661,7 @@ fn verify_proof_height(
     // New proof is ahead of the previous proof, so we update the previous proof height.
     tracing::trace!(
         expected_height = prev,
-        actual_height = received,
+        received_height = received,
         tolerance,
         "received proof with new height"
     );
@@ -913,10 +915,15 @@ impl SdkBuilder {
     /// If current proof time differs from local time by more than this value, the proof is stale.
     /// If None, proof time is not checked.
     ///
+    /// This is set to `None` by default.
+    ///
     /// Note that enabling this check can cause issues if the local time is not synchronized with the network time,
     /// when the network is stalled or time between blocks increases significantly.
     ///
-    /// This is set to `None` by fefault.
+    /// Selecting a safe value for this parameter depends on maximum time between blocks mined on the network.
+    /// For example, if the network is configured to mine a block every maximum 3 minutes, setting this value
+    /// to a bit more than 6 minutes (to account for misbehaving proposers, network delays and local time
+    /// synchronization issues) should be safe.
     pub fn with_proof_time_tolerance(mut self, tolerance_ms: Option<u64>) -> Self {
         self.proof_time_tolerance_ms = tolerance_ms;
         self
