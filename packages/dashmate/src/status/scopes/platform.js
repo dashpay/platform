@@ -159,6 +159,7 @@ export default function getPlatformScopeFactory(
     const info = {
       dockerStatus: null,
       serviceStatus: null,
+      version: null,
     };
 
     try {
@@ -189,6 +190,23 @@ export default function getPlatformScopeFactory(
         } else {
           throw e;
         }
+      }
+    }
+
+    try {
+      const driveVersionResult = await dockerCompose.execCommand(
+        config,
+        'drive_abci',
+        'drive-abci version',
+      );
+
+      info.version = driveVersionResult.out.trim();
+    } catch (e) {
+      // Throw an error if it's not a Drive issue
+      if (!(e instanceof DockerComposeError
+        && e.dockerComposeExecutionResult
+        && e.dockerComposeExecutionResult.exitCode !== 0)) {
+        throw e;
       }
     }
 

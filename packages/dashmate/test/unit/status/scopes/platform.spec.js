@@ -1,5 +1,6 @@
 import ContainerIsNotPresentError
   from '../../../../src/docker/errors/ContainerIsNotPresentError.js';
+import DockerComposeError from '../../../../src/docker/errors/DockerComposeError.js';
 import providers from '../../../../src/status/providers.js';
 import determineStatus from '../../../../src/status/determineStatus.js';
 import getConfigMock from '../../../../src/test/mock/getConfigMock.js';
@@ -73,7 +74,8 @@ describe('getPlatformScopeFactory', () => {
         },
       });
       mockDockerCompose.isServiceRunning.returns(true);
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci status').resolves({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const mockStatus = {
@@ -121,6 +123,7 @@ describe('getPlatformScopeFactory', () => {
         drive: {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.up,
+          version: '1.4.1',
         },
       };
 
@@ -147,7 +150,7 @@ describe('getPlatformScopeFactory', () => {
         },
       });
       mockDockerCompose.isServiceRunning.returns(true);
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const mockStatus = {
@@ -195,6 +198,7 @@ describe('getPlatformScopeFactory', () => {
         drive: {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.up,
+          version: '1.4.1',
         },
       };
 
@@ -212,7 +216,6 @@ describe('getPlatformScopeFactory', () => {
 
     it('should return empty scope if error during request to core', async () => {
       mockRpcClient.mnsync.withArgs('status').throws(new Error());
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
       mockDockerCompose.isServiceRunning.returns(true);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_tenderdash')
         .returns(DockerStatusEnum.running);
@@ -268,7 +271,7 @@ describe('getPlatformScopeFactory', () => {
           },
         },
       });
-      mockDockerCompose.execCommand.returns({ exitCode: 1, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const expectedScope = {
@@ -300,6 +303,7 @@ describe('getPlatformScopeFactory', () => {
         drive: {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.wait_for_core,
+          version: '1.4.1',
         },
       };
 
@@ -324,7 +328,7 @@ describe('getPlatformScopeFactory', () => {
         .returns(DockerStatusEnum.running);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_abci')
         .returns(DockerStatusEnum.running);
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const expectedScope = {
@@ -356,6 +360,7 @@ describe('getPlatformScopeFactory', () => {
         drive: {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.up,
+          version: '1.4.1',
         },
       };
 
@@ -380,8 +385,11 @@ describe('getPlatformScopeFactory', () => {
         .returns(DockerStatusEnum.running);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_abci')
         .throws(new ContainerIsNotPresentError('drive_abci'));
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
+      const error = new DockerComposeError({
+        exitCode: 1,
+      });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').rejects(error);
 
       const mockStatus = {
         node_info: {
@@ -434,6 +442,7 @@ describe('getPlatformScopeFactory', () => {
         drive: {
           dockerStatus: DockerStatusEnum.not_started,
           serviceStatus: ServiceStatusEnum.stopped,
+          version: null,
         },
       };
 
@@ -454,7 +463,8 @@ describe('getPlatformScopeFactory', () => {
       mockDockerCompose.isServiceRunning
         .withArgs(config, 'drive_tenderdash')
         .returns(true);
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci status').resolves({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.withArgs(config, 'drive_abci', 'drive-abci version').resolves({ exitCode: 0, out: '1.4.1' });
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
       mockFetch.returns(Promise.reject(new Error('FetchError')));
@@ -488,6 +498,7 @@ describe('getPlatformScopeFactory', () => {
         drive: {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.up,
+          version: '1.4.1',
         },
       };
 
