@@ -141,7 +141,7 @@ export default function getPlatformScopeFactory(
         }
 
         info.version = version;
-        info.protocolVersion = tenderdashStatus.node_info.protocol_version.app;
+        info.protocolVersion = parseInt(tenderdashStatus.node_info.protocol_version.app, 10);
         info.desiredProtocolVersion = tenderdashAbciInfo.response.app_version;
         info.listening = listening;
         info.latestBlockHeight = latestBlockHeight;
