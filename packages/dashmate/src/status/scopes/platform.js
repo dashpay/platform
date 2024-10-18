@@ -52,6 +52,8 @@ export default function getPlatformScopeFactory(
       dockerStatus: null,
       serviceStatus: null,
       version: null,
+      protocolVersion: null,
+      desiredProtocolVersion: null,
       listening: null,
       catchingUp: null,
       latestBlockHash: null,
@@ -107,14 +109,20 @@ export default function getPlatformScopeFactory(
 
         const port = config.get('platform.drive.tenderdash.rpc.port');
 
-        const [tenderdashStatusResponse, tenderdashNetInfoResponse] = await Promise.all([
+        const [
+          tenderdashStatusResponse,
+          tenderdashNetInfoResponse,
+          tenderdashAbciInfoResponse,
+        ] = await Promise.all([
           fetch(`http://${tenderdashHost}:${port}/status`),
           fetch(`http://${tenderdashHost}:${port}/net_info`),
+          fetch(`http://${tenderdashHost}:${port}/abci_info`),
         ]);
 
-        const [tenderdashStatus, tenderdashNetInfo] = await Promise.all([
+        const [tenderdashStatus, tenderdashNetInfo, tenderdashAbciInfo] = await Promise.all([
           tenderdashStatusResponse.json(),
           tenderdashNetInfoResponse.json(),
+          tenderdashAbciInfoResponse.json(),
         ]);
 
         const { version, network, moniker } = tenderdashStatus.node_info;
@@ -133,6 +141,8 @@ export default function getPlatformScopeFactory(
         }
 
         info.version = version;
+        info.protocolVersion = tenderdashStatus.node_info.protocol_version.app;
+        info.desiredProtocolVersion = tenderdashAbciInfo.response.app_version;
         info.listening = listening;
         info.latestBlockHeight = latestBlockHeight;
         info.latestBlockTime = latestBlockTime;
@@ -245,6 +255,8 @@ export default function getPlatformScopeFactory(
         dockerStatus: null,
         serviceStatus: null,
         version: null,
+        protocolVersion: null,
+        desiredProtocolVersion: null,
         listening: null,
         catchingUp: null,
         latestBlockHash: null,
@@ -258,6 +270,7 @@ export default function getPlatformScopeFactory(
       drive: {
         dockerStatus: null,
         serviceStatus: null,
+        version: null,
       },
     };
 
