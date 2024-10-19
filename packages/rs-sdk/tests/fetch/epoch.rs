@@ -8,7 +8,7 @@ use dash_sdk::{
         fetch_current_no_parameters::FetchCurrent, Fetch, FetchMany, LimitQuery,
         DEFAULT_EPOCH_QUERY_LIMIT,
     },
-    Sdk,
+    Error, Sdk,
 };
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
@@ -25,8 +25,14 @@ async fn get_current_epoch(sdk: &Sdk, cfg: &Config) -> EpochIndex {
     }
     .into();
 
+    let process_response = |response| async move { Ok::<_, Error>(response) };
+
     let response = sdk
-        .execute(identity_request, RequestSettings::default())
+        .execute(
+            identity_request,
+            process_response,
+            RequestSettings::default(),
+        )
         .await
         .expect("get identity");
 

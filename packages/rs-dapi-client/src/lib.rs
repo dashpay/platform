@@ -59,7 +59,7 @@ pub trait DapiRequest {
     where
         D: DapiRequestExecutor,
         PE: Error + Mockable + CanRetry + Send + Sync + 'static,
-        O: Debug + Mockable + Send + Sync + 'static,
+        O: Debug + Send + Sync + 'static,
         F: Fn(Self::Response) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<O, PE>> + Send + 'static,
         Self: 'c;
@@ -80,7 +80,7 @@ impl<T: transport::TransportRequest + Send> DapiRequest for T {
     where
         D: DapiRequestExecutor,
         PE: Error + Mockable + CanRetry + Send + 'static,
-        O: Debug + Mockable + Send + 'static,
+        O: Debug + Send + 'static,
         F: Fn(Self::Response) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<O, PE>> + Send + 'static,
         Self: 'c,

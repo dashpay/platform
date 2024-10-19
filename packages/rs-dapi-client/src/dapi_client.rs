@@ -94,6 +94,7 @@ pub trait DapiRequestExecutor {
     async fn execute<R, O, PE, F, Fut>(
         &self,
         request: R,
+        // TODO: Figure out how to make it optional. For example we can do two methods: execute and execute_and_process
         process_response: F,
         settings: RequestSettings,
     ) -> Result<O, DapiClientError<<R::Client as TransportClient>::Error, PE>>
@@ -102,7 +103,7 @@ pub trait DapiRequestExecutor {
         R::Response: Mockable,
         <R::Client as TransportClient>::Error: Mockable,
         PE: Error + Mockable + CanRetry + Send,
-        O: Debug + Send + Mockable,
+        O: Debug + Send,
         F: Fn(R::Response) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<O, PE>> + Send + 'static;
 }
@@ -151,7 +152,7 @@ impl DapiRequestExecutor for DapiClient {
         R::Response: Mockable + Send,
         <R::Client as TransportClient>::Error: Mockable,
         PE: Error + Mockable + CanRetry + Send,
-        O: Debug + Send + Mockable,
+        O: Debug + Send,
         F: Fn(R::Response) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<O, PE>> + Send + 'static,
     {

@@ -114,7 +114,7 @@ impl DapiRequestExecutor for MockDapiClient {
     async fn execute<R, O, PE, F, Fut>(
         &self,
         request: R,
-        _process_response: F,
+        process_response: F,
         _settings: RequestSettings,
     ) -> Result<O, DapiClientError<<R::Client as TransportClient>::Error, PE>>
     where
@@ -122,7 +122,7 @@ impl DapiRequestExecutor for MockDapiClient {
         R::Response: Mockable,
         <R::Client as TransportClient>::Error: Mockable,
         PE: Error + Mockable + CanRetry,
-        O: Debug + Mockable,
+        O: Debug,
         F: Fn(R::Response) -> Fut + Send + Sync,
         Fut: Future<Output = Result<O, PE>> + Send,
     {
@@ -136,15 +136,17 @@ impl DapiRequestExecutor for MockDapiClient {
             "mock execute"
         );
 
-        return if let Some(response) = response {
-            response
+        if let Some(response) = response {
+            process_response(response)
+                .await
+                .map_err(DapiClientError::Processing)
         } else {
             Err(MockError::MockExpectationNotFound(format!(
                 "unexpected mock request with key {}, use MockDapiClient::expect(): {:?}",
                 key, request
             ))
             .into())
-        };
+        }
     }
 }
 
@@ -260,7 +262,7 @@ impl Expectations {
     /// Get the response for a given request.
     ///
     /// Returns `None` if the request has not been expected.
-    pub fn get<I: Mockable, O: Mockable>(&self, request: &I) -> (Key, Option<O>) {
+    pub fn get<I: Mockable, R: Mockable>(&self, request: &I) -> (Key, Option<R>) {
         let key = Key::new(request);
 
         let response = self.expectations.get(&key).and_then(|v| v.deserialize());

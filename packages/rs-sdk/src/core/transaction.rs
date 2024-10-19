@@ -11,6 +11,7 @@ use dpp::dashcore::{Address, InstantLock, MerkleBlock, OutPoint, Transaction, Tx
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
+use std::sync::Arc;
 
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use std::time::Duration;
@@ -54,9 +55,16 @@ impl Sdk {
                 from_block_hash,
             )),
         };
-        self.execute(core_transactions_stream, RequestSettings::default())
-            .await
-            .map_err(|e| Error::DapiClientError(e.to_string()))
+
+        let process_response = |response| async move { Ok::<_, Error>(response) };
+
+        self.execute(
+            core_transactions_stream,
+            process_response,
+            RequestSettings::default(),
+        )
+        .await
+        .map_err(|e| Error::DapiClientError(e.to_string()))
     }
 
     /// Waits for a response for the asset lock proof
@@ -75,6 +83,8 @@ impl Sdk {
         .entered();
 
         tracing::debug!("waiting for messages from stream");
+
+        let process_response = |response| async move { Ok::<_, Error>(response) };
 
         // Define an inner async block to handle the stream processing.
         let stream_processing = async {
@@ -168,6 +178,7 @@ impl Sdk {
 
                         // Wait until the block is chainlocked
                         let mut core_chain_locked_height;
+
                         loop {
                             let GetTransactionResponse {
                                 height,
@@ -178,6 +189,7 @@ impl Sdk {
                                     GetTransactionRequest {
                                         id: transaction_id.to_string(),
                                     },
+                                    process_response,
                                     RequestSettings::default(),
                                 )
                                 .await?;

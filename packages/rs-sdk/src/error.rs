@@ -73,8 +73,8 @@ pub enum Error {
     StaleNode(#[from] StaleNodeError),
 }
 
-impl<T: Debug + Mockable> From<DapiClientError<T>> for Error {
-    fn from(value: DapiClientError<T>) -> Self {
+impl<T: Debug + Mockable> From<DapiClientError<T, Error>> for Error {
+    fn from(value: DapiClientError<T, Error>) -> Self {
         Self::DapiClientError(format!("{:?}", value))
     }
 }
@@ -90,6 +90,8 @@ impl CanRetry for Error {
         matches!(self, Error::StaleNode(..) | Error::TimeoutReached(_, _))
     }
 }
+
+impl Mockable for Error {}
 
 /// Server returned stale metadata
 #[derive(Debug, thiserror::Error)]

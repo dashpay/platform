@@ -8,6 +8,8 @@
 //!   It requires the implementing type to also implement [Debug] and [FromProof]
 //!   traits. The associated [Fetch::Request]` type needs to implement [TransportRequest].
 
+use super::types::identity::IdentityRequest;
+use super::DocumentQuery;
 use crate::mock::MockResponse;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
@@ -19,9 +21,7 @@ use dpp::{
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::fmt::Debug;
-
-use super::types::identity::IdentityRequest;
-use super::DocumentQuery;
+use std::sync::Arc;
 
 /// Trait implemented by objects that can be fetched from Platform.
 ///
@@ -53,18 +53,22 @@ where
     Self: Sized
         + Debug
         + MockResponse
+        + Send
+        + Sync
         + FromProof<
             <Self as Fetch>::Request,
             Request = <Self as Fetch>::Request,
             Response = <<Self as Fetch>::Request as DapiRequest>::Response,
-        >,
+        > + 'static,
 {
     /// Type of request used to fetch data from Platform.
     ///
     /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
     /// This type must implement [`TransportRequest`] and [`MockRequest`].
-    type Request: TransportRequest + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>;
+    type Request: TransportRequest
+        + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>
+        + 'static;
 
     /// Fetch single object from Platform.
     ///
@@ -120,17 +124,22 @@ where
         settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata), Error> {
         let request = query.query(sdk.prove())?;
+        let request_arc = Arc::new(request.clone());
+        let sdk_arc = Arc::new(sdk.clone());
 
-        let response = request
-            .clone()
-            .execute(sdk, settings.unwrap_or_default())
+        let process_response = move |response| {
+            let request = Arc::clone(&request_arc);
+            let sdk = Arc::clone(&sdk_arc);
+
+            async move {
+                sdk.parse_proof_with_metadata((*request).clone(), response)
+                    .await
+            }
+        };
+
+        let (object, response_metadata): (Option<Self>, ResponseMetadata) = request
+            .execute(sdk, process_response, settings.unwrap_or_default())
             .await?;
-
-        let object_type = std::any::type_name::<Self>().to_string();
-        tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
-
-        let (object, response_metadata): (Option<Self>, ResponseMetadata) =
-            sdk.parse_proof_with_metadata(request, response).await?;
 
         match object {
             Some(item) => Ok((item.into(), response_metadata)),
@@ -169,16 +178,21 @@ where
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
         let request = query.query(sdk.prove())?;
 
-        let response = request
-            .clone()
-            .execute(sdk, settings.unwrap_or_default())
-            .await?;
+        let request_arc = Arc::new(request.clone());
+        let sdk_arc = Arc::new(sdk.clone());
 
-        let object_type = std::any::type_name::<Self>().to_string();
-        tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
+        let process_response = move |response| {
+            let request = Arc::clone(&request_arc);
+            let sdk = Arc::clone(&sdk_arc);
 
-        let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) = sdk
-            .parse_proof_with_metadata_and_proof(request, response)
+            async move {
+                sdk.parse_proof_with_metadata_and_proof((*request).clone(), response)
+                    .await
+            }
+        };
+
+        let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) = request
+            .execute(sdk, process_response, settings.unwrap_or_default())
             .await?;
 
         match object {
