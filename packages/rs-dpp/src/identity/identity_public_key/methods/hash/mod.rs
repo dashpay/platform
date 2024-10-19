@@ -14,7 +14,7 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKey {
 
     fn validate_private_key_bytes(
         &self,
-        private_key_bytes: &[u8],
+        private_key_bytes: &[u8; 32],
         network: Network,
     ) -> Result<bool, ProtocolError> {
         match self {

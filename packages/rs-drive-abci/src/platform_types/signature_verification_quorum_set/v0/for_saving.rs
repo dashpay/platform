@@ -3,7 +3,7 @@ use crate::platform_types::signature_verification_quorum_set::v0::quorum_set::{
 };
 use crate::platform_types::signature_verification_quorum_set::{
     Quorums, SignatureVerificationQuorumSetForSaving, SignatureVerificationQuorumSetV0,
-    ThresholdBlsPublicKey, VerificationQuorum,
+    VerificationQuorum,
 };
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::QuorumHash;
@@ -135,7 +135,7 @@ impl From<PreviousPastQuorumsForSavingV0> for PreviousPastQuorumsV0 {
 pub struct QuorumForSavingV0 {
     hash: Bytes32,
     #[bincode(with_serde)]
-    public_key: ThresholdBlsPublicKey,
+    public_key: bls_signatures::PublicKey,
     index: Option<u32>,
 }
 
@@ -145,7 +145,10 @@ impl From<Vec<QuorumForSavingV0>> for Quorums<VerificationQuorum> {
             (
                 QuorumHash::from_byte_array(quorum.hash.to_buffer()),
                 VerificationQuorum {
-                    public_key: quorum.public_key,
+                    public_key: dpp::bls_signatures::PublicKey::try_from(
+                        quorum.public_key.to_bytes().as_slice(),
+                    )
+                    .expect("expected to convert between BLS key libraries (from chia)"),
                     index: quorum.index,
                 },
             )
@@ -159,7 +162,10 @@ impl Into<Vec<QuorumForSavingV0>> for Quorums<VerificationQuorum> {
         self.into_iter()
             .map(|(hash, quorum)| QuorumForSavingV0 {
                 hash: Bytes32::from(hash.as_byte_array()),
-                public_key: quorum.public_key,
+                public_key: bls_signatures::PublicKey::from_bytes(
+                    &quorum.public_key.0.to_compressed(),
+                )
+                .expect("expected to convert between BLS key libraries (to chia)"),
                 index: quorum.index,
             })
             .collect()

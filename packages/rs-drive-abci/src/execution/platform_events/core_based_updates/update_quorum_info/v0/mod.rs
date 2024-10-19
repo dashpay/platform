@@ -386,7 +386,7 @@ where
                 )?;
 
                 let public_key =
-                    match BlsPublicKey::from_bytes(quorum_info.quorum_public_key.as_slice())
+                    match BlsPublicKey::try_from(quorum_info.quorum_public_key.as_slice())
                         .map_err(ExecutionError::BlsErrorFromDashCoreResponse)
                     {
                         Ok(public_key) => public_key,

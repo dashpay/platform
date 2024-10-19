@@ -1,3 +1,4 @@
+use dashcore::blsful::BlsError;
 use thiserror::Error;
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
@@ -247,6 +248,10 @@ pub enum ProtocolError {
     /// Invalid CBOR error
     #[error("invalid cbor error: {0}")]
     InvalidCBOR(String),
+
+    /// Invalid CBOR error
+    #[error(transparent)]
+    BlsError(#[from] BlsError),
 }
 
 impl From<&str> for ProtocolError {
