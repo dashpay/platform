@@ -7,6 +7,7 @@ use crate::core_types::validator_set::v0::{
 use crate::ProtocolError;
 #[cfg(feature = "core-types-serialization")]
 use bincode::{Decode, Encode};
+use blsful::Bls12381G2Impl;
 use dashcore::{ProTxHash, QuorumHash};
 #[cfg(feature = "core-types-serialization")]
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -80,7 +81,7 @@ impl ValidatorSetV0Getters for ValidatorSet {
         }
     }
 
-    fn threshold_public_key(&self) -> &BlsPublicKey {
+    fn threshold_public_key(&self) -> &BlsPublicKey<Bls12381G2Impl> {
         match self {
             ValidatorSet::V0(v0) => v0.threshold_public_key(),
         }
@@ -112,7 +113,7 @@ impl ValidatorSetV0Setters for ValidatorSet {
         }
     }
 
-    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey) {
+    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey<Bls12381G2Impl>) {
         match self {
             ValidatorSet::V0(v0) => v0.set_threshold_public_key(threshold_public_key),
         }

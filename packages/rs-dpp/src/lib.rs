@@ -90,7 +90,7 @@ pub mod prelude {
 
 pub use bincode;
 #[cfg(all(not(target_arch = "wasm32"), feature = "bls-signatures"))]
-pub use dashcore::bls_signatures;
+pub use blsful as bls_signatures;
 #[cfg(feature = "ed25519-dalek")]
 pub use dashcore::ed25519_dalek;
 #[cfg(feature = "system_contracts")]

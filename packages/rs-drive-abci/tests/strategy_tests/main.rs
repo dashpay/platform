@@ -3,7 +3,7 @@
 
 extern crate core;
 
-use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
+use dpp::bls_signatures::SecretKey as BlsPrivateKey;
 
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};

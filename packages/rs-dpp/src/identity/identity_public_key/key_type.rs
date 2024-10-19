@@ -15,6 +15,7 @@ use lazy_static::lazy_static;
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
 use crate::{InvalidVectorSizeError, ProtocolError};
+use blsful::Bls12381G2Impl;
 #[cfg(feature = "random-public-keys")]
 use rand::rngs::StdRng;
 #[cfg(feature = "random-public-keys")]
@@ -270,7 +271,7 @@ impl KeyType {
 
     #[cfg(feature = "random-public-keys")]
     /// Gets the default size of the public key
-    pub fn random_public_and_private_key_data_v0(&self, rng: &mut StdRng) -> (Vec<u8>, Vec<u8>) {
+    pub fn random_public_and_private_key_data_v0(&self, rng: &mut StdRng) -> (Vec<u8>, [u8; 32]) {
         match self {
             KeyType::ECDSA_SECP256K1 => {
                 let secp = Secp256k1::new();
@@ -279,18 +280,13 @@ impl KeyType {
                 let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
                 (
                     private_key.public_key(&secp).to_bytes(),
-                    private_key.to_bytes(),
+                    private_key.inner.secret_bytes(),
                 )
             }
             KeyType::BLS12_381 => {
-                let private_key = bls_signatures::PrivateKey::generate_dash(rng)
-                    .expect("expected to generate a bls private key"); // we assume this will never error
-                let public_key_bytes = private_key
-                    .g1_element()
-                    .expect("expected to get a public key from a bls private key")
-                    .to_bytes()
-                    .to_vec();
-                (public_key_bytes, private_key.to_bytes().to_vec())
+                let private_key = blsful::SecretKey::<Bls12381G2Impl>::random(rng);
+                let public_key_bytes = private_key.public_key().0.to_compressed().to_vec();
+                (public_key_bytes, private_key.0.to_be_bytes())
             }
             KeyType::ECDSA_HASH160 => {
                 let secp = Secp256k1::new();
@@ -299,14 +295,14 @@ impl KeyType {
                 let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
                 (
                     ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()).to_vec(),
-                    private_key.to_bytes(),
+                    private_key.inner.secret_bytes(),
                 )
             }
             KeyType::EDDSA_25519_HASH160 => {
                 let key_pair = ed25519_dalek::SigningKey::generate(rng);
                 (
                     ripemd160_sha256(key_pair.verifying_key().to_bytes().as_slice()).to_vec(),
-                    key_pair.to_bytes().to_vec(),
+                    key_pair.to_bytes(),
                 )
             }
             KeyType::BIP13_SCRIPT_HASH => {
@@ -317,7 +313,7 @@ impl KeyType {
                 let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
                 (
                     ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()).to_vec(),
-                    private_key.to_bytes(),
+                    private_key.inner.secret_bytes(),
                 )
             }
         }
@@ -329,7 +325,7 @@ impl KeyType {
         &self,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Result<(Vec<u8>, Vec<u8>), ProtocolError> {
+    ) -> Result<(Vec<u8>, [u8; 32]), ProtocolError> {
         match platform_version
             .dpp
             .identity_versions
