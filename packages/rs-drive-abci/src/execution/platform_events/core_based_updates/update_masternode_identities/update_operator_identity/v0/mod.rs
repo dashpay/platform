@@ -400,7 +400,7 @@ mod tests {
     use dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, MasternodeType};
     use dashcore_rpc::json::DMNState;
     use dpp::block::block_info::BlockInfo;
-    use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
+    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::Txid;
     use dpp::identifier::MasternodeIdentifiers;
@@ -433,13 +433,15 @@ mod tests {
         let node_id_bytes: [u8; 20] = rng.gen();
 
         // Create a public key operator and payout address
-        let private_key_operator =
-            BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
-        let pub_key_operator = private_key_operator
-            .g1_element()
-            .expect("expected to get public key")
+        let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(rng)
+            .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
+        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
+            &private_key_operator_bytes.try_into().unwrap(),
+        )
+        .unwrap();
+        let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
 
         let operator_key: IdentityPublicKey = IdentityPublicKeyV0 {
             id: 0,
@@ -950,13 +952,15 @@ mod tests {
         ) = create_operator_identity(&platform, &mut rng);
 
         // Generate a new public key operator
-        let new_private_key_operator =
-            BlsPrivateKey::generate_dash(&mut rng).expect("expected to generate a private key");
-        let new_pub_key_operator = new_private_key_operator
-            .g1_element()
-            .expect("expected to get public key")
+        let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(&mut rng)
+            .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
+        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
+            &private_key_operator_bytes.try_into().unwrap(),
+        )
+        .unwrap();
+        let new_pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
 
         // Create an old masternode state
         let masternode_list_item = MasternodeListItem {
@@ -1040,13 +1044,15 @@ mod tests {
         ) = create_operator_identity(&platform, &mut rng);
 
         // Generate a new public key operator
-        let new_private_key_operator =
-            BlsPrivateKey::generate_dash(&mut rng).expect("expected to generate a private key");
-        let new_pub_key_operator = new_private_key_operator
-            .g1_element()
-            .expect("expected to get public key")
+        let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(&mut rng)
+            .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
+        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
+            &private_key_operator_bytes.try_into().unwrap(),
+        )
+        .unwrap();
+        let new_pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
 
         // Create an old masternode state with original public key operator
         let masternode_list_item = MasternodeListItem {
