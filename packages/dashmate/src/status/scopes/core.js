@@ -1,4 +1,5 @@
 /* eslint-disable camelcase */
+import { PortStateEnum } from '../enums/portState.js';
 import providers from '../providers.js';
 import { ServiceStatusEnum } from '../enums/serviceStatus.js';
 import { DockerStatusEnum } from '../enums/dockerStatus.js';
@@ -116,7 +117,8 @@ export default function getCoreScopeFactory(
 
     const providersResult = await Promise.allSettled([
       providers.github.release('dashpay/dash'),
-      providers.mnowatch.checkPortStatus(config.get('core.p2p.port'), config.get('externalIp')),
+      providers.mnowatch.checkPortStatus(config.get('core.p2p.port'), config.get('externalIp'))
+        .catch(() => PortStateEnum.ERROR),
       providers.insight(config.get('network')).status(),
     ]);
 

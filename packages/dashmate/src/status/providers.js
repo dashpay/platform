@@ -1,5 +1,4 @@
 import https from 'https';
-import { PortStateEnum } from './enums/portState.js';
 
 const MAX_REQUEST_TIMEOUT = 5000;
 const MAX_RESPONSE_SIZE = 1 * 1024 * 1024; // 1 MB
@@ -82,10 +81,9 @@ export default {
         path: ip ? `/${port}/?validateIp=${ip}` : `/${port}/`,
         method: 'GET',
         family: 4, // Force IPv4
-        timeout: MAX_REQUEST_TIMEOUT,
       };
 
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         const req = https.request(options, (res) => {
           let data = '';
 
@@ -95,9 +93,12 @@ export default {
               // eslint-disable-next-line no-console
               console.warn(`Port check request failed with status code ${res.statusCode}`);
             }
-            // Consume response data to free up memory
-            res.resume();
-            resolve(PortStateEnum.ERROR);
+
+            const error = new Error(`Invalid status code ${res.statusCode}`);
+
+            res.destroy(error);
+
+            // Do not handle request further
             return;
           }
 
@@ -109,14 +110,14 @@ export default {
             data += chunk;
 
             if (data.length > MAX_RESPONSE_SIZE) {
-              resolve(PortStateEnum.ERROR);
-
               if (process.env.DEBUG) {
                 // eslint-disable-next-line no-console
                 console.warn('Port check response size exceeded');
               }
 
-              req.destroy();
+              const error = new Error('Response size exceeded');
+
+              req.destroy(error);
             }
           });
 
@@ -126,13 +127,19 @@ export default {
           });
         });
 
+        req.setTimeout(MAX_REQUEST_TIMEOUT, () => {
+          const error = new Error('Port check timed out');
+
+          req.destroy(error);
+        });
+
         req.on('error', (e) => {
           if (process.env.DEBUG) {
             // eslint-disable-next-line no-console
             console.warn(`Port check request failed: ${e}`);
           }
 
-          resolve(PortStateEnum.ERROR);
+          reject(e);
         });
 
         req.end();
