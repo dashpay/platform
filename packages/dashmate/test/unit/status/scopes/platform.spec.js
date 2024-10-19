@@ -453,7 +453,7 @@ describe('getPlatformScopeFactory', () => {
           latest_block_time: 1337,
         },
       };
-      const mockNetInfo = { n_peers: 6, listening: true }
+      const mockNetInfo = { n_peers: 6, listening: true };
 
       const mockAbciInfo = {
         response: {
