@@ -114,7 +114,7 @@ impl DapiRequestExecutor for MockDapiClient {
     async fn execute<R, O, PE, F, Fut>(
         &self,
         request: R,
-        _process_response: Arc<F>,
+        _process_response: F,
         _settings: RequestSettings,
     ) -> Result<O, DapiClientError<<R::Client as TransportClient>::Error, PE>>
     where

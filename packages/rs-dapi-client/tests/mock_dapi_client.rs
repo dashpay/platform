@@ -32,12 +32,10 @@ async fn test_mock_get_identity_dapi_client() {
     let settings = RequestSettings::default();
 
     let process_response =
-        Arc::new(
-            |response| async move { Ok::<GetIdentityResponse, DummyProcessingError>(response) },
-        );
+        |response| async move { Ok::<GetIdentityResponse, DummyProcessingError>(response) };
 
     let result = dapi
-        .execute(request.clone(), Arc::clone(&process_response), settings)
+        .execute(request.clone(), process_response, settings)
         .await
         .unwrap();
 

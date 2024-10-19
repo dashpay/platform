@@ -25,7 +25,6 @@ pub use request_settings::RequestSettings;
 use std::error::Error;
 use std::fmt::Debug;
 use std::future::Future;
-use std::sync::Arc;
 
 /// A DAPI request could be executed with an initialized [DapiClient].
 ///
@@ -39,7 +38,7 @@ use std::sync::Arc;
 /// # let _ = async {
 /// let mut client = MockDapiClient::new();
 /// let request: proto::GetIdentityRequest = proto::get_identity_request::GetIdentityRequestV0 { id: b"0".to_vec(), prove: true }.into();
-/// let process_response = Arc::new(|response| async move { Ok::<GetIdentityResponse, DummyProcessingError>(response) });
+/// let process_response = |response| async move { Ok::<GetIdentityResponse, DummyProcessingError>(response) };
 /// let response = request.execute(&mut client, process_response, RequestSettings::default()).await?;
 /// # Ok::<(), DapiClientError<_, _>>(())
 /// # };
@@ -54,7 +53,7 @@ pub trait DapiRequest {
     fn execute<'c, D, O, PE, F, Fut>(
         self,
         dapi_client: &'c D,
-        process_response: Arc<F>,
+        process_response: F,
         settings: RequestSettings,
     ) -> BoxFuture<'c, Result<O, DapiClientError<Self::TransportError, PE>>>
     where
@@ -75,7 +74,7 @@ impl<T: transport::TransportRequest + Send> DapiRequest for T {
     fn execute<'c, D, O, PE, F, Fut>(
         self,
         dapi_client: &'c D,
-        process_response: Arc<F>,
+        process_response: F,
         settings: RequestSettings,
     ) -> BoxFuture<'c, Result<O, DapiClientError<Self::TransportError, PE>>>
     where

@@ -94,7 +94,7 @@ pub trait DapiRequestExecutor {
     async fn execute<R, O, PE, F, Fut>(
         &self,
         request: R,
-        process_response: Arc<F>,
+        process_response: F,
         settings: RequestSettings,
     ) -> Result<O, DapiClientError<<R::Client as TransportClient>::Error, PE>>
     where
@@ -143,7 +143,7 @@ impl DapiRequestExecutor for DapiClient {
     async fn execute<R, O, PE, F, Fut>(
         &self,
         request: R,
-        process_response: Arc<F>,
+        process_response: F,
         settings: RequestSettings,
     ) -> Result<O, DapiClientError<<R::Client as TransportClient>::Error, PE>>
     where
@@ -175,6 +175,8 @@ impl DapiRequestExecutor for DapiClient {
         let dump_dir = self.dump_dir.clone();
         #[cfg(feature = "dump")]
         let dump_request = request.clone();
+
+        let process_response = Arc::new(process_response);
 
         // Setup DAPI request execution routine future. It's a closure that will be called
         // more once to build new future on each retry.
