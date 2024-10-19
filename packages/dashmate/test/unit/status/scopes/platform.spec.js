@@ -80,6 +80,11 @@ describe('getPlatformScopeFactory', () => {
 
       const mockStatus = {
         node_info: {
+          protocol_version: {
+            p2p: '10',
+            block: '14',
+            app: '3',
+          },
           version: '0',
           network: 'test',
           moniker: 'test',
@@ -93,6 +98,15 @@ describe('getPlatformScopeFactory', () => {
         },
       };
       const mockNetInfo = { n_peers: 6, listening: true };
+
+      const mockAbciInfo = {
+        response: {
+          version: '1.4.1',
+          app_version: 4,
+          last_block_height: 90,
+          last_block_app_hash: 's0CySQxgRg96DrnJ7HCsql+k/Sk4JiT3y0psCaUI3TI=',
+        },
+      };
 
       const expectedScope = {
         platformActivation: 'Activated (at height 1337)',
@@ -109,6 +123,8 @@ describe('getPlatformScopeFactory', () => {
           p2pPortState: PortStateEnum.OPEN,
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.up,
+          protocolVersion: 3,
+          desiredProtocolVersion: 4,
           version: '0',
           listening: true,
           catchingUp: false,
@@ -131,7 +147,9 @@ describe('getPlatformScopeFactory', () => {
         .onFirstCall()
         .returns(Promise.resolve({ json: () => Promise.resolve(mockStatus) }))
         .onSecondCall()
-        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }));
+        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }))
+        .onThirdCall()
+        .resolves({ json: () => Promise.resolve(mockAbciInfo) });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const scope = await getPlatformScope(config);
@@ -155,6 +173,11 @@ describe('getPlatformScopeFactory', () => {
 
       const mockStatus = {
         node_info: {
+          protocol_version: {
+            p2p: '10',
+            block: '14',
+            app: '3',
+          },
           version: '0',
           network: 'test',
           moniker: 'test',
@@ -168,6 +191,15 @@ describe('getPlatformScopeFactory', () => {
         },
       };
       const mockNetInfo = { n_peers: 6, listening: true };
+
+      const mockAbciInfo = {
+        response: {
+          version: '1.4.1',
+          app_version: 4,
+          last_block_height: 90,
+          last_block_app_hash: 's0CySQxgRg96DrnJ7HCsql+k/Sk4JiT3y0psCaUI3TI=',
+        },
+      };
 
       const expectedScope = {
         platformActivation: 'Activated (at height 1337)',
@@ -185,6 +217,8 @@ describe('getPlatformScopeFactory', () => {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.syncing,
           version: '0',
+          protocolVersion: 3,
+          desiredProtocolVersion: 4,
           listening: true,
           catchingUp: true,
           latestBlockHash: 'DEADBEEF',
@@ -206,7 +240,9 @@ describe('getPlatformScopeFactory', () => {
         .onFirstCall()
         .returns(Promise.resolve({ json: () => Promise.resolve(mockStatus) }))
         .onSecondCall()
-        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }));
+        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }))
+        .onThirdCall()
+        .resolves({ json: () => Promise.resolve(mockAbciInfo) });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const scope = await getPlatformScope(config);
@@ -238,6 +274,8 @@ describe('getPlatformScopeFactory', () => {
           dockerStatus: null,
           serviceStatus: null,
           version: null,
+          protocolVersion: null,
+          desiredProtocolVersion: null,
           listening: null,
           catchingUp: null,
           latestBlockHash: null,
@@ -251,6 +289,7 @@ describe('getPlatformScopeFactory', () => {
         drive: {
           dockerStatus: null,
           serviceStatus: null,
+          version: null,
         },
       };
 
@@ -290,6 +329,8 @@ describe('getPlatformScopeFactory', () => {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.wait_for_core,
           version: null,
+          protocolVersion: null,
+          desiredProtocolVersion: null,
           listening: null,
           catchingUp: null,
           latestBlockHash: null,
@@ -347,6 +388,8 @@ describe('getPlatformScopeFactory', () => {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.error,
           version: null,
+          protocolVersion: null,
+          desiredProtocolVersion: null,
           listening: null,
           catchingUp: null,
           latestBlockHash: null,
@@ -393,6 +436,11 @@ describe('getPlatformScopeFactory', () => {
 
       const mockStatus = {
         node_info: {
+          protocol_version: {
+            p2p: '10',
+            block: '14',
+            app: '3',
+          },
           version: '0',
           network: 'test',
           moniker: 'test',
@@ -407,11 +455,22 @@ describe('getPlatformScopeFactory', () => {
       };
       const mockNetInfo = { n_peers: 6, listening: true };
 
+      const mockAbciInfo = {
+        response: {
+          version: '1.4.1',
+          app_version: 4,
+          last_block_height: 90,
+          last_block_app_hash: 's0CySQxgRg96DrnJ7HCsql+k/Sk4JiT3y0psCaUI3TI=',
+        },
+      };
+
       mockFetch
         .onFirstCall()
         .returns(Promise.resolve({ json: () => Promise.resolve(mockStatus) }))
         .onSecondCall()
-        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }));
+        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }))
+        .onThirdCall()
+        .resolves({ json: () => Promise.resolve(mockAbciInfo) });
 
       const expectedScope = {
         platformActivation: 'Activated (at height 1337)',
@@ -429,6 +488,8 @@ describe('getPlatformScopeFactory', () => {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.up,
           version: '0',
+          protocolVersion: 3,
+          desiredProtocolVersion: 4,
           listening: true,
           catchingUp: false,
           latestBlockHash: 'DEADBEEF',
@@ -485,6 +546,8 @@ describe('getPlatformScopeFactory', () => {
           dockerStatus: DockerStatusEnum.running,
           serviceStatus: ServiceStatusEnum.error,
           version: null,
+          protocolVersion: null,
+          desiredProtocolVersion: null,
           listening: null,
           catchingUp: null,
           latestBlockHash: null,
