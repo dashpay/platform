@@ -49,6 +49,10 @@ export default {
       return coreIsSynced ? ServiceStatusEnum.up : ServiceStatusEnum.wait_for_core;
     }
 
+    if (dockerStatus === DockerStatusEnum.not_started) {
+      return ServiceStatusEnum.stopped;
+    }
+
     return ServiceStatusEnum.error;
   },
 };

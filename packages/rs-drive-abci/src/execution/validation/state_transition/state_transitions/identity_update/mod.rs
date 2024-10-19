@@ -122,7 +122,7 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
-    use dpp::dashcore::key::{KeyPair, Secp256k1};
+    use dpp::dashcore::key::{Keypair, Secp256k1};
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
@@ -371,7 +371,7 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(1292);
 
-        let new_key_pair = KeyPair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&secp, &mut rng);
 
         let new_key = IdentityPublicKeyInCreationV0 {
             id: 2,

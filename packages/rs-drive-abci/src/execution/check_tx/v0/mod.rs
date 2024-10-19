@@ -213,7 +213,7 @@ mod tests {
 
     use dpp::consensus::ConsensusError;
     use dpp::dashcore::secp256k1::Secp256k1;
-    use dpp::dashcore::{key::KeyPair, signer, Network, PrivateKey};
+    use dpp::dashcore::{key::Keypair, signer, Network, PrivateKey};
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
@@ -2659,7 +2659,7 @@ mod tests {
 
         let secp = Secp256k1::new();
 
-        let new_key_pair = KeyPair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&secp, &mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -2760,7 +2760,7 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let new_key_pair = KeyPair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&secp, &mut rng);
 
         let new_key = IdentityPublicKeyInCreationV0 {
             id: 2,

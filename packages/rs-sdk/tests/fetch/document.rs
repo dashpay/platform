@@ -34,7 +34,8 @@ async fn document_read() {
     let first_doc = Document::fetch_many(&sdk, all_docs_query)
         .await
         .expect("fetch many documents")
-        .pop_first()
+        .into_iter()
+        .next()
         .expect("first item must exist")
         .1
         .expect("document must exist");

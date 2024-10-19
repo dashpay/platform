@@ -7,7 +7,7 @@ use anyhow::anyhow;
 use dashcore::hashes::Hash;
 use dashcore::key::Secp256k1;
 use dashcore::secp256k1::SecretKey;
-use dashcore::{Network, PublicKey as ECDSAPublicKey};
+use dashcore::{bls_signatures, ed25519_dalek, Network, PublicKey as ECDSAPublicKey};
 use platform_value::Bytes20;
 
 impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {

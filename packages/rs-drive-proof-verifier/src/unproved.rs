@@ -218,7 +218,7 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
                             let mut quorum_hash = [0u8; 32];
                             quorum_hash.copy_from_slice(&vs.quorum_hash);
 
-                            // Parse ValidatorV0 members into a BTreeMap
+                            // Parse ValidatorV0 members
                             let members = vs
                                 .members
                                 .into_iter()

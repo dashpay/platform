@@ -37,7 +37,7 @@ use super::fetch::Fetch;
 /// required to correctly verify proofs returned by the Dash Platform.
 ///
 /// Conversions are implemented between this type, [GetDocumentsRequest] and [DriveDocumentQuery] using [TryFrom] trait.
-#[derive(Debug, Clone, dapi_grpc_macros::Mockable)]
+#[derive(Debug, Clone, PartialEq, dapi_grpc_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentQuery {
     /// Data contract ID

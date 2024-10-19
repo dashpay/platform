@@ -8,7 +8,7 @@ use dashcore::secp256k1::rand::rngs::StdRng as EcdsaRng;
 #[cfg(feature = "random-public-keys")]
 use dashcore::secp256k1::rand::SeedableRng;
 use dashcore::secp256k1::Secp256k1;
-use dashcore::Network;
+use dashcore::{bls_signatures, ed25519_dalek, Network};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 
