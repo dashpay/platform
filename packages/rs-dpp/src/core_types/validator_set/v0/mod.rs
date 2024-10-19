@@ -8,7 +8,7 @@ use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 #[cfg(feature = "core-types-serialization")]
 use bincode::{BorrowDecode, Decode, Encode};
-use blsful::Bls12381G2Impl;
+use dashcore::blsful::Bls12381G2Impl;
 use dashcore::hashes::Hash;
 use dashcore::{ProTxHash, QuorumHash};
 use itertools::Itertools;
@@ -289,7 +289,7 @@ impl ValidatorSetV0Setters for ValidatorSetV0 {
 mod tests {
     use super::*;
     use bincode::config;
-    use blsful::SecretKey;
+    use dashcore::blsful::SecretKey;
     use dashcore::PubkeyHash;
     use rand::rngs::StdRng;
     use rand::SeedableRng;

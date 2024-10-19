@@ -1,4 +1,4 @@
-use crate::bls_signatures::PublicKey as BlsPublicKey;
+use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
 use crate::core_types::validator::v0::ValidatorV0;
 use crate::core_types::validator_set::v0::{
     ValidatorSetV0, ValidatorSetV0Getters, ValidatorSetV0Setters,
@@ -7,7 +7,6 @@ use crate::core_types::validator_set::v0::{
 use crate::ProtocolError;
 #[cfg(feature = "core-types-serialization")]
 use bincode::{Decode, Encode};
-use blsful::Bls12381G2Impl;
 use dashcore::{ProTxHash, QuorumHash};
 #[cfg(feature = "core-types-serialization")]
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};

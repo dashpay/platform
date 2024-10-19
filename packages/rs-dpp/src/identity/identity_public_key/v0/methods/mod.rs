@@ -2,9 +2,9 @@ use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMe
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType;
 use crate::util::hash::ripemd160_sha256;
-use crate::ProtocolError;
+use crate::{bls_signatures, ProtocolError};
 use anyhow::anyhow;
-use blsful::Bls12381G2Impl;
+use dashcore::blsful::Bls12381G2Impl;
 use dashcore::hashes::Hash;
 use dashcore::key::Secp256k1;
 use dashcore::secp256k1::SecretKey;
@@ -68,9 +68,11 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
             KeyType::BLS12_381 => {
                 #[cfg(feature = "bls-signatures")]
                 {
-                    let private_key: Option<blsful::SecretKey<Bls12381G2Impl>> =
-                        blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(private_key_bytes)
-                            .into();
+                    let private_key: Option<bls_signatures::SecretKey<Bls12381G2Impl>> =
+                        bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(
+                            private_key_bytes,
+                        )
+                        .into();
                     if private_key.is_none() {
                         return Ok(false);
                     }
@@ -124,7 +126,7 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
 mod tests {
     use super::*;
     use crate::identity::{Purpose, SecurityLevel};
-    use blsful::{Bls12381G2Impl, Pairing, Signature, SignatureSchemes};
+    use dashcore::blsful::{Bls12381G2Impl, Pairing, Signature, SignatureSchemes};
     use dashcore::Network;
     use dpp::version::PlatformVersion;
     use rand::rngs::StdRng;
@@ -136,9 +138,10 @@ mod tests {
         let (public_key_data, secret_key) = KeyType::BLS12_381
             .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
             .expect("expected to get keys");
-        let decoded_secret_key =
-            blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_key.try_into().unwrap())
-                .expect("expected to get secret key");
+        let decoded_secret_key = dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(
+            &secret_key.try_into().unwrap(),
+        )
+        .expect("expected to get secret key");
         let public_key = decoded_secret_key.public_key();
         let decoded_public_key_data = public_key.0.to_compressed();
         assert_eq!(
@@ -153,9 +156,10 @@ mod tests {
         let (_, secret_key) = KeyType::BLS12_381
             .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
             .expect("expected to get keys");
-        let decoded_secret_key =
-            blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_key.try_into().unwrap())
-                .expect("expected to get secret key");
+        let decoded_secret_key = dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(
+            &secret_key.try_into().unwrap(),
+        )
+        .expect("expected to get secret key");
         let signature = decoded_secret_key
             .sign(SignatureSchemes::Basic, b"hello")
             .expect("expected to sign");
