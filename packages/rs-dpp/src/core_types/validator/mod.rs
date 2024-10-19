@@ -1,6 +1,5 @@
-use crate::bls_signatures::PublicKey as BlsPublicKey;
+use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
 use crate::core_types::validator::v0::{ValidatorV0, ValidatorV0Getters, ValidatorV0Setters};
-use blsful::Bls12381G2Impl;
 use dashcore::{ProTxHash, PubkeyHash};
 #[cfg(feature = "core-types-serde-conversion")]
 use serde::{Deserialize, Serialize};
