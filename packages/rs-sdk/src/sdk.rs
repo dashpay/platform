@@ -83,7 +83,7 @@ pub type LastQueryTimestamp = u64;
 ///
 /// See tests/ for examples of using the SDK.
 pub struct Sdk {
-    /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)  
+    /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)
     pub network: Network,
     inner: SdkInstance,
     /// Use proofs when retrieving data from Platform.

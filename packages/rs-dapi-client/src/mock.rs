@@ -13,12 +13,15 @@
 
 use crate::{
     transport::{TransportClient, TransportRequest},
-    DapiClientError, DapiRequestExecutor, RequestSettings,
+    CanRetry, DapiClientError, DapiRequestExecutor, RequestSettings,
 };
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 use hex::ToHex;
 use sha2::Digest;
+use std::error::Error;
+use std::future::Future;
+use std::sync::Arc;
 use std::{
     any::type_name,
     collections::HashMap,
@@ -37,7 +40,10 @@ pub struct MockDapiClient {
 /// Result of executing a mock request
 pub type MockResult<T> = Result<
     <T as TransportRequest>::Response,
-    DapiClientError<<<T as TransportRequest>::Client as TransportClient>::Error>,
+    DapiClientError<
+        <<T as TransportRequest>::Client as TransportClient>::Error,
+        <<T as TransportRequest>::Client as TransportClient>::Error,
+    >,
 >;
 
 impl MockDapiClient {
@@ -105,14 +111,20 @@ impl MockDapiClient {
 
 #[async_trait]
 impl DapiRequestExecutor for MockDapiClient {
-    async fn execute<R: TransportRequest>(
+    async fn execute<R, O, PE, F, Fut>(
         &self,
         request: R,
+        _process_response: Arc<F>,
         _settings: RequestSettings,
-    ) -> MockResult<R>
+    ) -> Result<O, DapiClientError<<R::Client as TransportClient>::Error, PE>>
     where
-        R: Mockable,
+        R: TransportRequest + Mockable,
         R::Response: Mockable,
+        <R::Client as TransportClient>::Error: Mockable,
+        PE: Error + Mockable + CanRetry,
+        O: Debug + Mockable,
+        F: Fn(R::Response) -> Fut + Send + Sync,
+        Fut: Future<Output = Result<O, PE>> + Send,
     {
         let (key, response) = self.expectations.get(&request);
 
@@ -254,5 +266,29 @@ impl Expectations {
         let response = self.expectations.get(&key).and_then(|v| v.deserialize());
 
         (key, response)
+    }
+}
+
+/// Processing Error for tests
+#[derive(Debug, thiserror::Error)]
+#[error("DummyProcessingError occurred")]
+// #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct DummyProcessingError;
+
+impl CanRetry for DummyProcessingError {
+    fn can_retry(&self) -> bool {
+        false
+    }
+}
+
+impl Mockable for DummyProcessingError {
+    #[cfg(feature = "mocks")]
+    fn mock_serialize(&self) -> Option<Vec<u8>> {
+        Some(vec![]) // Implement as needed
+    }
+
+    #[cfg(feature = "mocks")]
+    fn mock_deserialize(_data: &[u8]) -> Option<Self> {
+        Some(DummyProcessingError)
     }
 }

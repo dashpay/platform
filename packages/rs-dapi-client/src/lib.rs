@@ -22,34 +22,47 @@ use dapi_grpc::mock::Mockable;
 pub use dump::DumpData;
 use futures::{future::BoxFuture, FutureExt};
 pub use request_settings::RequestSettings;
+use std::error::Error;
+use std::fmt::Debug;
+use std::future::Future;
+use std::sync::Arc;
 
 /// A DAPI request could be executed with an initialized [DapiClient].
 ///
 /// # Examples
 /// ```
+/// use std::sync::Arc;
 /// use rs_dapi_client::{RequestSettings, AddressList, mock::MockDapiClient, DapiClientError, DapiRequest};
-/// use dapi_grpc::platform::v0::{self as proto};
+/// use dapi_grpc::platform::v0::{self as proto, GetIdentityResponse};
+/// use rs_dapi_client::mock::DummyProcessingError;
 ///
 /// # let _ = async {
 /// let mut client = MockDapiClient::new();
 /// let request: proto::GetIdentityRequest = proto::get_identity_request::GetIdentityRequestV0 { id: b"0".to_vec(), prove: true }.into();
-/// let response = request.execute(&mut client, RequestSettings::default()).await?;
-/// # Ok::<(), DapiClientError<_>>(())
+/// let process_response = Arc::new(|response| async move { Ok::<GetIdentityResponse, DummyProcessingError>(response) });
+/// let response = request.execute(&mut client, process_response, RequestSettings::default()).await?;
+/// # Ok::<(), DapiClientError<_, _>>(())
 /// # };
 /// ```
 pub trait DapiRequest {
     /// Response from DAPI for this specific request.
-    type Response;
+    type Response: Send;
     /// An error type for the transport this request uses.
     type TransportError: Mockable;
 
     /// Executes the request.
-    fn execute<'c, D: DapiRequestExecutor>(
+    fn execute<'c, D, O, PE, F, Fut>(
         self,
         dapi_client: &'c D,
+        process_response: Arc<F>,
         settings: RequestSettings,
-    ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
+    ) -> BoxFuture<'c, Result<O, DapiClientError<Self::TransportError, PE>>>
     where
+        D: DapiRequestExecutor,
+        PE: Error + Mockable + CanRetry + Send + Sync + 'static,
+        O: Debug + Mockable + Send + Sync + 'static,
+        F: Fn(Self::Response) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<O, PE>> + Send + 'static,
         Self: 'c;
 }
 
@@ -59,15 +72,23 @@ impl<T: transport::TransportRequest + Send> DapiRequest for T {
 
     type TransportError = <T::Client as transport::TransportClient>::Error;
 
-    fn execute<'c, D: DapiRequestExecutor>(
+    fn execute<'c, D, O, PE, F, Fut>(
         self,
         dapi_client: &'c D,
+        process_response: Arc<F>,
         settings: RequestSettings,
-    ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
+    ) -> BoxFuture<'c, Result<O, DapiClientError<Self::TransportError, PE>>>
     where
+        D: DapiRequestExecutor,
+        PE: Error + Mockable + CanRetry + Send + 'static,
+        O: Debug + Mockable + Send + 'static,
+        F: Fn(Self::Response) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<O, PE>> + Send + 'static,
         Self: 'c,
     {
-        dapi_client.execute(self, settings).boxed()
+        dapi_client
+            .execute(self, process_response, settings)
+            .boxed()
     }
 }
 

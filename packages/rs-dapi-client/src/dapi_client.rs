@@ -3,7 +3,9 @@
 use backon::{ExponentialBuilder, Retryable};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
+use std::error::Error;
 use std::fmt::Debug;
+use std::future::Future;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tracing::Instrument;
@@ -18,32 +20,44 @@ use crate::{
 /// General DAPI request error type.
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
-pub enum DapiClientError<TE: Mockable> {
-    /// The error happened on transport layer
+pub enum DapiClientError<TE, PE>
+where
+    TE: Mockable,
+    PE: Mockable,
+{
+    /// The error happened on transport layer.
     #[error("transport error with {1}: {0}")]
     Transport(
         #[cfg_attr(feature = "mocks", serde(with = "dapi_grpc::mock::serde_mockable"))] TE,
         Address,
     ),
+    /// Processing error from the closure.
+    #[error("processing error: {0}")]
+    Processing(#[cfg_attr(feature = "mocks", serde(with = "dapi_grpc::mock::serde_mockable"))] PE),
     /// There are no valid DAPI addresses to use.
     #[error("no available addresses to use")]
     NoAvailableAddresses,
-    /// [AddressListError] errors
+    /// [AddressListError] errors.
     #[error("address list error: {0}")]
     AddressList(AddressListError),
 
     #[cfg(feature = "mocks")]
     #[error("mock error: {0}")]
-    /// Error happened in mock client
+    /// Error happened in mock client.
     Mock(#[from] crate::mock::MockError),
 }
 
-impl<TE: CanRetry + Mockable> CanRetry for DapiClientError<TE> {
+impl<TE, PE> CanRetry for DapiClientError<TE, PE>
+where
+    TE: CanRetry + Mockable,
+    PE: CanRetry + Mockable,
+{
     fn can_retry(&self) -> bool {
         use DapiClientError::*;
         match self {
             NoAvailableAddresses => false,
             Transport(transport_error, _) => transport_error.can_retry(),
+            Processing(processing_error) => processing_error.can_retry(),
             AddressList(_) => false,
             #[cfg(feature = "mocks")]
             Mock(_) => false,
@@ -61,7 +75,7 @@ struct TransportErrorData {
 /// Serialization of [DapiClientError].
 ///
 /// We need to do manual serialization because of the generic type parameter which doesn't support serde derive.
-impl<TE: Mockable> Mockable for DapiClientError<TE> {
+impl<TE: Mockable, PE: Mockable> Mockable for DapiClientError<TE, PE> {
     #[cfg(feature = "mocks")]
     fn mock_serialize(&self) -> Option<Vec<u8>> {
         Some(serde_json::to_vec(self).expect("serialize DAPI client error"))
@@ -77,15 +91,20 @@ impl<TE: Mockable> Mockable for DapiClientError<TE> {
 /// DAPI client executor trait.
 pub trait DapiRequestExecutor {
     /// Execute request using this DAPI client.
-    async fn execute<R>(
+    async fn execute<R, O, PE, F, Fut>(
         &self,
         request: R,
+        process_response: Arc<F>,
         settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
+    ) -> Result<O, DapiClientError<<R::Client as TransportClient>::Error, PE>>
     where
         R: TransportRequest + Mockable,
         R::Response: Mockable,
-        <R::Client as TransportClient>::Error: Mockable;
+        <R::Client as TransportClient>::Error: Mockable,
+        PE: Error + Mockable + CanRetry + Send,
+        O: Debug + Send + Mockable,
+        F: Fn(R::Response) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<O, PE>> + Send + 'static;
 }
 
 /// Access point to DAPI.
@@ -101,7 +120,7 @@ pub struct DapiClient {
 impl DapiClient {
     /// Initialize new [DapiClient] and optionally override default settings.
     pub fn new(address_list: AddressList, settings: RequestSettings) -> Self {
-        // multiply by 3 as we need to store core and platform addresses, and we want some spare capacity just in case
+        // Multiply by 3 as we need to store core and platform addresses, and we want some spare capacity just in case.
         let address_count = 3 * address_list.len();
 
         Self {
@@ -121,16 +140,20 @@ impl DapiClient {
 
 #[async_trait]
 impl DapiRequestExecutor for DapiClient {
-    /// Execute the [DapiRequest](crate::DapiRequest).
-    async fn execute<R>(
+    async fn execute<R, O, PE, F, Fut>(
         &self,
         request: R,
+        process_response: Arc<F>,
         settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
+    ) -> Result<O, DapiClientError<<R::Client as TransportClient>::Error, PE>>
     where
         R: TransportRequest + Mockable,
-        R::Response: Mockable,
+        R::Response: Mockable + Send,
         <R::Client as TransportClient>::Error: Mockable,
+        PE: Error + Mockable + CanRetry + Send,
+        O: Debug + Send + Mockable,
+        F: Fn(R::Response) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<O, PE>> + Send + 'static,
     {
         // Join settings of different sources to get final version of the settings for this execution:
         let applied_settings = self
@@ -156,6 +179,9 @@ impl DapiRequestExecutor for DapiClient {
         // Setup DAPI request execution routine future. It's a closure that will be called
         // more once to build new future on each retry.
         let routine = move || {
+            // Clone `process_response` inside `routine`
+            let process_response = Arc::clone(&process_response);
+
             // Try to get an address to initialize transport on:
 
             let address_list = self
@@ -163,9 +189,10 @@ impl DapiRequestExecutor for DapiClient {
                 .read()
                 .expect("can't get address list for read");
 
-            let address_result = address_list.get_live_address().cloned().ok_or(
-                DapiClientError::<<R::Client as TransportClient>::Error>::NoAvailableAddresses,
-            );
+            let address_result = address_list
+                .get_live_address()
+                .cloned()
+                .ok_or(DapiClientError::NoAvailableAddresses);
 
             drop(address_list);
 
@@ -200,24 +227,19 @@ impl DapiRequestExecutor for DapiClient {
                     &applied_settings,
                     &pool,
                 )
-                .map_err(|e| {
-                    DapiClientError::<<R::Client as TransportClient>::Error>::Transport(
-                        e,
-                        address.clone(),
-                    )
-                })?;
+                .map_err(|e| DapiClientError::Transport(e, address.clone()))?;
 
                 let response = transport_request
                     .execute_transport(&mut transport_client, &applied_settings)
                     .await
-                    .map_err(|e| {
-                        DapiClientError::<<R::Client as TransportClient>::Error>::Transport(
-                            e,
-                            address.clone(),
-                        )
-                    });
+                    .map_err(|e| DapiClientError::Transport(e, address.clone()))?;
 
-                match &response {
+                // Processing response
+                let result = process_response(response)
+                    .await
+                    .map_err(DapiClientError::Processing);
+
+                match &result {
                     Ok(_) => {
                         // Unban the address if it was banned and node responded successfully this time
                         if address.is_banned() {
@@ -226,11 +248,13 @@ impl DapiRequestExecutor for DapiClient {
                                 .write()
                                 .expect("can't get address list for write");
 
-                            address_list.unban_address(&address)
-                                .map_err(DapiClientError::<<R::Client as TransportClient>::Error>::AddressList)?;
+                            address_list
+                                .unban_address(&address)
+                                .map_err(DapiClientError::AddressList)?;
                         }
 
-                        tracing::trace!(?response, "received {} response", response_name);
+                        // TODO: implement tracing
+                        //tracing::trace!(?response, "received {} response", response_name);
                     }
                     Err(error) => {
                         if !error.can_retry() {
@@ -240,16 +264,17 @@ impl DapiRequestExecutor for DapiClient {
                                     .write()
                                     .expect("can't get address list for write");
 
-                                address_list.ban_address(&address)
-                                    .map_err(DapiClientError::<<R::Client as TransportClient>::Error>::AddressList)?;
+                                address_list
+                                    .ban_address(&address)
+                                    .map_err(DapiClientError::AddressList)?;
                             }
                         } else {
-                            tracing::trace!(?error, "received error");
+                            tracing::trace!(?error, "received retryable error");
                         }
                     }
                 };
 
-                response
+                result
             }
         };
 
@@ -275,8 +300,9 @@ impl DapiRequestExecutor for DapiClient {
         }
 
         // Dump request and response to disk if dump_dir is set:
-        #[cfg(feature = "dump")]
-        Self::dump_request_response(&dump_request, &result, dump_dir);
+        // TODO: implement
+        //#[cfg(feature = "dump")]
+        //Self::dump_request_response(&dump_request, &response, dump_dir);
 
         result
     }

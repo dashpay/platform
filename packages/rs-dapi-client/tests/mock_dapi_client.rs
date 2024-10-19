@@ -1,3 +1,7 @@
+use rs_dapi_client::mock::DummyProcessingError;
+use rs_dapi_client::DapiClientError;
+use std::convert::Infallible;
+use std::sync::Arc;
 #[cfg(feature = "mocks")]
 use {
     dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse, Proof},
@@ -27,9 +31,20 @@ async fn test_mock_get_identity_dapi_client() {
 
     let settings = RequestSettings::default();
 
-    let result = dapi.execute(request.clone(), settings).await.unwrap();
+    let process_response =
+        Arc::new(
+            |response| async move { Ok::<GetIdentityResponse, DummyProcessingError>(response) },
+        );
 
-    let result2 = request.execute(&dapi, settings).await.unwrap();
+    let result = dapi
+        .execute(request.clone(), Arc::clone(&process_response), settings)
+        .await
+        .unwrap();
+
+    let result2 = request
+        .execute(&dapi, process_response, settings)
+        .await
+        .unwrap();
 
     assert_eq!(result, response);
     assert_eq!(result2, response);
