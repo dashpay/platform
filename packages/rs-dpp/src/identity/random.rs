@@ -66,8 +66,8 @@ impl Identity {
     ) -> Result<(Self, I), ProtocolError>
     where
         I: Default
-            + IntoIterator<Item = (IdentityPublicKey, Vec<u8>)>
-            + Extend<(IdentityPublicKey, Vec<u8>)>,
+            + IntoIterator<Item = (IdentityPublicKey, [u8; 32])>
+            + Extend<(IdentityPublicKey, [u8; 32])>,
     {
         match platform_version
             .dpp
@@ -234,8 +234,8 @@ impl Identity {
     ) -> Result<(Vec<Self>, I), ProtocolError>
     where
         I: Default
-            + FromIterator<(IdentityPublicKey, Vec<u8>)>
-            + Extend<(IdentityPublicKey, Vec<u8>)>,
+            + FromIterator<(IdentityPublicKey, [u8; 32])>
+            + Extend<(IdentityPublicKey, [u8; 32])>,
     {
         match platform_version
             .dpp

@@ -1,4 +1,4 @@
-use dpp::bls_signatures::G2Element;
+use dpp::bls_signatures::{Bls12381G2Impl, Signature};
 
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
 use dpp::dashcore::{ChainLock, QuorumSigningRequestId};
@@ -37,7 +37,10 @@ where
         let quorum_config = quorum_set.config();
 
         // First verify that the signature conforms to a signature
-        let Ok(signature) = G2Element::from_bytes(chain_lock.signature.as_bytes()) else {
+
+        let Ok(signature) =
+            Signature::<Bls12381G2Impl>::try_from(chain_lock.signature.as_bytes().as_slice())
+        else {
             return Ok(Some(false));
         };
 
@@ -119,9 +122,12 @@ where
 
         let message_digest = sha256d::Hash::from_engine(engine);
 
-        let mut chain_lock_verified = quorum
-            .public_key
-            .verify(&signature, message_digest.as_ref());
+        let mut chain_lock_verified = signature
+            .verify(
+                &quorum.public_key,
+                message_digest.as_byte_array().as_slice(),
+            )
+            .is_ok();
 
         tracing::debug!(
             ?chain_lock,
@@ -162,9 +168,12 @@ where
 
                 let message_digest = sha256d::Hash::from_engine(engine);
 
-                chain_lock_verified = quorum
-                    .public_key
-                    .verify(&signature, message_digest.as_ref());
+                chain_lock_verified = signature
+                    .verify(
+                        &quorum.public_key,
+                        message_digest.as_byte_array().as_slice(),
+                    )
+                    .is_ok();
 
                 tracing::debug!(
                     ?chain_lock,

@@ -1,12 +1,12 @@
 use derive_more::{Deref, DerefMut, From};
-use dpp::bls_signatures::PrivateKey;
+use dpp::bls_signatures;
+pub use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
+use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
 use dpp::dashcore::bls_sig_utils::BLSSignature;
 use dpp::dashcore::{QuorumHash, Txid};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::fmt::Debug;
-
-pub use dpp::bls_signatures::PublicKey as ThresholdBlsPublicKey;
 
 use crate::error::Error;
 use crate::platform_types::signature_verification_quorum_set::QuorumConfig;
@@ -149,17 +149,14 @@ pub struct VerificationQuorum {
 
     /// Quorum threshold public key is used to verify
     /// signatures produced by corresponding quorum
-    pub public_key: ThresholdBlsPublicKey,
+    pub public_key: ThresholdBlsPublicKey<Bls12381G2Impl>,
 }
 
 impl Debug for VerificationQuorum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VerificationQuorum")
             .field("index", &self.index)
-            .field(
-                "public_key",
-                &hex::encode(*self.public_key.to_bytes()).to_string(),
-            )
+            .field("public_key", &self.public_key.to_string())
             .finish()
     }
 }
@@ -210,11 +207,21 @@ impl SigningQuorum {
         let message_digest = sha256d::Hash::from_engine(engine);
 
         let private_key =
-            PrivateKey::from_bytes(&self.private_key, false).map_err(Error::BLSError)?;
+            bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(&self.private_key)
+                .into_option()
+                .ok_or(Error::BLSError(
+                    dpp::bls_signatures::BlsError::DeserializationError(
+                        "Could not deserialize private key".to_string(),
+                    ),
+                ))?;
 
-        let g2element = private_key.sign(message_digest.as_ref());
-        let g2element_bytes = *g2element.to_bytes();
+        let signature = private_key
+            .sign(
+                SignatureSchemes::Basic,
+                message_digest.as_byte_array().as_slice(),
+            )
+            .map_err(Error::BLSError)?;
 
-        Ok(BLSSignature::from(g2element_bytes))
+        Ok(BLSSignature::from(signature.as_raw_value().to_compressed()))
     }
 }
