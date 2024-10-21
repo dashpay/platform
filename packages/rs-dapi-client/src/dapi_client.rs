@@ -182,6 +182,7 @@ impl DapiRequestExecutor for DapiClient {
                     retries: retries_counter.load(std::sync::atomic::Ordering::Acquire),
                     address: None,
                 })?;
+
                 let pool = self.pool.clone();
 
                 let mut transport_client = R::Client::with_uri_and_settings(
@@ -192,7 +193,7 @@ impl DapiRequestExecutor for DapiClient {
                 .map_err(|error| ExecutionError {
                     inner: DapiClientError::Transport(error),
                     retries: retries_counter.load(std::sync::atomic::Ordering::Acquire),
-                    address: None,
+                    address: Some(address.clone()),
                 })?;
 
                 let response = transport_request
@@ -214,7 +215,7 @@ impl DapiRequestExecutor for DapiClient {
                                     inner: DapiClientError::AddressList(error),
                                     retries: retries_counter
                                         .load(std::sync::atomic::Ordering::Acquire),
-                                    address: None,
+                                    address: Some(address.clone()),
                                 }
                             })?;
                         }
@@ -234,7 +235,7 @@ impl DapiRequestExecutor for DapiClient {
                                         inner: DapiClientError::AddressList(error),
                                         retries: retries_counter
                                             .load(std::sync::atomic::Ordering::Acquire),
-                                        address: None,
+                                        address: Some(address.clone()),
                                     }
                                 })?;
                             }
