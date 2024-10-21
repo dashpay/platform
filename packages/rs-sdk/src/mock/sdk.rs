@@ -24,6 +24,7 @@ use rs_dapi_client::{
     transport::TransportRequest,
     DapiClient, DumpData,
 };
+use std::fmt::Debug;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
@@ -325,7 +326,9 @@ impl MockDashPlatformSdk {
                 Response = <<O as FetchMany<K, R>>::Request as TransportRequest>::Response,
             > + Sync
             + Send
-            + Default,
+            + Default
+            + Debug
+            + 'static,
         <<O as FetchMany<K, R>>::Request as TransportRequest>::Response: Default,
     {
         let grpc_request = query.query(self.prove()).expect("query must be correct");

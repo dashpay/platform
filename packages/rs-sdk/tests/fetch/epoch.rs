@@ -8,7 +8,7 @@ use dash_sdk::{
         fetch_current_no_parameters::FetchCurrent, Fetch, FetchMany, LimitQuery,
         DEFAULT_EPOCH_QUERY_LIMIT,
     },
-    Sdk,
+    Error, Sdk,
 };
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;

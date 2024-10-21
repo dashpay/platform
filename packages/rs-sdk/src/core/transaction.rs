@@ -11,6 +11,7 @@ use dpp::dashcore::{Address, InstantLock, MerkleBlock, OutPoint, Transaction, Tx
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
+use std::sync::Arc;
 
 use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
 use std::time::Duration;
@@ -54,6 +55,7 @@ impl Sdk {
                 from_block_hash,
             )),
         };
+
         self.execute(core_transactions_stream, RequestSettings::default())
             .await
             .map_err(|e| Error::DapiClientError(e.to_string()))
@@ -168,6 +170,7 @@ impl Sdk {
 
                         // Wait until the block is chainlocked
                         let mut core_chain_locked_height;
+
                         loop {
                             let GetTransactionResponse {
                                 height,

@@ -28,10 +28,11 @@ pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    DapiClient, DapiClientError, DapiRequestExecutor,
+    CanRetry, DapiClient, DapiClientError, DapiRequestExecutor,
 };
 use std::collections::btree_map::Entry;
 use std::fmt::Debug;
+use std::future::Future;
 #[cfg(feature = "mocks")]
 use std::num::NonZeroUsize;
 #[cfg(feature = "mocks")]
@@ -83,7 +84,7 @@ pub type LastQueryTimestamp = u64;
 ///
 /// See tests/ for examples of using the SDK.
 pub struct Sdk {
-    /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)  
+    /// The network that the sdk is configured for (Dash (mainnet), Testnet, Devnet, Regtest)
     pub network: Network,
     inner: SdkInstance,
     /// Use proofs when retrieving data from Platform.
@@ -668,17 +669,32 @@ fn verify_metadata_height(
 
 #[async_trait::async_trait]
 impl DapiRequestExecutor for Sdk {
-    async fn execute<R: TransportRequest>(
+    async fn execute_and_process<R, O, PE, F, Fut>(
         &self,
         request: R,
+        process_response: F,
         settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
+    ) -> Result<O, DapiClientError<<R::Client as TransportClient>::Error, PE>>
+    where
+        R: TransportRequest + Mockable,
+        R::Response: Mockable,
+        <R::Client as TransportClient>::Error: Mockable,
+        PE: std::error::Error + Mockable + CanRetry + Send,
+        O: Debug + Send,
+        F: Fn(R::Response) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<O, PE>> + Send + 'static,
+    {
         match self.inner {
-            SdkInstance::Dapi { ref dapi, .. } => dapi.execute(request, settings).await,
+            SdkInstance::Dapi { ref dapi, .. } => {
+                dapi.execute_and_process(request, process_response, settings)
+                    .await
+            }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref dapi, .. } => {
                 let dapi_guard = dapi.lock().await;
-                dapi_guard.execute(request, settings).await
+                dapi_guard
+                    .execute_and_process(request, process_response, settings)
+                    .await
             }
         }
     }

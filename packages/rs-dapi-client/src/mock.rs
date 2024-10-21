@@ -11,14 +11,18 @@
 //!
 //! See `tests/mock_dapi_client.rs` for an example.
 
+use crate::dapi_client::DummyProcessingError;
 use crate::{
     transport::{TransportClient, TransportRequest},
-    DapiClientError, DapiRequestExecutor, RequestSettings,
+    CanRetry, DapiClientError, DapiRequestExecutor, RequestSettings,
 };
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 use hex::ToHex;
 use sha2::Digest;
+use std::error::Error;
+use std::future::Future;
+use std::sync::Arc;
 use std::{
     any::type_name,
     collections::HashMap,
@@ -37,7 +41,10 @@ pub struct MockDapiClient {
 /// Result of executing a mock request
 pub type MockResult<T> = Result<
     <T as TransportRequest>::Response,
-    DapiClientError<<<T as TransportRequest>::Client as TransportClient>::Error>,
+    DapiClientError<
+        <<T as TransportRequest>::Client as TransportClient>::Error,
+        DummyProcessingError,
+    >,
 >;
 
 impl MockDapiClient {
@@ -105,14 +112,20 @@ impl MockDapiClient {
 
 #[async_trait]
 impl DapiRequestExecutor for MockDapiClient {
-    async fn execute<R: TransportRequest>(
+    async fn execute_and_process<R, O, PE, F, Fut>(
         &self,
         request: R,
+        process_response: F,
         _settings: RequestSettings,
-    ) -> MockResult<R>
+    ) -> Result<O, DapiClientError<<R::Client as TransportClient>::Error, PE>>
     where
-        R: Mockable,
+        R: TransportRequest + Mockable,
         R::Response: Mockable,
+        <R::Client as TransportClient>::Error: Mockable,
+        PE: Error + Mockable + CanRetry,
+        O: Debug,
+        F: Fn(R::Response) -> Fut + Send + Sync,
+        Fut: Future<Output = Result<O, PE>> + Send,
     {
         let (key, response) = self.expectations.get(&request);
 
@@ -124,15 +137,17 @@ impl DapiRequestExecutor for MockDapiClient {
             "mock execute"
         );
 
-        return if let Some(response) = response {
-            response
+        if let Some(response) = response {
+            process_response(response)
+                .await
+                .map_err(DapiClientError::Processing)
         } else {
             Err(MockError::MockExpectationNotFound(format!(
                 "unexpected mock request with key {}, use MockDapiClient::expect(): {:?}",
                 key, request
             ))
             .into())
-        };
+        }
     }
 }
 
@@ -248,7 +263,7 @@ impl Expectations {
     /// Get the response for a given request.
     ///
     /// Returns `None` if the request has not been expected.
-    pub fn get<I: Mockable, O: Mockable>(&self, request: &I) -> (Key, Option<O>) {
+    pub fn get<I: Mockable, R: Mockable>(&self, request: &I) -> (Key, Option<R>) {
         let key = Key::new(request);
 
         let response = self.expectations.get(&key).and_then(|v| v.deserialize());
