@@ -22,7 +22,6 @@ pub trait DapiRequestExecutor {
 /// Error happened during request execution.
 #[derive(Debug, Clone, thiserror::Error, Eq, PartialEq)]
 #[error("{inner}")]
-#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct ExecutionError<E> {
     /// The cause of error
     pub inner: E,
@@ -47,10 +46,9 @@ impl<E: CanRetry> CanRetry for ExecutionError<E> {
 
 /// Request execution response.
 #[derive(Debug, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct ExecutionResponse<R> {
     /// The response from the request
-    pub response: R,
+    pub inner: R,
     /// How many times the request was retried
     pub retries: usize,
     /// The address of the node that was used for the request
@@ -60,7 +58,7 @@ pub struct ExecutionResponse<R> {
 impl<R> ExecutionResponse<R> {
     /// Unwrap the response
     pub fn into_inner(self) -> R {
-        self.response
+        self.inner
     }
 }
 

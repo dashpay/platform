@@ -177,8 +177,8 @@ impl DapiRequestExecutor for DapiClient {
             async move {
                 // It stays wrapped in `Result` since we want to return
                 // `impl Future<Output = Result<...>`, not a `Result` itself.
-                let address = address_result.map_err(|cause| ExecutionError {
-                    inner: cause,
+                let address = address_result.map_err(|inner| ExecutionError {
+                    inner,
                     retries: retries_counter.load(std::sync::atomic::Ordering::Acquire),
                     address: None,
                 })?;
@@ -247,13 +247,13 @@ impl DapiRequestExecutor for DapiClient {
                 let retries = retries_counter.load(std::sync::atomic::Ordering::Acquire);
 
                 response
-                    .map(|response| ExecutionResponse {
-                        response,
+                    .map(|inner| ExecutionResponse {
+                        inner,
                         retries,
                         address: address.clone(),
                     })
-                    .map_err(|cause| ExecutionError {
-                        inner: cause,
+                    .map_err(|inner| ExecutionError {
+                        inner,
                         retries,
                         address: Some(address),
                     })

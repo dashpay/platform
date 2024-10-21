@@ -262,13 +262,13 @@ impl Expectations {
 
 impl<R: Mockable> Mockable for ExecutionResponse<R> {
     fn mock_serialize(&self) -> Option<Vec<u8>> {
-        R::mock_serialize(&self.response)
+        R::mock_serialize(&self.inner)
     }
 
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
         // TODO: We need serialize retries and address too
-        R::mock_deserialize(data).map(|response| ExecutionResponse {
-            response,
+        R::mock_deserialize(data).map(|inner| ExecutionResponse {
+            inner,
             retries: 0,
             address: Address::from(Uri::default()),
         })
@@ -282,8 +282,8 @@ impl<E: Mockable> Mockable for ExecutionError<E> {
 
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
         // TODO: We need serialize retries and address too
-        E::mock_deserialize(data).map(|cause| ExecutionError {
-            inner: cause,
+        E::mock_deserialize(data).map(|inner| ExecutionError {
+            inner,
             retries: 0,
             address: None,
         })

@@ -366,7 +366,7 @@ impl MockDashPlatformSdk {
         dapi_guard.expect(
             &grpc_request,
             &Ok(ExecutionResponse {
-                response: Default::default(),
+                inner: Default::default(),
                 retries: 0,
                 address: Uri::default().into(),
             }),
