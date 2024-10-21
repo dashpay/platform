@@ -33,7 +33,7 @@ mod online {
 
         // we add few millis to duration to give chance to the server to time out before we kill request
         let response = tokio::time::timeout(
-            TIMEOUT + Duration::from_millis(100),
+            TIMEOUT + Duration::from_secs(1),
             request.execute(&sdk, settings),
         )
         .await
