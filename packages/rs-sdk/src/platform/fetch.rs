@@ -124,7 +124,9 @@ where
         let response = request
             .clone()
             .execute(sdk, settings.unwrap_or_default())
-            .await?;
+            .await // TODO: We need better way to handle execution response and errors
+            .map(|execution_response| execution_response.unwrap())
+            .map_err(|execution_error| execution_error.unwrap())?;
 
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
@@ -172,7 +174,9 @@ where
         let response = request
             .clone()
             .execute(sdk, settings.unwrap_or_default())
-            .await?;
+            .await // TODO: We need better way to handle execution response and errors
+            .map(|execution_response| execution_response.unwrap())
+            .map_err(|execution_error| execution_error.unwrap())?;
 
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");

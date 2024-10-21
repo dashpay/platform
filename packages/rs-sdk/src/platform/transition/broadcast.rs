@@ -24,7 +24,10 @@ impl BroadcastStateTransition for StateTransition {
     async fn broadcast(&self, sdk: &Sdk) -> Result<(), Error> {
         let request = self.broadcast_request_for_state_transition()?;
 
-        request.execute(sdk, RequestSettings::default()).await?;
+        request
+            .execute(sdk, RequestSettings::default())
+            .await // TODO: We need better way to handle execution errors
+            .map_err(|error| error.unwrap())?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
 
@@ -41,11 +44,17 @@ impl BroadcastStateTransition for StateTransition {
         request
             .clone()
             .execute(sdk, RequestSettings::default())
-            .await?;
+            .await // TODO: We need better way to handle execution response and errors
+            .map(|execution_response| execution_response.unwrap())
+            .map_err(|execution_error| execution_error.unwrap())?;
 
         let request = self.wait_for_state_transition_result_request()?;
 
-        let response = request.execute(sdk, RequestSettings::default()).await?;
+        let response = request
+            .execute(sdk, RequestSettings::default())
+            .await // TODO: We need better way to handle execution response and errors
+            .map(|execution_response| execution_response.unwrap())
+            .map_err(|execution_error| execution_error.unwrap())?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;
         let proof = response.proof_owned()?;

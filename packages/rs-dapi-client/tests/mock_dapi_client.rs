@@ -1,3 +1,5 @@
+use http_serde::http::Uri;
+use rs_dapi_client::{Address, ExecutionResponse};
 #[cfg(feature = "mocks")]
 use {
     dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse, Proof},
@@ -21,8 +23,13 @@ async fn test_mock_get_identity_dapi_client() {
             metadata: Default::default(),
         }))
     };
+    let execution_response = ExecutionResponse {
+        response,
+        retries: 0,
+        address: Address::from(Uri::default()),
+    };
 
-    dapi.expect(&request, &Ok(response.clone()))
+    dapi.expect(&request, &Ok(execution_response.clone()))
         .expect("expectation added");
 
     let settings = RequestSettings::default();
@@ -31,6 +38,6 @@ async fn test_mock_get_identity_dapi_client() {
 
     let result2 = request.execute(&dapi, settings).await.unwrap();
 
-    assert_eq!(result, response);
-    assert_eq!(result2, response);
+    assert_eq!(result, execution_response);
+    assert_eq!(result2, execution_response);
 }

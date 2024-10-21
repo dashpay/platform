@@ -47,11 +47,16 @@ impl TopUpIdentity for Identity {
         request
             .clone()
             .execute(sdk, RequestSettings::default())
-            .await?;
+            .await // TODO: We need better way to handle execution errors
+            .map_err(|error| error.unwrap())?;
 
         let request = state_transition.wait_for_state_transition_result_request()?;
 
-        let response = request.execute(sdk, RequestSettings::default()).await?;
+        let response = request
+            .execute(sdk, RequestSettings::default())
+            .await // TODO: We need better way to handle execution response and errors
+            .map(|execution_response| execution_response.unwrap())
+            .map_err(|execution_error| execution_error.unwrap())?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;
 

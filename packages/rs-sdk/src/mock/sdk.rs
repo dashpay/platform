@@ -1,6 +1,7 @@
 //! Mocking mechanisms for Dash Platform SDK.
 //!
 //! See [MockDashPlatformSdk] for more details.
+use super::MockResponse;
 use crate::{
     platform::{
         types::{evonode::EvoNode, identity::IdentityRequest},
@@ -18,16 +19,15 @@ use dapi_grpc::{
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use drive_proof_verifier::{error::ContextProviderError, ContextProvider, FromProof};
+use http::Uri;
 use rs_dapi_client::mock::MockError;
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
     transport::TransportRequest,
-    DapiClient, DumpData,
+    DapiClient, DumpData, ExecutionResponse,
 };
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, OwnedMutexGuard};
-
-use super::MockResponse;
 
 /// Mechanisms to mock Dash Platform SDK.
 ///
@@ -363,7 +363,14 @@ impl MockDashPlatformSdk {
         // This expectation will work for execute
         let mut dapi_guard = self.dapi.lock().await;
         // We don't really care about the response, as it will be mocked by from_proof, so we provide default()
-        dapi_guard.expect(&grpc_request, &Ok(Default::default()))?;
+        dapi_guard.expect(
+            &grpc_request,
+            &Ok(ExecutionResponse {
+                response: Default::default(),
+                retries: 0,
+                address: Uri::default().into(),
+            }),
+        )?;
 
         Ok(())
     }
