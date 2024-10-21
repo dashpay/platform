@@ -124,17 +124,14 @@ where
         settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata), Error> {
         let request = query.query(sdk.prove())?;
-        let request_arc = Arc::new(request.clone());
+        let request_clone = request.clone();
         let sdk_arc = Arc::new(sdk.clone());
 
         let process_response = move |response| {
-            let request = Arc::clone(&request_arc);
+            let request = request_clone.clone();
             let sdk = Arc::clone(&sdk_arc);
 
-            async move {
-                sdk.parse_proof_with_metadata((*request).clone(), response)
-                    .await
-            }
+            async move { sdk.parse_proof_with_metadata(request, response).await }
         };
 
         let (object, response_metadata): (Option<Self>, ResponseMetadata) = request
@@ -178,15 +175,15 @@ where
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
         let request = query.query(sdk.prove())?;
 
-        let request_arc = Arc::new(request.clone());
+        let request_clone = request.clone();
         let sdk_arc = Arc::new(sdk.clone());
 
         let process_response = move |response| {
-            let request = Arc::clone(&request_arc);
+            let request = request_clone.clone();
             let sdk = Arc::clone(&sdk_arc);
 
             async move {
-                sdk.parse_proof_with_metadata_and_proof((*request).clone(), response)
+                sdk.parse_proof_with_metadata_and_proof(request, response)
                     .await
             }
         };

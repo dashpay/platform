@@ -4,6 +4,7 @@
 //!
 //! ## Traits
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
+
 use super::LimitQuery;
 use crate::{
     error::Error,
@@ -14,11 +15,10 @@ use crate::{
 use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
-    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetIdentitiesBalancesRequest, GetIdentityKeysRequest, GetPathElementsRequest,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetVotePollsByEndDateRequest,
+    GetDataContractsRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentitiesBalancesRequest,
+    GetIdentityKeysRequest, GetPathElementsRequest, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::data_contract::DataContract;
@@ -41,6 +41,8 @@ use drive_proof_verifier::types::{
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
+use std::fmt::Debug;
+use std::sync::Arc;
 
 /// Fetch multiple objects from Platform.
 ///
@@ -89,7 +91,10 @@ where
             Request = Self::Request,
             Response = <<Self as FetchMany<K, O>>::Request as TransportRequest>::Response,
         > + Send
-        + Default,
+        + Sync
+        + Default
+        + Debug
+        + 'static,
 {
     /// Type of request used to fetch multiple objects from Platform.
     ///
@@ -97,7 +102,8 @@ where
     ///
     /// This type must implement [`TransportRequest`] and [`MockRequest`](crate::mock::MockRequest).
     type Request: TransportRequest
-        + Into<<O as FromProof<<Self as FetchMany<K, O>>::Request>>::Request>;
+        + Into<<O as FromProof<<Self as FetchMany<K, O>>::Request>>::Request>
+        + 'static;
 
     /// Fetch (or search) multiple objects on the Dash Platform
     ///
@@ -143,20 +149,24 @@ where
     ) -> Result<O, Error> {
         let request = query.query(sdk.prove())?;
 
-        let response = request
-            .clone()
-            .execute(sdk, RequestSettings::default())
-            .await?;
+        let request_clone = request.clone();
+        let sdk_arc = Arc::new(sdk.clone());
 
-        let object_type = std::any::type_name::<Self>().to_string();
-        tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
+        let process_response = move |response| {
+            let request = request_clone.clone();
+            let sdk = Arc::clone(&sdk_arc);
 
-        let object: O = sdk
-            .parse_proof::<<Self as FetchMany<K, O>>::Request, O>(request, response)
-            .await?
-            .unwrap_or_default();
+            async move {
+                sdk.parse_proof::<<Self as FetchMany<K, O>>::Request, O>(request, response)
+                    .await
+                    .map(|x| x.unwrap_or_default())
+            }
+        };
 
-        Ok(object)
+        request
+            .execute(sdk, process_response, RequestSettings::default())
+            .await
+            .map_err(Error::from)
     }
 
     /// Fetch multiple objects from Platform by their identifiers.
@@ -185,7 +195,7 @@ where
 
     /// Fetch multiple objects from Platform with limit.
     ///
-    /// Fetches up to `limit` objects matching the `query`.    
+    /// Fetches up to `limit` objects matching the `query`.
     /// See [FetchMany] and [FetchMany::fetch_many()] for more detailed documentation.
     ///
     /// ## Parameters
@@ -231,19 +241,24 @@ impl FetchMany<Identifier, Documents> for Document {
     ) -> Result<Documents, Error> {
         let document_query: DocumentQuery = query.query(sdk.prove())?;
 
-        let request = document_query.clone();
-        let response: GetDocumentsResponse =
-            request.execute(sdk, RequestSettings::default()).await?;
+        let document_query_clone = document_query.clone();
+        let sdk_arc = Arc::new(sdk.clone());
 
-        tracing::trace!(request=?document_query, response=?response, "fetch multiple documents");
+        let process_response = move |response| {
+            let document_query = document_query_clone.clone();
+            let sdk = Arc::clone(&sdk_arc);
 
-        // let object: Option<BTreeMap<K,Document>> = sdk
-        let documents: Documents = sdk
-            .parse_proof::<DocumentQuery, Documents>(document_query, response)
-            .await?
-            .unwrap_or_default();
+            async move {
+                sdk.parse_proof::<DocumentQuery, Documents>(document_query, response)
+                    .await
+                    .map(|x| x.unwrap_or_default())
+            }
+        };
 
-        Ok(documents)
+        document_query
+            .execute(sdk, process_response, RequestSettings::default())
+            .await
+            .map_err(Error::from)
     }
 }
 
