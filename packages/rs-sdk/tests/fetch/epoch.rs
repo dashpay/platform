@@ -25,14 +25,8 @@ async fn get_current_epoch(sdk: &Sdk, cfg: &Config) -> EpochIndex {
     }
     .into();
 
-    let process_response = |response| async move { Ok::<_, Error>(response) };
-
     let response = sdk
-        .execute(
-            identity_request,
-            process_response,
-            RequestSettings::default(),
-        )
+        .execute(identity_request, RequestSettings::default())
         .await
         .expect("get identity");
 
