@@ -11,6 +11,7 @@
 //!
 //! See `tests/mock_dapi_client.rs` for an example.
 
+use crate::dapi_client::DummyProcessingError;
 use crate::{
     transport::{TransportClient, TransportRequest},
     CanRetry, DapiClientError, DapiRequestExecutor, RequestSettings,
@@ -42,7 +43,7 @@ pub type MockResult<T> = Result<
     <T as TransportRequest>::Response,
     DapiClientError<
         <<T as TransportRequest>::Client as TransportClient>::Error,
-        <<T as TransportRequest>::Client as TransportClient>::Error,
+        DummyProcessingError,
     >,
 >;
 
@@ -111,7 +112,7 @@ impl MockDapiClient {
 
 #[async_trait]
 impl DapiRequestExecutor for MockDapiClient {
-    async fn execute<R, O, PE, F, Fut>(
+    async fn execute_and_process<R, O, PE, F, Fut>(
         &self,
         request: R,
         process_response: F,
@@ -268,29 +269,5 @@ impl Expectations {
         let response = self.expectations.get(&key).and_then(|v| v.deserialize());
 
         (key, response)
-    }
-}
-
-/// Processing Error for tests
-#[derive(Debug, thiserror::Error)]
-#[error("DummyProcessingError occurred")]
-// #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
-pub struct DummyProcessingError;
-
-impl CanRetry for DummyProcessingError {
-    fn can_retry(&self) -> bool {
-        false
-    }
-}
-
-impl Mockable for DummyProcessingError {
-    #[cfg(feature = "mocks")]
-    fn mock_serialize(&self) -> Option<Vec<u8>> {
-        Some(vec![]) // Implement as needed
-    }
-
-    #[cfg(feature = "mocks")]
-    fn mock_deserialize(_data: &[u8]) -> Option<Self> {
-        Some(DummyProcessingError)
     }
 }

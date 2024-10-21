@@ -135,7 +135,7 @@ where
         };
 
         let (object, response_metadata): (Option<Self>, ResponseMetadata) = request
-            .execute(sdk, process_response, settings.unwrap_or_default())
+            .execute_and_process(sdk, process_response, settings.unwrap_or_default())
             .await?;
 
         match object {
@@ -189,7 +189,7 @@ where
         };
 
         let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) = request
-            .execute(sdk, process_response, settings.unwrap_or_default())
+            .execute_and_process(sdk, process_response, settings.unwrap_or_default())
             .await?;
 
         match object {

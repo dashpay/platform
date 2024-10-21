@@ -73,8 +73,10 @@ pub enum Error {
     StaleNode(#[from] StaleNodeError),
 }
 
-impl<T: Debug + Mockable> From<DapiClientError<T, Error>> for Error {
-    fn from(value: DapiClientError<T, Error>) -> Self {
+impl<T: Debug + Mockable, PE: std::error::Error + Mockable + CanRetry> From<DapiClientError<T, PE>>
+    for Error
+{
+    fn from(value: DapiClientError<T, PE>) -> Self {
         Self::DapiClientError(format!("{:?}", value))
     }
 }

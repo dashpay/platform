@@ -164,7 +164,7 @@ where
         };
 
         request
-            .execute(sdk, process_response, RequestSettings::default())
+            .execute_and_process(sdk, process_response, RequestSettings::default())
             .await
             .map_err(Error::from)
     }
@@ -256,7 +256,7 @@ impl FetchMany<Identifier, Documents> for Document {
         };
 
         document_query
-            .execute(sdk, process_response, RequestSettings::default())
+            .execute_and_process(sdk, process_response, RequestSettings::default())
             .await
             .map_err(Error::from)
     }

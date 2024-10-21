@@ -669,7 +669,7 @@ fn verify_metadata_height(
 
 #[async_trait::async_trait]
 impl DapiRequestExecutor for Sdk {
-    async fn execute<R, O, PE, F, Fut>(
+    async fn execute_and_process<R, O, PE, F, Fut>(
         &self,
         request: R,
         process_response: F,
@@ -686,13 +686,14 @@ impl DapiRequestExecutor for Sdk {
     {
         match self.inner {
             SdkInstance::Dapi { ref dapi, .. } => {
-                dapi.execute(request, process_response, settings).await
+                dapi.execute_and_process(request, process_response, settings)
+                    .await
             }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref dapi, .. } => {
                 let dapi_guard = dapi.lock().await;
                 dapi_guard
-                    .execute(request, process_response, settings)
+                    .execute_and_process(request, process_response, settings)
                     .await
             }
         }

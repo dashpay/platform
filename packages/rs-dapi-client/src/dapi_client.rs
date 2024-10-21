@@ -18,6 +18,20 @@ use crate::{
     Address, AddressList, CanRetry, RequestSettings,
 };
 
+/// Processing Error for tests and non-processing request execution
+#[derive(Debug, thiserror::Error)]
+#[error("dummy processing error")]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
+pub struct DummyProcessingError;
+
+impl CanRetry for DummyProcessingError {
+    fn can_retry(&self) -> bool {
+        false
+    }
+}
+
+impl Mockable for DummyProcessingError {}
+
 /// General DAPI request error type.
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
@@ -92,7 +106,27 @@ impl<TE: Mockable, PE: Mockable> Mockable for DapiClientError<TE, PE> {
 /// DAPI client executor trait.
 pub trait DapiRequestExecutor {
     /// Execute request using this DAPI client.
-    async fn execute<R, O, PE, F, Fut>(
+    async fn execute<R>(
+        &self,
+        request: R,
+        settings: RequestSettings,
+    ) -> Result<
+        R::Response,
+        DapiClientError<<R::Client as TransportClient>::Error, DummyProcessingError>,
+    >
+    where
+        R: TransportRequest + Mockable,
+        R::Response: Mockable,
+        <R::Client as TransportClient>::Error: Mockable,
+    {
+        let process_response = move |response: R::Response| async move { Ok(response) };
+
+        self.execute_and_process(request, process_response, settings)
+            .await
+    }
+
+    /// Execute request using this DAPI client.
+    async fn execute_and_process<R, O, PE, F, Fut>(
         &self,
         request: R,
         // TODO: Figure out how to make it optional. For example we can do two methods: execute and execute_and_process
@@ -142,7 +176,7 @@ impl DapiClient {
 
 #[async_trait]
 impl DapiRequestExecutor for DapiClient {
-    async fn execute<R, O, PE, F, Fut>(
+    async fn execute_and_process<R, O, PE, F, Fut>(
         &self,
         request: R,
         process_response: F,

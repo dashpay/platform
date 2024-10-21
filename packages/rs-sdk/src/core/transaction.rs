@@ -56,15 +56,9 @@ impl Sdk {
             )),
         };
 
-        let process_response = |response| async move { Ok::<_, Error>(response) };
-
-        self.execute(
-            core_transactions_stream,
-            process_response,
-            RequestSettings::default(),
-        )
-        .await
-        .map_err(|e| Error::DapiClientError(e.to_string()))
+        self.execute(core_transactions_stream, RequestSettings::default())
+            .await
+            .map_err(|e| Error::DapiClientError(e.to_string()))
     }
 
     /// Waits for a response for the asset lock proof
@@ -83,8 +77,6 @@ impl Sdk {
         .entered();
 
         tracing::debug!("waiting for messages from stream");
-
-        let process_response = |response| async move { Ok::<_, Error>(response) };
 
         // Define an inner async block to handle the stream processing.
         let stream_processing = async {
@@ -189,7 +181,6 @@ impl Sdk {
                                     GetTransactionRequest {
                                         id: transaction_id.to_string(),
                                     },
-                                    process_response,
                                     RequestSettings::default(),
                                 )
                                 .await?;
