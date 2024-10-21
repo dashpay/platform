@@ -5,7 +5,7 @@ use std::time::Duration;
 use dapi_grpc::mock::Mockable;
 use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
-use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
+use rs_dapi_client::{CanRetry, DapiClientError};
 
 pub use drive_proof_verifier::error::ContextProviderError;
 

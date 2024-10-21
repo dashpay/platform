@@ -1,6 +1,6 @@
 //! [DapiClient] definition.
 
-use backon::{BackoffBuilder, ConstantBuilder, ExponentialBuilder, Retryable};
+use backon::{ConstantBuilder, Retryable};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 use std::fmt::Debug;

@@ -28,7 +28,7 @@ pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResponse, ExecutionResult,
+    DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResult,
 };
 use std::collections::btree_map::Entry;
 use std::fmt::Debug;

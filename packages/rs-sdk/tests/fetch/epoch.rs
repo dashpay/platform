@@ -1,8 +1,6 @@
 use super::{common::setup_logs, config::Config};
-use dapi_grpc::platform::{
-    v0::{get_identity_request::GetIdentityRequestV0, GetIdentityRequest},
-    VersionedGrpcResponse,
-};
+use dapi_grpc::platform::v0::{get_identity_request::GetIdentityRequestV0, GetIdentityRequest};
+use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_sdk::{
     platform::{
         fetch_current_no_parameters::FetchCurrent, Fetch, FetchMany, LimitQuery,
@@ -27,7 +25,9 @@ async fn get_current_epoch(sdk: &Sdk, cfg: &Config) -> EpochIndex {
 
     let response = sdk
         .execute(identity_request, RequestSettings::default())
-        .await
+        .await // TODO: We need better way to handle execution response and errors
+        .map(|execution_response| execution_response.unwrap())
+        .map_err(|execution_error| execution_error.unwrap())
         .expect("get identity");
 
     response.metadata().expect("metadata").epoch as EpochIndex
