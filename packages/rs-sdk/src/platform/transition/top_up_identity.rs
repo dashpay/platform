@@ -48,15 +48,15 @@ impl TopUpIdentity for Identity {
             .clone()
             .execute(sdk, RequestSettings::default())
             .await // TODO: We need better way to handle execution errors
-            .map_err(|error| error.unwrap())?;
+            .map_err(|error| error.into_inner())?;
 
         let request = state_transition.wait_for_state_transition_result_request()?;
 
         let response = request
             .execute(sdk, RequestSettings::default())
             .await // TODO: We need better way to handle execution response and errors
-            .map(|execution_response| execution_response.unwrap())
-            .map_err(|execution_error| execution_error.unwrap())?;
+            .map(|execution_response| execution_response.into_inner())
+            .map_err(|execution_error| execution_error.into_inner())?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;
 

@@ -147,8 +147,8 @@ where
             .clone()
             .execute(sdk, RequestSettings::default())
             .await // TODO: We need better way to handle execution response and errors
-            .map(|execution_response| execution_response.unwrap())
-            .map_err(|execution_error| execution_error.unwrap())?;
+            .map(|execution_response| execution_response.into_inner())
+            .map_err(|execution_error| execution_error.into_inner())?;
 
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
@@ -237,8 +237,8 @@ impl FetchMany<Identifier, Documents> for Document {
         let response: GetDocumentsResponse = request
             .execute(sdk, RequestSettings::default())
             .await // TODO: We need better way to handle execution response and errors
-            .map(|execution_response| execution_response.unwrap())
-            .map_err(|execution_error| execution_error.unwrap())?;
+            .map(|execution_response| execution_response.into_inner())
+            .map_err(|execution_error| execution_error.into_inner())?;
 
         tracing::trace!(request=?document_query, response=?response, "fetch multiple documents");
 

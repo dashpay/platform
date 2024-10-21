@@ -74,7 +74,7 @@ impl<S: Signer> PutVote<S> for Vote {
         request
             .execute(sdk, settings.request_settings)
             .await // TODO: We need better way to handle execution errors
-            .map_err(|error| error.unwrap())?;
+            .map_err(|error| error.into_inner())?;
 
         Ok(())
     }
@@ -112,8 +112,8 @@ impl<S: Signer> PutVote<S> for Vote {
         let response_result = request
             .execute(sdk, settings.request_settings)
             .await // TODO: We need better way to handle execution response and errors
-            .map(|execution_response| execution_response.unwrap())
-            .map_err(|execution_error| execution_error.unwrap());
+            .map(|execution_response| execution_response.into_inner())
+            .map_err(|execution_error| execution_error.into_inner());
 
         match response_result {
             Ok(_) => {}
@@ -135,8 +135,8 @@ impl<S: Signer> PutVote<S> for Vote {
         let response = request
             .execute(sdk, settings.request_settings)
             .await // TODO: We need better way to handle execution response and errors
-            .map(|execution_response| execution_response.unwrap())
-            .map_err(|execution_error| execution_error.unwrap())?;
+            .map(|execution_response| execution_response.into_inner())
+            .map_err(|execution_error| execution_error.into_inner())?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;
         let proof = response.proof_owned()?;

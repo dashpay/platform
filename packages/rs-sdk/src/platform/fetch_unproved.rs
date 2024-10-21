@@ -78,8 +78,8 @@ where
             .clone()
             .execute(sdk, settings)
             .await // TODO: We need better way to handle execution response and errors
-            .map(|execution_response| execution_response.unwrap())
-            .map_err(|execution_error| execution_error.unwrap())?;
+            .map(|execution_response| execution_response.into_inner())
+            .map_err(|execution_error| execution_error.into_inner())?;
 
         // Parse the response into the appropriate type along with metadata
         let (object, mtd): (Option<Self>, platform_proto::ResponseMetadata) =

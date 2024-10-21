@@ -131,7 +131,7 @@ impl DapiRequestExecutor for MockDapiClient {
             ));
 
             Err(ExecutionError {
-                cause: DapiClientError::Mock(error),
+                inner: DapiClientError::Mock(error),
                 retries: 0,
                 address: None,
             })
@@ -277,13 +277,13 @@ impl<R: Mockable> Mockable for ExecutionResponse<R> {
 
 impl<E: Mockable> Mockable for ExecutionError<E> {
     fn mock_serialize(&self) -> Option<Vec<u8>> {
-        E::mock_serialize(&self.cause)
+        E::mock_serialize(&self.inner)
     }
 
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
         // TODO: We need serialize retries and address too
         E::mock_deserialize(data).map(|cause| ExecutionError {
-            cause,
+            inner: cause,
             retries: 0,
             address: None,
         })

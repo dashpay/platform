@@ -140,7 +140,7 @@ impl DapiRequestExecutor for DapiClient {
         // Setup DAPI request execution routine future. It's a closure that will be called
         // more once to build new future on each retry.
         let routine = move || {
-            let retries_counter = Arc::clone(&retries_counter_arc_ref);
+            let retries_counter = Arc::clone(retries_counter_arc_ref);
 
             // Try to get an address to initialize transport on:
             let address_list = self
@@ -178,7 +178,7 @@ impl DapiRequestExecutor for DapiClient {
                 // It stays wrapped in `Result` since we want to return
                 // `impl Future<Output = Result<...>`, not a `Result` itself.
                 let address = address_result.map_err(|cause| ExecutionError {
-                    cause,
+                    inner: cause,
                     retries: retries_counter.load(std::sync::atomic::Ordering::Acquire),
                     address: None,
                 })?;
@@ -190,7 +190,7 @@ impl DapiRequestExecutor for DapiClient {
                     &pool,
                 )
                 .map_err(|error| ExecutionError {
-                    cause: DapiClientError::Transport(error),
+                    inner: DapiClientError::Transport(error),
                     retries: retries_counter.load(std::sync::atomic::Ordering::Acquire),
                     address: None,
                 })?;
@@ -211,7 +211,7 @@ impl DapiRequestExecutor for DapiClient {
 
                             address_list.unban_address(&address).map_err(|error| {
                                 ExecutionError {
-                                    cause: DapiClientError::AddressList(error),
+                                    inner: DapiClientError::AddressList(error),
                                     retries: retries_counter
                                         .load(std::sync::atomic::Ordering::Acquire),
                                     address: None,
@@ -231,7 +231,7 @@ impl DapiRequestExecutor for DapiClient {
 
                                 address_list.ban_address(&address).map_err(|error| {
                                     ExecutionError {
-                                        cause: DapiClientError::AddressList(error),
+                                        inner: DapiClientError::AddressList(error),
                                         retries: retries_counter
                                             .load(std::sync::atomic::Ordering::Acquire),
                                         address: None,
@@ -253,7 +253,7 @@ impl DapiRequestExecutor for DapiClient {
                         address: address.clone(),
                     })
                     .map_err(|cause| ExecutionError {
-                        cause,
+                        inner: cause,
                         retries,
                         address: Some(address),
                     })
