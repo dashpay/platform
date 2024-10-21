@@ -31,7 +31,7 @@ pub struct ExecutionError<E> {
     pub address: Option<Address>,
 }
 
-impl<E: CanRetry> ExecutionError<E> {
+impl<E> ExecutionError<E> {
     /// Unwrap the error cause
     pub fn into_inner(self) -> E {
         self.inner
