@@ -12,6 +12,7 @@ use tracing::Instrument;
 
 use crate::address_list::AddressListError;
 use crate::connection_pool::ConnectionPool;
+use crate::request_settings::AppliedRequestSettings;
 use crate::{
     transport::{TransportClient, TransportRequest},
     Address, AddressList, CanRetry, RequestSettings,
@@ -232,52 +233,38 @@ impl DapiRequestExecutor for DapiClient {
                 )
                 .map_err(|e| DapiClientError::Transport(e, address.clone()))?;
 
-                let response = transport_request
+                let response_result = transport_request
                     .execute_transport(&mut transport_client, &applied_settings)
                     .await
-                    .map_err(|e| DapiClientError::Transport(e, address.clone()))?;
+                    .map_err(|e| DapiClientError::Transport(e, address.clone()));
 
-                // Processing response
-                let result = process_response(response)
-                    .await
-                    .map_err(DapiClientError::Processing);
+                match response_result {
+                    Ok(response) => {
+                        // Processing response
+                        let result = process_response(response)
+                            .await
+                            .map_err(DapiClientError::Processing);
 
-                match &result {
-                    Ok(_) => {
-                        // Unban the address if it was banned and node responded successfully this time
-                        if address.is_banned() {
-                            let mut address_list = self
-                                .address_list
-                                .write()
-                                .expect("can't get address list for write");
+                        update_ban_status(
+                            &result,
+                            Arc::clone(&self.address_list),
+                            address,
+                            applied_settings,
+                        )?;
 
-                            address_list
-                                .unban_address(&address)
-                                .map_err(DapiClientError::AddressList)?;
-                        }
-
-                        // TODO: implement tracing
-                        //tracing::trace!(?response, "received {} response", response_name);
+                        result
                     }
-                    Err(error) => {
-                        if !error.can_retry() {
-                            if applied_settings.ban_failed_address {
-                                let mut address_list = self
-                                    .address_list
-                                    .write()
-                                    .expect("can't get address list for write");
+                    error_result => {
+                        update_ban_status(
+                            &error_result,
+                            Arc::clone(&self.address_list),
+                            address,
+                            applied_settings,
+                        )?;
 
-                                address_list
-                                    .ban_address(&address)
-                                    .map_err(DapiClientError::AddressList)?;
-                            }
-                        } else {
-                            tracing::trace!(?error, "received retryable error");
-                        }
+                        Err(error_result.unwrap_err())
                     }
-                };
-
-                result
+                }
             }
         };
 
@@ -309,4 +296,49 @@ impl DapiRequestExecutor for DapiClient {
 
         result
     }
+}
+
+fn update_ban_status<O, E, TE, PE>(
+    result: &Result<O, E>,
+    address_list: Arc<RwLock<AddressList>>,
+    address: Address,
+    applied_settings: AppliedRequestSettings,
+) -> Result<(), DapiClientError<TE, PE>>
+where
+    E: Error + CanRetry,
+    PE: Mockable,
+    TE: Mockable,
+{
+    match result {
+        Ok(_) => {
+            // Unban the address if it was banned and node responded successfully this time
+            if address.is_banned() {
+                let mut list = address_list
+                    .write()
+                    .expect("can't get address list for write");
+
+                list.unban_address(&address)
+                    .map_err(DapiClientError::AddressList)?;
+            }
+
+            // TODO: implement tracing
+            //tracing::trace!(?response, "received {} response", response_name);
+        }
+        Err(error) => {
+            if !error.can_retry() {
+                if applied_settings.ban_failed_address {
+                    let mut list = address_list
+                        .write()
+                        .expect("can't get address list for write");
+
+                    list.ban_address(&address)
+                        .map_err(DapiClientError::AddressList)?;
+                }
+            } else {
+                tracing::trace!(?error, "received retryable error");
+            }
+        }
+    };
+
+    Ok(())
 }

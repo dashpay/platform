@@ -10,6 +10,7 @@ use dapi_grpc::tonic::transport::Uri;
 pub use futures::future::BoxFuture;
 pub use grpc::{CoreGrpcClient, PlatformGrpcClient};
 use std::any;
+use std::error::Error;
 use std::fmt::Debug;
 
 /// Generic transport layer request.
@@ -48,7 +49,7 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
 /// Generic way to create a transport client from provided [Uri].
 pub trait TransportClient: Send + Sized {
     /// Error type for the specific client.
-    type Error: CanRetry + Send + Sync + Debug + Mockable;
+    type Error: Error + CanRetry + Send + Sync + Mockable;
 
     /// Build client using node's url.
     fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, Self::Error>;
