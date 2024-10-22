@@ -233,7 +233,7 @@ impl DapiRequestExecutor for DapiClient {
                         tracing::trace!(?response, "received {} response", response_name);
                     }
                     Err(error) => {
-                        if !error.can_retry() {
+                        if error.can_retry() {
                             if applied_settings.ban_failed_address {
                                 let mut address_list = self
                                     .address_list
