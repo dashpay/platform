@@ -122,7 +122,7 @@ impl CanRetry for dapi_grpc::tonic::Status {
 
         use dapi_grpc::tonic::Code::*;
 
-        !matches!(
+        matches!(
             code,
             Ok | DataLoss
                 | Cancelled
