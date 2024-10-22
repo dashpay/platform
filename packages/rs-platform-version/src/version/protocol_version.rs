@@ -1,5 +1,5 @@
 use crate::error::PlatformVersionError;
-use crate::version::contracts::SystemDataContractVersions;
+use crate::version::system_data_contract_versions::SystemDataContractVersions;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::DriveVersion;
@@ -15,7 +15,7 @@ use crate::version::v1::PLATFORM_V1;
 use std::sync::OnceLock;
 
 use crate::version::consensus_versions::ConsensusVersions;
-use crate::version::limits::SystemLimits;
+use crate::version::system_limits::SystemLimits;
 use crate::version::v2::PLATFORM_V2;
 use crate::version::v3::PLATFORM_V3;
 use crate::version::v4::PLATFORM_V4;
