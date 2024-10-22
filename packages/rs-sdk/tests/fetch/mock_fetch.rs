@@ -1,8 +1,9 @@
 //! Tests of mocked Fetch trait implementations.
 
 use super::common::{mock_data_contract, mock_document_type};
+use dapi_grpc::{platform::v0::GetIdentityResponse, tonic::IntoRequest};
 use dash_sdk::{
-    platform::{DocumentQuery, Fetch},
+    platform::{DocumentQuery, Fetch, Query},
     Sdk,
 };
 use dpp::{
@@ -17,6 +18,7 @@ use dpp::{
     prelude::{DataContract, Identifier, Identity},
     version::PlatformVersion,
 };
+use rs_dapi_client::{CanRetry, ExecutionError, ExecutionResult};
 
 #[tokio::test]
 /// Given some identity, when I fetch it using mock API, then I get the same identity
@@ -146,4 +148,29 @@ async fn test_mock_fetch_document() {
         .expect("identity should exist");
 
     assert_eq!(retrieved, expected);
+}
+
+/// RetryError used to test retry mechanism
+#[derive(Debug)]
+struct RetryError();
+impl CanRetry for RetryError {
+    fn can_retry(&self) -> bool {
+        true
+    }
+}
+
+#[tokio::test]
+async fn test_mock_fetch_retry() {
+    let mut sdk = Sdk::new_mock();
+    let query = Identifier::random();
+
+    let expected: ExecutionResult<GetIdentityResponse, RetryError> = Err(ExecutionError {
+        inner: RetryError(),
+        retries: 0,
+        address: None,
+    });
+
+    let mut mock = sdk.mock();
+    let i: Identity = Identity::fetch(&sdk, query).await.unwrap().unwrap();
+    mock.expect_fetch(query, Some(expected));
 }

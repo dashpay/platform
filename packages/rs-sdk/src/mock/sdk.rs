@@ -19,7 +19,10 @@ use dapi_grpc::{
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use drive_proof_verifier::{error::ContextProviderError, ContextProvider, FromProof};
-use rs_dapi_client::mock::MockError;
+use http::Uri;
+use rs_dapi_client::{
+    mock::MockError, transport::TransportClient, DapiClientError, ExecutionError, ExecutionResult,
+};
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
     transport::TransportRequest,
@@ -271,7 +274,15 @@ impl MockDashPlatformSdk {
         <<O as Fetch>::Request as TransportRequest>::Response: Default,
     {
         let grpc_request = query.query(self.prove()).expect("query must be correct");
-        self.expect(grpc_request, object).await?;
+        self.expect(
+            grpc_request,
+            ExecutionResponse {
+                address: Uri::default().into(),
+                inner: object,
+                retries: 0,
+            },
+        )
+        .await?;
 
         Ok(self)
     }
@@ -326,50 +337,80 @@ impl MockDashPlatformSdk {
             + Send
             + Default,
         <<O as FetchMany<K, R>>::Request as TransportRequest>::Response: Default,
+        ExecutionResult<
+            Option<R>,
+            <<<O as FetchMany<K, R>>::Request as TransportRequest>::Client as TransportClient>::Error,
+        >: MockResponse,
     {
         let grpc_request = query.query(self.prove()).expect("query must be correct");
-        self.expect(grpc_request, objects).await?;
+        self.expect(
+            grpc_request,
+            Ok(ExecutionResponse {
+                address: Uri::default().into(),
+                inner: objects,
+                retries: 0,
+            }),
+        )
+        .await?;
 
         Ok(self)
     }
 
     /// Save expectations for a request.
-    async fn expect<I: TransportRequest, O: MockResponse>(
+    pub async fn expect<R: TransportRequest, O, I>(
         &mut self,
-        grpc_request: I,
-        returned_object: Option<O>,
+        grpc_request: R,
+        expected_response: I,
     ) -> Result<(), Error>
     where
-        I::Response: Default,
+        R::Response: Default,
+        ExecutionResponse<Option<O>>: MockResponse,
+        ExecutionError<<R::Client as TransportClient>::Error>: MockResponse,
+        ExecutionResult<Option<O>, <R::Client as TransportClient>::Error>: MockResponse,
+        I: Into<ExecutionResult<Option<O>, <R::Client as TransportClient>::Error>>,
     {
         let key = Key::new(&grpc_request);
+        let response = expected_response.into();
 
         // detect duplicates
         if self.from_proof_expectations.contains_key(&key) {
             return Err(MockError::MockExpectationConflict(format!(
                 "proof expectation key {} already defined for {} request: {:?}",
                 key,
-                std::any::type_name::<I>(),
+                std::any::type_name::<R>(),
                 grpc_request
             ))
             .into());
         }
 
         // This expectation will work for from_proof
-        self.from_proof_expectations
-            .insert(key, returned_object.mock_serialize(self));
+        match &response {
+            Ok(response) => {
+                self.from_proof_expectations
+                    .insert(key, response.mock_serialize(self));
 
-        // This expectation will work for execute
-        let mut dapi_guard = self.dapi.lock().await;
-        // We don't really care about the response, as it will be mocked by from_proof, so we provide default()
-        dapi_guard.expect(
-            &grpc_request,
-            &Ok(ExecutionResponse {
-                inner: Default::default(),
-                retries: 0,
-                address: "http://127.0.0.1".parse().expect("failed to parse address"),
-            }),
-        )?;
+                // This expectation will work for execute
+                let mut dapi_guard = self.dapi.lock().await;
+                // We don't really care about the response, as it will be mocked by from_proof, so we provide default()
+                dapi_guard.expect(
+                    &grpc_request,
+                    &Ok(ExecutionResponse {
+                        inner: Default::default(),
+                        retries: 0,
+                        address: Uri::default().into(),
+                    }),
+                )?;
+            }
+            Err(e) => {
+                let error_response = ExecutionError {
+                    inner: response.err().unwrap(),
+                    retries: 0,
+                    address: None,
+                };
+                let mut dapi_guard = self.dapi.lock().await;
+                dapi_guard.expect(&grpc_request, &Err(response))?;
+            }
+        };
 
         Ok(())
     }
