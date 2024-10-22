@@ -1,5 +1,9 @@
+use crate::version::dpp_versions::dpp_contract_versions::{
+    DPPContractVersions, DataContractMethodVersions, DocumentTypeClassMethodVersions,
+    DocumentTypeIndexVersions, DocumentTypeMethodVersions, DocumentTypeSchemaVersions,
+    DocumentTypeVersions, RecursiveSchemaValidatorVersions,
+};
 use versioned_feature_core::FeatureVersionBounds;
-use crate::version::dpp_versions::dpp_contract_versions::{DPPContractVersions, DataContractMethodVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions, DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeVersions, RecursiveSchemaValidatorVersions};
 
 pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
     max_serialized_size: 65000,

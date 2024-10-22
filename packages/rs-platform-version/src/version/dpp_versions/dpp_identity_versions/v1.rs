@@ -1,4 +1,6 @@
-use crate::version::dpp_versions::dpp_identity_versions::{IdentityKeyTypeMethodVersions, DPPIdentityVersions};
+use crate::version::dpp_versions::dpp_identity_versions::{
+    DPPIdentityVersions, IdentityKeyTypeMethodVersions,
+};
 
 pub const IDENTITY_VERSIONS_V1: DPPIdentityVersions = DPPIdentityVersions {
     identity_structure_version: 0,

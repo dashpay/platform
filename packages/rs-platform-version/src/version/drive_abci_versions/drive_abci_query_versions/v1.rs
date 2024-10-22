@@ -1,5 +1,9 @@
+use crate::version::drive_abci_versions::drive_abci_query_versions::{
+    DriveAbciQueryDataContractVersions, DriveAbciQueryIdentityVersions,
+    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQuerySystemVersions,
+    DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
+};
 use versioned_feature_core::FeatureVersionBounds;
-use crate::version::drive_abci_versions::drive_abci_query_versions::{DriveAbciQueryDataContractVersions, DriveAbciQueryIdentityVersions, DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQuerySystemVersions, DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions};
 
 pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryVersions {
     max_returned_elements: 100,

@@ -1,42 +1,30 @@
 use crate::version::consensus_versions::ConsensusVersions;
-use crate::version::dpp_versions::DPPVersion;
-use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::{
-    DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion
-    ,
-    DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions, DriveFetchMethodVersions,
-    DriveInitializationMethodVersions,
-    DriveMethodVersions, DriveOperationsMethodVersion, DrivePlatformStateMethodVersions,
-    DrivePlatformSystemMethodVersions, DrivePrefundedSpecializedMethodVersions,
-    DriveProtocolUpgradeVersions, DriveProveMethodVersions,
-    DriveSystemEstimationCostsMethodVersions,
-    DriveVersion,
-};
-use crate::version::fee::v1::FEE_VERSION1;
-use crate::version::system_limits::SystemLimits;
-use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
-use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
-use crate::version::PlatformArchitectureVersion;
-use grovedb_version::version::v1::GROVE_V1;
-use crate::version::dpp_versions::dpp_contract_versions::v1::CONTRACT_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_document_versions::v1::DOCUMENT_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_asset_lock_versions::v1::DPP_ASSET_LOCK_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_contract_versions::v1::CONTRACT_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_method_versions::v1::DPP_METHOD_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_validation_versions::v2::DPP_VALIDATION_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_document_versions::v1::DOCUMENT_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_method_versions::v1::DPP_METHOD_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v1::STATE_TRANSITION_CONVERSION_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v1::STATE_TRANSITION_SERIALIZATION_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_versions::v1::STATE_TRANSITION_VERSIONS_V1;
+use crate::version::dpp_versions::dpp_validation_versions::v2::DPP_VALIDATION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
+use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v1::DRIVE_ABCI_METHOD_VERSIONS_V1;
-use crate::version::drive_abci_versions::drive_abci_query_versions::{DriveAbciQueryDataContractVersions, DriveAbciQueryIdentityVersions, DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQuerySystemVersions, DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions};
+use crate::version::drive_abci_versions::drive_abci_query_versions::{
+    DriveAbciQueryDataContractVersions, DriveAbciQueryIdentityVersions,
+    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQuerySystemVersions,
+    DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
+};
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v1::DRIVE_ABCI_VALIDATION_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v1::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1;
-use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
+use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::drive_contract_method_versions::v1::DRIVE_CONTRACT_METHOD_VERSIONS_V1;
+use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v1::DRIVE_DOCUMENT_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_identity_method_versions::v1::DRIVE_IDENTITY_METHOD_VERSIONS_V1;
@@ -44,17 +32,25 @@ use crate::version::drive_versions::drive_state_transition_method_versions::v1::
 use crate::version::drive_versions::drive_structure_version::v1::DRIVE_STRUCTURE_V1;
 use crate::version::drive_versions::drive_verify_method_versions::v1::DRIVE_VERIFY_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_vote_method_versions::v1::DRIVE_VOTE_METHOD_VERSIONS_V1;
+use crate::version::drive_versions::{
+    DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
+    DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions, DriveFetchMethodVersions,
+    DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
+    DrivePlatformStateMethodVersions, DrivePlatformSystemMethodVersions,
+    DrivePrefundedSpecializedMethodVersions, DriveProtocolUpgradeVersions,
+    DriveProveMethodVersions, DriveSystemEstimationCostsMethodVersions, DriveVersion,
+};
+use crate::version::fee::v1::FEE_VERSION1;
+use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
+use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::system_data_contract_versions::v1::SYSTEM_DATA_CONTRACT_VERSIONS_V1;
+use crate::version::system_limits::SystemLimits;
+use grovedb_version::version::v1::GROVE_V1;
 
 pub const TEST_PROTOCOL_VERSION_2: u32 = (1 << TEST_PROTOCOL_VERSION_SHIFT_BYTES) + 2;
 
 pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     protocol_version: TEST_PROTOCOL_VERSION_2,
-    proofs: FeatureVersionBounds {
-        min_version: 0,
-        max_version: 0,
-        default_current_version: 0,
-    },
     drive: DriveVersion {
         structure: DRIVE_STRUCTURE_V1,
         methods: DriveMethodVersions {
@@ -135,10 +131,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         },
         grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
         grove_version: GROVE_V1,
-    },
-    platform_architecture: PlatformArchitectureVersion {
-        data_contract_factory_structure_version: 0,
-        document_factory_structure_version: 0,
     },
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
@@ -320,6 +312,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         voting_versions: VOTING_VERSION_V2,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V1,
+        factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V1,
     fee_version: FEE_VERSION1,

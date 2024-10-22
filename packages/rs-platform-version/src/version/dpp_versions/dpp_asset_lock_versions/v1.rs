@@ -1,5 +1,5 @@
-use versioned_feature_core::FeatureVersionBounds;
 use crate::version::dpp_versions::dpp_asset_lock_versions::DPPAssetLockVersions;
+use versioned_feature_core::FeatureVersionBounds;
 
 pub const DPP_ASSET_LOCK_VERSIONS_V1: DPPAssetLockVersions = DPPAssetLockVersions {
     reduced_asset_lock_value: FeatureVersionBounds {

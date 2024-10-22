@@ -1,7 +1,6 @@
 use crate::version::FeatureVersion;
-use grovedb_version::version::GroveVersion;
-use drive_credit_pool_method_versions::DriveCreditPoolMethodVersions;
 use drive_contract_method_versions::DriveContractMethodVersions;
+use drive_credit_pool_method_versions::DriveCreditPoolMethodVersions;
 use drive_document_method_versions::DriveDocumentMethodVersions;
 use drive_grove_method_versions::DriveGroveMethodVersions;
 use drive_identity_method_versions::DriveIdentityMethodVersions;
@@ -9,18 +8,19 @@ use drive_state_transition_method_versions::DriveStateTransitionMethodVersions;
 use drive_structure_version::DriveStructureVersion;
 use drive_verify_method_versions::DriveVerifyMethodVersions;
 use drive_vote_method_versions::DriveVoteMethodVersions;
+use grovedb_version::version::GroveVersion;
 
-pub mod drive_vote_method_versions;
-pub mod drive_verify_method_versions;
-pub mod drive_structure_version;
-pub mod drive_state_transition_method_versions;
-pub mod drive_identity_method_versions;
-pub mod drive_grove_method_versions;
-pub mod drive_document_method_versions;
-pub mod drive_credit_pool_method_versions;
 pub mod drive_contract_method_versions;
-pub mod v2;
+pub mod drive_credit_pool_method_versions;
+pub mod drive_document_method_versions;
+pub mod drive_grove_method_versions;
+pub mod drive_identity_method_versions;
+pub mod drive_state_transition_method_versions;
+pub mod drive_structure_version;
+pub mod drive_verify_method_versions;
+pub mod drive_vote_method_versions;
 pub mod v1;
+pub mod v2;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVersion {

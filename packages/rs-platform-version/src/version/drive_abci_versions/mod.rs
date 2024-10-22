@@ -1,6 +1,6 @@
+pub mod drive_abci_method_versions;
 pub mod drive_abci_query_versions;
 pub mod drive_abci_structure_versions;
-pub mod drive_abci_method_versions;
 pub mod drive_abci_validation_versions;
 pub mod drive_abci_withdrawal_constants;
 

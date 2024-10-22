@@ -1,5 +1,7 @@
+use crate::version::dpp_versions::dpp_document_versions::{
+    DPPDocumentVersions, DocumentMethodVersions,
+};
 use versioned_feature_core::FeatureVersionBounds;
-use crate::version::dpp_versions::dpp_document_versions::{DocumentMethodVersions, DPPDocumentVersions};
 
 pub const DOCUMENT_VERSIONS_V1: DPPDocumentVersions = DPPDocumentVersions {
     document_structure_version: 0,

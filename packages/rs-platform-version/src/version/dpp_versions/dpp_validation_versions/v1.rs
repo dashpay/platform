@@ -1,6 +1,9 @@
-use crate::version::dpp_versions::dpp_validation_versions::{DataContractValidationVersions, DocumentTypeValidationVersions, DPPValidationVersions, JsonSchemaValidatorVersions, VotingValidationVersions};
+use crate::version::dpp_versions::dpp_validation_versions::{
+    DPPValidationVersions, DataContractValidationVersions, DocumentTypeValidationVersions,
+    JsonSchemaValidatorVersions, VotingValidationVersions,
+};
 
-pub const DPP_VALIDATION_VERSIONS_V1 : DPPValidationVersions = DPPValidationVersions {
+pub const DPP_VALIDATION_VERSIONS_V1: DPPValidationVersions = DPPValidationVersions {
     json_schema_validator: JsonSchemaValidatorVersions {
         new: 0,
         validate: 0,

@@ -1,7 +1,7 @@
 pub mod v1;
 
-use versioned_feature_core::FeatureVersion;
 use crate::version::drive_versions::DriveDataContractOperationMethodVersions;
+use versioned_feature_core::FeatureVersion;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveStateTransitionMethodVersions {

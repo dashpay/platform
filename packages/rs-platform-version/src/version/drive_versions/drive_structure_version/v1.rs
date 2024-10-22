@@ -1,5 +1,5 @@
-use versioned_feature_core::FeatureVersionBounds;
 use crate::version::drive_versions::drive_structure_version::DriveStructureVersion;
+use versioned_feature_core::FeatureVersionBounds;
 
 pub const DRIVE_STRUCTURE_V1: DriveStructureVersion = DriveStructureVersion {
     document_indexes: FeatureVersionBounds {

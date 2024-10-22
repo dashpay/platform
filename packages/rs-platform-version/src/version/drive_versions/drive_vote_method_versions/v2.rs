@@ -1,4 +1,8 @@
-use crate::version::drive_versions::drive_vote_method_versions::{DriveVoteCleanupMethodVersions, DriveVoteContestedResourceInsertMethodVersions, DriveVoteFetchMethodVersions, DriveVoteInsertMethodVersions, DriveVoteMethodVersions, DriveVoteSetupMethodVersions, DriveVoteStorageFormMethodVersions};
+use crate::version::drive_versions::drive_vote_method_versions::{
+    DriveVoteCleanupMethodVersions, DriveVoteContestedResourceInsertMethodVersions,
+    DriveVoteFetchMethodVersions, DriveVoteInsertMethodVersions, DriveVoteMethodVersions,
+    DriveVoteSetupMethodVersions, DriveVoteStorageFormMethodVersions,
+};
 
 pub const DRIVE_VOTE_METHOD_VERSIONS_V2: DriveVoteMethodVersions = DriveVoteMethodVersions {
     insert: DriveVoteInsertMethodVersions {
