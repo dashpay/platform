@@ -19,10 +19,14 @@ const logger = require('../../../logger');
 /**
  * @param {jaysonClient} rpcClient
  * @param {createGrpcErrorFromDriveResponse} createGrpcErrorFromDriveResponse
+ * @param {fetchCachedStateTransitionResult} fetchCachedStateTransitionResult
  *
  * @returns {broadcastStateTransitionHandler}
  */
-function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDriveResponse) {
+function broadcastStateTransitionHandlerFactory(
+  rpcClient,
+  createGrpcErrorFromDriveResponse,
+  fetchCachedStateTransitionResult) {
   /**
    * @typedef broadcastStateTransitionHandler
    *
@@ -38,7 +42,9 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
       throw new InvalidArgumentGrpcError('State Transition is not specified');
     }
 
-    const tx = Buffer.from(stByteArray)
+    const stBytes = Buffer.from(stByteArray);
+
+    const tx = stBytes
       .toString('base64');
 
     let response;
@@ -55,14 +61,15 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
       throw e;
     }
 
-    const {
-      result,
-      error: jsonRpcError,
-    } = response;
+    let { result } = response;
+    const { error: jsonRpcError } = response;
 
     if (jsonRpcError) {
       if (typeof jsonRpcError.data === 'string') {
         if (jsonRpcError.data === 'tx already exists in cache') {
+          result = fetchCachedStateTransitionResult(stBytes);
+
+
           throw new AlreadyExistsGrpcError('state transition already in chain');
         }
 
