@@ -19,7 +19,6 @@ use dapi_grpc::{
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use drive_proof_verifier::{error::ContextProviderError, ContextProvider, FromProof};
-use http::Uri;
 use rs_dapi_client::mock::MockError;
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
