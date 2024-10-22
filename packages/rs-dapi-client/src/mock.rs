@@ -270,7 +270,9 @@ impl<R: Mockable> Mockable for ExecutionResponse<R> {
         R::mock_deserialize(data).map(|inner| ExecutionResponse {
             inner,
             retries: 0,
-            address: Address::from(Uri::default()),
+            address: "http://127.0.0.1:9000"
+                .parse()
+                .expect("failed to parse address"),
         })
     }
 }

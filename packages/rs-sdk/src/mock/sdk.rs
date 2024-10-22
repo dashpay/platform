@@ -368,7 +368,7 @@ impl MockDashPlatformSdk {
             &Ok(ExecutionResponse {
                 inner: Default::default(),
                 retries: 0,
-                address: Uri::default().into(),
+                address: "http://127.0.0.1".parse().expect("failed to parse address"),
             }),
         )?;
 
