@@ -28,14 +28,14 @@ pub use request_settings::RequestSettings;
 ///
 /// # Examples
 /// ```
-/// use rs_dapi_client::{RequestSettings, AddressList, mock::MockDapiClient, DapiClientError, DapiRequest};
+/// use rs_dapi_client::{RequestSettings, AddressList, mock::MockDapiClient, DapiClientError, DapiRequest, ExecutionError};
 /// use dapi_grpc::platform::v0::{self as proto};
 ///
 /// # let _ = async {
 /// let mut client = MockDapiClient::new();
 /// let request: proto::GetIdentityRequest = proto::get_identity_request::GetIdentityRequestV0 { id: b"0".to_vec(), prove: true }.into();
 /// let response = request.execute(&mut client, RequestSettings::default()).await?;
-/// # Ok::<(), DapiClientError<_>>(())
+/// # Ok::<(), ExecutionError<DapiClientError<_>>>(())
 /// # };
 /// ```
 pub trait DapiRequest {
