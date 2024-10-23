@@ -2,9 +2,10 @@ const {
   server: {
     error: {
       InvalidArgumentGrpcError,
-      AlreadyExistsGrpcError,
       ResourceExhaustedGrpcError,
       UnavailableGrpcError,
+      AlreadyExistsGrpcError,
+      InternalGrpcError,
     },
   },
 } = require('@dashevo/grpc-common');
@@ -14,19 +15,23 @@ const {
     BroadcastStateTransitionResponse,
   },
 } = require('@dashevo/dapi-grpc');
+
+const crypto = require('crypto');
+
 const logger = require('../../../logger');
 
 /**
  * @param {jaysonClient} rpcClient
  * @param {createGrpcErrorFromDriveResponse} createGrpcErrorFromDriveResponse
- * @param {fetchCachedStateTransitionResult} fetchCachedStateTransitionResult
+ * @param {requestTenderRpc} requestTenderRpc
  *
  * @returns {broadcastStateTransitionHandler}
  */
 function broadcastStateTransitionHandlerFactory(
   rpcClient,
   createGrpcErrorFromDriveResponse,
-  fetchCachedStateTransitionResult) {
+  requestTenderRpc,
+) {
   /**
    * @typedef broadcastStateTransitionHandler
    *
@@ -61,16 +66,65 @@ function broadcastStateTransitionHandlerFactory(
       throw e;
     }
 
-    let { result } = response;
-    const { error: jsonRpcError } = response;
+    const { result, error: jsonRpcError } = response;
 
     if (jsonRpcError) {
       if (typeof jsonRpcError.data === 'string') {
         if (jsonRpcError.data === 'tx already exists in cache') {
-          result = fetchCachedStateTransitionResult(stBytes);
+          // We need to figure out and report to user why the ST cached
+          const stHash = crypto.createHash('sha256')
+            .update(stBytes)
+            .digest();
 
+          // TODO: Apply search filter to fetch specific state transition
+          // Throw an already exist in mempool error if the ST in mempool
+          const unconfirmedTxsResponse = await requestTenderRpc('unconfirmed_txs', { limit: 100 });
 
-          throw new AlreadyExistsGrpcError('state transition already in chain');
+          if (unconfirmedTxsResponse?.txs?.includes(stBytes.toString('base64'))) {
+            throw new AlreadyExistsGrpcError('state transition already in mempool');
+          }
+
+          // Throw an already exist in chain error if the ST is committed
+          let txResponse;
+          try {
+            txResponse = await requestTenderRpc('tx', { hash: stHash.toString('base64') });
+          } catch (e) {
+            if (typeof e.data !== 'string' || !e.data.includes('not found')) {
+              throw e;
+            }
+          }
+
+          if (txResponse?.tx_result) {
+            throw new AlreadyExistsGrpcError('state transition already in chain');
+          }
+
+          // If the ST not in mempool and not in the state but still in the cache
+          // it means it was invalidated by CheckTx so we run CheckTx again to provide
+          // the validation error
+          const checkTxResponse = await requestTenderRpc('check_tx', { tx });
+
+          if (checkTxResponse?.code !== 0) {
+            // Return validation error
+            throw await createGrpcErrorFromDriveResponse(
+              checkTxResponse.code,
+              checkTxResponse.info,
+            );
+          } else {
+            // CheckTx passes for the ST, it means we have a bug in Drive so ST is passing check
+            // tx and then removed from the block. The removal from the block doesn't remove ST
+            // from the cache because it's happening only one proposer and other nodes do not know
+            // that this ST was processed and keep it in the cache
+            // The best what we can do is to return an internal error and and log the transaction
+            logger.warn({
+              tx,
+            }, `State transition ${stHash.toString('hex')} is passing CheckTx but removed from the block by proposal`);
+
+            const error = new Error('State Transition processing error. Please report'
+              + ' faulty state transition and try to create a new state transition with different'
+              + ' hash as a workaround.');
+
+            throw new InternalGrpcError(error);
+          }
         }
 
         if (jsonRpcError.data.startsWith('Tx too large.')) {
