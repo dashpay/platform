@@ -1,3 +1,5 @@
+pub mod v1;
+
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
     pub estimated_contract_max_serialized_size: u16,

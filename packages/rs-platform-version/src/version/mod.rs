@@ -3,15 +3,15 @@ use crate::version::v4::PROTOCOL_VERSION_4;
 pub use protocol_version::*;
 
 mod consensus_versions;
-pub mod contracts;
 pub mod dpp_versions;
 pub mod drive_abci_versions;
 pub mod drive_versions;
 pub mod fee;
-mod limits;
 #[cfg(feature = "mock-versions")]
 pub mod mocks;
 pub mod patches;
+pub mod system_data_contract_versions;
+mod system_limits;
 pub mod v1;
 pub mod v2;
 pub mod v3;
