@@ -1,8 +1,12 @@
 //! Tests of mocked Fetch trait implementations.
 
-use super::common::{mock_data_contract, mock_document_type};
-use dapi_grpc::{platform::v0::GetIdentityResponse, tonic::IntoRequest};
+use super::common::{mock_data_contract, mock_document_type, setup_logs};
+use dapi_grpc::platform::v0::{
+    get_data_contract_response::GetDataContractResponseV0, GetDataContractRequest,
+    GetDataContractResponse, Proof, ResponseMetadata,
+};
 use dash_sdk::{
+    error::StaleNodeError,
     platform::{DocumentQuery, Fetch, Query},
     Sdk,
 };
@@ -18,7 +22,6 @@ use dpp::{
     prelude::{DataContract, Identifier, Identity},
     version::PlatformVersion,
 };
-use rs_dapi_client::{CanRetry, ExecutionError, ExecutionResult};
 
 #[tokio::test]
 /// Given some identity, when I fetch it using mock API, then I get the same identity
@@ -150,27 +153,90 @@ async fn test_mock_fetch_document() {
     assert_eq!(retrieved, expected);
 }
 
-/// RetryError used to test retry mechanism
-#[derive(Debug)]
-struct RetryError();
-impl CanRetry for RetryError {
-    fn can_retry(&self) -> bool {
-        true
-    }
-}
-
 #[tokio::test]
 async fn test_mock_fetch_retry() {
+    setup_logs();
+
     let mut sdk = Sdk::new_mock();
-    let query = Identifier::random();
+    let query_correct = Identifier::random();
+    let query_stale = Identifier::random();
+    assert_ne!(query_correct, query_stale);
 
-    let expected: ExecutionResult<GetIdentityResponse, RetryError> = Err(ExecutionError {
-        inner: RetryError(),
-        retries: 0,
-        address: None,
-    });
-
+    // CONFIGURE EXPECTATIONS
     let mut mock = sdk.mock();
-    let i: Identity = Identity::fetch(&sdk, query).await.unwrap().unwrap();
-    mock.expect_fetch(query, Some(expected));
+
+    // On DAPI level, we mock some response that will indicate to the SDK that the node is behind and we should retry
+    // First, we return height 10 to indicate current tip
+    let request: GetDataContractRequest = query_correct.query(true).expect("create query");
+    let metadata = ResponseMetadata {
+        height: 10,
+        ..Default::default()
+    };
+    let response: GetDataContractResponse = GetDataContractResponseV0 {
+        metadata: Some(metadata.clone()),
+        result: Some(
+            dapi_grpc::platform::v0::get_data_contract_response::get_data_contract_response_v0::Result::Proof(
+                Proof {
+                    ..Default::default()
+                },
+            )),
+    }.into();
+    mock.expect_dapi(&request, &Ok(response.into()))
+        .await
+        .expect("add mock 1");
+
+    mock.expect_from_proof_with_metadata(
+        &request,
+        Ok((Option::<DataContract>::None, metadata, Default::default())),
+    )
+    .expect("add proof expectation 1");
+
+    // Now, we return height 2 to indicate that the node is behind
+    let request: GetDataContractRequest = query_stale.query(true).expect("create query");
+    let metadata = ResponseMetadata {
+        height: 2,
+        ..Default::default()
+    };
+    let response: GetDataContractResponse = GetDataContractResponseV0 {
+        metadata: Some(metadata.clone()),
+        result: Some(
+            dapi_grpc::platform::v0::get_data_contract_response::get_data_contract_response_v0::Result::Proof(
+                Proof {
+                    ..Default::default()
+                },
+            )),
+    }.into();
+
+    mock.expect_dapi(&request, &Ok(response.into()))
+        .await
+        .expect("add mock 2");
+    mock.expect_from_proof_with_metadata(
+        &request,
+        Ok((Option::<DataContract>::None, metadata, Default::default())),
+    )
+    .expect("add proof expectation 2");
+
+    // EXECUTE THE TEST
+    drop(mock);
+
+    DataContract::fetch(&sdk, query_correct)
+        .await
+        .expect("first fetch should succeed");
+
+    let e = DataContract::fetch(&sdk, query_stale)
+        .await
+        .expect_err("second fetch should fail");
+
+    match e {
+        dash_sdk::Error::StaleNode(StaleNodeError::Height {
+            expected_height,
+            received_height,
+            tolerance_blocks,
+        }) => {
+            assert_eq!(expected_height, 10);
+            assert_eq!(received_height, 2);
+            assert_eq!(tolerance_blocks, 1);
+        }
+        _ => panic!("unexpected error: {:?}", e),
+    }
 }
