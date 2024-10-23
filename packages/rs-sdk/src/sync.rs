@@ -3,10 +3,16 @@
 //! This is a workaround for an issue in tokio, where you cannot call `block_on` from sync call that is called
 //! inside a tokio runtime. This module spawns async futures in active tokio runtime, and retrieves the result
 //! using a channel.
+use backon::Retryable;
 use drive_proof_verifier::error::ContextProviderError;
-use std::{future::Future, sync::mpsc::SendError};
+use futures::future::BoxFuture;
+use rs_dapi_client::{CanRetry, ExecutionError, ExecutionResponse};
+use std::{
+    fmt::Debug,
+    future::Future,
+    sync::mpsc::SendError,
+};
 use tokio::runtime::TryCurrentError;
-
 #[derive(Debug, thiserror::Error)]
 pub enum AsyncError {
     /// Not running inside tokio runtime
@@ -86,6 +92,52 @@ async fn worker<F: Future>(
     tracing::trace!("Worker response sent");
 
     Ok(())
+}
+
+/// Retries the provided future `count` times.
+pub async fn retry<'a, F, T, E>(retry_factory: F,configured_retries:  usize) ->Result<ExecutionResponse<T>, ExecutionError<E>>
+where
+    F: FnMut() -> BoxFuture<'a, Result<ExecutionResponse<T>, ExecutionError<E>>>,
+    E: CanRetry + Debug,
+{
+    // TODO: make configurable
+    let backoff_strategy = backon::ConstantBuilder::default()
+        .with_delay(std::time::Duration::from_millis(10)) // we use different server, so no real delay needed, just to avoid spamming
+        .with_max_times(configured_retries); // no retries by default
+
+    // let retries = atomic::AtomicUsize::new(0);
+    let retries: usize = 0;
+
+    let  result= retry_factory.retry(backoff_strategy)
+        .when(|e| {
+            if e.can_retry() {
+                
+                // retries used in this attempt; `e.retries` on rs-dapi-client-layer and `+1` on sdk layer
+                let used = e.retries + 1;
+                
+                // retries used in all preceeding attempts
+                let retries_so_far = retries+used;//  retries.fetch_add(used, Ordering::Relaxed) + used; // relaxed as only 1 thread accesses that
+                if retries_so_far >= configured_retries {
+                    tracing::warn!(retry = retries_so_far, error=?e, "retrying request");
+                    true
+                } else {
+                    tracing::warn!(retry = retries_so_far, error=?e, "no more retries left, giving up");
+                    false
+                }
+            } else {
+                false
+            }
+    })
+    .notify(|error, duration| {
+        tracing::warn!(?duration, ?error, "request failed, retrying");
+    })
+    .await;
+
+    let retry_count = retries;
+    result.map_err(|mut e| {
+        e.retries = retry_count;
+        e
+    })
 }
 
 #[cfg(test)]
