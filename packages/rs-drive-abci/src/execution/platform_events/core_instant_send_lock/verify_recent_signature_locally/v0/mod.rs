@@ -1,4 +1,4 @@
-use dpp::bls_signatures::G2Element;
+use dpp::bls_signatures::{Bls12381G2Impl, Signature};
 use std::fmt::{Debug, Formatter};
 
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
@@ -20,19 +20,20 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
     platform_state: &PlatformState,
 ) -> Result<bool, Error> {
     // First verify that the signature conforms to a signature
-    let signature = match G2Element::from_bytes(instant_lock.signature.as_bytes()) {
-        Ok(signature) => signature,
-        Err(e) => {
-            tracing::trace!(
-                instant_lock = ?InstantLockDebug(instant_lock),
-                "Invalid instant Lock {} signature format: {}",
-                instant_lock.txid,
-                e,
-            );
+    let signature =
+        match Signature::<Bls12381G2Impl>::try_from(instant_lock.signature.as_bytes().as_slice()) {
+            Ok(signature) => signature,
+            Err(e) => {
+                tracing::trace!(
+                    instant_lock = ?InstantLockDebug(instant_lock),
+                    "Invalid instant Lock {} signature format: {}",
+                    instant_lock.txid,
+                    e,
+                );
 
-            return Ok(false);
-        }
-    };
+                return Ok(false);
+            }
+        };
 
     let signing_height = platform_state.last_committed_core_height();
     let verification_height = signing_height.saturating_sub(SIGN_OFFSET);
@@ -96,9 +97,12 @@ pub(super) fn verify_recent_instant_lock_signature_locally_v0(
 
         let message_digest = sha256d::Hash::from_engine(engine);
 
-        if quorum
-            .public_key
-            .verify(&signature, message_digest.as_ref())
+        if signature
+            .verify(
+                &quorum.public_key,
+                message_digest.as_byte_array().as_slice(),
+            )
+            .is_ok()
         {
             return Ok(true);
         }

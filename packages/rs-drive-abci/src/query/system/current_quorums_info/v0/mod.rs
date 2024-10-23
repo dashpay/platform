@@ -40,7 +40,11 @@ impl<C> Platform<C> {
                     quorum_hash: validator_set.quorum_hash().as_byte_array().to_vec(),
                     core_height: validator_set.core_height(),
                     members,
-                    threshold_public_key: validator_set.threshold_public_key().to_bytes().to_vec(),
+                    threshold_public_key: validator_set
+                        .threshold_public_key()
+                        .0
+                        .to_compressed()
+                        .to_vec(),
                 }
             })
             .collect();

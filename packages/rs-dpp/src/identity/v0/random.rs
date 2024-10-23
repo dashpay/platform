@@ -47,8 +47,8 @@ impl IdentityV0 {
     ) -> Result<(Self, I), ProtocolError>
     where
         I: Default
-            + IntoIterator<Item = (IdentityPublicKey, Vec<u8>)>
-            + Extend<(IdentityPublicKey, Vec<u8>)>,
+            + IntoIterator<Item = (IdentityPublicKey, [u8; 32])>
+            + Extend<(IdentityPublicKey, [u8; 32])>,
     {
         let id = Identifier::new(rng.gen::<[u8; 32]>());
         let revision = 0;
@@ -126,11 +126,11 @@ impl IdentityV0 {
     ) -> Result<(Vec<Self>, I), ProtocolError>
     where
         I: Default
-            + FromIterator<(IdentityPublicKey, Vec<u8>)>
-            + Extend<(IdentityPublicKey, Vec<u8>)>,
+            + FromIterator<(IdentityPublicKey, [u8; 32])>
+            + Extend<(IdentityPublicKey, [u8; 32])>,
     {
         let mut vec: Vec<IdentityV0> = vec![];
-        let mut private_key_map: Vec<(IdentityPublicKey, Vec<u8>)> = vec![];
+        let mut private_key_map: Vec<(IdentityPublicKey, [u8; 32])> = vec![];
         for _i in 0..count {
             let (identity, mut map) = Self::random_identity_with_main_keys_with_private_key(
                 key_count,
