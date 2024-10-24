@@ -12,6 +12,7 @@ pub mod mock;
 mod request_settings;
 pub mod transport;
 
+use crate::transport::TransportError;
 pub use address_list::Address;
 pub use address_list::AddressList;
 pub use connection_pool::ConnectionPool;
@@ -34,21 +35,19 @@ pub use request_settings::RequestSettings;
 /// let mut client = MockDapiClient::new();
 /// let request: proto::GetIdentityRequest = proto::get_identity_request::GetIdentityRequestV0 { id: b"0".to_vec(), prove: true }.into();
 /// let response = request.execute(&mut client, RequestSettings::default()).await?;
-/// # Ok::<(), DapiClientError<_>>(())
+/// # Ok::<(), DapiClientError>(())
 /// # };
 /// ```
 pub trait DapiRequest {
     /// Response from DAPI for this specific request.
     type Response;
-    /// An error type for the transport this request uses.
-    type TransportError: Mockable;
 
     /// Executes the request.
     fn execute<'c, D: DapiRequestExecutor>(
         self,
         dapi_client: &'c D,
         settings: RequestSettings,
-    ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
+    ) -> BoxFuture<'c, Result<Self::Response, DapiClientError>>
     where
         Self: 'c;
 }
@@ -57,13 +56,11 @@ pub trait DapiRequest {
 impl<T: transport::TransportRequest + Send> DapiRequest for T {
     type Response = T::Response;
 
-    type TransportError = <T::Client as transport::TransportClient>::Error;
-
     fn execute<'c, D: DapiRequestExecutor>(
         self,
         dapi_client: &'c D,
         settings: RequestSettings,
-    ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
+    ) -> BoxFuture<'c, Result<Self::Response, DapiClientError>>
     where
         Self: 'c,
     {

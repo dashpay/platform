@@ -8,6 +8,8 @@
 //! Each of these enums has a variant for each request/response pair. Name of variant in request enum is the same as
 //! the name of variant in response.
 
+use rs_dapi_client::transport::TransportError;
+
 /// Delegate the execution of a transport request to the appropriate variant of an enum wrapper.
 ///
 /// Given two enums, request and response, that wrap multiple requests/responses for one object type, this macro
@@ -43,11 +45,11 @@ macro_rules! delegate_transport_request_variant {
                 self,
                 client: &'c mut Self::Client,
                 settings: &$crate::platform::dapi::transport::AppliedRequestSettings,
-            ) -> $crate::platform::dapi::transport::BoxFuture<'c, Result<Self::Response, <Self::Client as $crate::platform::dapi::transport::TransportClient>::Error>> {
+            ) -> $crate::platform::dapi::transport::BoxFuture<'c, Result<Self::Response, TransportError>> {
                 use futures::FutureExt;
                 use $request::*;
 
-                let settings =settings.clone();
+                let settings = settings.clone();
 
                 // We need to build new async box because we have to map response to the $response type
                 match self {$(

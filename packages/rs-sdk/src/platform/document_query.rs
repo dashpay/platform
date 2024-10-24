@@ -24,7 +24,7 @@ use dpp::{
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::{types::Documents, ContextProvider, FromProof};
 use rs_dapi_client::transport::{
-    AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
+    AppliedRequestSettings, BoxFuture, TransportClient, TransportError, TransportRequest,
 };
 
 use super::fetch::Fetch;
@@ -148,7 +148,7 @@ impl TransportRequest for DocumentQuery {
         self,
         client: &'c mut Self::Client,
         settings: &AppliedRequestSettings,
-    ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>> {
+    ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
         let request: GetDocumentsRequest = self
             .try_into()
             .expect("DocumentQuery should always be valid");
