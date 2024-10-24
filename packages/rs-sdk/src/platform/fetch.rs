@@ -156,7 +156,6 @@ where
         settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
         let request: &<Self as Fetch>::Request = &query.query(sdk.prove())?;
-
         let fut = |settings: RequestSettings| {
             async move {
                 let response = request
