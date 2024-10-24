@@ -196,9 +196,7 @@ impl DapiRequestExecutor for DapiClient {
                     &applied_settings,
                     &pool,
                 )
-                .map_err(|e| {
-                    DapiClientError::Transport(TransportError::from(e), address.clone())
-                })?;
+                .map_err(|e| DapiClientError::Transport(e, address.clone()))?;
 
                 let response = transport_request
                     .execute_transport(&mut transport_client, &applied_settings)

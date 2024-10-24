@@ -98,7 +98,7 @@ impl TransportRequest for EvoNode {
         async move {
             let response = client
                 .get_status(grpc_request)
-                .map_err(TransportError::from)
+                .map_err(TransportError::Grpc)
                 .map_ok(|response| response.into_inner())
                 .await;
 

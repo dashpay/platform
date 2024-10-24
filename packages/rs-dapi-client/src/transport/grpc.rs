@@ -161,7 +161,7 @@ macro_rules! impl_transport_request_grpc {
 
                 client
                     .$($method)+(grpc_request)
-                    .map_err(TransportError::from)
+                    .map_err(TransportError::Grpc)
                     .map_ok(|response| response.into_inner())
                     .boxed()
             }

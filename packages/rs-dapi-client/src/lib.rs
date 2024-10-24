@@ -12,13 +12,11 @@ pub mod mock;
 mod request_settings;
 pub mod transport;
 
-use crate::transport::TransportError;
 pub use address_list::Address;
 pub use address_list::AddressList;
 pub use connection_pool::ConnectionPool;
 pub use dapi_client::DapiRequestExecutor;
 pub use dapi_client::{DapiClient, DapiClientError};
-use dapi_grpc::mock::Mockable;
 #[cfg(feature = "dump")]
 pub use dump::DumpData;
 use futures::{future::BoxFuture, FutureExt};
