@@ -28,7 +28,7 @@ pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    DapiClient, DapiClientError, DapiRequestExecutor,
+    DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResult,
 };
 use std::collections::btree_map::Entry;
 use std::fmt::Debug;
@@ -672,7 +672,7 @@ impl DapiRequestExecutor for Sdk {
         &self,
         request: R,
         settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
+    ) -> ExecutionResult<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
         match self.inner {
             SdkInstance::Dapi { ref dapi, .. } => dapi.execute(request, settings).await,
             #[cfg(feature = "mocks")]

@@ -146,7 +146,9 @@ where
         let response = request
             .clone()
             .execute(sdk, RequestSettings::default())
-            .await?;
+            .await // TODO: We need better way to handle execution response and errors
+            .map(|execution_response| execution_response.into_inner())
+            .map_err(|execution_error| execution_error.into_inner())?;
 
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
@@ -185,7 +187,7 @@ where
 
     /// Fetch multiple objects from Platform with limit.
     ///
-    /// Fetches up to `limit` objects matching the `query`.    
+    /// Fetches up to `limit` objects matching the `query`.
     /// See [FetchMany] and [FetchMany::fetch_many()] for more detailed documentation.
     ///
     /// ## Parameters
@@ -232,8 +234,11 @@ impl FetchMany<Identifier, Documents> for Document {
         let document_query: DocumentQuery = query.query(sdk.prove())?;
 
         let request = document_query.clone();
-        let response: GetDocumentsResponse =
-            request.execute(sdk, RequestSettings::default()).await?;
+        let response: GetDocumentsResponse = request
+            .execute(sdk, RequestSettings::default())
+            .await // TODO: We need better way to handle execution response and errors
+            .map(|execution_response| execution_response.into_inner())
+            .map_err(|execution_error| execution_error.into_inner())?;
 
         tracing::trace!(request=?document_query, response=?response, "fetch multiple documents");
 

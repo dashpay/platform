@@ -1,6 +1,7 @@
 //! Subsystem to manage DAPI nodes.
 
 use chrono::Utc;
+use dapi_grpc::tonic::codegen::http;
 use dapi_grpc::tonic::transport::Uri;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 use std::collections::HashSet;
@@ -18,6 +19,16 @@ pub struct Address {
     banned_until: Option<chrono::DateTime<Utc>>,
     #[cfg_attr(feature = "mocks", serde(with = "http_serde::uri"))]
     uri: Uri,
+}
+
+impl FromStr for Address {
+    type Err = AddressListError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Uri::from_str(s)
+            .map(Address::from)
+            .map_err(AddressListError::from)
+    }
 }
 
 impl PartialEq<Self> for Address {
@@ -81,6 +92,9 @@ impl Address {
 pub enum AddressListError {
     #[error("address {0} not found in the list")]
     AddressNotFound(#[cfg_attr(feature = "mocks", serde(with = "http_serde::uri"))] Uri),
+    #[error("unable parse address: {0}")]
+    #[cfg_attr(feature = "mocks", serde(skip))]
+    InvalidAddressUri(#[from] http::uri::InvalidUri),
 }
 
 /// A structure to manage DAPI addresses to select from
@@ -200,6 +214,7 @@ impl AddressList {
     }
 }
 
+// TODO: Must be changed to FromStr
 impl From<&str> for AddressList {
     fn from(value: &str) -> Self {
         let uri_list: Vec<Uri> = value

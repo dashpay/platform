@@ -74,7 +74,12 @@ where
         let request: <Self as FetchUnproved>::Request = query.query(false)?;
 
         // Execute the request using the Sdk instance
-        let response = request.clone().execute(sdk, settings).await?;
+        let response = request
+            .clone()
+            .execute(sdk, settings)
+            .await // TODO: We need better way to handle execution response and errors
+            .map(|execution_response| execution_response.into_inner())
+            .map_err(|execution_error| execution_error.into_inner())?;
 
         // Parse the response into the appropriate type along with metadata
         let (object, mtd): (Option<Self>, platform_proto::ResponseMetadata) =
