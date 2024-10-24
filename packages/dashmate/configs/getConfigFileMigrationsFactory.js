@@ -1021,14 +1021,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       },
       '1.5.0': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([, options]) => {
-              if (options.network === NETWORK_MAINNET && name !== 'base') {
-                  options.platform.drive.tenderdash.p2p.seeds = mainnet.get('platform.drive.tenderdash.p2p.seeds');
-              }
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_MAINNET && name !== 'base') {
+              options.platform.drive.tenderdash.p2p.seeds = mainnet.get('platform.drive.tenderdash.p2p.seeds');
+            }
 
-              if (options.network === NETWORK_TESTNET && name !== 'base') {
-                  options.platform.drive.tenderdash.p2p.seeds = testnet.get('platform.drive.tenderdash.p2p.seeds');
-              }
+            if (options.network === NETWORK_TESTNET && name !== 'base') {
+              options.platform.drive.tenderdash.p2p.seeds = testnet.get('platform.drive.tenderdash.p2p.seeds');
+            }
           });
         return configFile;
       },
