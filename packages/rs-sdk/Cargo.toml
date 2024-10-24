@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 
 arc-swap = { version = "1.7.1" }
+backon = { version = "1.2", features = ["tokio-sleep"] }
 chrono = { version = "0.4.38" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
@@ -57,7 +58,6 @@ test-case = { version = "3.3.1" }
 
 [features]
 default = ["mocks", "offline-testing"]
-tokio-sleep = ["rs-dapi-client/tokio-sleep"]
 
 mocks = [
   "dep:serde",
