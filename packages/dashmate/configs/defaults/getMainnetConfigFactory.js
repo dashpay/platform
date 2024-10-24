@@ -53,6 +53,11 @@ export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
                   host: '152.42.151.147',
                   port: 26656,
                 },
+                {
+                  id: 'fdc2239c1e0e62f3a192823d6e068d012620a2d1',
+                  host: 'seed-1.pshenmic.dev',
+                  port: 26656,
+                },
               ],
             },
             mempool: {
