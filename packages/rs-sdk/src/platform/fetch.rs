@@ -9,7 +9,7 @@
 //!   traits. The associated [Fetch::Request]` type needs to implement [TransportRequest].
 
 use crate::mock::MockResponse;
-use crate::retry;
+use crate::sync::retry;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
 use dpp::voting::votes::Vote;
@@ -155,8 +155,7 @@ where
         query: Q,
         settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let request1: <Self as Fetch>::Request = query.query(sdk.prove())?;
-        let request = &request1;
+        let request: &<Self as Fetch>::Request = &query.query(sdk.prove())?;
 
         let fut = |settings: RequestSettings| {
             async move {
@@ -164,11 +163,7 @@ where
                     .clone()
                     .execute(sdk, settings)
                     .await // TODO: We need better way to handle execution response and errors
-                    .map_err(|execution_error| ExecutionError {
-                        inner: Error::from(execution_error.inner),
-                        address: execution_error.address,
-                        retries: execution_error.retries,
-                    })?;
+                    .map_err(|execution_error| execution_error.into())?;
 
                 let address = response.address.clone();
                 let retries = response.retries;
@@ -203,10 +198,7 @@ where
             .dapi_client_settings
             .override_by(settings.unwrap_or_default());
 
-        retry!(settings, fut)
-            .await
-            .map(|x| x.into_inner())
-            .map_err(|e| e.into_inner())
+        retry(settings, fut).await.into_inner()
     }
 
     /// Fetch single object from Platform.

@@ -1,7 +1,7 @@
 use super::{types::evonode::EvoNode, Query};
 use crate::mock::MockResponse;
 use crate::Sdk;
-use crate::{error::Error, retry};
+use crate::{error::Error, sync::retry};
 use dapi_grpc::platform::v0::{
     self as platform_proto, GetStatusRequest, GetStatusResponse, ResponseMetadata,
 };
@@ -107,7 +107,7 @@ where
         };
 
         let settings = sdk.dapi_client_settings.override_by(settings);
-        retry!(settings, closure).await.into_inner()
+        retry(settings, closure).await.into_inner()
     }
 }
 

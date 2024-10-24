@@ -10,7 +10,8 @@ use crate::{
     error::Error,
     mock::MockResponse,
     platform::{document_query::DocumentQuery, query::Query},
-    retry, Sdk,
+    sync::retry,
+    Sdk,
 };
 use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
@@ -146,22 +147,22 @@ where
     ) -> Result<O, Error> {
         let request = &query.query(sdk.prove())?;
         let closure = |settings: RequestSettings| async move {
-            let request = request.clone();
-
             let grpc_response = request
                 .clone()
                 .execute(sdk, settings)
                 .await
                 .map_err(|e| e.into())?;
 
-            let address = grpc_response.address.clone();
-            let retries = grpc_response.retries;
-            let response = grpc_response.into_inner();
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = grpc_response;
 
             let object_type = std::any::type_name::<Self>().to_string();
             tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
 
-            sdk.parse_proof::<<Self as FetchMany<K, O>>::Request, O>(request, response)
+            sdk.parse_proof::<<Self as FetchMany<K, O>>::Request, O>(request.clone(), response)
                 .await
                 .map(|o| ExecutionResponse {
                     inner: o,
@@ -177,7 +178,7 @@ where
 
         let settings = sdk.dapi_client_settings;
 
-        retry!(settings, closure)
+        retry(settings, closure)
             .await
             .into_inner()
             .map(|o| o.unwrap_or_default())
@@ -255,7 +256,7 @@ impl FetchMany<Identifier, Documents> for Document {
     ) -> Result<Documents, Error> {
         let document_query: &DocumentQuery = &query.query(sdk.prove())?;
 
-        retry!(RequestSettings::default(), |settings| async move {
+        retry(RequestSettings::default(), |settings| async move {
             let request = document_query.clone();
             let result = request.execute(sdk, settings).await.map_err(|e| e.into())?;
 

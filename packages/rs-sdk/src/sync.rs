@@ -94,12 +94,54 @@ async fn worker<F: Future>(
     Ok(())
 }
 
-/// Retry the provided code block using [`RetryFuture`].
+/// Retry the provided closure.
 ///
-/// This macro defines a variable `settings` that is visible within the $code block.
-/// The $code block should use this variable when executing requests.
-
-/// `$code` should return [`ExecutionResult`].
+/// This function is used to retry async code. It takes into account number of retries already executed by lower
+/// layers and stops retrying once the maximum number of retries is reached.
+///
+/// The `settings` should contain maximum number of retries that should be executed. In case of failure, total number of
+/// requests sent is expected to be at least `settings.retries + 1` (initial request + `retries` configured in settings).
+/// The actual number of requests sent can be higher, as the lower layers can retry the request multiple times.
+///
+/// `code` should be a `FnMut()` closure that returns a future that should be retried.
+/// It takes [`RequestSettings`] as an argument and returns [`ExecutionResult`].
+/// Retry mechanism can change [`RequestSettings`] between invocations of the `code` closure
+/// to limit the number of retries for lower layers.
+///
+/// ## Parameters
+///
+/// - `settings` - global settings with any request-specific settings overrides applied.
+/// - `code` - closure that returns a future that should be retried. It should take [`RequestSettings`] as
+///   an argument and return [`ExecutionResult`].
+///
+/// ## Returns
+///
+/// Returns future that resolves to [`ExecutionResult`].
+///
+/// ## Example
+///
+/// ```rust
+/// # use dash_sdk::RequestSettings;
+/// # use dash_sdk::error::{Error,StaleNodeError};
+/// # use rs_dapi_client::{ExecutionResult, ExecutionError};
+/// async fn retry_test_function(settings: RequestSettings) -> ExecutionResult<(), dash_sdk::Error> {
+/// // do something
+///     Err(ExecutionError {
+///         inner: Error::StaleNode(StaleNodeError::Height{
+///             expected_height: 10,
+///             received_height: 3,
+///             tolerance_blocks: 1,
+///         }),
+///        retries: 0,
+///       address: None,
+///    })
+/// }
+/// #[tokio::main]
+///     async fn main() {
+///     let global_settings = RequestSettings::default();
+///     dash_sdk::sync::retry(global_settings, retry_test_function).await.expect_err("should fail");
+/// }
+/// ```
 ///
 /// ## Troubleshooting
 ///
@@ -107,74 +149,13 @@ async fn worker<F: Future>(
 /// - ensure returned value is [`ExecutionResult`].,
 /// - consider adding `.await` at the end of the closure.
 ///
-/// ## Example
 ///
-/// ```rust
-/// # use dash_sdk::RequestSettings;
-/// async fn retry_test_function(settings: RequestSettings) -> ExecutionResult<(), dash_sdk::Error> {
-/// // do something
-/// #    unimplemented!()
-/// }
-/// #[tokio::main]
-/// # async fn main() {
-/// let global_settings = RequestSettings::default();
-/// let closure = |settings| retry_test_function(settings);
-/// dash_sdk::retry!(global_settings, closure).expect_err("should fail");
-/// # }
-/// ```
-#[macro_export]
-macro_rules! retry {
-    ($settings:expr, $code:expr) => {{
-        let fut = move |s: rs_dapi_client::RequestSettings| {
-            let ss = s.clone();
-            $code(ss)
-        };
-        $crate::sync::do_retry(fut, $settings)
-    }};
-}
-
-// pub trait RetryFuture<R, E> {
-//     /// On error, retry the provided future `max_retries` times.
-//     ///
-//     /// This function is used to retry async functions. It takes into account number of retries already executed by lower
-//     /// layers and stops retrying if the maximum number of retries is reached.
-//     ///
-//     /// `Self` should be a closure that returns a future that should be retried. See below for more details.
-//     ///
-//     /// The `settings` contain maximum number of retries that should be executed. In case of failure, total number of
-//     /// requests sent is expected to be at least `max_retries + 1` (initial request + `max_retries` retries).
-//     /// It should contain global settings with any request-specific settings overrides applied.
-//     ///
-//     /// `settings` can be modified between retries; provided future SHOULD re-apply the settings on the beginning of each retry.
-//     ///
-//     /// Note that actual number of requests sent can be higher than specified in `settings`, as the retries on
-//     /// lower layers are not directly controlled  by this function.
-//     ///
-//     /// ## Writing a retryable closure
-//     ///
-//     /// In order to allow multiple executions, this trait is implemented for closures that return a future to be executed.
-//     /// The closure should be `FnMut(RequestSettings) -> Future<Output = ExecutionResult<R, E>>`.
-//     /// The closure should be able to be called multiple times, with different settings each time.
-//     async fn retry(self, settings: RequestSettings) -> ExecutionResult<R, E>;
-// }
-
-// impl<Fut, FutureFn, R, E> RetryFuture<R, E> for FutureFn
-// where
-//     Fut: Future<Output = ExecutionResult<R, E>>,
-//     FutureFn: FnMut(RequestSettings) -> Fut, // eg. FnMut() -> BoxFuture<'a, Result<ExecutionResponse<T>, ExecutionError<E>>>,
-//     E: CanRetry + Debug,
-// {
-//     async fn retry(self, settings: RequestSettings) -> ExecutionResult<R, E> {
-//         do_retry(self, settings).await
-//     }
-// }
-
-/// Retry the provided future `max_retries` times.
+/// ## See also
 ///
-/// See trait [`RetryFuture`] for more details.
-pub async fn do_retry<Fut, FutureFn, R, E>(
-    f: FutureFn,
+/// - [`::backon`] crate that is used by this function.
+pub async fn retry<Fut, FutureFn, R, E>(
     settings: RequestSettings,
+    code: FutureFn,
 ) -> ExecutionResult<R, E>
 where
     Fut: Future<Output = ExecutionResult<R, E>>,
@@ -192,7 +173,7 @@ where
     let settings = ArcSwap::new(Arc::new(settings));
 
     // We need a mutex here, as `closure` must be FnMut()
-    let inner_fn = Arc::new(Mutex::new(f));
+    let inner_fn = Arc::new(Mutex::new(code));
     let closure_settings = &settings;
     let closure = move || {
         let inner_fn = inner_fn.clone();
@@ -235,7 +216,6 @@ where
         .await;
 
     result.map_err(|mut e| {
-        // e.retries = retry_count.load(Ordering::Relaxed);
         e.retries = retries;
         e
     })
@@ -360,7 +340,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_retry_macro() {
+    async fn test_retry() {
         for _ in 0..5 {
             REQUEST_COUNTER.store(0, Ordering::Relaxed);
             let expected_requests: usize = (random::<u8>() % 100 + 1) as usize;
@@ -369,7 +349,7 @@ mod test {
             global_settings.retries = Some(expected_requests - 1);
 
             // let closure = |s| retry_test_function(s);
-            retry!(global_settings, retry_test_function)
+            retry(global_settings, retry_test_function)
                 .await
                 .expect_err("should fail");
 
