@@ -2,6 +2,7 @@ use dpp::ProtocolError;
 
 /// Errors
 #[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "mocks", derive(bincode::Encode, bincode::Decode))]
 #[allow(missing_docs)]
 pub enum Error {
     /// Not initialized
@@ -86,6 +87,7 @@ pub enum Error {
 
 /// Errors returned by the context provider
 #[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "mocks", derive(bincode::Encode, bincode::Decode))]
 pub enum ContextProviderError {
     /// Generic Context provider error
     #[error("Context provider error: {0}")]
