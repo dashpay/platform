@@ -164,7 +164,7 @@ where
                     .clone()
                     .execute(sdk, settings.unwrap_or_default())
                     .await // TODO: We need better way to handle execution response and errors
-                               .map_err(|execution_error| 
+                               .map_err(|execution_error|
                                 ExecutionError{
                                     inner:Error::from(execution_error.inner),
                                     address: execution_error.address,
@@ -199,7 +199,7 @@ where
             }.boxed()
         };
         // TODO: correct retry configuration
-        let configured_retries = settings.unwrap_or_default().retries.unwrap_or(0);
+        let configured_retries = settings.unwrap_or_default().retries.unwrap_or(10);
         crate::sync::retry(fut, configured_retries)
             .await
             .map(|x| x.into_inner())

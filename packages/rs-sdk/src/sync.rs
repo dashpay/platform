@@ -7,11 +7,7 @@ use backon::Retryable;
 use drive_proof_verifier::error::ContextProviderError;
 use futures::future::BoxFuture;
 use rs_dapi_client::{CanRetry, ExecutionError, ExecutionResponse};
-use std::{
-    fmt::Debug,
-    future::Future,
-    sync::mpsc::SendError,
-};
+use std::{fmt::Debug, future::Future, sync::mpsc::SendError};
 use tokio::runtime::TryCurrentError;
 #[derive(Debug, thiserror::Error)]
 pub enum AsyncError {
@@ -95,7 +91,21 @@ async fn worker<F: Future>(
 }
 
 /// Retries the provided future `count` times.
-pub async fn retry<'a, F, T, E>(retry_factory: F,max_retries:  usize) ->Result<ExecutionResponse<T>, ExecutionError<E>>
+///
+/// This function is used to retry async functions. It takes into account number of retries already executed by lower
+/// layers and stops retrying if the maximum number of retries is reached.
+///
+/// The `retry_factory` is a closure that returns a future that should be retried.
+///
+/// The `max_retries` is the maximum number of retries that should be executed. In case of failure, total number of
+/// requests sent is expected to be at least `max_retries + 1` (initial request + `max_retries` retries).
+///
+/// Note that actual number of requests sent can be higher, as the retries on lower layers are not directly controlled
+/// by this function.
+pub async fn retry<'a, F, T, E>(
+    retried_fn: F,
+    max_retries: usize,
+) -> Result<ExecutionResponse<T>, ExecutionError<E>>
 where
     F: FnMut() -> BoxFuture<'a, Result<ExecutionResponse<T>, ExecutionError<E>>>,
     E: CanRetry + Debug,
@@ -105,23 +115,24 @@ where
         .with_delay(std::time::Duration::from_millis(10)) // we use different server, so no real delay needed, just to avoid spamming
         .with_max_times(max_retries); // no retries by default
 
-    // let retries = atomic::AtomicUsize::new(0);
-    let retries: usize = 0;
+    let mut retries: usize = 0;
 
-    let  result= retry_factory.retry(backoff_strategy)
+    let  result= retried_fn.retry(backoff_strategy)
         .when(|e| {
             if e.can_retry() {
-                
-                // retries used in this attempt; `e.retries` on rs-dapi-client-layer and `+1` on sdk layer
-                let used = e.retries + 1;
-                
-                // retries used in all preceeding attempts
-                let retries_so_far = retries+used;//  retries.fetch_add(used, Ordering::Relaxed) + used; // relaxed as only 1 thread accesses that
-                if retries_so_far >= max_retries {
-                    tracing::warn!(retry = retries_so_far, max_retries, error=?e, "retrying request");
+                // requests sent for current execution attempt: `e.retries` on rs-dapi-client layer and `+1` for initial request
+                let requests_sent = e.retries + 1;
+
+                // requests sent in all preceeding attempts                
+                // let all_requests_sent = retries.fetch_add(requests_sent, Ordering::Relaxed) + requests_sent; 
+                 retries += requests_sent;
+                 let all_requests_sent = retries;
+
+                if all_requests_sent < max_retries {
+                    tracing::warn!(retry = all_requests_sent, max_retries, error=?e, "retrying request");
                     true
                 } else {
-                    tracing::warn!(retry = retries_so_far, error=?e, "no more retries left, giving up");
+                    tracing::warn!(retry = all_requests_sent, max_retries, error=?e, "no more retries left, giving up");
                     false
                 }
             } else {
@@ -133,9 +144,9 @@ where
     })
     .await;
 
-    let retry_count = retries;
     result.map_err(|mut e| {
-        e.retries = retry_count;
+        // e.retries = retry_count.load(Ordering::Relaxed);
+        e.retries = retries;
         e
     })
 }
