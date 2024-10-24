@@ -1,8 +1,12 @@
 //! Definitions of errors
+
+use std::any::Any;
 use std::fmt::Debug;
 use std::time::Duration;
 
 use dapi_grpc::mock::Mockable;
+use dpp::consensus::ConsensusError;
+use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
 use rs_dapi_client::{CanRetry, DapiClientError};
@@ -73,8 +77,24 @@ pub enum Error {
     StaleNode(#[from] StaleNodeError),
 }
 
-impl<T: Debug + Mockable> From<DapiClientError<T>> for Error {
+impl<T: Debug + Mockable + Any> From<DapiClientError<T>> for Error {
     fn from(value: DapiClientError<T>) -> Self {
+        if let DapiClientError::Transport(ref t, _) = &value {
+            if let Some(status) = (t as &dyn Any).downcast_ref::<dapi_grpc::tonic::Status>() {
+                if let Some(consensus_error_value) =
+                    status.metadata().get_bin("drive-error-data-bin")
+                {
+                    return ConsensusError::deserialize_from_bytes(
+                        consensus_error_value.as_encoded_bytes(),
+                    )
+                    .map(|consensus_error| {
+                        Error::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error)))
+                    })
+                    .unwrap_or_else(Error::Protocol);
+                }
+            }
+        }
+
         Self::DapiClientError(format!("{:?}", value))
     }
 }
