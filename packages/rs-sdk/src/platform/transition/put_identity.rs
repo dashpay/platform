@@ -14,7 +14,7 @@ use drive_proof_verifier::DataContractProvider;
 use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use drive::drive::Drive;
-use rs_dapi_client::{DapiClientError, DapiRequest, RequestSettings};
+use rs_dapi_client::{DapiClientError, DapiRequest, IntoInner, RequestSettings};
 
 #[async_trait::async_trait]
 /// A trait for putting an identity to platform
@@ -57,7 +57,7 @@ impl<S: Signer> PutIdentity<S> for Identity {
             .clone()
             .execute(sdk, RequestSettings::default())
             .await // TODO: We need better way to handle execution errors
-            .map_err(|error| error.into_inner())?;
+            .into_inner()?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
 
@@ -83,8 +83,7 @@ impl<S: Signer> PutIdentity<S> for Identity {
             .clone()
             .execute(sdk, RequestSettings::default())
             .await // TODO: We need better way to handle execution response and errors
-            .map(|execution_response| execution_response.into_inner())
-            .map_err(|execution_error| execution_error.into_inner());
+            .into_inner();
 
         match response_result {
             Ok(_) => {}
@@ -107,8 +106,7 @@ impl<S: Signer> PutIdentity<S> for Identity {
         let response = request
             .execute(sdk, RequestSettings::default())
             .await // TODO: We need better way to handle execution response and errors
-            .map(|execution_response| execution_response.into_inner())
-            .map_err(|execution_error| execution_error.into_inner())?;
+            .into_inner()?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;
         let proof = response.proof_owned()?;

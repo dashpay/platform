@@ -3,6 +3,7 @@ use crate::{Address, CanRetry, DapiClientError, RequestSettings};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dapi_grpc::tonic::async_trait;
+use http_serde::http::Uri;
 use std::fmt::Debug;
 
 #[async_trait]
@@ -20,6 +21,12 @@ pub trait DapiRequestExecutor {
         <R::Client as TransportClient>::Error: Mockable;
 }
 
+/// Unwrap wrapped types
+pub trait IntoInner<T> {
+    /// Unwrap the inner type
+    fn into_inner(self) -> T;
+}
+
 /// Error happened during request execution.
 #[derive(Debug, Clone, thiserror::Error, Eq, PartialEq)]
 #[error("{inner}")]
@@ -31,11 +38,27 @@ pub struct ExecutionError<E> {
     /// The address of the node that was used for the request
     pub address: Option<Address>,
 }
-
 impl<E> ExecutionError<E> {
+    /// Convert inner error type without loosing retries and address
+    pub fn into<F>(self) -> ExecutionError<F>
+    where
+        F: From<E>,
+    {
+        ExecutionError {
+            inner: self.inner.into(),
+            retries: self.retries,
+            address: self.address,
+        }
+    }
+}
+
+impl<E, I> IntoInner<I> for ExecutionError<E>
+where
+    E: Into<I>,
+{
     /// Unwrap the error cause
-    pub fn into_inner(self) -> E {
-        self.inner
+    fn into_inner(self) -> I {
+        self.inner.into()
     }
 }
 
@@ -56,10 +79,13 @@ pub struct ExecutionResponse<R> {
     pub address: Address,
 }
 
-impl<R> ExecutionResponse<R> {
+impl<R, I> IntoInner<I> for ExecutionResponse<R>
+where
+    R: Into<I>,
+{
     /// Unwrap the response
-    pub fn into_inner(self) -> R {
-        self.inner
+    fn into_inner(self) -> I {
+        self.inner.into()
     }
 }
 
@@ -77,5 +103,24 @@ impl<T: VersionedGrpcResponse> VersionedGrpcResponse for ExecutionResponse<T> {
     }
 }
 
+impl<R> From<R> for ExecutionResponse<R> {
+    fn from(inner: R) -> Self {
+        Self {
+            inner,
+            retries: 0,
+            address: Uri::default().into(),
+        }
+    }
+}
+
 /// Result of request execution
 pub type ExecutionResult<R, E> = Result<ExecutionResponse<R>, ExecutionError<E>>;
+
+impl<T, E> IntoInner<Result<T, E>> for ExecutionResult<T, E> {
+    fn into_inner(self) -> Result<T, E> {
+        match self {
+            Ok(response) => Ok(response.into_inner()),
+            Err(error) => Err(error.into_inner()),
+        }
+    }
+}

@@ -19,7 +19,7 @@ use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
-use rs_dapi_client::{DapiRequest, RequestSettings};
+use rs_dapi_client::{DapiRequest, IntoInner, RequestSettings};
 
 #[async_trait::async_trait]
 /// A trait for purchasing a document on Platform
@@ -102,7 +102,7 @@ impl<S: Signer> PurchaseDocument<S> for Document {
             .clone()
             .execute(sdk, settings.request_settings)
             .await // TODO: We need better way to handle execution errors
-            .map_err(|error| error.into_inner())?;
+            .into_inner()?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
 
@@ -120,8 +120,7 @@ impl<S: Signer> PurchaseDocument<S> for Document {
         let response = request
             .execute(sdk, RequestSettings::default())
             .await // TODO: We need better way to handle execution response and errors
-            .map(|execution_response| execution_response.into_inner())
-            .map_err(|execution_error| execution_error.into_inner())?;
+            .into_inner()?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;
 

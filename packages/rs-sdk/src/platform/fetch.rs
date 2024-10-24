@@ -9,6 +9,7 @@
 //!   traits. The associated [Fetch::Request]` type needs to implement [TransportRequest].
 
 use crate::mock::MockResponse;
+use crate::retry;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
 use dpp::voting::votes::Vote;
@@ -17,10 +18,8 @@ use dpp::{
     prelude::Identity,
 };
 use drive_proof_verifier::FromProof;
-use futures::future::BoxFuture;
-use futures::FutureExt;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
-use rs_dapi_client::{ExecutionError, ExecutionResponse};
+use rs_dapi_client::{ExecutionError, ExecutionResponse, IntoInner};
 use std::fmt::Debug;
 
 use super::types::identity::IdentityRequest;
@@ -156,51 +155,55 @@ where
         query: Q,
         settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let request1: <Self as Fetch>::Request = query.query(sdk.prove())?.clone();
+        let request1: <Self as Fetch>::Request = query.query(sdk.prove())?;
         let request = &request1;
-        let fut = || ->   BoxFuture< Result<ExecutionResponse<(Option<Self>, ResponseMetadata, Proof)>, ExecutionError<Error>>> {
-            async {
+
+        let fut = |settings: RequestSettings| {
+            async move {
                 let response = request
                     .clone()
-                    .execute(sdk, settings.unwrap_or_default())
+                    .execute(sdk, settings)
                     .await // TODO: We need better way to handle execution response and errors
-                               .map_err(|execution_error|
-                                ExecutionError{
-                                    inner:Error::from(execution_error.inner),
-                                    address: execution_error.address,
-                                    retries: execution_error.retries,
-                                })?;
+                    .map_err(|execution_error| ExecutionError {
+                        inner: Error::from(execution_error.inner),
+                        address: execution_error.address,
+                        retries: execution_error.retries,
+                    })?;
 
-                                let address = response.address.clone();
-                                let retries = response.retries;
-                            let grpc_response =response.into_inner();
+                let address = response.address.clone();
+                let retries = response.retries;
+                let grpc_response = response.into_inner();
 
                 let object_type = std::any::type_name::<Self>().to_string();
                 tracing::trace!(request = ?request, response = ?grpc_response, object_type, "fetched object from platform");
 
                 let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) =
                     sdk.parse_proof_with_metadata_and_proof(request.clone(), grpc_response)
-                        .await.map_err(|e| ExecutionError{
+                        .await
+                        .map_err(|e| ExecutionError {
                             inner: e,
                             address: Some(address.clone()),
                             retries,
-                        })  ?;
+                        })?;
 
-               let o= match object {
+                let o = match object {
                     Some(item) => Ok((item.into(), response_metadata, proof)),
                     None => Ok((None, response_metadata, proof)),
                 };
 
-                o.map(|x| ExecutionResponse{
+                o.map(|x| ExecutionResponse {
                     inner: x,
                     address,
                     retries,
                 })
-            }.boxed()
+            }
         };
-        // TODO: correct retry configuration
-        let configured_retries = settings.unwrap_or_default().retries.unwrap_or(10);
-        crate::sync::retry(fut, configured_retries)
+
+        let settings = sdk
+            .dapi_client_settings
+            .override_by(settings.unwrap_or_default());
+
+        retry!(settings, fut)
             .await
             .map(|x| x.into_inner())
             .map_err(|e| e.into_inner())

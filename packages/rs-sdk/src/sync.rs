@@ -3,12 +3,16 @@
 //! This is a workaround for an issue in tokio, where you cannot call `block_on` from sync call that is called
 //! inside a tokio runtime. This module spawns async futures in active tokio runtime, and retrieves the result
 //! using a channel.
-use backon::Retryable;
+
+use arc_swap::ArcSwap;
 use drive_proof_verifier::error::ContextProviderError;
-use futures::future::BoxFuture;
-use rs_dapi_client::{CanRetry, ExecutionError, ExecutionResponse};
-use std::{fmt::Debug, future::Future, sync::mpsc::SendError};
-use tokio::runtime::TryCurrentError;
+use rs_dapi_client::{CanRetry, ExecutionResult, RequestSettings};
+use std::{
+    fmt::Debug,
+    future::Future,
+    sync::{mpsc::SendError, Arc},
+};
+use tokio::{runtime::TryCurrentError, sync::Mutex};
 #[derive(Debug, thiserror::Error)]
 pub enum AsyncError {
     /// Not running inside tokio runtime
@@ -90,46 +94,132 @@ async fn worker<F: Future>(
     Ok(())
 }
 
-/// Retries the provided future `count` times.
+/// Retry the provided code block using [`RetryFuture`].
 ///
-/// This function is used to retry async functions. It takes into account number of retries already executed by lower
-/// layers and stops retrying if the maximum number of retries is reached.
+/// This macro defines a variable `settings` that is visible within the $code block.
+/// The $code block should use this variable when executing requests.
+
+/// `$code` should return [`ExecutionResult`].
 ///
-/// The `retry_factory` is a closure that returns a future that should be retried.
+/// ## Troubleshooting
 ///
-/// The `max_retries` is the maximum number of retries that should be executed. In case of failure, total number of
-/// requests sent is expected to be at least `max_retries + 1` (initial request + `max_retries` retries).
+/// Compiler error: `no method named retry found for closure`:
+/// - ensure returned value is [`ExecutionResult`].,
+/// - consider adding `.await` at the end of the closure.
 ///
-/// Note that actual number of requests sent can be higher, as the retries on lower layers are not directly controlled
-/// by this function.
-pub async fn retry<'a, F, T, E>(
-    retried_fn: F,
-    max_retries: usize,
-) -> Result<ExecutionResponse<T>, ExecutionError<E>>
+/// ## Example
+///
+/// ```rust
+/// # use dash_sdk::RequestSettings;
+/// async fn retry_test_function(settings: RequestSettings) -> ExecutionResult<(), dash_sdk::Error> {
+/// // do something
+/// #    unimplemented!()
+/// }
+/// #[tokio::main]
+/// # async fn main() {
+/// let global_settings = RequestSettings::default();
+/// let closure = |settings| retry_test_function(settings);
+/// dash_sdk::retry!(global_settings, closure).expect_err("should fail");
+/// # }
+/// ```
+#[macro_export]
+macro_rules! retry {
+    ($settings:expr, $code:expr) => {{
+        let fut = move |s: rs_dapi_client::RequestSettings| {
+            let ss = s.clone();
+            $code(ss)
+        };
+        $crate::sync::do_retry(fut, $settings)
+    }};
+}
+
+// pub trait RetryFuture<R, E> {
+//     /// On error, retry the provided future `max_retries` times.
+//     ///
+//     /// This function is used to retry async functions. It takes into account number of retries already executed by lower
+//     /// layers and stops retrying if the maximum number of retries is reached.
+//     ///
+//     /// `Self` should be a closure that returns a future that should be retried. See below for more details.
+//     ///
+//     /// The `settings` contain maximum number of retries that should be executed. In case of failure, total number of
+//     /// requests sent is expected to be at least `max_retries + 1` (initial request + `max_retries` retries).
+//     /// It should contain global settings with any request-specific settings overrides applied.
+//     ///
+//     /// `settings` can be modified between retries; provided future SHOULD re-apply the settings on the beginning of each retry.
+//     ///
+//     /// Note that actual number of requests sent can be higher than specified in `settings`, as the retries on
+//     /// lower layers are not directly controlled  by this function.
+//     ///
+//     /// ## Writing a retryable closure
+//     ///
+//     /// In order to allow multiple executions, this trait is implemented for closures that return a future to be executed.
+//     /// The closure should be `FnMut(RequestSettings) -> Future<Output = ExecutionResult<R, E>>`.
+//     /// The closure should be able to be called multiple times, with different settings each time.
+//     async fn retry(self, settings: RequestSettings) -> ExecutionResult<R, E>;
+// }
+
+// impl<Fut, FutureFn, R, E> RetryFuture<R, E> for FutureFn
+// where
+//     Fut: Future<Output = ExecutionResult<R, E>>,
+//     FutureFn: FnMut(RequestSettings) -> Fut, // eg. FnMut() -> BoxFuture<'a, Result<ExecutionResponse<T>, ExecutionError<E>>>,
+//     E: CanRetry + Debug,
+// {
+//     async fn retry(self, settings: RequestSettings) -> ExecutionResult<R, E> {
+//         do_retry(self, settings).await
+//     }
+// }
+
+/// Retry the provided future `max_retries` times.
+///
+/// See trait [`RetryFuture`] for more details.
+pub async fn do_retry<Fut, FutureFn, R, E>(
+    f: FutureFn,
+    settings: RequestSettings,
+) -> ExecutionResult<R, E>
 where
-    F: FnMut() -> BoxFuture<'a, Result<ExecutionResponse<T>, ExecutionError<E>>>,
+    Fut: Future<Output = ExecutionResult<R, E>>,
+    FutureFn: FnMut(RequestSettings) -> Fut,
     E: CanRetry + Debug,
 {
-    // TODO: make configurable
+    let max_retries = settings.retries.unwrap_or(0);
+
     let backoff_strategy = backon::ConstantBuilder::default()
         .with_delay(std::time::Duration::from_millis(10)) // we use different server, so no real delay needed, just to avoid spamming
         .with_max_times(max_retries); // no retries by default
 
     let mut retries: usize = 0;
 
-    let  result= retried_fn.retry(backoff_strategy)
+    let settings = ArcSwap::new(Arc::new(settings));
+
+    // We need a mutex here, as `closure` must be FnMut()
+    let inner_fn = Arc::new(Mutex::new(f));
+    let closure_settings = &settings;
+    let closure = move || {
+        let inner_fn = inner_fn.clone();
+        let settings = closure_settings.load_full().clone();
+        async move {
+            let mut func = inner_fn.lock().await;
+            (*func)(*settings).await
+        }
+    };
+
+    let  result= ::backon::Retryable::retry(closure,backoff_strategy)
         .when(|e| {
             if e.can_retry() {
-                // requests sent for current execution attempt: `e.retries` on rs-dapi-client layer and `+1` for initial request
+                // requests sent for current execution attempt; 
                 let requests_sent = e.retries + 1;
 
-                // requests sent in all preceeding attempts                
-                // let all_requests_sent = retries.fetch_add(requests_sent, Ordering::Relaxed) + requests_sent; 
-                 retries += requests_sent;
-                 let all_requests_sent = retries;
+                // requests sent in all preceeding attempts; user expects `settings.retries +1`                           
+                retries += requests_sent;
+                let all_requests_sent = retries;
 
-                if all_requests_sent < max_retries {
+                if all_requests_sent <= max_retries {
                     tracing::warn!(retry = all_requests_sent, max_retries, error=?e, "retrying request");
+                    let new_settings = RequestSettings {
+                        retries: Some(max_retries - all_requests_sent), // limit num of retries for lower layer
+                        ..**settings.load()
+                    };
+                    settings.store(Arc::new(new_settings));
                     true
                 } else {
                     tracing::warn!(retry = all_requests_sent, max_retries, error=?e, "no more retries left, giving up");
@@ -138,11 +228,11 @@ where
             } else {
                 false
             }
-    })
-    .notify(|error, duration| {
-        tracing::warn!(?duration, ?error, "request failed, retrying");
-    })
-    .await;
+        })
+        .notify(|error, duration| {
+            tracing::warn!(?duration, ?error, "request failed, retrying");
+        })
+        .await;
 
     result.map_err(|mut e| {
         // e.retries = retry_count.load(Ordering::Relaxed);
@@ -154,7 +244,13 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::future::Future;
+    use dpp::dashcore::secp256k1::rand::random;
+    use http::Uri;
+    use rs_dapi_client::ExecutionError;
+    use std::{
+        future::Future,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
     use tokio::{
         runtime::Builder,
         sync::mpsc::{self, Receiver},
@@ -229,6 +325,60 @@ mod test {
             rt.block_on(worker_join).unwrap();
             // Assert the result
             assert_eq!(result.unwrap(), "Success");
+        }
+    }
+
+    #[derive(Debug)]
+    enum MockError {
+        Generic,
+    }
+    impl CanRetry for MockError {
+        fn can_retry(&self) -> bool {
+            true
+        }
+    }
+    /// Counter for tracking number of requests sent
+    static REQUEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    async fn retry_test_function(settings: RequestSettings) -> ExecutionResult<(), MockError> {
+        // each invocation executes two retries
+        let retries = (random::<u8>() % 5) as usize;
+        let retries = if settings.retries.unwrap_or_default() < retries {
+            settings.retries.unwrap_or_default()
+        } else {
+            retries
+        };
+
+        // we sent 1 initial request to `retries` retries
+        REQUEST_COUNTER.fetch_add(1 + retries, Ordering::Relaxed);
+
+        Err(ExecutionError {
+            inner: MockError::Generic,
+            retries,
+            address: Some(Uri::from_static("http://localhost").into()),
+        })
+    }
+
+    #[tokio::test]
+    async fn test_retry_macro() {
+        for _ in 0..5 {
+            REQUEST_COUNTER.store(0, Ordering::Relaxed);
+            let expected_requests: usize = (random::<u8>() % 100 + 1) as usize;
+            // we retry 5 times, and expect 5 retries + 1 initial request
+            let mut global_settings = RequestSettings::default();
+            global_settings.retries = Some(expected_requests - 1);
+
+            // let closure = |s| retry_test_function(s);
+            retry!(global_settings, retry_test_function)
+                .await
+                .expect_err("should fail");
+
+            assert_eq!(
+                REQUEST_COUNTER.load(Ordering::Relaxed),
+                expected_requests,
+                "test failed for expected {} requests",
+                expected_requests
+            );
         }
     }
 }
