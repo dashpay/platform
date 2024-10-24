@@ -57,7 +57,7 @@ function broadcastStateTransitionHandlerFactory(
     try {
       response = await rpcClient.request('broadcast_tx', { tx });
     } catch (e) {
-      if (e.message === 'socket hang up') {
+      if (e.code === 'ECONNRESET' || e.message === 'socket hang up') {
         throw new UnavailableGrpcError('Tenderdash is not available');
       }
 

@@ -18,7 +18,7 @@ function requestTenderRpcFactory(rpcClient) {
     try {
       response = await rpcClient.request(uri, params);
     } catch (e) {
-      if (e.message === 'socket hang up') {
+      if (e.code === 'ECONNRESET' || e.message === 'socket hang up') {
         throw new UnavailableGrpcError('Tenderdash is not available');
       }
 
