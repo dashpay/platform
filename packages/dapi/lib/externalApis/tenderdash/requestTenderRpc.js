@@ -23,9 +23,11 @@ function requestTenderRpcFactory(rpcClient) {
         throw new UnavailableGrpcError('Tenderdash is not available');
       }
 
-      e.message = `Failed to request ${uri}: ${e.message}`;
-
-      throw e;
+      throw new RPCError(
+        e.code || -32602,
+        `Failed to request ${uri}: ${e.message}`,
+        e,
+      );
     }
 
     const { result, error: jsonRpcError } = response;
