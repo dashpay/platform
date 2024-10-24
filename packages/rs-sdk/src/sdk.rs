@@ -418,6 +418,7 @@ impl Sdk {
         }
     }
 
+    // TODO: Move to a separate struct
     /// Updates or fetches the nonce for a given identity and contract pair from a cache,
     /// querying Platform if the cached value is stale or absent. Optionally
     /// increments the nonce before storing it, based on the provided settings.
@@ -672,7 +673,7 @@ impl DapiRequestExecutor for Sdk {
         &self,
         request: R,
         settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
+    ) -> Result<R::Response, DapiClientError> {
         match self.inner {
             SdkInstance::Dapi { ref dapi, .. } => dapi.execute(request, settings).await,
             #[cfg(feature = "mocks")]

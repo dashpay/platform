@@ -35,10 +35,7 @@ pub struct MockDapiClient {
     expectations: Expectations,
 }
 /// Result of executing a mock request
-pub type MockResult<T> = Result<
-    <T as TransportRequest>::Response,
-    DapiClientError<<<T as TransportRequest>::Client as TransportClient>::Error>,
->;
+pub type MockResult<T> = Result<<T as TransportRequest>::Response, DapiClientError>;
 
 impl MockDapiClient {
     /// Create a new mock client

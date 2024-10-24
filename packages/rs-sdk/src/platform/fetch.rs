@@ -17,7 +17,7 @@ use dpp::{
     prelude::Identity,
 };
 use drive_proof_verifier::FromProof;
-use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
+use rs_dapi_client::{transport::TransportRequest, DapiClientError, DapiRequest, RequestSettings};
 use std::fmt::Debug;
 
 use super::types::identity::IdentityRequest;
