@@ -95,7 +95,7 @@ async fn worker<F: Future>(
 }
 
 /// Retries the provided future `count` times.
-pub async fn retry<'a, F, T, E>(retry_factory: F,configured_retries:  usize) ->Result<ExecutionResponse<T>, ExecutionError<E>>
+pub async fn retry<'a, F, T, E>(retry_factory: F,max_retries:  usize) ->Result<ExecutionResponse<T>, ExecutionError<E>>
 where
     F: FnMut() -> BoxFuture<'a, Result<ExecutionResponse<T>, ExecutionError<E>>>,
     E: CanRetry + Debug,
@@ -103,7 +103,7 @@ where
     // TODO: make configurable
     let backoff_strategy = backon::ConstantBuilder::default()
         .with_delay(std::time::Duration::from_millis(10)) // we use different server, so no real delay needed, just to avoid spamming
-        .with_max_times(configured_retries); // no retries by default
+        .with_max_times(max_retries); // no retries by default
 
     // let retries = atomic::AtomicUsize::new(0);
     let retries: usize = 0;
@@ -117,8 +117,8 @@ where
                 
                 // retries used in all preceeding attempts
                 let retries_so_far = retries+used;//  retries.fetch_add(used, Ordering::Relaxed) + used; // relaxed as only 1 thread accesses that
-                if retries_so_far >= configured_retries {
-                    tracing::warn!(retry = retries_so_far, error=?e, "retrying request");
+                if retries_so_far >= max_retries {
+                    tracing::warn!(retry = retries_so_far, max_retries, error=?e, "retrying request");
                     true
                 } else {
                     tracing::warn!(retry = retries_so_far, error=?e, "no more retries left, giving up");

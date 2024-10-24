@@ -8,7 +8,6 @@ use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
 use arc_swap::{ArcSwapAny, ArcSwapOption};
-use backon::Retryable;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::bincode;
@@ -22,13 +21,10 @@ use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFet
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::MockContextProvider;
 use drive_proof_verifier::{ContextProvider, FromProof};
-use futures::future::BoxFuture;
-use futures::FutureExt;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
 pub use rs_dapi_client::AddressList;
-use rs_dapi_client::CanRetry;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
@@ -674,30 +670,6 @@ fn verify_metadata_height(
     Ok(())
 }
 
-/// Helper function that creates a closure that executes a request on the Sdk.
-/// It is used to create a closure that can be passed to the retryable backoff strategy.
-fn do_execute<'a, R: TransportRequest + 'a>(
-    inner: &'a SdkInstance,
-    request: R,
-    settings: RequestSettings,
-) -> impl FnMut() -> BoxFuture<
-    'a,
-    ExecutionResult<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>,
-> {
-    move || {
-        let request = request.clone();
-        match inner {
-            SdkInstance::Dapi { ref dapi, .. } => dapi.execute(request, settings).boxed(),
-            #[cfg(feature = "mocks")]
-            SdkInstance::Mock { ref dapi, .. } => async move {
-                let dapi_guard = dapi.lock().await;
-                dapi_guard.execute(request, settings).await
-            }
-            .boxed(),
-        }
-    }
-}
-
 #[async_trait::async_trait]
 impl DapiRequestExecutor for Sdk {
     async fn execute<R: TransportRequest>(
@@ -705,50 +677,14 @@ impl DapiRequestExecutor for Sdk {
         request: R,
         settings: RequestSettings,
     ) -> ExecutionResult<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
-        let applied_settings = self
-            .dapi_client_settings
-            .override_by(R::SETTINGS_OVERRIDES)
-            .override_by(settings)
-            .finalize();
-
-        let configured_retries = applied_settings.retries;
-        // TODO: make configurable
-        let backoff_strategy = backon::ConstantBuilder::default()
-            .with_delay(std::time::Duration::from_millis(10)) // we use different server, so no real delay needed, just to avoid spamming
-            .with_max_times(settings.retries.unwrap_or(0)); // no retries by default
-
-        // let retries = atomic::AtomicUsize::new(0);
-        let retries: usize = 0;
-
-        let execute_fn = do_execute(&self.inner, request, settings);
-        let  result=    execute_fn.retry(backoff_strategy)
-            .when(|e| {
-                if e.can_retry() {
-                    // retries used in this attempt; `e.retries` on rs-dapi-client-layer and `+1` on sdk layer
-                    let used = e.retries + 1;
-                    // retries used in all preceeding attempts
-                    let retries_so_far = retries+used;//  retries.fetch_add(used, Ordering::Relaxed) + used; // relaxed as only 1 thread accesses that
-                    if retries_so_far >= configured_retries {
-                        tracing::warn!(retry = retries_so_far, error=?e, "retrying request");
-                        true
-                    } else {
-                        tracing::warn!(retry = retries_so_far, error=?e, "no more retries left, giving up");
-                        false
-                    }
-                } else {
-                    false
-                }
-            })
-            .notify(|error, duration| {
-                tracing::warn!(?duration, ?error, "request failed, retrying");
-            })
-            .await;
-
-        let retry_count = retries;
-        result.map_err(|mut e| {
-            e.retries = retry_count;
-            e
-        })
+        match self.inner {
+            SdkInstance::Dapi { ref dapi, .. } => dapi.execute(request, settings).await,
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { ref dapi, .. } => {
+                let dapi_guard = dapi.lock().await;
+                dapi_guard.execute(request, settings).await
+            }
+        }
     }
 }
 
