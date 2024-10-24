@@ -4,16 +4,17 @@ const RPCError = require('../../rpcServer/RPCError');
 
 /**
  * @param {jaysonClient} rpcClient
- * @return {requestTenderRpc}
+ * @return {requestTenderRpc} A function to make RPC requests to Tenderdash.
  */
 function requestTenderRpcFactory(rpcClient) {
   /**
+   * @function
    * @typedef requestTenderRpc
    * @param {string} uri
-   * @param {Object} [params]
+   * @param {Object} [params={}]
    * @return {Promise<Object>}
    */
-  return async function requestTenderRpc(uri, params = {}) {
+  async function requestTenderRpc(uri, params = {}) {
     let response;
     try {
       response = await rpcClient.request(uri, params);
@@ -44,7 +45,9 @@ function requestTenderRpcFactory(rpcClient) {
     }
 
     return result;
-  };
+  }
+
+  return requestTenderRpc;
 }
 
 module.exports = requestTenderRpcFactory;
