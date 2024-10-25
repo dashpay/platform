@@ -79,6 +79,7 @@ impl Address {
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub enum AddressListError {
+    /// Specified address not present in the list
     #[error("address {0} not found in the list")]
     AddressNotFound(#[cfg_attr(feature = "mocks", serde(with = "http_serde::uri"))] Uri),
 }

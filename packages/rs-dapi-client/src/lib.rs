@@ -14,6 +14,7 @@ pub mod transport;
 
 pub use address_list::Address;
 pub use address_list::AddressList;
+pub use address_list::AddressListError;
 pub use connection_pool::ConnectionPool;
 pub use dapi_client::DapiRequestExecutor;
 pub use dapi_client::{DapiClient, DapiClientError};
