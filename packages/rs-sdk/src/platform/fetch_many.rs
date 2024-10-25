@@ -254,7 +254,7 @@ impl FetchMany<Identifier, Documents> for Document {
     ) -> Result<Documents, Error> {
         let document_query: &DocumentQuery = &query.query(sdk.prove())?;
 
-        retry(RequestSettings::default(), |settings| async move {
+        retry(sdk.dapi_client_settings, |settings| async move {
             let request = document_query.clone();
 
             let ExecutionResponse {
