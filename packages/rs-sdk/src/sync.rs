@@ -170,11 +170,18 @@ where
 
     let mut retries: usize = 0;
 
+    // Settings must be modified inside `when()` closure, so we need to use `ArcSwap` to allow mutable access to settings.
     let settings = ArcSwap::new(Arc::new(settings));
 
-    // We need a mutex here, as `closure` must be FnMut()
+    // Closure below needs to be FnMut, so we need mutable future_factory_fn. In order to achieve that,
+    // we use Arc<Mutex<.>>> pattern, to NOT move `future_factory_fn` directly into closure (as this breaks FnMut),
+    // while still allowing mutable access to it.
     let inner_fn = Arc::new(Mutex::new(future_factory_fn));
+
     let closure_settings = &settings;
+    // backon also support [backon::RetryableWithContext], but it doesn't pass the context to `when()` call.
+    // As we need to modify the settings inside `when()`, context doesn't solve our problem and we have to implement
+    // our own "context-like" logic using the closure below and `ArcSwap` for settings.
     let closure = move || {
         let inner_fn = inner_fn.clone();
         let settings = closure_settings.load_full().clone();
