@@ -112,10 +112,10 @@ impl<S: Signer> UpdatePriceOfDocument<S> for Document {
         data_contract: Arc<DataContract>,
     ) -> Result<Document, Error> {
         let request = state_transition.wait_for_state_transition_result_request()?;
-
+        // TODO: Implement retry logic
         let response = request
             .execute(sdk, RequestSettings::default())
-            .await 
+            .await
             .into_inner()?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;

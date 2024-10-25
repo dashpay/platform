@@ -40,7 +40,7 @@ impl BroadcastStateTransition for StateTransition {
         _time_out_ms: Option<u64>,
     ) -> Result<StateTransitionProofResult, Error> {
         let request = self.broadcast_request_for_state_transition()?;
-
+        // TODO: Implement retry logic
         request
             .clone()
             .execute(sdk, RequestSettings::default())

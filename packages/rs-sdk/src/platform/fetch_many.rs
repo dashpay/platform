@@ -284,7 +284,9 @@ impl FetchMany<Identifier, Documents> for Document {
                 retries,
                 address,
             })
-        }).await.into_inner()
+        })
+        .await
+        .into_inner()
     }
 }
 
