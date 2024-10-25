@@ -5,11 +5,12 @@ use std::time::Duration;
 use dapi_grpc::mock::Mockable;
 use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
-use rs_dapi_client::{CanRetry, DapiClientError};
+use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 
 pub use drive_proof_verifier::error::ContextProviderError;
 
 /// Error type for the SDK
+// TODO: Propagate server address and retry information so that the user can retrieve it
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// SDK is not configured properly
@@ -82,6 +83,16 @@ impl<T: Debug + Mockable> From<DapiClientError<T>> for Error {
 impl From<PlatformVersionError> for Error {
     fn from(value: PlatformVersionError) -> Self {
         Self::Protocol(value.into())
+    }
+}
+
+impl<T> From<ExecutionError<T>> for Error
+where
+    ExecutionError<T>: ToString,
+{
+    fn from(value: ExecutionError<T>) -> Self {
+        // TODO: Improve error handling
+        Self::DapiClientError(value.to_string())
     }
 }
 
