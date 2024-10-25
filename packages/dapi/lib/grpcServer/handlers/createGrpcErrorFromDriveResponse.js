@@ -115,9 +115,9 @@ async function createGrpcErrorFromDriveResponse(code, info) {
   // DPP errors
   if (code >= 10000 && code < 50000) {
     const consensusMetadata = {
-      code,
       ...createRawMetadata(data),
-      'dash-serialized-consensus-error-bin': serializedConsensusError,
+      code,
+      'dash-serialized-consensus-error-bin': Buffer.from(serializedConsensusError),
     };
 
     let consensusError;

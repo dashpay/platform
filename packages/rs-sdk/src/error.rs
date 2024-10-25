@@ -1,5 +1,4 @@
 //! Definitions of errors
-use dapi_grpc::tonic;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersionError;
