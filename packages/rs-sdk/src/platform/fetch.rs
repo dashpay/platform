@@ -19,7 +19,7 @@ use dpp::{
 };
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
-use rs_dapi_client::{ExecutionError, ExecutionResponse, IntoInner};
+use rs_dapi_client::{ExecutionError, ExecutionResponse, InnerInto, IntoInner};
 use std::fmt::Debug;
 
 use super::types::identity::IdentityRequest;
@@ -163,7 +163,7 @@ where
                     .clone()
                     .execute(sdk, settings)
                     .await // TODO: We need better way to handle execution response and errors
-                    .map_err(|execution_error| execution_error.into())?;
+                    .map_err(|execution_error| execution_error.inner_into())?;
 
                 let address = response.address.clone();
                 let retries = response.retries;

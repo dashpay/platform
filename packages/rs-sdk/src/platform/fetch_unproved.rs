@@ -9,7 +9,7 @@ use dpp::{dashcore::Network, version::PlatformVersion};
 use drive_proof_verifier::types::EvoNodeStatus;
 use drive_proof_verifier::unproved::FromUnproved;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
-use rs_dapi_client::{ExecutionError, ExecutionResponse, IntoInner};
+use rs_dapi_client::{ExecutionError, ExecutionResponse, InnerInto, IntoInner};
 use std::fmt::Debug;
 
 #[async_trait::async_trait]
@@ -83,7 +83,7 @@ where
                 .clone()
                 .execute(sdk, local_settings)
                 .await
-                .map_err(|e| e.into())?;
+                .map_err(|e| e.inner_into())?;
 
             // Parse the response into the appropriate type along with metadata
             let (object, mtd): (Option<Self>, platform_proto::ResponseMetadata) =

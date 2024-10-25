@@ -42,8 +42,8 @@ use drive_proof_verifier::types::{
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{
-    transport::TransportRequest, DapiRequest, ExecutionError, ExecutionResponse, IntoInner,
-    RequestSettings,
+    transport::TransportRequest, DapiRequest, ExecutionError, ExecutionResponse, InnerInto,
+    IntoInner, RequestSettings,
 };
 
 /// Fetch multiple objects from Platform.
@@ -151,7 +151,7 @@ where
                 .clone()
                 .execute(sdk, settings)
                 .await
-                .map_err(|e| e.into())?;
+                .map_err(|e| e.inner_into())?;
 
             let ExecutionResponse {
                 address,
@@ -258,7 +258,7 @@ impl FetchMany<Identifier, Documents> for Document {
 
         retry(RequestSettings::default(), |settings| async move {
             let request = document_query.clone();
-            let result = request.execute(sdk, settings).await.map_err(|e| e.into())?;
+            let result = request.execute(sdk, settings).await.map_err(|e| e.inner_into())?;
 
             let ExecutionResponse {
                 inner: response,

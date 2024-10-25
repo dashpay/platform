@@ -13,12 +13,11 @@
 
 use crate::{
     transport::{TransportClient, TransportRequest},
-    Address, DapiClientError, DapiRequestExecutor, ExecutionError, ExecutionResponse,
-    ExecutionResult, RequestSettings,
+    DapiClientError, DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult,
+    RequestSettings,
 };
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
-use dapi_grpc::tonic::transport::Uri;
 use hex::ToHex;
 use sha2::Digest;
 use std::{
@@ -75,12 +74,12 @@ impl MockDapiClient {
     ///
     /// Panics if the file can't be read or the data can't be parsed.
     #[cfg(feature = "dump")]
-    pub fn load<T: TransportRequest, P: AsRef<std::path::Path>>(
+    pub fn load<T, P: AsRef<std::path::Path>>(
         &mut self,
         file: P,
     ) -> Result<(T, MockResult<T>), std::io::Error>
     where
-        T: Mockable,
+        T: Mockable + TransportRequest,
         T::Response: Mockable,
     {
         use crate::DumpData;
@@ -289,5 +288,30 @@ impl<E: Mockable> Mockable for ExecutionError<E> {
             retries: 0,
             address: None,
         })
+    }
+}
+
+/// Create full wrapping object from inner type, using defaults for
+/// fields that cannot be derived from the inner type.
+pub trait FromInner<R>
+where
+    Self: Default,
+{
+    /// Create full wrapping object from inner type, using defaults for
+    /// fields that cannot be derived from the inner type.
+    ///
+    /// Note this is imprecise conversion and should be avoided outside of tests.
+    fn from_inner(inner: R) -> Self;
+}
+
+impl<R> FromInner<R> for ExecutionResponse<R>
+where
+    Self: Default,
+{
+    fn from_inner(inner: R) -> Self {
+        Self {
+            inner,
+            ..Default::default()
+        }
     }
 }
