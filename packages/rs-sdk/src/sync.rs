@@ -184,8 +184,8 @@ where
     // our own "context-like" logic using the closure below and `ArcSwap` for settings.
     let closure = move || {
         let inner_fn = inner_fn.clone();
-        let settings = closure_settings.load_full().clone();
         async move {
+            let settings = closure_settings.load_full().clone();
             let mut func = inner_fn.lock().await;
             (*func)(*settings).await
         }
@@ -201,7 +201,7 @@ where
                 retries += requests_sent;
                 let all_requests_sent = retries;
 
-                if all_requests_sent <= max_retries {
+                if all_requests_sent <=max_retries { // we account for for initial request
                     tracing::warn!(retry = all_requests_sent, max_retries, error=?e, "retrying request");
                     let new_settings = RequestSettings {
                         retries: Some(max_retries - all_requests_sent), // limit num of retries for lower layer
@@ -323,12 +323,13 @@ mod test {
             true
         }
     }
-    /// Counter for tracking number of requests sent
-    static REQUEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-    async fn retry_test_function(settings: RequestSettings) -> ExecutionResult<(), MockError> {
+    async fn retry_test_function(
+        settings: RequestSettings,
+        counter: Arc<AtomicUsize>,
+    ) -> ExecutionResult<(), MockError> {
         // num or retries increases with each call
-        let retries = REQUEST_COUNTER.load(Ordering::Relaxed);
+        let retries = counter.load(Ordering::Relaxed);
         let retries = if settings.retries.unwrap_or_default() < retries {
             settings.retries.unwrap_or_default()
         } else {
@@ -336,7 +337,7 @@ mod test {
         };
 
         // we sent 1 initial request plus `retries` retries
-        REQUEST_COUNTER.fetch_add(1 + retries, Ordering::Relaxed);
+        counter.fetch_add(1 + retries, Ordering::Relaxed);
 
         Err(ExecutionError {
             inner: MockError::Generic,
@@ -348,19 +349,24 @@ mod test {
     #[test_case::test_matrix([1,2,3,5,7,8,10,11,23,49])]
     #[tokio::test]
     async fn test_retry(expected_requests: usize) {
-        for _ in 0..5 {
-            REQUEST_COUNTER.store(0, Ordering::Relaxed);
+        for _ in 0..1 {
+            let counter = Arc::new(AtomicUsize::new(0));
+
             // we retry 5 times, and expect 5 retries + 1 initial request
             let mut global_settings = RequestSettings::default();
             global_settings.retries = Some(expected_requests - 1);
 
-            // let closure = |s| retry_test_function(s);
-            retry(global_settings, retry_test_function)
+            let closure = |s| {
+                let counter = counter.clone();
+                retry_test_function(s, counter)
+            };
+
+            retry(global_settings, closure)
                 .await
                 .expect_err("should fail");
 
             assert_eq!(
-                REQUEST_COUNTER.load(Ordering::Relaxed),
+                counter.load(Ordering::Relaxed),
                 expected_requests,
                 "test failed for expected {} requests",
                 expected_requests
