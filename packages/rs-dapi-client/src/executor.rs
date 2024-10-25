@@ -125,8 +125,8 @@ where
 /// Result of request execution
 pub type ExecutionResult<R, E> = Result<ExecutionResponse<R>, ExecutionError<E>>;
 
-impl<T, E> IntoInner<Result<T, E>> for ExecutionResult<T, E> {
-    fn into_inner(self) -> Result<T, E> {
+impl<R, E> IntoInner<Result<R, E>> for ExecutionResult<R, E> {
+    fn into_inner(self) -> Result<R, E> {
         match self {
             Ok(response) => Ok(response.into_inner()),
             Err(error) => Err(error.into_inner()),

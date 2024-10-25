@@ -147,20 +147,18 @@ where
     ) -> Result<O, Error> {
         let request = &query.query(sdk.prove())?;
         let closure = |settings: RequestSettings| async move {
-            let grpc_response = request
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request
                 .clone()
                 .execute(sdk, settings)
                 .await
                 .map_err(|e| e.inner_into())?;
 
-            let ExecutionResponse {
-                address,
-                retries,
-                inner: response,
-            } = grpc_response;
-
             let object_type = std::any::type_name::<Self>().to_string();
-            tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
+            tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
 
             sdk.parse_proof::<<Self as FetchMany<K, O>>::Request, O>(request.clone(), response)
                 .await
@@ -258,15 +256,14 @@ impl FetchMany<Identifier, Documents> for Document {
 
         retry(RequestSettings::default(), |settings| async move {
             let request = document_query.clone();
-            let result = request.execute(sdk, settings).await.map_err(|e| e.inner_into())?;
 
             let ExecutionResponse {
-                inner: response,
                 address,
                 retries,
-            } = result;
+                inner: response,
+            } = request.execute(sdk, settings).await.map_err(|e| e.inner_into())?;
 
-            tracing::trace!(request=?document_query, response=?response, "fetch multiple documents");
+            tracing::trace!(request=?document_query, response=?response, ?address, retries, "fetch multiple documents");
 
             // let object: Option<BTreeMap<K,Document>> = sdk
             let documents = sdk

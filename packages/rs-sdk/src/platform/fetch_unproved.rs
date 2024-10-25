@@ -94,7 +94,7 @@ where
                     sdk.version(),
                 )
                 .map_err(|e| ExecutionError {
-                    inner: Error::from(e),
+                    inner: e.into(),
                     address: Some(address.clone()),
                     retries,
                 })?;

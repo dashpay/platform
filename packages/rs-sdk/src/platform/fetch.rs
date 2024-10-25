@@ -158,21 +158,21 @@ where
         let request: &<Self as Fetch>::Request = &query.query(sdk.prove())?;
 
         let fut = |settings: RequestSettings| async move {
-            let response = request
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request
                 .clone()
                 .execute(sdk, settings)
                 .await
                 .map_err(|execution_error| execution_error.inner_into())?;
 
-            let address = response.address.clone();
-            let retries = response.retries;
-            let grpc_response = response.into_inner();
-
             let object_type = std::any::type_name::<Self>().to_string();
-            tracing::trace!(request = ?request, response = ?grpc_response, object_type, "fetched object from platform");
+            tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
 
             let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) = sdk
-                .parse_proof_with_metadata_and_proof(request.clone(), grpc_response)
+                .parse_proof_with_metadata_and_proof(request.clone(), response)
                 .await
                 .map_err(|e| ExecutionError {
                     inner: e,
@@ -180,12 +180,11 @@ where
                     retries,
                 })?;
 
-            let o = match object {
+            match object {
                 Some(item) => Ok((item.into(), response_metadata, proof)),
                 None => Ok((None, response_metadata, proof)),
-            };
-
-            o.map(|x| ExecutionResponse {
+            }
+            .map(|x| ExecutionResponse {
                 inner: x,
                 address,
                 retries,
