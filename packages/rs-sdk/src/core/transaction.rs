@@ -56,7 +56,6 @@ impl Sdk {
         };
         self.execute(core_transactions_stream, RequestSettings::default())
             .await
-            // TODO: We need better way to handle execution response and errors
             .map(|execution_response| execution_response.into_inner())
             .map_err(|e| Error::DapiClientError(e.to_string()))
     }

@@ -82,7 +82,7 @@ impl<S: Signer> PutIdentity<S> for Identity {
         let response_result = request
             .clone()
             .execute(sdk, RequestSettings::default())
-            .await // TODO: We need better way to handle execution response and errors
+            .await 
             .into_inner();
 
         match response_result {
@@ -105,7 +105,7 @@ impl<S: Signer> PutIdentity<S> for Identity {
 
         let response = request
             .execute(sdk, RequestSettings::default())
-            .await // TODO: We need better way to handle execution response and errors
+            .await 
             .into_inner()?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;

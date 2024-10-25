@@ -111,7 +111,7 @@ impl<S: Signer> PutVote<S> for Vote {
 
         let response_result = request
             .execute(sdk, settings.request_settings)
-            .await // TODO: We need better way to handle execution response and errors
+            .await 
             .into_inner();
 
         match response_result {
@@ -133,7 +133,7 @@ impl<S: Signer> PutVote<S> for Vote {
         let request = masternode_vote_transition.wait_for_state_transition_result_request()?;
         let response = request
             .execute(sdk, settings.request_settings)
-            .await // TODO: We need better way to handle execution response and errors
+            .await 
             .into_inner()?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;

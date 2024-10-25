@@ -115,7 +115,7 @@ impl<S: Signer> UpdatePriceOfDocument<S> for Document {
 
         let response = request
             .execute(sdk, RequestSettings::default())
-            .await // TODO: We need better way to handle execution response and errors
+            .await 
             .into_inner()?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;
