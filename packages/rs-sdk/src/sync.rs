@@ -335,7 +335,7 @@ mod test {
             retries
         };
 
-        // we sent 1 initial request to `retries` retries
+        // we sent 1 initial request plus `retries` retries
         REQUEST_COUNTER.fetch_add(1 + retries, Ordering::Relaxed);
 
         Err(ExecutionError {
