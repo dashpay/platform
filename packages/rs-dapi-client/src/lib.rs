@@ -12,7 +12,9 @@ pub mod mock;
 mod request_settings;
 pub mod transport;
 
-pub use address_list::*;
+pub use address_list::Address;
+pub use address_list::AddressList;
+pub use address_list::AddressListError;
 pub use connection_pool::ConnectionPool;
 pub use dapi_client::DapiRequestExecutor;
 pub use dapi_client::{DapiClient, DapiClientError};
