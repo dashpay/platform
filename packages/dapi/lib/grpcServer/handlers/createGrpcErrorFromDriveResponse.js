@@ -117,12 +117,12 @@ async function createGrpcErrorFromDriveResponse(code, info) {
     const consensusMetadata = {
       code,
       ...createRawMetadata(data),
-      'dash-serialized-consensus-error-bin': serializedConsensusError
+      'dash-serialized-consensus-error-bin': serializedConsensusError,
     };
 
     let consensusError;
     try {
-      consensusError = deserializeConsensusError(data.serializedError || []);
+      consensusError = deserializeConsensusError(serializedConsensusError);
     } catch (e) {
       logger.error({
         err: e,
