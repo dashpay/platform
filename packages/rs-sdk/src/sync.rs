@@ -346,7 +346,7 @@ mod test {
         })
     }
 
-    #[test_case::test_matrix([1,2,3,5,7,8,10,11,23,49])]
+    #[test_case::test_matrix([1,2,3,5,7,8,10,11,23,49, usize::MAX])]
     #[tokio::test]
     async fn test_retry(expected_requests: usize) {
         for _ in 0..1 {
