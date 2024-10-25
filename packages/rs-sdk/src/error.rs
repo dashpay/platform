@@ -74,11 +74,14 @@ pub enum Error {
     StaleNode(#[from] StaleNodeError),
 }
 
-// TODO: Return a more specific errors like connection, node error instead of DAPI client error
+// TODO: Decompose DapiClientError to more specific errors like connection, node error instead of DAPI client error
 impl From<DapiClientError> for Error {
     fn from(value: DapiClientError) -> Self {
         if let DapiClientError::Transport(TransportError::Grpc(status), _) = &value {
-            if let Some(consensus_error_value) = status.metadata().get_bin("drive-error-data-bin") {
+            if let Some(consensus_error_value) = status
+                .metadata()
+                .get_bin("dash-serialized-consensus-error-bin")
+            {
                 return ConsensusError::deserialize_from_bytes(
                     consensus_error_value.as_encoded_bytes(),
                 )

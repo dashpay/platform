@@ -11,10 +11,7 @@
 //!
 //! See `tests/mock_dapi_client.rs` for an example.
 
-use crate::{
-    transport::{TransportClient, TransportRequest},
-    DapiClientError, DapiRequestExecutor, RequestSettings,
-};
+use crate::{transport::TransportRequest, DapiClientError, DapiRequestExecutor, RequestSettings};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 use hex::ToHex;
@@ -74,12 +71,12 @@ impl MockDapiClient {
     ///
     /// Panics if the file can't be read or the data can't be parsed.
     #[cfg(feature = "dump")]
-    pub fn load<T: TransportRequest, P: AsRef<std::path::Path>>(
+    pub fn load<T, P: AsRef<std::path::Path>>(
         &mut self,
         file: P,
     ) -> Result<(T, MockResult<T>), std::io::Error>
     where
-        T: Mockable,
+        T: TransportRequest + Mockable,
         T::Response: Mockable,
     {
         use crate::DumpData;
