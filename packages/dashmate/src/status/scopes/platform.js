@@ -1,4 +1,5 @@
 import prettyMs from 'pretty-ms';
+import { PortStateEnum } from '../enums/portState.js';
 import DockerComposeError from '../../docker/errors/DockerComposeError.js';
 import providers from '../providers.js';
 import { DockerStatusEnum } from '../enums/dockerStatus.js';
@@ -52,6 +53,8 @@ export default function getPlatformScopeFactory(
       dockerStatus: null,
       serviceStatus: null,
       version: null,
+      protocolVersion: null,
+      desiredProtocolVersion: null,
       listening: null,
       catchingUp: null,
       latestBlockHash: null,
@@ -90,8 +93,10 @@ export default function getPlatformScopeFactory(
     // Collecting platform data fails if Tenderdash is waiting for core to sync
     if (info.serviceStatus === ServiceStatusEnum.up) {
       const portStatusResult = await Promise.allSettled([
-        providers.mnowatch.checkPortStatus(config.get('platform.gateway.listeners.dapiAndDrive.port'), config.get('externalIp')),
-        providers.mnowatch.checkPortStatus(config.get('platform.drive.tenderdash.p2p.port'), config.get('externalIp')),
+        providers.mnowatch.checkPortStatus(config.get('platform.gateway.listeners.dapiAndDrive.port'), config.get('externalIp'))
+          .catch(() => PortStateEnum.ERROR),
+        providers.mnowatch.checkPortStatus(config.get('platform.drive.tenderdash.p2p.port'), config.get('externalIp'))
+          .catch(() => PortStateEnum.ERROR),
       ]);
       const [httpPortState, p2pPortState] = portStatusResult.map((result) => (result.status === 'fulfilled' ? result.value : null));
 
@@ -107,14 +112,20 @@ export default function getPlatformScopeFactory(
 
         const port = config.get('platform.drive.tenderdash.rpc.port');
 
-        const [tenderdashStatusResponse, tenderdashNetInfoResponse] = await Promise.all([
+        const [
+          tenderdashStatusResponse,
+          tenderdashNetInfoResponse,
+          tenderdashAbciInfoResponse,
+        ] = await Promise.all([
           fetch(`http://${tenderdashHost}:${port}/status`),
           fetch(`http://${tenderdashHost}:${port}/net_info`),
+          fetch(`http://${tenderdashHost}:${port}/abci_info`),
         ]);
 
-        const [tenderdashStatus, tenderdashNetInfo] = await Promise.all([
+        const [tenderdashStatus, tenderdashNetInfo, tenderdashAbciInfo] = await Promise.all([
           tenderdashStatusResponse.json(),
           tenderdashNetInfoResponse.json(),
+          tenderdashAbciInfoResponse.json(),
         ]);
 
         const { version, network, moniker } = tenderdashStatus.node_info;
@@ -133,6 +144,8 @@ export default function getPlatformScopeFactory(
         }
 
         info.version = version;
+        info.protocolVersion = parseInt(tenderdashStatus.node_info.protocol_version.app, 10);
+        info.desiredProtocolVersion = tenderdashAbciInfo.response.app_version;
         info.listening = listening;
         info.latestBlockHeight = latestBlockHeight;
         info.latestBlockTime = latestBlockTime;
@@ -245,6 +258,8 @@ export default function getPlatformScopeFactory(
         dockerStatus: null,
         serviceStatus: null,
         version: null,
+        protocolVersion: null,
+        desiredProtocolVersion: null,
         listening: null,
         catchingUp: null,
         latestBlockHash: null,
@@ -258,6 +273,7 @@ export default function getPlatformScopeFactory(
       drive: {
         dockerStatus: null,
         serviceStatus: null,
+        version: null,
       },
     };
 

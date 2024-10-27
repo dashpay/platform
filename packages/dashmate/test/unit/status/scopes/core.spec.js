@@ -78,7 +78,7 @@ describe('getCoreScopeFactory', () => {
       });
 
       mockGithubProvider.returns('v1337-dev');
-      mockMNOWatchProvider.returns('OPEN');
+      mockMNOWatchProvider.resolves('OPEN');
       mockInsightProvider.returns({
         status: this.sinon.stub().returns({
           info: { blocks: 1337 },
@@ -219,7 +219,7 @@ describe('getCoreScopeFactory', () => {
       });
 
       mockGithubProvider.returns('v1337-dev');
-      mockMNOWatchProvider.returns('OPEN');
+      mockMNOWatchProvider.resolves('OPEN');
       mockInsightProvider.returns({
         status: this.sinon.stub().returns({
           info: { blocks: 1337 },
@@ -271,7 +271,7 @@ describe('getCoreScopeFactory', () => {
       });
 
       mockGithubProvider.returns(Promise.reject());
-      mockMNOWatchProvider.returns(PortStateEnum.ERROR);
+      mockMNOWatchProvider.rejects(PortStateEnum.ERROR);
       mockInsightProvider.returns({
         status: () => Promise.reject(),
       });

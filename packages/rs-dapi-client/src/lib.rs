@@ -14,6 +14,7 @@ pub mod transport;
 
 pub use address_list::Address;
 pub use address_list::AddressList;
+pub use address_list::AddressListError;
 pub use connection_pool::ConnectionPool;
 pub use dapi_client::DapiRequestExecutor;
 pub use dapi_client::{DapiClient, DapiClientError};
@@ -71,9 +72,16 @@ impl<T: transport::TransportRequest + Send> DapiRequest for T {
     }
 }
 
-/// Allows to flag the transport error variant how tolerant we are of it and whether we can
-/// try to do a request again.
+/// Returns true if the operation can be retried.
 pub trait CanRetry {
+    /// Returns true if the operation can be retried safely.
+    fn can_retry(&self) -> bool;
+
     /// Get boolean flag that indicates if the error is retryable.
-    fn is_node_failure(&self) -> bool;
+    ///
+    /// Depreacted in favor of [CanRetry::can_retry].
+    #[deprecated = "Use !can_retry() instead"]
+    fn is_node_failure(&self) -> bool {
+        !self.can_retry()
+    }
 }
