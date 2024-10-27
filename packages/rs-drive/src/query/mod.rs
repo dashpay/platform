@@ -1275,23 +1275,39 @@ impl<'a> DriveDocumentQuery<'a> {
     #[cfg(any(feature = "server", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given key.
     fn inner_query_starts_from_key(
-        start_at_key: Vec<u8>,
+        start_at_key: Option<Vec<u8>>,
         left_to_right: bool,
         included: bool,
     ) -> Query {
         // We only need items after the start at document
         let mut inner_query = Query::new_with_direction(left_to_right);
+
         if left_to_right {
-            if included {
-                inner_query.insert_range_from(start_at_key..);
+            if let Some(start_at_key) = start_at_key {
+                if included {
+                    inner_query.insert_range_from(start_at_key..);
+                } else {
+                    inner_query.insert_range_after(start_at_key..);
+                }
             } else {
-                inner_query.insert_range_after(start_at_key..);
+                inner_query.insert_all();
             }
         } else if included {
-            inner_query.insert_range_to_inclusive(..=start_at_key);
+            if let Some(start_at_key) = start_at_key {
+                inner_query.insert_range_to_inclusive(..=start_at_key);
+            } else {
+                inner_query.insert_key(vec![]);
+            }
         } else {
-            inner_query.insert_range_to(..start_at_key);
+            if let Some(start_at_key) = start_at_key {
+                inner_query.insert_range_to(..start_at_key);
+            } else {
+                //todo: really not sure if this is correct
+                // Should investigate more
+                inner_query.insert_key(vec![]);
+            }
         }
+
         inner_query
     }
 
@@ -1434,11 +1450,11 @@ impl<'a> DriveDocumentQuery<'a> {
                                     platform_version,
                                 )
                                 .ok()
-                                .flatten()
-                                .unwrap_or_default();
+                                .flatten();
 
                             // We should always include if we have left_over
-                            let non_conditional_included = !left_over.is_empty() | *included;
+                            let non_conditional_included =
+                                !left_over.is_empty() | *included | start_at_key.is_none();
 
                             let mut non_conditional_query = Self::inner_query_starts_from_key(
                                 start_at_key,
@@ -1849,6 +1865,7 @@ impl<'a> DriveDocumentQuery<'a> {
             drive_operations,
             platform_version,
         )?;
+        println!("path_query {}", path_query);
         let query_result = drive.grove_get_path_query_serialized_results(
             &path_query,
             transaction,
@@ -1976,6 +1993,8 @@ mod tests {
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
     use dpp::prelude::Identifier;
+    use grovedb::Query;
+    use indexmap::IndexMap;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use serde_json::json;
@@ -1998,6 +2017,7 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::document::DocumentV0;
     use dpp::platform_value::string_encoding::Encoding;
     use dpp::platform_value::Value;
     use dpp::tests::fixtures::{get_data_contract_fixture, get_dpns_data_contract_fixture};
@@ -2017,6 +2037,38 @@ mod tests {
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/family/family-contract.json";
+
+        // let's construct the grovedb structure for the dashpay data contract
+        let contract = json_document_to_contract(contract_path, false, platform_version)
+            .expect("expected to get document");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                storage_flags,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        (drive, contract)
+    }
+
+    fn setup_withdrawal_contract() -> (Drive, DataContract) {
+        let tmp_dir = TempDir::new().unwrap();
+
+        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+
+        let platform_version = PlatformVersion::latest();
+
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create root tree successfully");
+
+        let contract_path = "tests/supporting_files/contract/withdrawals/withdrawals.json";
 
         // let's construct the grovedb structure for the dashpay data contract
         let contract = json_document_to_contract(contract_path, false, platform_version)
@@ -2666,5 +2718,104 @@ mod tests {
             &DriveConfig::default(),
         )
         .expect_err("starts with can not start with an empty string");
+    }
+
+    #[test]
+    fn test_withdrawal_query_with_missing_transaction_index() {
+        // Setup the withdrawal contract
+        let (_, contract) = setup_withdrawal_contract();
+        let platform_version = PlatformVersion::latest();
+
+        let document_type_name = "withdrawal";
+        let document_type = contract
+            .document_type_for_name(document_type_name)
+            .expect("expected to get document type");
+
+        // Create a DriveDocumentQuery that simulates missing 'transactionIndex' in documents
+        let drive_document_query = DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clause: Some(WhereClause {
+                    field: "status".to_string(),
+                    operator: WhereOperator::In,
+                    value: Value::Array(vec![
+                        Value::U64(0),
+                        Value::U64(1),
+                        Value::U64(2),
+                        Value::U64(3),
+                        Value::U64(4),
+                    ]),
+                }),
+                range_clause: None,
+                equal_clauses: BTreeMap::default(),
+            },
+            offset: None,
+            limit: Some(3),
+            order_by: IndexMap::from([
+                (
+                    "status".to_string(),
+                    OrderClause {
+                        field: "status".to_string(),
+                        ascending: true,
+                    },
+                ),
+                (
+                    "transactionIndex".to_string(),
+                    OrderClause {
+                        field: "transactionIndex".to_string(),
+                        ascending: true,
+                    },
+                ),
+            ]),
+            start_at: Some([3u8; 32]),
+            start_at_included: false,
+            block_time_ms: None,
+        };
+
+        println!("{:?}", &drive_document_query);
+
+        // Create a document that we are starting at, which may be missing 'transactionIndex'
+        let mut properties = BTreeMap::new();
+        properties.insert("status".to_string(), Value::U64(0));
+        // We intentionally omit 'transactionIndex' to simulate missing field
+
+        let starts_at_document = DocumentV0 {
+            id: Identifier::from([3u8; 32]), // The same as start_at
+            owner_id: Identifier::random(),
+            properties,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+        }
+        .into();
+
+        // Attempt to construct the path query
+        let result = drive_document_query
+            .construct_path_query(Some(starts_at_document), platform_version)
+            .expect("expected to construct a path query");
+
+        println!("Generated PathQuery: {}", result);
+
+        assert_eq!(
+            result
+                .clone()
+                .query
+                .query
+                .default_subquery_branch
+                .subquery
+                .expect("expected subquery")
+                .items,
+            Query::new_range_full().items
+        );
     }
 }
