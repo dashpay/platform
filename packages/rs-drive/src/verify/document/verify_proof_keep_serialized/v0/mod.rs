@@ -39,6 +39,7 @@ impl<'a> DriveDocumentQuery<'a> {
         } else {
             self.construct_path_query(None, platform_version)
         }?;
+        println!("path query is {}", path_query);
         let (root_hash, proved_key_values) = if self.start_at.is_some() {
             GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
