@@ -366,3 +366,19 @@ where
         }
     }
 }
+
+/// Convert response into inner type
+pub trait InnerInto<T> {
+    /// Convert response into inner type
+    fn inner_into(self) -> T;
+}
+
+/// Blanket implementation of InnerInto for types that implement FromInner
+impl<T, U> InnerInto<U> for T
+where
+    U: FromInner<T>,
+{
+    fn inner_into(self) -> U {
+        U::from_inner(self)
+    }
+}

@@ -22,6 +22,7 @@ use dpp::{
     prelude::{DataContract, Identifier, Identity},
     version::PlatformVersion,
 };
+use rs_dapi_client::mock::InnerInto;
 
 #[tokio::test]
 /// Given some identity, when I fetch it using mock API, then I get the same identity
@@ -181,7 +182,7 @@ async fn test_mock_fetch_retry() {
                 },
             )),
     }.into();
-    mock.expect_dapi(&request, &Ok(response.into()))
+    mock.expect_dapi(&request, &Ok(response.inner_into()))
         .await
         .expect("add mock 1");
 
@@ -207,7 +208,7 @@ async fn test_mock_fetch_retry() {
             )),
     }.into();
 
-    mock.expect_dapi(&request, &Ok(response.into()))
+    mock.expect_dapi(&request, &Ok(response.inner_into()))
         .await
         .expect("add mock 2");
     mock.expect_from_proof_with_metadata(
