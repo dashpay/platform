@@ -77,12 +77,37 @@ where
 impl<T: Mockable> Mockable for Option<T> {
     #[cfg(feature = "mocks")]
     fn mock_serialize(&self) -> Option<Vec<u8>> {
-        self.as_ref().and_then(|value| value.mock_serialize())
+        let data = match self {
+            None => vec![0],
+            Some(value) => {
+                let mut data = vec![1]; // we return None if value does not support serialization
+                let mut serialized = value.mock_serialize()?;
+                data.append(&mut serialized);
+
+                data
+            }
+        };
+
+        Some(data)
     }
 
     #[cfg(feature = "mocks")]
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
-        T::mock_deserialize(data).map(Some)
+        if data.is_empty() {
+            panic!("empty data");
+        }
+
+        match data[0] {
+            0 => Some(None),
+            // Mind double Some - first says mock_deserialize is implemented, second is deserialized value
+            1 => Some(Some(
+                T::mock_deserialize(&data[1..]).expect("unable to deserialize Option<T>"),
+            )),
+            _ => panic!(
+                "unsupported first byte for Option<T>::mock_deserialize: {:x}",
+                data[0]
+            ),
+        }
     }
 }
 
