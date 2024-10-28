@@ -56,7 +56,7 @@ impl Sdk {
         };
         self.execute(core_transactions_stream, RequestSettings::default())
             .await
-            .map(|execution_response| execution_response.into_inner())
+            .into_inner()
             .map_err(|e| Error::DapiClientError(e.to_string()))
     }
 

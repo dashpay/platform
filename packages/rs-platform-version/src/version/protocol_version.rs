@@ -1,5 +1,4 @@
 use crate::error::PlatformVersionError;
-use crate::version::contracts::SystemDataContractVersions;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::DriveVersion;
@@ -10,34 +9,27 @@ use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
 use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
 #[cfg(feature = "mock-versions")]
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
+use crate::version::system_data_contract_versions::SystemDataContractVersions;
 use crate::version::v1::PLATFORM_V1;
 #[cfg(feature = "mock-versions")]
 use std::sync::OnceLock;
 
 use crate::version::consensus_versions::ConsensusVersions;
-use crate::version::limits::SystemLimits;
+use crate::version::system_limits::SystemLimits;
 use crate::version::v2::PLATFORM_V2;
 use crate::version::v3::PLATFORM_V3;
 use crate::version::v4::PLATFORM_V4;
 use crate::version::ProtocolVersion;
 pub use versioned_feature_core::*;
 
-#[derive(Clone, Debug, Default)]
-pub struct PlatformArchitectureVersion {
-    pub data_contract_factory_structure_version: FeatureVersion,
-    pub document_factory_structure_version: FeatureVersion,
-}
-
 #[derive(Clone, Debug)]
 pub struct PlatformVersion {
     pub protocol_version: ProtocolVersion,
-    pub proofs: FeatureVersionBounds,
     pub dpp: DPPVersion,
     pub drive: DriveVersion,
     pub drive_abci: DriveAbciVersion,
     pub consensus: ConsensusVersions,
     pub fee_version: FeeVersion,
-    pub platform_architecture: PlatformArchitectureVersion,
     pub system_data_contracts: SystemDataContractVersions,
     pub system_limits: SystemLimits,
 }

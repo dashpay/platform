@@ -55,6 +55,7 @@ const waitForTransactionToBeProvableFactory = require('../../../externalApis/ten
 const waitForTransactionResult = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/waitForTransactionResult');
 const getExistingTransactionResultFactory = require('../../../externalApis/tenderdash/waitForTransactionToBeProvable/getExistingTransactionResult');
 const getConsensusParamsFactory = require('../../../externalApis/tenderdash/getConsensusParamsFactory');
+const requestTenderRpcFactory = require('../../../externalApis/tenderdash/requestTenderRpc');
 
 /**
  * @param {jaysonClient} rpcClient
@@ -73,10 +74,13 @@ function platformHandlersFactory(
 ) {
   const wrapInErrorHandler = wrapInErrorHandlerFactory(logger, isProductionEnvironment);
 
+  const requestTenderRpc = requestTenderRpcFactory(rpcClient);
+
   // broadcastStateTransition
   const broadcastStateTransitionHandler = broadcastStateTransitionHandlerFactory(
     rpcClient,
     createGrpcErrorFromDriveResponse,
+    requestTenderRpc,
   );
 
   const wrappedBroadcastStateTransition = jsonToProtobufHandlerWrapper(

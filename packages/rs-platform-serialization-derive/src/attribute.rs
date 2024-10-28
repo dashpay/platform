@@ -5,7 +5,6 @@ use virtue::utils::{parse_tagged_attribute, ParsedAttribute};
 pub struct ContainerAttributes {
     pub crate_name: String,
     pub untagged: bool,
-    pub unversioned: bool,
     pub bounds: Option<(String, Literal)>,
     pub decode_bounds: Option<(String, Literal)>,
     pub borrow_decode_bounds: Option<(String, Literal)>,
@@ -16,7 +15,6 @@ impl Default for ContainerAttributes {
     fn default() -> Self {
         Self {
             crate_name: "::platform_serialization".to_string(),
-            unversioned: false,
             untagged: false,
             bounds: None,
             decode_bounds: None,
@@ -111,7 +109,6 @@ impl FromAttribute for ContainerAttributes {
 pub struct FieldAttributes {
     pub with_serde: bool,
     pub with_platform_version: bool,
-    pub platform_version_path_bounds: String,
 }
 
 impl FromAttribute for FieldAttributes {
