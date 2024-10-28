@@ -1,5 +1,4 @@
-use http_serde::http::Uri;
-use rs_dapi_client::{Address, ExecutionResponse};
+use rs_dapi_client::ExecutionResponse;
 #[cfg(feature = "mocks")]
 use {
     dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse, Proof},
