@@ -11,7 +11,8 @@
 //!
 //! See `tests/mock_dapi_client.rs` for an example.
 
-use crate::{transport::TransportRequest, DapiClientError, DapiRequestExecutor, RequestSettings};
+use crate::{transport::TransportRequest, DapiClientError, DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult,
+    RequestSettings};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 use hex::ToHex;
@@ -41,16 +42,12 @@ impl MockDapiClient {
     }
 
     /// Add a new expectation for a request
-    pub fn expect<R>(
-        &mut self,
-        request: &R,
-        response: &MockResult<R>,
-    ) -> Result<&mut Self, MockError>
+    pub fn expect<R>(&mut self, request: &R, result: &MockResult<R>) -> Result<&mut Self, MockError>
     where
         R: TransportRequest + Mockable,
         R::Response: Mockable,
     {
-        let key = self.expectations.add(request, response)?;
+        let key = self.expectations.add(request, result)?;
 
         tracing::trace!(
             %key,
@@ -118,15 +115,20 @@ impl DapiRequestExecutor for MockDapiClient {
             "mock execute"
         );
 
-        return if let Some(response) = response {
+        if let Some(response) = response {
             response
         } else {
-            Err(MockError::MockExpectationNotFound(format!(
+            let error = MockError::MockExpectationNotFound(format!(
                 "unexpected mock request with key {}, use MockDapiClient::expect(): {:?}",
                 key, request
-            ))
-            .into())
-        };
+            ));
+
+            Err(ExecutionError {
+                inner: DapiClientError::Mock(error),
+                retries: 0,
+                address: None,
+            })
+        }
     }
 }
 
@@ -194,9 +196,9 @@ pub enum MockError {
 
 #[derive(Debug)]
 /// Wrapper that encapsulated serialized form of expected response for a request
-struct ExpectedResponse(Vec<u8>);
+struct ExpectedResult(Vec<u8>);
 
-impl ExpectedResponse {
+impl ExpectedResult {
     fn serialize<I: Mockable>(request: &I) -> Self {
         // We use json because bincode sometimes fail to deserialize
         Self(request.mock_serialize().expect("encode value"))
@@ -211,7 +213,7 @@ impl ExpectedResponse {
 #[derive(Default, Debug)]
 /// Requests expected by a mock and their responses.
 struct Expectations {
-    expectations: HashMap<Key, ExpectedResponse>,
+    expectations: HashMap<Key, ExpectedResult>,
 }
 
 impl Expectations {
@@ -221,10 +223,10 @@ impl Expectations {
     pub fn add<I: Mockable + Debug, O: Mockable>(
         &mut self,
         request: &I,
-        response: &O,
+        result: &O,
     ) -> Result<Key, MockError> {
         let key = Key::new(request);
-        let value = ExpectedResponse::serialize(response);
+        let value = ExpectedResult::serialize(result);
 
         if self.expectations.contains_key(&key) {
             return Err(MockError::MockExpectationConflict(format!(
@@ -248,5 +250,62 @@ impl Expectations {
         let response = self.expectations.get(&key).and_then(|v| v.deserialize());
 
         (key, response)
+    }
+}
+
+impl<R: Mockable> Mockable for ExecutionResponse<R> {
+    fn mock_serialize(&self) -> Option<Vec<u8>> {
+        R::mock_serialize(&self.inner)
+    }
+
+    fn mock_deserialize(data: &[u8]) -> Option<Self> {
+        // TODO: We need serialize retries and address too
+        R::mock_deserialize(data).map(|inner| ExecutionResponse {
+            inner,
+            retries: 0,
+            address: "http://127.0.0.1:9000"
+                .parse()
+                .expect("failed to parse address"),
+        })
+    }
+}
+
+impl<E: Mockable> Mockable for ExecutionError<E> {
+    fn mock_serialize(&self) -> Option<Vec<u8>> {
+        E::mock_serialize(&self.inner)
+    }
+
+    fn mock_deserialize(data: &[u8]) -> Option<Self> {
+        // TODO: We need serialize retries and address too
+        E::mock_deserialize(data).map(|inner| ExecutionError {
+            inner,
+            retries: 0,
+            address: None,
+        })
+    }
+}
+
+/// Create full wrapping object from inner type, using defaults for
+/// fields that cannot be derived from the inner type.
+pub trait FromInner<R>
+where
+    Self: Default,
+{
+    /// Create full wrapping object from inner type, using defaults for
+    /// fields that cannot be derived from the inner type.
+    ///
+    /// Note this is imprecise conversion and should be avoided outside of tests.
+    fn from_inner(inner: R) -> Self;
+}
+
+impl<R> FromInner<R> for ExecutionResponse<R>
+where
+    Self: Default,
+{
+    fn from_inner(inner: R) -> Self {
+        Self {
+            inner,
+            ..Default::default()
+        }
     }
 }

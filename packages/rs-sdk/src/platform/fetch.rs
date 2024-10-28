@@ -9,6 +9,7 @@
 //!   traits. The associated [Fetch::Request]` type needs to implement [TransportRequest].
 
 use crate::mock::MockResponse;
+use crate::sync::retry;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
 use dpp::voting::votes::Vote;
@@ -18,6 +19,7 @@ use dpp::{
 };
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiClientError, DapiRequest, RequestSettings};
+use rs_dapi_client::{ExecutionError, ExecutionResponse, InnerInto, IntoInner};
 use std::fmt::Debug;
 
 use super::types::identity::IdentityRequest;
@@ -119,23 +121,9 @@ where
         query: Q,
         settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata), Error> {
-        let request = query.query(sdk.prove())?;
-
-        let response = request
-            .clone()
-            .execute(sdk, settings.unwrap_or_default())
-            .await?;
-
-        let object_type = std::any::type_name::<Self>().to_string();
-        tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
-
-        let (object, response_metadata): (Option<Self>, ResponseMetadata) =
-            sdk.parse_proof_with_metadata(request, response).await?;
-
-        match object {
-            Some(item) => Ok((item.into(), response_metadata)),
-            None => Ok((None, response_metadata)),
-        }
+        Self::fetch_with_metadata_and_proof(sdk, query, settings)
+            .await
+            .map(|(object, metadata, _)| (object, metadata))
     }
 
     /// Fetch single object from Platform with metadata and underlying proof.
@@ -167,24 +155,47 @@ where
         query: Q,
         settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let request = query.query(sdk.prove())?;
+        let request: &<Self as Fetch>::Request = &query.query(sdk.prove())?;
 
-        let response = request
-            .clone()
-            .execute(sdk, settings.unwrap_or_default())
-            .await?;
+        let fut = |settings: RequestSettings| async move {
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request
+                .clone()
+                .execute(sdk, settings)
+                .await
+                .map_err(|execution_error| execution_error.inner_into())?;
 
-        let object_type = std::any::type_name::<Self>().to_string();
-        tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
+            let object_type = std::any::type_name::<Self>().to_string();
+            tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
 
-        let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) = sdk
-            .parse_proof_with_metadata_and_proof(request, response)
-            .await?;
+            let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) = sdk
+                .parse_proof_with_metadata_and_proof(request.clone(), response)
+                .await
+                .map_err(|e| ExecutionError {
+                    inner: e,
+                    address: Some(address.clone()),
+                    retries,
+                })?;
 
-        match object {
-            Some(item) => Ok((item.into(), response_metadata, proof)),
-            None => Ok((None, response_metadata, proof)),
-        }
+            match object {
+                Some(item) => Ok((item.into(), response_metadata, proof)),
+                None => Ok((None, response_metadata, proof)),
+            }
+            .map(|x| ExecutionResponse {
+                inner: x,
+                address,
+                retries,
+            })
+        };
+
+        let settings = sdk
+            .dapi_client_settings
+            .override_by(settings.unwrap_or_default());
+
+        retry(settings, fut).await.into_inner()
     }
 
     /// Fetch single object from Platform.

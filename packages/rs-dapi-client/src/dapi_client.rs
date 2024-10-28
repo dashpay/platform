@@ -1,9 +1,10 @@
 //! [DapiClient] definition.
 
-use backon::{ExponentialBuilder, Retryable};
+use backon::{ConstantBuilder, Retryable};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 use std::fmt::Debug;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tracing::Instrument;
@@ -13,7 +14,8 @@ use crate::connection_pool::ConnectionPool;
 use crate::transport::TransportError;
 use crate::{
     transport::{TransportClient, TransportRequest},
-    Address, AddressList, CanRetry, RequestSettings,
+    Address, AddressList, CanRetry, DapiRequestExecutor, ExecutionError, ExecutionResponse,
+    ExecutionResult, RequestSettings,
 };
 
 /// General DAPI request error type.
@@ -21,11 +23,10 @@ use crate::{
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub enum DapiClientError {
     /// The error happened on transport layer
-    #[error("transport error with {1}: {0}")]
+    #[error("transport error: {0}")]
     Transport(
         #[cfg_attr(feature = "mocks", serde(with = "dapi_grpc::mock::serde_mockable"))]
         TransportError,
-        Address,
     ),
     /// There are no valid DAPI addresses to use.
     #[error("no available addresses to use")]
@@ -45,7 +46,7 @@ impl CanRetry for DapiClientError {
         use DapiClientError::*;
         match self {
             NoAvailableAddresses => false,
-            Transport(transport_error, _) => transport_error.can_retry(),
+            Transport(transport_error) => transport_error.can_retry(),
             AddressList(_) => false,
             #[cfg(feature = "mocks")]
             Mock(_) => false,
@@ -66,21 +67,6 @@ impl Mockable for DapiClientError {
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
         Some(serde_json::from_slice(data).expect("deserialize DAPI client error"))
     }
-}
-
-#[async_trait]
-/// DAPI client executor trait.
-pub trait DapiRequestExecutor {
-    /// Execute request using this DAPI client.
-    async fn execute<R>(
-        &self,
-        request: R,
-        settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError>
-    where
-        R: TransportRequest + Mockable,
-        R::Response: Mockable,
-        TransportError: Mockable;
 }
 
 /// Access point to DAPI.
@@ -121,7 +107,7 @@ impl DapiRequestExecutor for DapiClient {
         &self,
         request: R,
         settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError>
+    ) -> ExecutionResult<R::Response, DapiClientError>
     where
         R: TransportRequest + Mockable,
         R::Response: Mockable,
@@ -135,12 +121,9 @@ impl DapiRequestExecutor for DapiClient {
             .finalize();
 
         // Setup retry policy:
-        let retry_settings = ExponentialBuilder::default()
+        let retry_settings = ConstantBuilder::default()
             .with_max_times(applied_settings.retries)
-            // backon doesn't accept 1.0
-            .with_factor(1.001)
-            .with_min_delay(Duration::from_secs(0))
-            .with_max_delay(Duration::from_secs(0));
+            .with_delay(Duration::from_millis(10));
 
         // Save dump dir for later use, as self is moved into routine
         #[cfg(feature = "dump")]
@@ -148,11 +131,15 @@ impl DapiRequestExecutor for DapiClient {
         #[cfg(feature = "dump")]
         let dump_request = request.clone();
 
+        let retries_counter_arc = Arc::new(AtomicUsize::new(0));
+        let retries_counter_arc_ref = &retries_counter_arc;
+
         // Setup DAPI request execution routine future. It's a closure that will be called
         // more once to build new future on each retry.
         let routine = move || {
-            // Try to get an address to initialize transport on:
+            let retries_counter = Arc::clone(retries_counter_arc_ref);
 
+            // Try to get an address to initialize transport on:
             let address_list = self
                 .address_list
                 .read()
@@ -188,7 +175,12 @@ impl DapiRequestExecutor for DapiClient {
             async move {
                 // It stays wrapped in `Result` since we want to return
                 // `impl Future<Output = Result<...>`, not a `Result` itself.
-                let address = address_result?;
+                let address = address_result.map_err(|inner| ExecutionError {
+                    inner,
+                    retries: retries_counter.load(std::sync::atomic::Ordering::Acquire),
+                    address: None,
+                })?;
+
                 let pool = self.pool.clone();
 
                 let mut transport_client = R::Client::with_uri_and_settings(
@@ -196,12 +188,16 @@ impl DapiRequestExecutor for DapiClient {
                     &applied_settings,
                     &pool,
                 )
-                .map_err(|e| DapiClientError::Transport(e, address.clone()))?;
+                .map_err(|error| ExecutionError {
+                    inner: DapiClientError::Transport(error),
+                    retries: retries_counter.load(std::sync::atomic::Ordering::Acquire),
+                    address: Some(address.clone()),
+                })?;
 
                 let response = transport_request
                     .execute_transport(&mut transport_client, &applied_settings)
                     .await
-                    .map_err(|e| DapiClientError::Transport(e, address.clone()));
+                    .map_err(DapiClientError::Transport);
 
                 match &response {
                     Ok(_) => {
@@ -212,9 +208,14 @@ impl DapiRequestExecutor for DapiClient {
                                 .write()
                                 .expect("can't get address list for write");
 
-                            address_list
-                                .unban_address(&address)
-                                .map_err(DapiClientError::AddressList)?;
+                            address_list.unban_address(&address).map_err(|error| {
+                                ExecutionError {
+                                    inner: DapiClientError::AddressList(error),
+                                    retries: retries_counter
+                                        .load(std::sync::atomic::Ordering::Acquire),
+                                    address: Some(address.clone()),
+                                }
+                            })?;
                         }
 
                         tracing::trace!(?response, "received {} response", response_name);
@@ -227,9 +228,14 @@ impl DapiRequestExecutor for DapiClient {
                                     .write()
                                     .expect("can't get address list for write");
 
-                                address_list
-                                    .ban_address(&address)
-                                    .map_err(DapiClientError::AddressList)?;
+                                address_list.ban_address(&address).map_err(|error| {
+                                    ExecutionError {
+                                        inner: DapiClientError::AddressList(error),
+                                        retries: retries_counter
+                                            .load(std::sync::atomic::Ordering::Acquire),
+                                        address: Some(address.clone()),
+                                    }
+                                })?;
                             }
                         } else {
                             tracing::trace!(?error, "received error");
@@ -237,7 +243,19 @@ impl DapiRequestExecutor for DapiClient {
                     }
                 };
 
+                let retries = retries_counter.load(std::sync::atomic::Ordering::Acquire);
+
                 response
+                    .map(|inner| ExecutionResponse {
+                        inner,
+                        retries,
+                        address: address.clone(),
+                    })
+                    .map_err(|inner| ExecutionError {
+                        inner,
+                        retries,
+                        address: Some(address),
+                    })
             }
         };
 
@@ -246,11 +264,14 @@ impl DapiRequestExecutor for DapiClient {
         let result = routine
             .retry(retry_settings)
             .notify(|error, duration| {
+                let retries_counter = Arc::clone(&retries_counter_arc);
+                retries_counter.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+
                 tracing::warn!(
                     ?error,
                     "retrying error with sleeping {} secs",
                     duration.as_secs_f32()
-                )
+                );
             })
             .when(|e| e.can_retry())
             .instrument(tracing::info_span!("request routine"))

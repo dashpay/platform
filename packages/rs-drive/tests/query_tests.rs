@@ -4342,6 +4342,8 @@ fn test_dpns_query_start_after_with_null_id() {
 
     let domain1_id = Identifier::random_with_rng(&mut rng);
 
+    assert!(domain0_id > domain1_id);
+
     let domain1 = Domain {
         id: domain1_id,
         owner_id: Identifier::random_with_rng(&mut rng),
@@ -4428,7 +4430,7 @@ fn test_dpns_query_start_after_with_null_id() {
             ["normalizedParentDomainName", "==", "dash"]
         ],
         "startAfter":  encoded_start_at,
-        "limit": 2,
+        "limit": 3,
         "orderBy": [
             ["normalizedLabel", "asc"]
         ]

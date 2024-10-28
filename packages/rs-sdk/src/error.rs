@@ -10,6 +10,7 @@ use std::fmt::Debug;
 use std::time::Duration;
 
 /// Error type for the SDK
+// TODO: Propagate server address and retry information so that the user can retrieve it
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// SDK is not configured properly
@@ -76,7 +77,7 @@ pub enum Error {
 // TODO: Decompose DapiClientError to more specific errors like connection, node error instead of DAPI client error
 impl From<DapiClientError> for Error {
     fn from(value: DapiClientError) -> Self {
-        if let DapiClientError::Transport(TransportError::Grpc(status), _) = &value {
+        if let DapiClientError::Transport(TransportError::Grpc(status)) = &value {
             if let Some(consensus_error_value) = status
                 .metadata()
                 .get_bin("dash-serialized-consensus-error-bin")
@@ -98,6 +99,16 @@ impl From<DapiClientError> for Error {
 impl From<PlatformVersionError> for Error {
     fn from(value: PlatformVersionError) -> Self {
         Self::Protocol(value.into())
+    }
+}
+
+impl<T> From<ExecutionError<T>> for Error
+where
+    ExecutionError<T>: ToString,
+{
+    fn from(value: ExecutionError<T>) -> Self {
+        // TODO: Improve error handling
+        Self::DapiClientError(value.to_string())
     }
 }
 
