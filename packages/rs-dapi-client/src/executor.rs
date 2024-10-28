@@ -29,6 +29,7 @@ pub trait IntoInner<T> {
 
 /// Error happened during request execution.
 #[derive(Debug, Clone, thiserror::Error, Eq, PartialEq)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 #[error("{inner}")]
 pub struct ExecutionError<E> {
     /// The cause of error
@@ -70,6 +71,7 @@ impl<E: CanRetry> CanRetry for ExecutionError<E> {
 
 /// Request execution response.
 #[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct ExecutionResponse<R> {
     /// The response from the request
     pub inner: R,

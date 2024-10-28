@@ -1,6 +1,7 @@
 //! Subsystem to manage DAPI nodes.
 
 use chrono::Utc;
+use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::codegen::http;
 use dapi_grpc::tonic::transport::Uri;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
@@ -56,6 +57,18 @@ impl From<Uri> for Address {
             banned_until: None,
             uri,
         }
+    }
+}
+
+impl Mockable for Address {
+    #[cfg(feature = "mocks")]
+    fn mock_serialize(&self) -> Option<Vec<u8>> {
+        Some(serde_json::to_vec(self).expect("unable to serialize Address"))
+    }
+
+    #[cfg(feature = "mocks")]
+    fn mock_deserialize(data: &[u8]) -> Option<Self> {
+        Some(serde_json::from_slice(data).expect("unable to deserialize Address"))
     }
 }
 

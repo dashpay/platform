@@ -13,12 +13,11 @@
 
 use crate::{
     transport::{TransportClient, TransportRequest},
-    Address, DapiClientError, DapiRequestExecutor, ExecutionError, ExecutionResponse,
-    ExecutionResult, RequestSettings,
+    DapiClientError, DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult,
+    RequestSettings,
 };
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
-use dapi_grpc::tonic::transport::Uri;
 use hex::ToHex;
 use sha2::Digest;
 use std::{
@@ -75,12 +74,12 @@ impl MockDapiClient {
     ///
     /// Panics if the file can't be read or the data can't be parsed.
     #[cfg(feature = "dump")]
-    pub fn load<T: TransportRequest, P: AsRef<std::path::Path>>(
+    pub fn load<T, P: AsRef<std::path::Path>>(
         &mut self,
         file: P,
     ) -> Result<(T, MockResult<T>), std::io::Error>
     where
-        T: Mockable,
+        T: TransportRequest + Mockable,
         T::Response: Mockable,
     {
         use crate::DumpData;
@@ -262,32 +261,83 @@ impl Expectations {
 
 impl<R: Mockable> Mockable for ExecutionResponse<R> {
     fn mock_serialize(&self) -> Option<Vec<u8>> {
-        R::mock_serialize(&self.inner)
+        // We encode data as vec![inner, address, retries] where each od them is serialized to bytes
+        let ser: Vec<Vec<u8>> = vec![
+            self.inner
+                .mock_serialize()
+                .expect("unable to serialize ExecutionResponse inner"),
+            self.address
+                .mock_serialize()
+                .expect("unable to serialize ExecutionResponse address"),
+            (self.retries as u64)
+                .mock_serialize()
+                .expect("unable to serialize ExecutionResponse retries"),
+        ];
+
+        ser.mock_serialize()
     }
 
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
-        // TODO: We need serialize retries and address too
-        R::mock_deserialize(data).map(|inner| ExecutionResponse {
-            inner,
-            retries: 0,
-            address: "http://127.0.0.1:9000"
-                .parse()
-                .expect("failed to parse address"),
+        let deser: Vec<Vec<u8>> =
+            Mockable::mock_deserialize(data).expect("unable to deserialize ExecutionResponse");
+
+        let [inner, address, retries] = &deser[0..] else {
+            // panics intentionally, as this is just for mocking, and we know these types can be mocked
+            // because they were serialized somehow :)
+            panic!(
+                "invalid ExecutionResponse data: expected 3 elements, got {}",
+                deser.len()
+            );
+        };
+
+        Some(Self {
+            inner: Mockable::mock_deserialize(inner)
+                .expect("unable to deserialize ExecutionResponse inner"),
+            address: Mockable::mock_deserialize(address)
+                .expect("unable to deserialize ExecutionResponse address"),
+            retries: Mockable::mock_deserialize(retries)
+                .expect("unable to deserialize ExecutionResponse retries"),
         })
     }
 }
 
 impl<E: Mockable> Mockable for ExecutionError<E> {
     fn mock_serialize(&self) -> Option<Vec<u8>> {
-        E::mock_serialize(&self.inner)
+        // We encode data as vec![inner, address, retries] where each od them is serialized to bytes
+        let ser: Vec<Vec<u8>> = vec![
+            self.inner
+                .mock_serialize()
+                .expect("unable to serialize ExecutionError inner"),
+            self.address
+                .mock_serialize()
+                .expect("unable to serialize ExecutionError address"),
+            self.retries
+                .mock_serialize()
+                .expect("unable to serialize ExecutionError retries"),
+        ];
+
+        ser.mock_serialize()
     }
 
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
-        // TODO: We need serialize retries and address too
-        E::mock_deserialize(data).map(|inner| ExecutionError {
-            inner,
-            retries: 0,
-            address: None,
+        let deser: Vec<Vec<u8>> =
+            Mockable::mock_deserialize(data).expect("unable to deserialize ExecutionError");
+
+        let [inner, address, retries] = &deser[0..] else {
+            // panics intentionally, as this is just for mocking, and we know these types can be mocked because they were
+            // serialized before
+            panic!(
+                "invalid ExecutionError data: expected 3 elements, got {}",
+                deser.len()
+            );
+        };
+        Some(Self {
+            inner: Mockable::mock_deserialize(inner)
+                .expect("unable to deserialize ExecutionError inner"),
+            address: Mockable::mock_deserialize(address)
+                .expect("unable to deserialize ExecutionError address"),
+            retries: Mockable::mock_deserialize(retries)
+                .expect("unable to deserialize ExecutionError retries"),
         })
     }
 }

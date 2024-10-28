@@ -97,6 +97,29 @@ impl Mockable for Vec<u8> {
         serde_json::from_slice(data).ok()
     }
 }
+
+impl<T: Mockable> Mockable for Vec<T> {
+    #[cfg(feature = "mocks")]
+    fn mock_serialize(&self) -> Option<Vec<u8>> {
+        let data: Vec<Vec<u8>> = self
+            .iter()
+            .map(|d| d.mock_serialize())
+            .collect::<Option<Vec<Vec<u8>>>>()?;
+
+        Some(serde_json::to_vec(&data).expect("unable to serialize Vec<T>"))
+    }
+
+    #[cfg(feature = "mocks")]
+    fn mock_deserialize(data: &[u8]) -> Option<Self> {
+        let data: Vec<Vec<u8>> =
+            serde_json::from_slice(data).expect("unable to deserialize Vec<T>");
+
+        data.into_iter()
+            .map(|d| T::mock_deserialize(&d))
+            .collect::<Option<Vec<T>>>()
+    }
+}
+
 #[cfg(feature = "mocks")]
 #[derive(serde::Serialize, serde::Deserialize)]
 struct MockableStatus {
@@ -128,3 +151,30 @@ impl Mockable for crate::tonic::Status {
 /// This will return `None` on serialization,
 /// effectively disabling mocking of streaming responses.
 impl<T: Mockable> Mockable for Streaming<T> {}
+
+/// Mocking of primitive types - just serialize them as little-endian bytes.
+///
+/// This is useful for mocking of messages that contain primitive types.
+macro_rules! mockable_number {
+    ($($t:ty),*) => {
+        $(
+            impl Mockable for $t {
+                #[cfg(feature = "mocks")]
+                fn mock_serialize(&self) -> Option<Vec<u8>> {
+                    (*self).to_le_bytes().to_vec().mock_serialize()
+                }
+
+                #[cfg(feature = "mocks")]
+                fn mock_deserialize(data: &[u8]) -> Option<Self> {
+                    let data: Vec<u8> = Mockable::mock_deserialize(data)?;
+                    Some(Self::from_le_bytes(
+                        data.try_into().expect("invalid serialized data"),
+                    ))
+                }
+            }
+        )*
+    };
+}
+
+// No `u8` as it would cause conflict between Vec<u8> and Vec<T: Mockable>  impls.
+mockable_number!(usize, u16, u32, u64, u128, isize, i8, i16, i32, i64, i128);
