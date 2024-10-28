@@ -79,7 +79,7 @@ impl MockDapiClient {
         file: P,
     ) -> Result<(T, MockResult<T>), std::io::Error>
     where
-        T: Mockable + TransportRequest,
+        T: TransportRequest + Mockable,
         T::Response: Mockable,
     {
         use crate::DumpData;

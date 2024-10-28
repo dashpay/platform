@@ -86,7 +86,7 @@ where
                 .map_err(|e| e.inner_into())?;
 
             // Parse the response into the appropriate type along with metadata
-            let (object, mtd): (Option<Self>, platform_proto::ResponseMetadata) =
+            let (object, metadata): (Option<Self>, platform_proto::ResponseMetadata) =
                 Self::maybe_from_unproved_with_metadata(
                     request.clone(),
                     response,
@@ -100,7 +100,7 @@ where
                 })?;
 
             Ok(ExecutionResponse {
-                inner: (object, mtd),
+                inner: (object, metadata),
                 address,
                 retries,
             })

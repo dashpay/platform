@@ -15,13 +15,15 @@ pub mod transport;
 
 pub use address_list::Address;
 pub use address_list::AddressList;
+pub use address_list::AddressListError;
 pub use connection_pool::ConnectionPool;
 pub use dapi_client::{DapiClient, DapiClientError};
 use dapi_grpc::mock::Mockable;
 #[cfg(feature = "dump")]
 pub use dump::DumpData;
-pub use executor::DapiRequestExecutor;
-pub use executor::{ExecutionError, ExecutionResponse, ExecutionResult, InnerInto, IntoInner};
+pub use executor::{
+    DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult, InnerInto, IntoInner,
+};
 use futures::{future::BoxFuture, FutureExt};
 pub use request_settings::RequestSettings;
 

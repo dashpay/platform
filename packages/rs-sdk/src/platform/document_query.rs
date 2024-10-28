@@ -19,7 +19,7 @@ use dpp::{
     document::Document,
     platform_value::{platform_value, Value},
     prelude::{DataContract, Identifier},
-    ProtocolError,
+    InvalidVectorSizeError, ProtocolError,
 };
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::{types::Documents, ContextProvider, FromProof};
@@ -326,6 +326,26 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
         } else {
             None
         };
+
+        let (start_at, start_at_included) = match request.start.as_ref() {
+            None => (None, false),
+            Some(Start::StartAt(at)) => (
+                Some(at.clone().try_into().map_err(|_| {
+                    ProtocolError::InvalidVectorSizeError(InvalidVectorSizeError::new(32, at.len()))
+                })?),
+                true,
+            ),
+            Some(Start::StartAfter(after)) => (
+                Some(after.clone().try_into().map_err(|_| {
+                    ProtocolError::InvalidVectorSizeError(InvalidVectorSizeError::new(
+                        32,
+                        after.len(),
+                    ))
+                })?),
+                true,
+            ),
+        };
+
         let query = Self {
             contract: &request.data_contract,
             document_type,
@@ -338,8 +358,8 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
                 .into_iter()
                 .map(|v| (v.field.clone(), v))
                 .collect(),
-            start_at: None,
-            start_at_included: false,
+            start_at,
+            start_at_included,
             block_time_ms: None,
         };
 
