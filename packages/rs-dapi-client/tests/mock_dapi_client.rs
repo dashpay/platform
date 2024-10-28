@@ -1,9 +1,9 @@
-use http_serde::http::Uri;
-use rs_dapi_client::{Address, ExecutionResponse};
 #[cfg(feature = "mocks")]
 use {
     dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse, Proof},
-    rs_dapi_client::{mock::MockDapiClient, DapiRequest, DapiRequestExecutor, RequestSettings},
+    rs_dapi_client::{
+        mock::MockDapiClient, DapiRequest, DapiRequestExecutor, ExecutionResponse, RequestSettings,
+    },
 };
 
 #[tokio::test]

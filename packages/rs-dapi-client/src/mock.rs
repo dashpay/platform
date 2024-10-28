@@ -13,12 +13,11 @@
 
 use crate::{
     transport::{TransportClient, TransportRequest},
-    Address, DapiClientError, DapiRequestExecutor, ExecutionError, ExecutionResponse,
-    ExecutionResult, RequestSettings,
+    DapiClientError, DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult,
+    RequestSettings,
 };
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
-use dapi_grpc::tonic::transport::Uri;
 use hex::ToHex;
 use sha2::Digest;
 use std::{
@@ -75,12 +74,12 @@ impl MockDapiClient {
     ///
     /// Panics if the file can't be read or the data can't be parsed.
     #[cfg(feature = "dump")]
-    pub fn load<T: TransportRequest, P: AsRef<std::path::Path>>(
+    pub fn load<T, P: AsRef<std::path::Path>>(
         &mut self,
         file: P,
     ) -> Result<(T, MockResult<T>), std::io::Error>
     where
-        T: Mockable,
+        T: TransportRequest + Mockable,
         T::Response: Mockable,
     {
         use crate::DumpData;
