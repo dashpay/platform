@@ -267,7 +267,7 @@ async fn contested_resource_vote_states_with_limit_PLAN_674() {
     assert_eq!(
         contenders.contenders.len(),
         limit as usize,
-        "number of contenders for {:?} should must be at least {}",
+        "number of contenders for {:?} should must be {}",
         label,
         limit
     );
