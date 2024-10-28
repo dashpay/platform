@@ -1865,7 +1865,7 @@ impl<'a> DriveDocumentQuery<'a> {
             drive_operations,
             platform_version,
         )?;
-        println!("path_query {}", path_query);
+
         let query_result = drive.grove_get_path_query_serialized_results(
             &path_query,
             transaction,
@@ -2014,12 +2014,16 @@ mod tests {
     use serde_json::Value::Null;
 
     use crate::config::DriveConfig;
-    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::{
+        setup_drive_with_initial_state_structure, setup_system_data_contract,
+    };
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contracts::SystemDataContract;
     use dpp::document::DocumentV0;
     use dpp::platform_value::string_encoding::Encoding;
     use dpp::platform_value::Value;
+    use dpp::system_data_contracts::load_system_data_contract;
     use dpp::tests::fixtures::{get_data_contract_fixture, get_dpns_data_contract_fixture};
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::util::cbor_serializer;
@@ -2068,11 +2072,9 @@ mod tests {
             .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
-        let contract_path = "tests/supporting_files/contract/withdrawals/withdrawals.json";
-
         // let's construct the grovedb structure for the dashpay data contract
-        let contract = json_document_to_contract(contract_path, false, platform_version)
-            .expect("expected to get document");
+        let contract = load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+            .expect("load system contact");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
@@ -2775,8 +2777,6 @@ mod tests {
             block_time_ms: None,
         };
 
-        println!("{:?}", &drive_document_query);
-
         // Create a document that we are starting at, which may be missing 'transactionIndex'
         let mut properties = BTreeMap::new();
         properties.insert("status".to_string(), Value::U64(0));
@@ -2803,8 +2803,6 @@ mod tests {
         let result = drive_document_query
             .construct_path_query(Some(starts_at_document), platform_version)
             .expect("expected to construct a path query");
-
-        println!("Generated PathQuery: {}", result);
 
         assert_eq!(
             result

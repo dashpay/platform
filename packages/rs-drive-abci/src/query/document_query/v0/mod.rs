@@ -131,8 +131,6 @@ impl<C> Platform<C> {
                 &self.config.drive,
             ));
 
-        println!("{:?}", drive_query);
-
         let response = if prove {
             let proof =
                 match drive_query.execute_with_proof(&self.drive, None, None, platform_version) {
