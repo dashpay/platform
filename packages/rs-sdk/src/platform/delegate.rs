@@ -8,8 +8,6 @@
 //! Each of these enums has a variant for each request/response pair. Name of variant in request enum is the same as
 //! the name of variant in response.
 
-use rs_dapi_client::transport::TransportError;
-
 /// Delegate the execution of a transport request to the appropriate variant of an enum wrapper.
 ///
 /// Given two enums, request and response, that wrap multiple requests/responses for one object type, this macro

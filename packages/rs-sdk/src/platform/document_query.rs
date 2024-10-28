@@ -24,7 +24,7 @@ use dpp::{
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::{types::Documents, ContextProvider, FromProof};
 use rs_dapi_client::transport::{
-    AppliedRequestSettings, BoxFuture, TransportClient, TransportError, TransportRequest,
+    AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
 };
 
 use super::fetch::Fetch;

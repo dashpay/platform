@@ -5,7 +5,7 @@ use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
 pub use drive_proof_verifier::error::ContextProviderError;
 use rs_dapi_client::transport::TransportError;
-use rs_dapi_client::{CanRetry, DapiClientError};
+use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 use std::fmt::Debug;
 use std::time::Duration;
 

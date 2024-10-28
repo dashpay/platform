@@ -3,7 +3,7 @@ use dapi_grpc::platform::v0::get_identities_contract_keys_request::Version::V0;
 use dapi_grpc::platform::v0::GetIdentitiesContractKeysRequest;
 use dpp::identity::Purpose;
 use rs_dapi_client::transport::{
-    AppliedRequestSettings, BoxFuture, TransportClient, TransportError, TransportRequest,
+    AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
 };
 
 use crate::platform::Identifier;

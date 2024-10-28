@@ -14,8 +14,8 @@ use crate::connection_pool::ConnectionPool;
 use crate::transport::TransportError;
 use crate::{
     transport::{TransportClient, TransportRequest},
-    Address, AddressList, CanRetry, DapiRequestExecutor, ExecutionError, ExecutionResponse,
-    ExecutionResult, RequestSettings,
+    AddressList, CanRetry, DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult,
+    RequestSettings,
 };
 
 /// General DAPI request error type.

@@ -11,8 +11,10 @@
 //!
 //! See `tests/mock_dapi_client.rs` for an example.
 
-use crate::{transport::TransportRequest, DapiClientError, DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult,
-    RequestSettings};
+use crate::{
+    transport::TransportRequest, DapiClientError, DapiRequestExecutor, ExecutionError,
+    ExecutionResponse, ExecutionResult, RequestSettings,
+};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 use hex::ToHex;
@@ -33,7 +35,7 @@ pub struct MockDapiClient {
     expectations: Expectations,
 }
 /// Result of executing a mock request
-pub type MockResult<T> = Result<<T as TransportRequest>::Response, DapiClientError>;
+pub type MockResult<T> = ExecutionResult<<T as TransportRequest>::Response, DapiClientError>;
 
 impl MockDapiClient {
     /// Create a new mock client
