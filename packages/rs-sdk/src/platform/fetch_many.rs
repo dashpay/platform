@@ -4,21 +4,22 @@
 //!
 //! ## Traits
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
+
 use super::LimitQuery;
 use crate::{
     error::Error,
     mock::MockResponse,
     platform::{document_query::DocumentQuery, query::Query},
+    sync::retry,
     Sdk,
 };
 use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
-    GetDataContractsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetIdentitiesBalancesRequest, GetIdentityKeysRequest, GetPathElementsRequest,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetVotePollsByEndDateRequest,
+    GetDataContractsRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentitiesBalancesRequest,
+    GetIdentityKeysRequest, GetPathElementsRequest, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::data_contract::DataContract;
@@ -40,7 +41,10 @@ use drive_proof_verifier::types::{
     ProtocolVersionUpgrades, ResourceVotesByIdentity, VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
-use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
+use rs_dapi_client::{
+    transport::TransportRequest, DapiRequest, ExecutionError, ExecutionResponse, InnerInto,
+    IntoInner, RequestSettings,
+};
 
 /// Fetch multiple objects from Platform.
 ///
@@ -141,22 +145,41 @@ where
         sdk: &Sdk,
         query: Q,
     ) -> Result<O, Error> {
-        let request = query.query(sdk.prove())?;
+        let request = &query.query(sdk.prove())?;
+        let closure = |settings: RequestSettings| async move {
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request
+                .clone()
+                .execute(sdk, settings)
+                .await
+                .map_err(|e| e.inner_into())?;
 
-        let response = request
-            .clone()
-            .execute(sdk, RequestSettings::default())
-            .await?;
+            let object_type = std::any::type_name::<Self>().to_string();
+            tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
 
-        let object_type = std::any::type_name::<Self>().to_string();
-        tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
+            sdk.parse_proof::<<Self as FetchMany<K, O>>::Request, O>(request.clone(), response)
+                .await
+                .map(|o| ExecutionResponse {
+                    inner: o,
+                    retries,
+                    address: address.clone(),
+                })
+                .map_err(|e| ExecutionError {
+                    inner: e,
+                    retries,
+                    address: Some(address),
+                })
+        };
 
-        let object: O = sdk
-            .parse_proof::<<Self as FetchMany<K, O>>::Request, O>(request, response)
-            .await?
-            .unwrap_or_default();
+        let settings = sdk.dapi_client_settings;
 
-        Ok(object)
+        retry(settings, closure)
+            .await
+            .into_inner()
+            .map(|o| o.unwrap_or_default())
     }
 
     /// Fetch multiple objects from Platform by their identifiers.
@@ -185,7 +208,7 @@ where
 
     /// Fetch multiple objects from Platform with limit.
     ///
-    /// Fetches up to `limit` objects matching the `query`.    
+    /// Fetches up to `limit` objects matching the `query`.
     /// See [FetchMany] and [FetchMany::fetch_many()] for more detailed documentation.
     ///
     /// ## Parameters
@@ -229,21 +252,38 @@ impl FetchMany<Identifier, Documents> for Document {
         sdk: &Sdk,
         query: Q,
     ) -> Result<Documents, Error> {
-        let document_query: DocumentQuery = query.query(sdk.prove())?;
+        let document_query: &DocumentQuery = &query.query(sdk.prove())?;
 
-        let request = document_query.clone();
-        let response: GetDocumentsResponse =
-            request.execute(sdk, RequestSettings::default()).await?;
+        retry(sdk.dapi_client_settings, |settings| async move {
+            let request = document_query.clone();
 
-        tracing::trace!(request=?document_query, response=?response, "fetch multiple documents");
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request.execute(sdk, settings).await.map_err(|e| e.inner_into())?;
 
-        // let object: Option<BTreeMap<K,Document>> = sdk
-        let documents: Documents = sdk
-            .parse_proof::<DocumentQuery, Documents>(document_query, response)
-            .await?
-            .unwrap_or_default();
+            tracing::trace!(request=?document_query, response=?response, ?address, retries, "fetch multiple documents");
 
-        Ok(documents)
+            // let object: Option<BTreeMap<K,Document>> = sdk
+            let documents = sdk
+                .parse_proof::<DocumentQuery, Documents>(document_query.clone(), response)
+                .await
+                .map_err(|e| ExecutionError {
+                    inner: e,
+                    retries,
+                    address: Some(address.clone()),
+                })?
+                .unwrap_or_default();
+
+            Ok(ExecutionResponse {
+                inner: documents,
+                retries,
+                address,
+            })
+        })
+        .await
+        .into_inner()
     }
 }
 
