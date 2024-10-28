@@ -67,7 +67,7 @@ async fn contested_resource_identity_votes_not_found() {
 ///  * enter `ProRegTx transaction ID`  and `Owner Private Key` from step 1.
 ///  * top up the identity balance using `t - Identity top up` option (1 DASH will be OK).
 ///  * exit Wallet screen using `q - Back to Main`
-///
+///t
 /// 3. Vote for some contested resource using the masternode identity:
 ///
 ///  * select `csnq`:  `c - Contracts` -> `s - Fetch system contract` -> `n - Fetch DPNS contract` -> `q - Back to Contracts `

@@ -71,7 +71,10 @@ impl<S: Signer> PutVote<S> for Vote {
         )?;
         let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
 
-        request.execute(sdk, settings.request_settings).await?;
+        request
+            .execute(sdk, settings.request_settings)
+            .await // TODO: We need better way to handle execution errors
+            .map_err(|error| error.into_inner())?;
 
         Ok(())
     }
@@ -106,7 +109,11 @@ impl<S: Signer> PutVote<S> for Vote {
         )?;
         let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
 
-        let response_result = request.execute(sdk, settings.request_settings).await;
+        let response_result = request
+            .execute(sdk, settings.request_settings)
+            .await // TODO: We need better way to handle execution response and errors
+            .map(|execution_response| execution_response.into_inner())
+            .map_err(|execution_error| execution_error.into_inner());
 
         match response_result {
             Ok(_) => {}
@@ -125,7 +132,11 @@ impl<S: Signer> PutVote<S> for Vote {
         }
 
         let request = masternode_vote_transition.wait_for_state_transition_result_request()?;
-        let response = request.execute(sdk, settings.request_settings).await?;
+        let response = request
+            .execute(sdk, settings.request_settings)
+            .await // TODO: We need better way to handle execution response and errors
+            .map(|execution_response| execution_response.into_inner())
+            .map_err(|execution_error| execution_error.into_inner())?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;
         let proof = response.proof_owned()?;

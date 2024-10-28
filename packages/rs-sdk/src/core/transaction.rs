@@ -56,6 +56,9 @@ impl Sdk {
         };
         self.execute(core_transactions_stream, RequestSettings::default())
             .await
+            // TODO: We need better way to handle execution response and errors
+            .map(|execution_response| execution_response.into_inner())
+            .map_err(|execution_error| execution_error.into_inner())
             .map_err(|e| Error::DapiClientError(e.to_string()))
     }
 
@@ -180,7 +183,9 @@ impl Sdk {
                                     },
                                     RequestSettings::default(),
                                 )
-                                .await?;
+                                .await // TODO: We need better way to handle execution errors
+                                .map_err(|error| error.into_inner())?
+                                .into_inner();
 
                             core_chain_locked_height = height;
 
