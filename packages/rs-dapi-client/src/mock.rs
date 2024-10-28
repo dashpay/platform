@@ -290,3 +290,28 @@ impl<E: Mockable> Mockable for ExecutionError<E> {
         })
     }
 }
+
+/// Create full wrapping object from inner type, using defaults for
+/// fields that cannot be derived from the inner type.
+pub trait FromInner<R>
+where
+    Self: Default,
+{
+    /// Create full wrapping object from inner type, using defaults for
+    /// fields that cannot be derived from the inner type.
+    ///
+    /// Note this is imprecise conversion and should be avoided outside of tests.
+    fn from_inner(inner: R) -> Self;
+}
+
+impl<R> FromInner<R> for ExecutionResponse<R>
+where
+    Self: Default,
+{
+    fn from_inner(inner: R) -> Self {
+        Self {
+            inner,
+            ..Default::default()
+        }
+    }
+}

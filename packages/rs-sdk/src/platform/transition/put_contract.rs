@@ -18,7 +18,7 @@ use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::DataContractProvider;
-use rs_dapi_client::{DapiRequest, RequestSettings};
+use rs_dapi_client::{DapiRequest, IntoInner, RequestSettings};
 
 #[async_trait::async_trait]
 /// A trait for putting a contract to platform
@@ -87,7 +87,7 @@ impl<S: Signer> PutContract<S> for DataContract {
             .clone()
             .execute(sdk, settings.unwrap_or_default().request_settings)
             .await // TODO: We need better way to handle execution errors
-            .map_err(|error| error.into_inner())?;
+            .into_inner()?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
 
@@ -103,9 +103,8 @@ impl<S: Signer> PutContract<S> for DataContract {
 
         let response = request
             .execute(sdk, RequestSettings::default())
-            .await // TODO: We need better way to handle execution response and errors
-            .map(|execution_response| execution_response.into_inner())
-            .map_err(|execution_error| execution_error.into_inner())?;
+            .await
+            .into_inner()?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;
 

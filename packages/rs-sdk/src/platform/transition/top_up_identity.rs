@@ -11,7 +11,7 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use drive::drive::Drive;
 use drive_proof_verifier::error::ContextProviderError;
 use drive_proof_verifier::DataContractProvider;
-use rs_dapi_client::{DapiRequest, RequestSettings};
+use rs_dapi_client::{DapiRequest, IntoInner, RequestSettings};
 
 #[async_trait::async_trait]
 pub trait TopUpIdentity {
@@ -48,15 +48,14 @@ impl TopUpIdentity for Identity {
             .clone()
             .execute(sdk, RequestSettings::default())
             .await // TODO: We need better way to handle execution errors
-            .map_err(|error| error.into_inner())?;
+            .into_inner()?;
 
         let request = state_transition.wait_for_state_transition_result_request()?;
-
+        // TODO: Implement retry logic in wait for state transition result
         let response = request
             .execute(sdk, RequestSettings::default())
-            .await // TODO: We need better way to handle execution response and errors
-            .map(|execution_response| execution_response.into_inner())
-            .map_err(|execution_error| execution_error.into_inner())?;
+            .await
+            .into_inner()?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;
 

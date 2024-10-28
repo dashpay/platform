@@ -1,7 +1,7 @@
 use super::{types::evonode::EvoNode, Query};
-use crate::error::Error;
 use crate::mock::MockResponse;
 use crate::Sdk;
+use crate::{error::Error, sync::retry};
 use dapi_grpc::platform::v0::{
     self as platform_proto, GetStatusRequest, GetStatusResponse, ResponseMetadata,
 };
@@ -9,6 +9,7 @@ use dpp::{dashcore::Network, version::PlatformVersion};
 use drive_proof_verifier::types::EvoNodeStatus;
 use drive_proof_verifier::unproved::FromUnproved;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
+use rs_dapi_client::{ExecutionError, ExecutionResponse, InnerInto, IntoInner};
 use std::fmt::Debug;
 
 #[async_trait::async_trait]
@@ -71,21 +72,42 @@ where
         >,
     {
         // Default implementation
-        let request: <Self as FetchUnproved>::Request = query.query(false)?;
+        let request: &<Self as FetchUnproved>::Request = &query.query(false)?;
+        let closure = move |local_settings: RequestSettings| async move {
+            // Execute the request using the Sdk instance
+            let ExecutionResponse {
+                inner: response,
+                address,
+                retries,
+            } = request
+                .clone()
+                .execute(sdk, local_settings)
+                .await
+                .map_err(|e| e.inner_into())?;
 
-        // Execute the request using the Sdk instance
-        let response = request
-            .clone()
-            .execute(sdk, settings)
-            .await // TODO: We need better way to handle execution response and errors
-            .map(|execution_response| execution_response.into_inner())
-            .map_err(|execution_error| execution_error.into_inner())?;
+            // Parse the response into the appropriate type along with metadata
+            let (object, metadata): (Option<Self>, platform_proto::ResponseMetadata) =
+                Self::maybe_from_unproved_with_metadata(
+                    request.clone(),
+                    response,
+                    sdk.network,
+                    sdk.version(),
+                )
+                .map_err(|e| ExecutionError {
+                    inner: e.into(),
+                    address: Some(address.clone()),
+                    retries,
+                })?;
 
-        // Parse the response into the appropriate type along with metadata
-        let (object, mtd): (Option<Self>, platform_proto::ResponseMetadata) =
-            Self::maybe_from_unproved_with_metadata(request, response, sdk.network, sdk.version())?;
+            Ok(ExecutionResponse {
+                inner: (object, metadata),
+                address,
+                retries,
+            })
+        };
 
-        Ok((object, mtd))
+        let settings = sdk.dapi_client_settings.override_by(settings);
+        retry(settings, closure).await.into_inner()
     }
 }
 

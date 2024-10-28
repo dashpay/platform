@@ -21,7 +21,9 @@ pub use dapi_client::{DapiClient, DapiClientError};
 use dapi_grpc::mock::Mockable;
 #[cfg(feature = "dump")]
 pub use dump::DumpData;
-pub use executor::{DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult};
+pub use executor::{
+    DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult, InnerInto, IntoInner,
+};
 use futures::{future::BoxFuture, FutureExt};
 pub use request_settings::RequestSettings;
 
