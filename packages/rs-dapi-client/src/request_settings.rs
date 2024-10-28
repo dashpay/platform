@@ -23,7 +23,7 @@ pub struct RequestSettings {
     pub connect_timeout: Option<Duration>,
     /// Timeout for a request.
     pub timeout: Option<Duration>,
-    /// Number of retries until returning the last error. `0` means no retries, that is only one request will be sent.
+    /// Number of retries in case of failed requests. If max retries reached, the last error is returned.
     /// 1 means one request and one retry in case of error, etc.
     pub retries: Option<usize>,
     /// Ban DAPI address if node not responded or responded with error.

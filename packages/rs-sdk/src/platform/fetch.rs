@@ -19,7 +19,7 @@ use dpp::{
 };
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
-use rs_dapi_client::{ExecutionError, ExecutionResponse, IntoInner};
+use rs_dapi_client::{ExecutionError, ExecutionResponse, InnerInto, IntoInner};
 use std::fmt::Debug;
 
 use super::types::identity::IdentityRequest;
@@ -156,41 +156,39 @@ where
         settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
         let request: &<Self as Fetch>::Request = &query.query(sdk.prove())?;
-        let fut = |settings: RequestSettings| {
-            async move {
-                let response = request
-                    .clone()
-                    .execute(sdk, settings)
-                    .await // TODO: We need better way to handle execution response and errors
-                    .map_err(|execution_error| execution_error.into())?;
 
-                let address = response.address.clone();
-                let retries = response.retries;
-                let grpc_response = response.into_inner();
+        let fut = |settings: RequestSettings| async move {
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request
+                .clone()
+                .execute(sdk, settings)
+                .await
+                .map_err(|execution_error| execution_error.inner_into())?;
 
-                let object_type = std::any::type_name::<Self>().to_string();
-                tracing::trace!(request = ?request, response = ?grpc_response, object_type, "fetched object from platform");
+            let object_type = std::any::type_name::<Self>().to_string();
+            tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
 
-                let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) =
-                    sdk.parse_proof_with_metadata_and_proof(request.clone(), grpc_response)
-                        .await
-                        .map_err(|e| ExecutionError {
-                            inner: e,
-                            address: Some(address.clone()),
-                            retries,
-                        })?;
-
-                let o = match object {
-                    Some(item) => Ok((item.into(), response_metadata, proof)),
-                    None => Ok((None, response_metadata, proof)),
-                };
-
-                o.map(|x| ExecutionResponse {
-                    inner: x,
-                    address,
+            let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) = sdk
+                .parse_proof_with_metadata_and_proof(request.clone(), response)
+                .await
+                .map_err(|e| ExecutionError {
+                    inner: e,
+                    address: Some(address.clone()),
                     retries,
-                })
+                })?;
+
+            match object {
+                Some(item) => Ok((item.into(), response_metadata, proof)),
+                None => Ok((None, response_metadata, proof)),
             }
+            .map(|x| ExecutionResponse {
+                inner: x,
+                address,
+                retries,
+            })
         };
 
         let settings = sdk

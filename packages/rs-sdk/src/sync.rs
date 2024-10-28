@@ -103,15 +103,15 @@ async fn worker<F: Future>(
 /// requests sent is expected to be at least `settings.retries + 1` (initial request + `retries` configured in settings).
 /// The actual number of requests sent can be higher, as the lower layers can retry the request multiple times.
 ///
-/// `code` should be a `FnMut()` closure that returns a future that should be retried.
+/// `future_factory_fn` should be a `FnMut()` closure that returns a future that should be retried.
 /// It takes [`RequestSettings`] as an argument and returns [`ExecutionResult`].
-/// Retry mechanism can change [`RequestSettings`] between invocations of the `code` closure
+/// Retry mechanism can change [`RequestSettings`] between invocations of the `future_factory_fn` closure
 /// to limit the number of retries for lower layers.
 ///
 /// ## Parameters
 ///
 /// - `settings` - global settings with any request-specific settings overrides applied.
-/// - `code` - closure that returns a future that should be retried. It should take [`RequestSettings`] as
+/// - `future_factory_fn` - closure that returns a future that should be retried. It should take [`RequestSettings`] as
 ///   an argument and return [`ExecutionResult`].
 ///
 /// ## Returns
@@ -153,32 +153,39 @@ async fn worker<F: Future>(
 /// ## See also
 ///
 /// - [`::backon`] crate that is used by this function.
-pub async fn retry<Fut, FutureFn, R, E>(
+pub async fn retry<Fut, FutureFactoryFn, R, E>(
     settings: RequestSettings,
-    code: FutureFn,
+    future_factory_fn: FutureFactoryFn,
 ) -> ExecutionResult<R, E>
 where
     Fut: Future<Output = ExecutionResult<R, E>>,
-    FutureFn: FnMut(RequestSettings) -> Fut,
+    FutureFactoryFn: FnMut(RequestSettings) -> Fut,
     E: CanRetry + Debug,
 {
-    let max_retries = settings.retries.unwrap_or(0);
+    let max_retries = settings.retries.unwrap_or_default();
 
     let backoff_strategy = backon::ConstantBuilder::default()
         .with_delay(std::time::Duration::from_millis(10)) // we use different server, so no real delay needed, just to avoid spamming
-        .with_max_times(max_retries); // no retries by default
+        .with_max_times(max_retries);
 
     let mut retries: usize = 0;
 
+    // Settings must be modified inside `when()` closure, so we need to use `ArcSwap` to allow mutable access to settings.
     let settings = ArcSwap::new(Arc::new(settings));
 
-    // We need a mutex here, as `closure` must be FnMut()
-    let inner_fn = Arc::new(Mutex::new(code));
+    // Closure below needs to be FnMut, so we need mutable future_factory_fn. In order to achieve that,
+    // we use Arc<Mutex<.>>> pattern, to NOT move `future_factory_fn` directly into closure (as this breaks FnMut),
+    // while still allowing mutable access to it.
+    let inner_fn = Arc::new(Mutex::new(future_factory_fn));
+
     let closure_settings = &settings;
+    // backon also support [backon::RetryableWithContext], but it doesn't pass the context to `when()` call.
+    // As we need to modify the settings inside `when()`, context doesn't solve our problem and we have to implement
+    // our own "context-like" logic using the closure below and `ArcSwap` for settings.
     let closure = move || {
         let inner_fn = inner_fn.clone();
-        let settings = closure_settings.load_full().clone();
         async move {
+            let settings = closure_settings.load_full().clone();
             let mut func = inner_fn.lock().await;
             (*func)(*settings).await
         }
@@ -194,7 +201,7 @@ where
                 retries += requests_sent;
                 let all_requests_sent = retries;
 
-                if all_requests_sent <= max_retries {
+                if all_requests_sent <=max_retries { // we account for for initial request
                     tracing::warn!(retry = all_requests_sent, max_retries, error=?e, "retrying request");
                     let new_settings = RequestSettings {
                         retries: Some(max_retries - all_requests_sent), // limit num of retries for lower layer
@@ -203,7 +210,7 @@ where
                     settings.store(Arc::new(new_settings));
                     true
                 } else {
-                    tracing::warn!(retry = all_requests_sent, max_retries, error=?e, "no more retries left, giving up");
+                    tracing::error!(retry = all_requests_sent, max_retries, error=?e, "no more retries left, giving up");
                     false
                 }
             } else {
@@ -224,7 +231,6 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use dpp::dashcore::secp256k1::rand::random;
     use http::Uri;
     use rs_dapi_client::ExecutionError;
     use std::{
@@ -317,20 +323,21 @@ mod test {
             true
         }
     }
-    /// Counter for tracking number of requests sent
-    static REQUEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-    async fn retry_test_function(settings: RequestSettings) -> ExecutionResult<(), MockError> {
-        // each invocation executes two retries
-        let retries = (random::<u8>() % 5) as usize;
+    async fn retry_test_function(
+        settings: RequestSettings,
+        counter: Arc<AtomicUsize>,
+    ) -> ExecutionResult<(), MockError> {
+        // num or retries increases with each call
+        let retries = counter.load(Ordering::Relaxed);
         let retries = if settings.retries.unwrap_or_default() < retries {
             settings.retries.unwrap_or_default()
         } else {
             retries
         };
 
-        // we sent 1 initial request to `retries` retries
-        REQUEST_COUNTER.fetch_add(1 + retries, Ordering::Relaxed);
+        // we sent 1 initial request plus `retries` retries
+        counter.fetch_add(1 + retries, Ordering::Relaxed);
 
         Err(ExecutionError {
             inner: MockError::Generic,
@@ -339,22 +346,27 @@ mod test {
         })
     }
 
+    #[test_case::test_matrix([1,2,3,5,7,8,10,11,23,49, usize::MAX])]
     #[tokio::test]
-    async fn test_retry() {
-        for _ in 0..5 {
-            REQUEST_COUNTER.store(0, Ordering::Relaxed);
-            let expected_requests: usize = (random::<u8>() % 100 + 1) as usize;
+    async fn test_retry(expected_requests: usize) {
+        for _ in 0..1 {
+            let counter = Arc::new(AtomicUsize::new(0));
+
             // we retry 5 times, and expect 5 retries + 1 initial request
             let mut global_settings = RequestSettings::default();
             global_settings.retries = Some(expected_requests - 1);
 
-            // let closure = |s| retry_test_function(s);
-            retry(global_settings, retry_test_function)
+            let closure = |s| {
+                let counter = counter.clone();
+                retry_test_function(s, counter)
+            };
+
+            retry(global_settings, closure)
                 .await
                 .expect_err("should fail");
 
             assert_eq!(
-                REQUEST_COUNTER.load(Ordering::Relaxed),
+                counter.load(Ordering::Relaxed),
                 expected_requests,
                 "test failed for expected {} requests",
                 expected_requests

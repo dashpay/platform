@@ -103,7 +103,7 @@ impl<S: Signer> PutContract<S> for DataContract {
 
         let response = request
             .execute(sdk, RequestSettings::default())
-            .await // TODO: We need better way to handle execution response and errors
+            .await
             .into_inner()?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;

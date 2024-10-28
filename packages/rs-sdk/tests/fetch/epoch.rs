@@ -25,7 +25,7 @@ async fn get_current_epoch(sdk: &Sdk, cfg: &Config) -> EpochIndex {
 
     let response = sdk
         .execute(identity_request, RequestSettings::default())
-        .await // TODO: We need better way to handle execution response and errors
+        .await
         .into_inner()
         .expect("get identity");
 

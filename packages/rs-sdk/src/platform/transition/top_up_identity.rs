@@ -51,10 +51,10 @@ impl TopUpIdentity for Identity {
             .into_inner()?;
 
         let request = state_transition.wait_for_state_transition_result_request()?;
-
+        // TODO: Implement retry logic in wait for state transition result
         let response = request
             .execute(sdk, RequestSettings::default())
-            .await // TODO: We need better way to handle execution response and errors
+            .await
             .into_inner()?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;

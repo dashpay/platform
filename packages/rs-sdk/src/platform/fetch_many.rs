@@ -42,8 +42,8 @@ use drive_proof_verifier::types::{
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{
-    transport::TransportRequest, DapiRequest, ExecutionError, ExecutionResponse, IntoInner,
-    RequestSettings,
+    transport::TransportRequest, DapiRequest, ExecutionError, ExecutionResponse, InnerInto,
+    IntoInner, RequestSettings,
 };
 
 /// Fetch multiple objects from Platform.
@@ -147,20 +147,18 @@ where
     ) -> Result<O, Error> {
         let request = &query.query(sdk.prove())?;
         let closure = |settings: RequestSettings| async move {
-            let grpc_response = request
-                .clone()
-                .execute(sdk, settings)
-                .await
-                .map_err(|e| e.into())?;
-
             let ExecutionResponse {
                 address,
                 retries,
                 inner: response,
-            } = grpc_response;
+            } = request
+                .clone()
+                .execute(sdk, settings)
+                .await
+                .map_err(|e| e.inner_into())?;
 
             let object_type = std::any::type_name::<Self>().to_string();
-            tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
+            tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
 
             sdk.parse_proof::<<Self as FetchMany<K, O>>::Request, O>(request.clone(), response)
                 .await
@@ -256,17 +254,16 @@ impl FetchMany<Identifier, Documents> for Document {
     ) -> Result<Documents, Error> {
         let document_query: &DocumentQuery = &query.query(sdk.prove())?;
 
-        retry(RequestSettings::default(), |settings| async move {
+        retry(sdk.dapi_client_settings, |settings| async move {
             let request = document_query.clone();
-            let result = request.execute(sdk, settings).await.map_err(|e| e.into())?;
 
             let ExecutionResponse {
-                inner: response,
                 address,
                 retries,
-            } = result;
+                inner: response,
+            } = request.execute(sdk, settings).await.map_err(|e| e.inner_into())?;
 
-            tracing::trace!(request=?document_query, response=?response, "fetch multiple documents");
+            tracing::trace!(request=?document_query, response=?response, ?address, retries, "fetch multiple documents");
 
             // let object: Option<BTreeMap<K,Document>> = sdk
             let documents = sdk
@@ -284,7 +281,9 @@ impl FetchMany<Identifier, Documents> for Document {
                 retries,
                 address,
             })
-        }).await.into_inner()
+        })
+        .await
+        .into_inner()
     }
 }
 
