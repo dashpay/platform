@@ -4448,8 +4448,6 @@ fn test_dpns_query_start_after_with_null_id() {
     )
     .expect("query should be built");
 
-    println!("{:?}", query);
-
     // We are commenting this out on purpose to make it easier to find
     // let mut query_operations: Vec<QueryOperation> = vec![];
     // let path_query = query
