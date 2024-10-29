@@ -26,9 +26,9 @@ where
     /// # Panics
     ///
     /// Panics on any error.
-    fn mock_serialize(&self) -> Option<Vec<u8>> {
-        None
-    }
+    #[cfg(feature = "mocks")]
+    fn mock_serialize(&self) -> Option<Vec<u8>>;
+
     /// Deserialize the message serialized with [mock_serialize()].
     ///
     /// Returns None if the message is not serializable or mocking is disabled.
@@ -36,9 +36,8 @@ where
     /// # Panics
     ///
     /// Panics on any error.
-    fn mock_deserialize(_data: &[u8]) -> Option<Self> {
-        None
-    }
+    #[cfg(feature = "mocks")]
+    fn mock_deserialize(_data: &[u8]) -> Option<Self>;
 }
 #[cfg(feature = "mocks")]
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -175,7 +174,17 @@ impl Mockable for crate::tonic::Status {
 ///
 /// This will return `None` on serialization,
 /// effectively disabling mocking of streaming responses.
-impl<T: Mockable> Mockable for Streaming<T> {}
+impl<T: Mockable> Mockable for Streaming<T> {
+    #[cfg(feature = "mocks")]
+    fn mock_serialize(&self) -> Option<Vec<u8>> {
+        unimplemented!("mocking of streaming messages is not supported")
+    }
+
+    #[cfg(feature = "mocks")]
+    fn mock_deserialize(_data: &[u8]) -> Option<Self> {
+        unimplemented!("mocking of streaming messages is not supported")
+    }
+}
 
 /// Mocking of primitive types - just serialize them as little-endian bytes.
 ///
