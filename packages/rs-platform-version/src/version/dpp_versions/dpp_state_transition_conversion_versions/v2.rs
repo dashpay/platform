@@ -4,6 +4,7 @@ pub const STATE_TRANSITION_CONVERSION_VERSIONS_V2: DPPStateTransitionConversionV
     DPPStateTransitionConversionVersions {
         identity_to_identity_create_transition: 0,
         identity_to_identity_top_up_transition: 0,
+        identity_to_identity_transfer_transition: 0,
         identity_to_identity_withdrawal_transition: 1,
         identity_to_identity_create_transition_with_signer: 0,
     };
