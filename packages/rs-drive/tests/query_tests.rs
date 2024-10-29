@@ -75,6 +75,7 @@ use dpp::tests::json_document::json_document_to_contract;
 use dpp::util::cbor_serializer;
 use once_cell::sync::Lazy;
 
+use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 
 #[cfg(feature = "server")]
@@ -2305,7 +2306,7 @@ fn test_family_person_update() {
     let platform_version = PlatformVersion::latest();
 
     let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -2883,7 +2884,7 @@ fn test_family_with_nulls_query() {
     let platform_version = PlatformVersion::latest();
 
     let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -4341,6 +4342,8 @@ fn test_dpns_query_start_after_with_null_id() {
 
     let domain1_id = Identifier::random_with_rng(&mut rng);
 
+    assert!(domain0_id > domain1_id);
+
     let domain1 = Domain {
         id: domain1_id,
         owner_id: Identifier::random_with_rng(&mut rng),
@@ -4427,7 +4430,7 @@ fn test_dpns_query_start_after_with_null_id() {
             ["normalizedParentDomainName", "==", "dash"]
         ],
         "startAfter":  encoded_start_at,
-        "limit": 2,
+        "limit": 3,
         "orderBy": [
             ["normalizedLabel", "asc"]
         ]
@@ -4804,7 +4807,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 #[cfg(feature = "server")]
 #[test]
 fn test_query_a_b_c_d_e_contract() {
-    let drive: Drive = setup_drive_with_initial_state_structure();
+    let drive: Drive = setup_drive_with_initial_state_structure(None);
 
     let platform_version = PlatformVersion::latest();
 
@@ -4919,7 +4922,7 @@ fn test_query_a_b_c_d_e_contract() {
 #[cfg(feature = "server")]
 #[test]
 fn test_query_documents_by_created_at() {
-    let drive = setup_drive_with_initial_state_structure();
+    let drive = setup_drive_with_initial_state_structure(None);
 
     let platform_version = PlatformVersion::latest();
 

@@ -16,7 +16,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 /// Info pertinent to the current epoch.
-#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct EpochInfoV0 {
     /// Current epoch index

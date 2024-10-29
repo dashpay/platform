@@ -2,13 +2,16 @@ use crate::from_request::TryFromRequest;
 use crate::provider::DataContractProvider;
 use crate::verify::verify_tenderdash_proof;
 use crate::{types, types::*, ContextProvider, Error};
+use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
 use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
 use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
     self, GetProtocolVersionUpgradeVoteStatusRequestV0,
 };
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
-use dapi_grpc::platform::v0::{get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata};
+use dapi_grpc::platform::v0::{
+    get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata
+};
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
@@ -35,15 +38,15 @@ use drive::drive::identity::key::fetch::{
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
+use drive::query::proposer_block_count_query::ProposerQueryType;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
+use indexmap::IndexMap;
 use std::array::TryFromSliceError;
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
-use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
-use drive::query::proposer_block_count_query::ProposerQueryType;
 
 /// Parse and verify the received proof and retrieve the requested object, if any.
 ///
@@ -78,7 +81,7 @@ pub trait FromProof<Req> {
     ///
     /// * `Ok(Some(object, metadata))` when the requested object was found in the proof.
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
-    /// For collections, returns Ok(None) if none of the requested objects were found.
+    ///    For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -108,7 +111,7 @@ pub trait FromProof<Req> {
     ///
     /// * `Ok(Some((object, metadata)))` when the requested object was found in the proof.
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
-    /// For collections, returns Ok(None) if none of the requested objects were found.
+    ///    For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -368,33 +371,13 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
                 }
             };
 
-        let key_request = match parse_key_request_type(&request_type)? {
-            KeyRequestType::SpecificKeys(specific_keys) => {
-                IdentityKeysRequest::new_specific_keys_query(&identity_id, specific_keys)
-            }
-            KeyRequestType::AllKeys => IdentityKeysRequest::new_all_keys_query(&identity_id, None),
-            KeyRequestType::SearchKey(criteria) => IdentityKeysRequest {
-                identity_id,
-                request_type: KeyRequestType::SearchKey(criteria),
-                limit,
-                offset,
-            },
-            KeyRequestType::ContractBoundKey(id, purpose, kind) => IdentityKeysRequest {
-                identity_id,
-                request_type: KeyRequestType::ContractBoundKey(id, purpose, kind),
-                limit,
-                offset,
-            },
-            KeyRequestType::ContractDocumentTypeBoundKey(id, s, purpose, kind) => {
-                IdentityKeysRequest {
-                    identity_id,
-                    request_type: KeyRequestType::ContractDocumentTypeBoundKey(
-                        id, s, purpose, kind,
-                    ),
-                    limit,
-                    offset,
-                }
-            }
+        let request_type = parse_key_request_type(&request_type)?;
+
+        let key_request = IdentityKeysRequest {
+            identity_id,
+            request_type,
+            limit,
+            offset,
         };
 
         tracing::debug!(?identity_id, "checking proof of identity keys");
@@ -849,25 +832,22 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
         })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
-
-        let maybe_contracts: Option<BTreeMap<Identifier, Option<DataContract>>> =
-            if !contracts.is_empty() {
-                let contracts: DataContracts = contracts
-                    .into_iter()
-                    .try_fold(DataContracts::new(), |mut acc, (k, v)| {
-                        Identifier::from_bytes(&k).map(|id| {
-                            acc.insert(id, v);
-                            acc
-                        })
-                    })
-                    .map_err(|e| Error::ResultEncodingError {
+        let contracts = contracts
+            .into_iter()
+            .map(|(k, v)| {
+                Identifier::from_bytes(&k).map(|id| (id, v)).map_err(|e| {
+                    Error::ResultEncodingError {
                         error: e.to_string(),
-                    })?;
+                    }
+                })
+            })
+            .collect::<Result<DataContracts, Error>>()?;
 
-                Some(contracts)
-            } else {
-                None
-            };
+        let maybe_contracts = if contracts.is_empty() {
+            None
+        } else {
+            Some(contracts)
+        };
 
         Ok((maybe_contracts, mtd.clone(), proof.clone()))
     }
@@ -922,7 +902,11 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((maybe_history, mtd.clone(), proof.clone()))
+        Ok((
+            maybe_history.map(IndexMap::from_iter),
+            mtd.clone(),
+            proof.clone(),
+        ))
     }
 }
 
@@ -1005,13 +989,13 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfo {
             provider,
         )?;
 
-        if let Some(mut e) = epochs.0 {
+        if let Some(e) = epochs.0 {
             if e.len() != 1 {
                 return Err(Error::RequestError {
                     error: format!("expected 1 epoch, got {}", e.len()),
                 });
             }
-            let epoch = e.pop_first().and_then(|v| v.1);
+            let epoch = e.into_iter().next().and_then(|v| v.1);
             Ok((epoch, epochs.1, epochs.2))
         } else {
             Ok((None, epochs.1, epochs.2))
@@ -1074,7 +1058,7 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
 
                 (info.index, Some(v))
             })
-            .collect::<BTreeMap<EpochIndex, Option<ExtendedEpochInfo>>>();
+            .collect::<ExtendedEpochInfos>();
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -1221,10 +1205,11 @@ impl FromProof<GetPathElementsRequest> for Elements {
 
         let (root_hash, objects) =
             Drive::verify_elements(&proof.grovedb_proof, path, keys, platform_version)?;
+        let elements: Elements = Elements::from_iter(objects);
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((objects.into_option(), mtd.clone(), proof.clone()))
+        Ok((elements.into_option(), mtd.clone(), proof.clone()))
     }
 }
 
@@ -1396,8 +1381,7 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        let resources: ContestedResources =
-            items.into_iter().map(ContestedResource::Value).collect();
+        let resources: ContestedResources = items.into_iter().map(ContestedResource).collect();
 
         Ok((resources.into_option(), mtd.clone(), proof.clone()))
     }
@@ -1656,23 +1640,25 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for Vote {
             }
         };
 
-        let (mut maybe_votes, mtd, proof) =
-            ResourceVotesByIdentity::maybe_from_proof_with_metadata(
-                request,
-                response,
-                network,
-                platform_version,
-                provider,
-            )?;
+        let (maybe_votes, mtd, proof) = ResourceVotesByIdentity::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network,
+            platform_version,
+            provider,
+        )?;
 
-        let (id, vote) = match maybe_votes.as_mut() {
+        let (id, vote) = match maybe_votes {
             Some(v) if v.len() > 1 => {
                 return Err(Error::ResponseDecodeError {
                     error: format!("expected 1 vote, got {}", v.len()),
                 })
             }
             Some(v) if v.is_empty() => return Ok((None, mtd, proof)),
-            Some(v) => v.pop_first().expect("is_empty() must detect empty map"),
+            Some(v) => v
+                .into_iter()
+                .next()
+                .expect("is_empty() must detect empty map"),
             None => return Ok((None, mtd, proof)),
         };
 
@@ -1734,7 +1720,6 @@ impl FromProof<platform::GetTotalCreditsInPlatformRequest> for TotalCreditsInPla
         ))
     }
 }
-
 impl FromProof<platform::GetEvonodesProposedEpochBlocksByIdsRequest> for ProposerBlockCounts {
     type Request = platform::GetEvonodesProposedEpochBlocksByIdsRequest;
     type Response = platform::GetEvonodesProposedEpochBlocksResponse;
@@ -1868,6 +1853,8 @@ fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
 pub trait Length {
     /// Return number of non-None elements in the data structure
     fn count_some(&self) -> usize;
+    /// Return number of all elements in the data structure, including None
+    fn count(&self) -> usize;
 }
 
 impl<T: Length> Length for Option<T> {
@@ -1877,11 +1864,21 @@ impl<T: Length> Length for Option<T> {
             Some(i) => i.count_some(),
         }
     }
+    fn count(&self) -> usize {
+        match self {
+            None => 0,
+            Some(i) => i.count(),
+        }
+    }
 }
 
 impl<T> Length for Vec<Option<T>> {
     fn count_some(&self) -> usize {
         self.iter().filter(|v| v.is_some()).count()
+    }
+
+    fn count(&self) -> usize {
+        self.len()
     }
 }
 
@@ -1889,11 +1886,29 @@ impl<K, T> Length for Vec<(K, Option<T>)> {
     fn count_some(&self) -> usize {
         self.iter().filter(|(_, v)| v.is_some()).count()
     }
+
+    fn count(&self) -> usize {
+        self.len()
+    }
 }
 
 impl<K, T> Length for BTreeMap<K, Option<T>> {
     fn count_some(&self) -> usize {
         self.values().filter(|v| v.is_some()).count()
+    }
+
+    fn count(&self) -> usize {
+        self.len()
+    }
+}
+
+impl<K, T> Length for IndexMap<K, Option<T>> {
+    fn count_some(&self) -> usize {
+        self.values().filter(|v| v.is_some()).count()
+    }
+
+    fn count(&self) -> usize {
+        self.len()
     }
 }
 
@@ -1904,16 +1919,24 @@ impl<K, T> Length for BTreeMap<K, Option<T>> {
 /// * `$object`: The type for which to implement Length trait
 /// * `$len`: A closure that returns the length of the object; if ommitted, defaults to 1
 macro_rules! define_length {
-    ($object:ty,$len:expr) => {
+    ($object:ty,$some:expr,$counter:expr) => {
         impl Length for $object {
             fn count_some(&self) -> usize {
                 #[allow(clippy::redundant_closure_call)]
-                $len(self)
+                $some(self)
+            }
+
+            fn count(&self) -> usize {
+                #[allow(clippy::redundant_closure_call)]
+                $counter(self)
             }
         }
     };
+    ($object:ty,$some:expr) => {
+        define_length!($object, $some, $some);
+    };
     ($object:ty) => {
-        define_length!($object, |_| 1);
+        define_length!($object, |_| 1, |_| 1);
     };
 }
 
@@ -1923,22 +1946,30 @@ define_length!(Document);
 define_length!(Identity);
 define_length!(IdentityBalance);
 define_length!(IdentityBalanceAndRevision);
-define_length!(IdentitiesContractKeys, |x: &IdentitiesContractKeys| x
-    .values()
-    .map(|v| v.count_some())
-    .sum());
+define_length!(
+    IdentitiesContractKeys,
+    |x: &IdentitiesContractKeys| x.values().map(|v| v.count_some()).sum(),
+    |x: &IdentitiesContractKeys| x.len()
+);
 define_length!(ContestedResources, |x: &ContestedResources| x.0.len());
 define_length!(Contenders, |x: &Contenders| x.contenders.len());
 define_length!(Voters, |x: &Voters| x.0.len());
 define_length!(
     VotePollsGroupedByTimestamp,
-    |x: &VotePollsGroupedByTimestamp| x.0.iter().map(|v| v.1.len()).sum()
+    |x: &VotePollsGroupedByTimestamp| x.0.iter().map(|v| v.1.len()).sum(),
+    |x: &VotePollsGroupedByTimestamp| x.0.len()
 );
+
+/// Convert a type into an Option
 trait IntoOption
 where
     Self: Sized,
 {
-    /// For zero-length data structures, return None, otherwise return Some(self)
+    /// For zero-length data structures, return None, otherwise return Some(self).
+    ///
+    /// In case of a zero-length data structure, the function returns None.
+    /// Otherwise, it returns Some(self), even it all values are None. This is to ensure that proof of absence
+    /// preserves the keys that are not present in the data structure.
     fn into_option(self) -> Option<Self>;
 }
 
@@ -1947,7 +1978,7 @@ impl<L: Length> IntoOption for L {
     where
         Self: Sized,
     {
-        if self.count_some() == 0 {
+        if self.count() == 0 {
             None
         } else {
             Some(self)

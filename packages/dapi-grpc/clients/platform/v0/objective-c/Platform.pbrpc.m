@@ -755,5 +755,25 @@
              responseClass:[GetStatusResponse class]];
 }
 
+#pragma mark getCurrentQuorumsInfo(GetCurrentQuorumsInfoRequest) returns (GetCurrentQuorumsInfoResponse)
+
+- (void)getCurrentQuorumsInfoWithRequest:(GetCurrentQuorumsInfoRequest *)request handler:(void(^)(GetCurrentQuorumsInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetCurrentQuorumsInfoWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetCurrentQuorumsInfoWithRequest:(GetCurrentQuorumsInfoRequest *)request handler:(void(^)(GetCurrentQuorumsInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getCurrentQuorumsInfo"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetCurrentQuorumsInfoResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getCurrentQuorumsInfoWithMessage:(GetCurrentQuorumsInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getCurrentQuorumsInfo"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetCurrentQuorumsInfoResponse class]];
+}
+
 @end
 #endif

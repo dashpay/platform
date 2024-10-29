@@ -54,6 +54,10 @@ CF_EXTERN_C_BEGIN
 @class GetContestedResourcesRequest_GetContestedResourcesRequestV0_StartAtValueInfo;
 @class GetContestedResourcesResponse_GetContestedResourcesResponseV0;
 @class GetContestedResourcesResponse_GetContestedResourcesResponseV0_ContestedResourceValues;
+@class GetCurrentQuorumsInfoRequest_GetCurrentQuorumsInfoRequestV0;
+@class GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0;
+@class GetCurrentQuorumsInfoResponse_ValidatorSetV0;
+@class GetCurrentQuorumsInfoResponse_ValidatorV0;
 @class GetDataContractHistoryRequest_GetDataContractHistoryRequestV0;
 @class GetDataContractHistoryResponse_GetDataContractHistoryResponseV0;
 @class GetDataContractHistoryResponse_GetDataContractHistoryResponseV0_DataContractHistory;
@@ -77,7 +81,6 @@ CF_EXTERN_C_BEGIN
 @class GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodeProposedBlocks;
 @class GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodesProposedBlocks;
 @class GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0;
-@class GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds;
 @class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0;
 @class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentitiesBalances;
 @class GetIdentitiesBalancesResponse_GetIdentitiesBalancesResponseV0_IdentityBalance;
@@ -1396,8 +1399,10 @@ typedef GPB_ENUM(GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedE
 
 GPB_FINAL @interface GetEvonodesProposedEpochBlocksByIdsRequest_GetEvonodesProposedEpochBlocksByIdsRequestV0 : GPBMessage
 
+/** The epoch we are querying for, if none is set, get current epoch */
 @property(nonatomic, readwrite) uint32_t epoch;
 
+@property(nonatomic, readwrite) BOOL hasEpoch;
 /** IDs of the evonodes for which we want to get their proposed blocks */
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *idsArray;
 /** The number of items in @c idsArray without causing the array to be created. */
@@ -1539,9 +1544,10 @@ typedef GPB_ENUM(GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesPropose
 
 GPB_FINAL @interface GetEvonodesProposedEpochBlocksByRangeRequest_GetEvonodesProposedEpochBlocksByRangeRequestV0 : GPBMessage
 
-/** The epoch we are querying for */
+/** The epoch we are querying for, if none is set, get current epoch */
 @property(nonatomic, readwrite) uint32_t epoch;
 
+@property(nonatomic, readwrite) BOOL hasEpoch;
 /** Maximum number of evonodes proposed epoch blocks to return */
 @property(nonatomic, readwrite) uint32_t limit;
 
@@ -1591,31 +1597,17 @@ void GetIdentitiesBalancesRequest_ClearVersionOneOfCase(GetIdentitiesBalancesReq
 #pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0
 
 typedef GPB_ENUM(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber) {
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_IdentitiesIds = 1,
+  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_IdsArray = 1,
   GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_FieldNumber_Prove = 2,
 };
 
 GPB_FINAL @interface GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0 : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds *identitiesIds;
-/** Test to see if @c identitiesIds has been set. */
-@property(nonatomic, readwrite) BOOL hasIdentitiesIds;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *idsArray;
+/** The number of items in @c idsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger idsArray_Count;
 
 @property(nonatomic, readwrite) BOOL prove;
-
-@end
-
-#pragma mark - GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds
-
-typedef GPB_ENUM(GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds_FieldNumber) {
-  GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds_FieldNumber_IdentitiesIdsArray = 1,
-};
-
-GPB_FINAL @interface GetIdentitiesBalancesRequest_GetIdentitiesBalancesRequestV0_GetIdentitiesBalancesByKnownIdentityIds : GPBMessage
-
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identitiesIdsArray;
-/** The number of items in @c identitiesIdsArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger identitiesIdsArray_Count;
 
 @end
 
@@ -4842,6 +4834,131 @@ GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_StateSync : GPBMessag
 @property(nonatomic, readwrite) uint64_t backfilledBlocks;
 
 @property(nonatomic, readwrite) uint64_t backfillBlocksTotal;
+
+@end
+
+#pragma mark - GetCurrentQuorumsInfoRequest
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoRequest_FieldNumber) {
+  GetCurrentQuorumsInfoRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoRequest_Version_OneOfCase) {
+  GetCurrentQuorumsInfoRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetCurrentQuorumsInfoRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetCurrentQuorumsInfoRequest : GPBMessage
+
+@property(nonatomic, readonly) GetCurrentQuorumsInfoRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetCurrentQuorumsInfoRequest_GetCurrentQuorumsInfoRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetCurrentQuorumsInfoRequest_ClearVersionOneOfCase(GetCurrentQuorumsInfoRequest *message);
+
+#pragma mark - GetCurrentQuorumsInfoRequest_GetCurrentQuorumsInfoRequestV0
+
+GPB_FINAL @interface GetCurrentQuorumsInfoRequest_GetCurrentQuorumsInfoRequestV0 : GPBMessage
+
+@end
+
+#pragma mark - GetCurrentQuorumsInfoResponse
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoResponse_FieldNumber) {
+  GetCurrentQuorumsInfoResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoResponse_Version_OneOfCase) {
+  GetCurrentQuorumsInfoResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetCurrentQuorumsInfoResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetCurrentQuorumsInfoResponse : GPBMessage
+
+@property(nonatomic, readonly) GetCurrentQuorumsInfoResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetCurrentQuorumsInfoResponse_ClearVersionOneOfCase(GetCurrentQuorumsInfoResponse *message);
+
+#pragma mark - GetCurrentQuorumsInfoResponse_ValidatorV0
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoResponse_ValidatorV0_FieldNumber) {
+  GetCurrentQuorumsInfoResponse_ValidatorV0_FieldNumber_ProTxHash = 1,
+  GetCurrentQuorumsInfoResponse_ValidatorV0_FieldNumber_NodeIp = 2,
+  GetCurrentQuorumsInfoResponse_ValidatorV0_FieldNumber_IsBanned = 3,
+};
+
+GPB_FINAL @interface GetCurrentQuorumsInfoResponse_ValidatorV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *proTxHash;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *nodeIp;
+
+@property(nonatomic, readwrite) BOOL isBanned;
+
+@end
+
+#pragma mark - GetCurrentQuorumsInfoResponse_ValidatorSetV0
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoResponse_ValidatorSetV0_FieldNumber) {
+  GetCurrentQuorumsInfoResponse_ValidatorSetV0_FieldNumber_QuorumHash = 1,
+  GetCurrentQuorumsInfoResponse_ValidatorSetV0_FieldNumber_CoreHeight = 2,
+  GetCurrentQuorumsInfoResponse_ValidatorSetV0_FieldNumber_MembersArray = 3,
+  GetCurrentQuorumsInfoResponse_ValidatorSetV0_FieldNumber_ThresholdPublicKey = 4,
+};
+
+GPB_FINAL @interface GetCurrentQuorumsInfoResponse_ValidatorSetV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *quorumHash;
+
+@property(nonatomic, readwrite) uint32_t coreHeight;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetCurrentQuorumsInfoResponse_ValidatorV0*> *membersArray;
+/** The number of items in @c membersArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger membersArray_Count;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *thresholdPublicKey;
+
+@end
+
+#pragma mark - GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0
+
+typedef GPB_ENUM(GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0_FieldNumber) {
+  GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0_FieldNumber_QuorumHashesArray = 1,
+  GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0_FieldNumber_CurrentQuorumHash = 2,
+  GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0_FieldNumber_ValidatorSetsArray = 3,
+  GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0_FieldNumber_LastBlockProposer = 4,
+  GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0_FieldNumber_Metadata = 5,
+};
+
+GPB_FINAL @interface GetCurrentQuorumsInfoResponse_GetCurrentQuorumsInfoResponseV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *quorumHashesArray;
+/** The number of items in @c quorumHashesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger quorumHashesArray_Count;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *currentQuorumHash;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetCurrentQuorumsInfoResponse_ValidatorSetV0*> *validatorSetsArray;
+/** The number of items in @c validatorSetsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger validatorSetsArray_Count;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *lastBlockProposer;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
 
 @end
 

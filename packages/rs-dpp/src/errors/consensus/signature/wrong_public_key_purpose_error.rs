@@ -8,11 +8,12 @@ use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 use bincode::{Decode, Encode};
+use itertools::Itertools;
 
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {key_purpose_requirement}")]
+#[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {}", allowed_key_purposes.iter().map(|s| s.to_string()).join(" | "))]
 #[platform_serialize(unversioned)]
 pub struct WrongPublicKeyPurposeError {
     /*
@@ -21,22 +22,22 @@ pub struct WrongPublicKeyPurposeError {
 
     */
     public_key_purpose: Purpose,
-    key_purpose_requirement: Purpose,
+    allowed_key_purposes: Vec<Purpose>,
 }
 
 impl WrongPublicKeyPurposeError {
-    pub fn new(public_key_purpose: Purpose, key_purpose_requirement: Purpose) -> Self {
+    pub fn new(public_key_purpose: Purpose, allowed_key_purposes: Vec<Purpose>) -> Self {
         Self {
             public_key_purpose,
-            key_purpose_requirement,
+            allowed_key_purposes,
         }
     }
 
     pub fn public_key_purpose(&self) -> Purpose {
         self.public_key_purpose
     }
-    pub fn key_purpose_requirement(&self) -> Purpose {
-        self.key_purpose_requirement
+    pub fn allowed_key_purposes(&self) -> &Vec<Purpose> {
+        &self.allowed_key_purposes
     }
 }
 
@@ -56,7 +57,7 @@ impl From<crate::state_transition::errors::WrongPublicKeyPurposeError> for Conse
         Self::SignatureError(SignatureError::WrongPublicKeyPurposeError(
             WrongPublicKeyPurposeError::new(
                 value.public_key_purpose(),
-                value.key_purpose_requirement(),
+                value.allowed_key_purposes().clone(),
             ),
         ))
     }

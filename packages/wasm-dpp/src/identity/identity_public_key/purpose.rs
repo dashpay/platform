@@ -15,6 +15,8 @@ pub enum PurposeWasm {
     SYSTEM = 4,
     /// this key cannot be used for signing documents
     VOTING = 5,
+    /// this key is only for masternode owners
+    OWNER = 6,
 }
 
 impl From<Purpose> for PurposeWasm {
@@ -26,6 +28,7 @@ impl From<Purpose> for PurposeWasm {
             Purpose::TRANSFER => PurposeWasm::TRANSFER,
             Purpose::SYSTEM => PurposeWasm::SYSTEM,
             Purpose::VOTING => PurposeWasm::VOTING,
+            Purpose::OWNER => PurposeWasm::OWNER,
         }
     }
 }

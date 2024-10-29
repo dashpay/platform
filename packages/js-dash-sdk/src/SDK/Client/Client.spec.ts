@@ -37,6 +37,7 @@ describe('Dash - Client', function suite() {
     testHDKey = 'tprv8ZgxMBicQKsPeGi4CikhacVPz6UmErenu1PoD3S4XcEDSPP8auRaS8hG3DQtsQ2i9HACgohHwF5sgMVJNksoKqYoZbis8o75Pp1koCme2Yo';
 
     client = new Client({
+      network: 'testnet',
       wallet: {
         HDPrivateKey: testHDKey,
       },
@@ -77,7 +78,7 @@ describe('Dash - Client', function suite() {
   it('should be instantiable', () => {
     client = new Client();
     expect(client).to.exist;
-    expect(client.network).to.be.equal('testnet');
+    expect(client.network).to.be.equal('mainnet');
     expect(client.getDAPIClient().constructor.name).to.be.equal('DAPIClient');
   });
 
@@ -111,7 +112,7 @@ describe('Dash - Client', function suite() {
         wallet: {
           mnemonic: testMnemonic,
           offlineMode: true,
-          network: 'evonet',
+          network: 'mainnet',
         },
       });
 

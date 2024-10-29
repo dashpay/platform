@@ -315,7 +315,7 @@ mod tests {
 
         #[test]
         fn test_increment_block_count_to_1_if_proposers_tree_is_not_committed() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -358,7 +358,7 @@ mod tests {
 
         #[test]
         fn test_existing_block_count_is_incremented() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -445,7 +445,7 @@ mod tests {
 
         #[test]
         fn test_values_are_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -480,7 +480,7 @@ mod tests {
 
         #[test]
         fn test_values_are_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -561,7 +561,7 @@ mod tests {
 
         #[test]
         fn test_values_are_deleted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -633,7 +633,7 @@ mod tests {
 
         #[test]
         fn test_value_is_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -668,7 +668,7 @@ mod tests {
 
     #[test]
     fn test_update_start_time() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::first();
@@ -694,7 +694,7 @@ mod tests {
 
     #[test]
     fn test_update_epoch_start_block_height() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::first();
@@ -718,7 +718,7 @@ mod tests {
 
     #[test]
     fn test_update_epoch_start_block_core_height() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let transaction = drive.grove.start_transaction();
 
         let platform_version = PlatformVersion::first();
@@ -745,7 +745,7 @@ mod tests {
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -767,7 +767,7 @@ mod tests {
 
         #[test]
         fn test_value_is_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -801,7 +801,7 @@ mod tests {
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -823,7 +823,7 @@ mod tests {
 
         #[test]
         fn test_value_is_set() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -857,7 +857,7 @@ mod tests {
 
         #[test]
         fn test_values_has_been_deleted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::first();
@@ -905,7 +905,7 @@ mod tests {
 
         #[test]
         fn test_values_are_being_deleted() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let epoch = Epoch::new(0).unwrap();

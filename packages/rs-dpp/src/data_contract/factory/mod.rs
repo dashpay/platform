@@ -39,7 +39,8 @@ impl DataContractFactory {
     pub fn new(protocol_version: u32) -> Result<Self, ProtocolError> {
         let platform_version = PlatformVersion::get(protocol_version)?;
         match platform_version
-            .platform_architecture
+            .dpp
+            .factory_versions
             .data_contract_factory_structure_version
         {
             0 => Ok(DataContractFactoryV0::new(protocol_version).into()),

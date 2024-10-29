@@ -33,11 +33,6 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
         rpc: {
           port: 19998,
         },
-        log: {
-          file: {
-            path: homeDir.joinPath('logs', 'testnet', 'core.log'),
-          },
-        },
         spork: {
           address: 'yjPtiKh2uwk3bDutTEA2q9mCtXyiZRWn55',
         },
@@ -94,6 +89,11 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
                   host: '35.92.64.72',
                   port: 36656,
                 },
+                {
+                  id: 'de3a73fc78e5c828151454156b492e4a2d985849',
+                  host: 'seed-1.pshenmic.dev',
+                  port: 36656,
+                },
               ],
               port: 36656,
             },
@@ -118,6 +118,11 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
             genesis: {
               chain_id: 'dash-testnet-51',
               validator_quorum_type: 6,
+              consensus_params: {
+                version: {
+                  app_version: '1',
+                },
+              },
             },
           },
         },

@@ -195,7 +195,7 @@ mod tests {
         #[test]
         fn should_do_nothing_if_credits_per_epoch_are_empty() {
             let platform_version = PlatformVersion::latest();
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let credits_per_epoch = SignedCreditsPerEpoch::default();
@@ -216,7 +216,7 @@ mod tests {
 
         #[test]
         fn should_update_epoch_storage_fee_pools() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             const TO_EPOCH_INDEX: EpochIndex = 10;
@@ -281,7 +281,7 @@ mod tests {
 
         #[test]
         fn should_subtract_negative_credits_from_future_epochs() {
-            let drive = setup_drive_with_initial_state_structure();
+            let drive = setup_drive_with_initial_state_structure(None);
             let transaction = drive.grove.start_transaction();
 
             let platform_version = PlatformVersion::latest();

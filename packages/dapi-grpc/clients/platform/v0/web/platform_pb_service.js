@@ -289,6 +289,15 @@ Platform.getStatus = {
   responseType: platform_pb.GetStatusResponse
 };
 
+Platform.getCurrentQuorumsInfo = {
+  methodName: "getCurrentQuorumsInfo",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetCurrentQuorumsInfoRequest,
+  responseType: platform_pb.GetCurrentQuorumsInfoResponse
+};
+
 exports.Platform = Platform;
 
 function PlatformClient(serviceHost, options) {
@@ -1231,6 +1240,37 @@ PlatformClient.prototype.getStatus = function getStatus(requestMessage, metadata
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getStatus, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getCurrentQuorumsInfo = function getCurrentQuorumsInfo(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getCurrentQuorumsInfo, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

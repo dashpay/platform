@@ -48,15 +48,15 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
 /// Generic way to create a transport client from provided [Uri].
 pub trait TransportClient: Send + Sized {
     /// Error type for the specific client.
-    type Error: CanRetry + Send + Debug + Mockable;
+    type Error: std::error::Error + CanRetry + Send + Mockable;
 
     /// Build client using node's url.
-    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Self;
+    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, Self::Error>;
 
     /// Build client using node's url and [AppliedRequestSettings].
     fn with_uri_and_settings(
         uri: Uri,
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
-    ) -> Self;
+    ) -> Result<Self, Self::Error>;
 }

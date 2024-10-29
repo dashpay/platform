@@ -1,11 +1,19 @@
 ---
 
+x-default-logging: &default-logging
+  driver: local
+  options:
+    max-size: "500m"
+    max-file: "5"
+    compress: "true"
+
 services:
   core_insight:
     image: ${CORE_INSIGHT_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "Core Insight API"
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - 127.0.0.1:${CORE_INSIGHT_PORT:?err}:${CORE_INSIGHT_PORT:?err}
     depends_on:

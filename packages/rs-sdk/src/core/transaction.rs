@@ -12,7 +12,7 @@ use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProo
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
 
-use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
+use rs_dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 
@@ -56,6 +56,7 @@ impl Sdk {
         };
         self.execute(core_transactions_stream, RequestSettings::default())
             .await
+            .into_inner()
             .map_err(|e| Error::DapiClientError(e.to_string()))
     }
 
@@ -180,7 +181,8 @@ impl Sdk {
                                     },
                                     RequestSettings::default(),
                                 )
-                                .await?;
+                                .await // TODO: We need better way to handle execution errors
+                                .into_inner()?;
 
                             core_chain_locked_height = height;
 

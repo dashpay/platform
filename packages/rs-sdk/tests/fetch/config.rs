@@ -11,6 +11,7 @@ use dpp::{
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
 use std::{path::PathBuf, str::FromStr};
+use zeroize::Zeroizing;
 
 /// Existing document ID
 ///
@@ -43,7 +44,7 @@ pub struct Config {
     pub core_user: String,
     /// Password for Dash Core RPC interface
     #[serde(default)]
-    pub core_password: String,
+    pub core_password: Zeroizing<String>,
     /// When true, use SSL for the Dash Platform node grpc interface
     #[serde(default)]
     pub platform_ssl: bool,
@@ -71,6 +72,7 @@ pub struct Config {
     /// ID of document of the type [`existing_document_type_name`](Config::existing_document_type_name)
     /// in [`existing_data_contract_id`](Config::existing_data_contract_id).
     #[serde(default = "Config::default_document_id")]
+    #[allow(unused)]
     pub existing_document_id: Identifier,
     // Hex-encoded ProTxHash of the existing HP masternode
     #[serde(default = "Config::default_protxhash")]
@@ -141,14 +143,14 @@ impl Config {
     /// ## Feature flags
     ///
     /// * `offline-testing` is not set - connect to Platform and generate
-    /// new test vectors during execution
+    ///   new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
-    /// load existing test vectors from disk
+    ///   load existing test vectors from disk
     ///
     /// ## Arguments
     ///
     /// * namespace - namespace to use when storing mock expectations; this is used to separate
-    /// expectations from different tests.
+    ///   expectations from different tests.
     ///
     /// When empty string is provided, expectations are stored in the root of the dump directory.
     pub async fn setup_api(&self, namespace: &str) -> dash_sdk::Sdk {
@@ -223,8 +225,8 @@ impl Config {
         //  Next time we need to do it again and update this value :(. This is terrible.
         //  We should automate creation of identity for SDK tests when we have time.
         Identifier::from_string(
-            "a1534e47f60be71e823a9dbc9ceb6d3ea9f1ebde7a3773f03e49ef31c7d9c044",
-            Encoding::Hex,
+            "G1vdreUUxFAmt3bd2kJmV8idrhPCvRQis4cQfRQayWW2",
+            Encoding::Base58,
         )
         .unwrap()
     }
@@ -250,7 +252,7 @@ impl Config {
     ///
     /// See documentation of [contested_resource_identity_votes_ok](super::contested_resource_identity_votes::contested_resource_identity_votes_ok).
     fn default_protxhash() -> String {
-        String::from("d10bf435af7c75f5b07b09486af1212469d69fdc787589548e315776bc1052a1")
+        String::from("208a6f71a8b68d20485d568d3039124c5b930d893e73a23774081de0be6e30dd")
     }
 
     /// Return ProTxHash of an existing evo node, or None if not set

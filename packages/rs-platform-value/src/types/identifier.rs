@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "json")]
 use serde_json::Value as JsonValue;
 
-use crate::string_encoding::Encoding;
+use crate::string_encoding::{Encoding, ALL_ENCODINGS};
 use crate::types::encoding_string_to_encoding;
 use crate::{string_encoding, Error, Value};
 
@@ -168,6 +168,29 @@ impl Identifier {
         let vec = string_encoding::decode(encoded_value, encoding)?;
 
         Identifier::from_bytes(&vec)
+    }
+
+    pub fn from_string_try_encodings(
+        encoded_value: &str,
+        encodings: &[Encoding],
+    ) -> Result<Identifier, Error> {
+        let mut tried = vec![];
+        for encoding in encodings {
+            if let Ok(vec) = string_encoding::decode(encoded_value, *encoding) {
+                if vec.len() == 32 {
+                    return Identifier::from_bytes(&vec);
+                }
+            }
+            tried.push(encoding.to_string());
+        }
+        Err(Error::StringDecodingError(format!(
+            "Failed to decode string with encodings [{}]",
+            tried.join(", ")
+        )))
+    }
+
+    pub fn from_string_unknown_encoding(encoded_value: &str) -> Result<Identifier, Error> {
+        Identifier::from_string_try_encodings(encoded_value, &ALL_ENCODINGS)
     }
 
     pub fn from_string_with_encoding_string(

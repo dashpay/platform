@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn test_value() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 

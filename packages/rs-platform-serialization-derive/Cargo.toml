@@ -2,7 +2,7 @@
 name = "platform-serialization-derive"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "Bincode serialization and deserialization derivations"
-version = "1.3.0-dev.2"
+version = "1.4.1"
 edition = "2021"
 rust-version.workspace = true
 license = "MIT"
@@ -12,6 +12,6 @@ proc-macro = true
 
 [dependencies]
 proc-macro2 = "1.0.56"
-virtue = "0.0.14"
-quote = "1.0.26"
-syn = "2.0.15"
+virtue = "0.0.17"
+quote = "1.0.37"
+syn = "2.0.75"

@@ -10,6 +10,7 @@ mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
     use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::Network::Regtest;
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::version::PlatformVersion;
     use drive::config::DriveConfig;
@@ -620,7 +621,6 @@ mod tests {
                 epoch_time_length_s,
                 ..Default::default()
             },
-            initial_protocol_version: PROTOCOL_VERSION_1,
             block_spacing_ms: epoch_time_length_s * 1000,
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
@@ -628,7 +628,7 @@ mod tests {
 
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
-            .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
+            .with_initial_protocol_version(PROTOCOL_VERSION_1)
             .build_with_mock_rpc();
 
         let ChainExecutionOutcome {
@@ -775,6 +775,7 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
+                    network: Regtest,
                     validator_set: ValidatorSetConfig {
                         quorum_size: 40,
                         ..Default::default()
@@ -1015,6 +1016,7 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let mut config = PlatformConfig {
+                    network: Regtest,
                     validator_set: ValidatorSetConfig {
                         quorum_size: 50,
                         ..Default::default()
