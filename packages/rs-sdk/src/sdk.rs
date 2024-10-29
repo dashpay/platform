@@ -28,7 +28,7 @@ pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
-    DapiClient, DapiClientError, DapiRequestExecutor,
+    DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResult,
 };
 use std::collections::btree_map::Entry;
 use std::fmt::Debug;
@@ -119,6 +119,9 @@ pub struct Sdk {
     /// Cancellation token; once cancelled, all pending requests should be aborted.
     pub(crate) cancel_token: CancellationToken,
 
+    /// Global settings of dapi client
+    pub(crate) dapi_client_settings: RequestSettings,
+
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
 }
@@ -134,6 +137,7 @@ impl Clone for Sdk {
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
             metadata_height_tolerance: self.metadata_height_tolerance,
             metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
+            dapi_client_settings: self.dapi_client_settings,
             #[cfg(feature = "mocks")]
             dump_dir: self.dump_dir.clone(),
         }
@@ -672,7 +676,7 @@ impl DapiRequestExecutor for Sdk {
         &self,
         request: R,
         settings: RequestSettings,
-    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
+    ) -> ExecutionResult<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
         match self.inner {
             SdkInstance::Dapi { ref dapi, .. } => dapi.execute(request, settings).await,
             #[cfg(feature = "mocks")]
@@ -958,6 +962,7 @@ impl SdkBuilder {
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
                     network: self.network,
+                    dapi_client_settings: self.settings,
                     inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
                     context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
@@ -1020,6 +1025,7 @@ impl SdkBuilder {
                 let mock_sdk = Arc::new(Mutex::new(mock_sdk));
                 let sdk= Sdk {
                     network: self.network,
+                    dapi_client_settings: self.settings,
                     inner:SdkInstance::Mock {
                         mock:mock_sdk.clone(),
                         dapi,

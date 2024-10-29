@@ -1,8 +1,6 @@
 use super::{common::setup_logs, config::Config};
-use dapi_grpc::platform::{
-    v0::{get_identity_request::GetIdentityRequestV0, GetIdentityRequest},
-    VersionedGrpcResponse,
-};
+use dapi_grpc::platform::v0::{get_identity_request::GetIdentityRequestV0, GetIdentityRequest};
+use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_sdk::{
     platform::{
         fetch_current_no_parameters::FetchCurrent, Fetch, FetchMany, LimitQuery,
@@ -14,7 +12,7 @@ use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use drive_proof_verifier::types::ExtendedEpochInfos;
-use rs_dapi_client::{DapiRequestExecutor, RequestSettings};
+use rs_dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
 
 /// Get current epoch index from DAPI response metadata
 async fn get_current_epoch(sdk: &Sdk, cfg: &Config) -> EpochIndex {
@@ -28,6 +26,7 @@ async fn get_current_epoch(sdk: &Sdk, cfg: &Config) -> EpochIndex {
     let response = sdk
         .execute(identity_request, RequestSettings::default())
         .await
+        .into_inner()
         .expect("get identity");
 
     response.metadata().expect("metadata").epoch as EpochIndex
