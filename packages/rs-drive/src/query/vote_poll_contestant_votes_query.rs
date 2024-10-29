@@ -215,7 +215,7 @@ impl ContestedDocumentVotePollVotesDriveQuery {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(vec![]),
+            | Err(Error::GroveDB(GroveError::InvalidParentLayerPath(_))) => Ok(vec![]),
             Err(e) => Err(e),
             Ok((query_result_elements, _skipped)) => {
                 let voters = query_result_elements
@@ -252,7 +252,7 @@ impl ContestedDocumentVotePollVotesDriveQuery {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
+            | Err(Error::GroveDB(GroveError::InvalidParentLayerPath(_))) => {
                 Ok((QueryResultElements::new(), 0))
             }
             _ => {

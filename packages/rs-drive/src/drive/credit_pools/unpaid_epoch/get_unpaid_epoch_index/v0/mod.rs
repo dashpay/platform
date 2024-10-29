@@ -64,7 +64,7 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
+                Err(Error::GroveDB(grovedb::Error::InvalidParentLayerPath(_)))
             ));
         }
 

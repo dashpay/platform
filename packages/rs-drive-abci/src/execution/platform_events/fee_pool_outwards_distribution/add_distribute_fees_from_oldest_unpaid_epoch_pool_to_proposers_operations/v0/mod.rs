@@ -268,9 +268,9 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(DriveError::GroveDB(
-                grovedb::Error::PathParentLayerNotFound(_)
-            ))
+            Err(DriveError::GroveDB(grovedb::Error::InvalidParentLayerPath(
+                _
+            )))
         ));
     }
 }

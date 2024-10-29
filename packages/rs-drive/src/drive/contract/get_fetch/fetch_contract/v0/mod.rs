@@ -77,7 +77,7 @@ impl Drive {
         match value {
             Ok(Element::Item(stored_contract_bytes, element_flag)) => {
                 let contract = cost_return_on_error_no_add!(
-                    &cost,
+                    cost,
                     DataContract::versioned_deserialize(
                         &stored_contract_bytes,
                         false,
@@ -88,7 +88,7 @@ impl Drive {
                 let drive_operation = CalculatedCostOperation(cost.clone());
                 let fee = if let Some(epoch) = epoch {
                     Some(cost_return_on_error_no_add!(
-                        &cost,
+                        cost,
                         Drive::calculate_fee(
                             None,
                             Some(vec![drive_operation]),
@@ -103,7 +103,7 @@ impl Drive {
                 };
 
                 let storage_flags = cost_return_on_error_no_add!(
-                    &cost,
+                    cost,
                     StorageFlags::map_some_element_flags_ref(&element_flag)
                         .map_err(Error::StorageFlags)
                 );
@@ -134,7 +134,7 @@ impl Drive {
                 match value {
                     Ok(Element::Item(stored_contract_bytes, element_flag)) => {
                         let contract = cost_return_on_error_no_add!(
-                            &cost,
+                            cost,
                             DataContract::versioned_deserialize(
                                 &stored_contract_bytes,
                                 false,
@@ -145,7 +145,7 @@ impl Drive {
                         let drive_operation = CalculatedCostOperation(cost.clone());
                         let fee = if let Some(epoch) = epoch {
                             Some(cost_return_on_error_no_add!(
-                                &cost,
+                                cost,
                                 Drive::calculate_fee(
                                     None,
                                     Some(vec![drive_operation]),
@@ -160,7 +160,7 @@ impl Drive {
                         };
 
                         let storage_flags = cost_return_on_error_no_add!(
-                            &cost,
+                            cost,
                             StorageFlags::map_some_element_flags_ref(&element_flag)
                                 .map_err(Error::StorageFlags)
                         );
@@ -180,7 +180,7 @@ impl Drive {
                     .wrap_with_cost(cost),
                     Err(
                         grovedb::Error::PathKeyNotFound(_)
-                        | grovedb::Error::PathParentLayerNotFound(_)
+                        | grovedb::Error::InvalidParentLayerPath(_)
                         | grovedb::Error::PathNotFound(_),
                     ) => Ok(None).wrap_with_cost(cost),
                     Err(e) => Err(Error::GroveDB(e)).wrap_with_cost(cost),
@@ -192,7 +192,7 @@ impl Drive {
             .wrap_with_cost(cost),
             Err(
                 grovedb::Error::PathKeyNotFound(_)
-                | grovedb::Error::PathParentLayerNotFound(_)
+                | grovedb::Error::InvalidParentLayerPath(_)
                 | grovedb::Error::PathNotFound(_),
             ) => Ok(None).wrap_with_cost(cost),
             Err(e) => Err(Error::GroveDB(e)).wrap_with_cost(cost),

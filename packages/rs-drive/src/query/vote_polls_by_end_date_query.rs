@@ -118,7 +118,7 @@ impl VotePollsByEndDateDriveQuery {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(BTreeMap::new()),
+            | Err(Error::GroveDB(GroveError::InvalidParentLayerPath(_))) => Ok(BTreeMap::new()),
             Err(e) => Err(e),
             Ok((query_result_elements, _)) => {
                 let vote_polls_by_end_date = query_result_elements
@@ -174,7 +174,7 @@ impl VotePollsByEndDateDriveQuery {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(vec![]),
+            | Err(Error::GroveDB(GroveError::InvalidParentLayerPath(_))) => Ok(vec![]),
             Err(e) => Err(e),
             Ok((query_result_elements, _)) => {
                 // Process the query result elements and collect VotePolls
@@ -348,7 +348,7 @@ impl VotePollsByEndDateDriveQuery {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(BTreeMap::new()),
+            | Err(Error::GroveDB(GroveError::InvalidParentLayerPath(_))) => Ok(BTreeMap::new()),
             Err(e) => Err(e),
             Ok((query_result_elements, _)) => {
                 let vote_polls_by_end_date = query_result_elements
@@ -402,7 +402,7 @@ impl VotePollsByEndDateDriveQuery {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(BTreeMap::new()),
+            | Err(Error::GroveDB(GroveError::InvalidParentLayerPath(_))) => Ok(BTreeMap::new()),
             Err(e) => Err(e),
             Ok((query_result_elements, _)) => {
                 let vote_polls_by_end_date = query_result_elements
@@ -456,7 +456,7 @@ impl VotePollsByEndDateDriveQuery {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
+            | Err(Error::GroveDB(GroveError::InvalidParentLayerPath(_))) => {
                 Ok(QueryResultElements::new())
             }
             _ => {

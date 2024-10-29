@@ -532,7 +532,7 @@ impl<'a> ResolvedContestedDocumentVotePollDriveQuery<'a> {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
+            | Err(Error::GroveDB(GroveError::InvalidParentLayerPath(_))) => {
                 Ok(ContestedDocumentVotePollDriveQueryExecutionResult::default())
             }
             Err(e) => Err(e),

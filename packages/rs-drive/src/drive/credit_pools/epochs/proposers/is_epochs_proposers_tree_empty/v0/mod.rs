@@ -25,7 +25,7 @@ impl Drive {
             .unwrap()
         {
             Ok(result) => Ok(result),
-            Err(grovedb::Error::PathNotFound(_) | grovedb::Error::PathParentLayerNotFound(_)) => {
+            Err(grovedb::Error::PathNotFound(_) | grovedb::Error::InvalidParentLayerPath(_)) => {
                 Ok(true)
             }
             Err(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(

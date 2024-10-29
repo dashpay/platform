@@ -484,7 +484,7 @@ mod tests {
         // Assert failure due to missing intermediate path
         assert_matches!(
             result,
-            Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
+            Err(Error::GroveDB(grovedb::Error::InvalidParentLayerPath(_)))
         );
     }
 

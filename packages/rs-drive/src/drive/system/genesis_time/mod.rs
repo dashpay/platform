@@ -35,7 +35,7 @@ impl Drive {
                 Ok(Some(genesis_time_ms))
             }
             Err(Error::GroveDB(
-                grovedb::Error::PathParentLayerNotFound(_) | grovedb::Error::PathKeyNotFound(_),
+                grovedb::Error::InvalidParentLayerPath(_) | grovedb::Error::PathKeyNotFound(_),
             )) => Ok(None),
             Err(e) => Err(e),
         }

@@ -67,7 +67,7 @@ impl Drive {
                         .map(|r| match r {
                             Err(GroveError::PathKeyNotFound(_))
                             | Err(GroveError::PathNotFound(_))
-                            | Err(GroveError::PathParentLayerNotFound(_)) => Ok(false),
+                            | Err(GroveError::InvalidParentLayerPath(_)) => Ok(false),
                             Err(e) => Err(e),
                             Ok(_) => Ok(true),
                         })

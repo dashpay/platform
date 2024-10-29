@@ -479,7 +479,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(vec![]),
+            | Err(Error::GroveDB(GroveError::InvalidParentLayerPath(_))) => Ok(vec![]),
             Err(e) => Err(e),
             Ok((query_result_elements, _)) => {
                 let result_is_in_key = self.result_is_in_key();

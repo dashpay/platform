@@ -169,7 +169,7 @@ impl Drive {
             }
             Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
             | Err(Error::GroveDB(grovedb::Error::PathNotFound(_)))
-            | Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_))) => {
+            | Err(Error::GroveDB(grovedb::Error::InvalidParentLayerPath(_))) => {
                 // keep already_exists at false
             }
             Err(e) => {

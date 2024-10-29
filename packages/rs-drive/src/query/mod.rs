@@ -915,7 +915,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     .map_err(|e| match e {
                         Error::GroveDB(GroveError::PathKeyNotFound(_))
                         | Error::GroveDB(GroveError::PathNotFound(_))
-                        | Error::GroveDB(GroveError::PathParentLayerNotFound(_)) => {
+                        | Error::GroveDB(GroveError::InvalidParentLayerPath(_)) => {
                             let error_message = if self.start_at_included {
                                 "startAt document not found"
                             } else {
@@ -1875,7 +1875,7 @@ impl<'a> DriveDocumentQuery<'a> {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok((Vec::new(), 0)),
+            | Err(Error::GroveDB(GroveError::InvalidParentLayerPath(_))) => Ok((Vec::new(), 0)),
             _ => {
                 let (data, skipped) = query_result?;
                 {
@@ -1912,7 +1912,7 @@ impl<'a> DriveDocumentQuery<'a> {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
+            | Err(Error::GroveDB(GroveError::InvalidParentLayerPath(_))) => {
                 Ok((QueryResultElements::new(), 0))
             }
             _ => {
@@ -2014,9 +2014,7 @@ mod tests {
     use serde_json::Value::Null;
 
     use crate::config::DriveConfig;
-    use crate::util::test_helpers::setup::{
-        setup_drive_with_initial_state_structure, setup_system_data_contract,
-    };
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contracts::SystemDataContract;

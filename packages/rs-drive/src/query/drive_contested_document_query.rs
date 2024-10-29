@@ -148,7 +148,7 @@ impl<'a> DriveContestedDocumentQuery<'a> {
         match query_result {
             Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
             | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok((Vec::new(), 0)),
+            | Err(Error::GroveDB(GroveError::InvalidParentLayerPath(_))) => Ok((Vec::new(), 0)),
             _ => {
                 let (data, skipped) = query_result?;
                 {
