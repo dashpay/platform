@@ -11,7 +11,7 @@ default = ["mocks"]
 mocks = [
   "dep:serde",
   "dep:serde_json",
-  "dep:bincode",
+  "bincode/serde",
   "dep:platform-serialization-derive",
   "dep:platform-serialization",
   "dpp/document-serde-conversion",
@@ -31,7 +31,7 @@ dpp = { path = "../rs-dpp", features = [
   "extended-document",
   "core-types-serialization",
 ], default-features = false }
-bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
+bincode = { version = "2.0.0-rc.3", optional = false }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive", optional = true }
 platform-serialization = { path = "../rs-platform-serialization", optional = true }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.2.1", tag = "v1.2.1+1.3.0", features = [

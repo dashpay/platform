@@ -3,11 +3,9 @@
 use crate::error::{Error, StaleNodeError};
 use crate::internal_cache::InternalSdkCache;
 use crate::mock::MockResponse;
-#[cfg(feature = "mocks")]
-use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
-use arc_swap::{ArcSwapAny, ArcSwapOption};
+use arc_swap::ArcSwapOption;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::bincode;
@@ -18,12 +16,8 @@ use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::grovedb::operations::proof::GroveDBProof;
 use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
-#[cfg(feature = "mocks")]
-use drive_proof_verifier::MockContextProvider;
 use drive_proof_verifier::{ContextProvider, FromProof};
 pub use http::Uri;
-#[cfg(feature = "mocks")]
-use rs_dapi_client::mock::MockDapiClient;
 pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
@@ -32,17 +26,21 @@ use rs_dapi_client::{
 };
 use std::collections::btree_map::Entry;
 use std::fmt::Debug;
-#[cfg(feature = "mocks")]
-use std::num::NonZeroUsize;
-#[cfg(feature = "mocks")]
-use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
 use std::time::{SystemTime, UNIX_EPOCH};
-#[cfg(feature = "mocks")]
-use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
+#[cfg(feature = "mocks")]
+use {
+    crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk},
+    arc_swap::ArcSwapAny,
+    drive_proof_verifier::MockContextProvider,
+    rs_dapi_client::mock::MockDapiClient,
+    std::num::NonZeroUsize,
+    std::path::{Path, PathBuf},
+    tokio::sync::{Mutex, MutexGuard},
+};
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
