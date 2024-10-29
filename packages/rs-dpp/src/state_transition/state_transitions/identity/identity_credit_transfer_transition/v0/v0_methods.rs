@@ -47,8 +47,7 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
                 } else {
                     return Err(
                         ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
-                            "specified withdrawal public key cannot be used for signing"
-                                .to_string(),
+                            "specified transfer public key cannot be used for signing".to_string(),
                         ),
                     );
                 }

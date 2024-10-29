@@ -15,8 +15,8 @@ pub trait TransferToIdentity {
     /// Function to transfer credits from an identity to another identity. Returns the final
     /// identity balance.
     ///
-    /// If signing_withdrawal_key_to_use is not set, we will try to use one in the signer that is
-    /// available for the transfer
+    /// If signing_transfer_key_to_use is not set, we will try to use one in the signer that is
+    /// available for the transfer.
     async fn transfer_credits<S: Signer + Send>(
         &self,
         sdk: &Sdk,

@@ -9,7 +9,7 @@ pub mod put_document;
 pub mod put_identity;
 pub mod put_settings;
 pub mod top_up_identity;
-mod transfer;
+pub mod transfer;
 pub mod transfer_document;
 mod txid;
 pub mod update_price_of_document;
