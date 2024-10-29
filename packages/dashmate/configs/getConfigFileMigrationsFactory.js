@@ -4,6 +4,7 @@ import lodash from 'lodash';
 import path from 'path';
 
 import {
+  NETWORK_DEVNET,
   NETWORK_LOCAL,
   NETWORK_MAINNET,
   NETWORK_TESTNET,
@@ -1028,6 +1029,15 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (options.network === NETWORK_TESTNET && name !== 'base') {
               options.platform.drive.tenderdash.p2p.seeds = testnet.get('platform.drive.tenderdash.p2p.seeds');
+            }
+          });
+        return configFile;
+      },
+      '1.3.0-dev.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if ([NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_DEVNET].includes(options.network)) {
+              options.core.docker.image = 'dashpay/dashd:22.0.0-nightly.2024.10.29';
             }
           });
         return configFile;
