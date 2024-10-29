@@ -25,7 +25,7 @@ export default function getLocalConfigFactory(getBaseConfig) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:21.2.0-nightly.2024.09.12',
+          image: 'dashpay/dashd:22.0.0-nightly.2024.10.29',
         },
         p2p: {
           port: 20001,

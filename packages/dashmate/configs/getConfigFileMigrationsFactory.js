@@ -866,7 +866,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             if ([NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_DEVNET].includes(options.network)) {
-              options.core.docker.image = 'dashpay/dashd:21.2.0-nightly.2024.09.12';
+              options.core.docker.image = 'dashpay/dashd:22.0.0-nightly.2024.10.29';
             }
           });
         return configFile;
