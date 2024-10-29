@@ -119,7 +119,13 @@ async function createGrpcTransportError(grpcError, dapiAddress) {
 
   // DPP consensus errors
   if (code >= 10000 && code < 50000) {
-    const consensusError = deserializeConsensusError(data.serializedError || []);
+    const consensusErrorString = metadata['dash-serialized-consensus-error-bin'];
+    if (!consensusErrorString) {
+      throw new Error(`Can't deserialize consensus error ${code}: serialized data is missing`);
+    }
+
+    const consensusErrorBytes = Buffer.from(consensusErrorString, 'base64');
+    const consensusError = deserializeConsensusError(consensusErrorBytes);
 
     delete data.serializedError;
 

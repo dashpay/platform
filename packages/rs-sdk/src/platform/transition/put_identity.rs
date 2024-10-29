@@ -14,6 +14,7 @@ use drive_proof_verifier::DataContractProvider;
 use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use drive::drive::Drive;
+use rs_dapi_client::transport::TransportError;
 use rs_dapi_client::{DapiClientError, DapiRequest, IntoInner, RequestSettings};
 
 #[async_trait::async_trait]
@@ -88,7 +89,9 @@ impl<S: Signer> PutIdentity<S> for Identity {
         match response_result {
             Ok(_) => {}
             //todo make this more reliable
-            Err(DapiClientError::Transport(te)) if te.code() == Code::AlreadyExists => {
+            Err(DapiClientError::Transport(TransportError::Grpc(te)))
+                if te.code() == Code::AlreadyExists =>
+            {
                 tracing::debug!(
                     ?identity_id,
                     "attempt to create identity that already exists"
