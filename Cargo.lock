@@ -1195,6 +1195,7 @@ version = "1.4.1"
 dependencies = [
  "arc-swap",
  "async-trait",
+ "backon",
  "base64 0.22.1",
  "bip37-bloom-filter",
  "chrono",

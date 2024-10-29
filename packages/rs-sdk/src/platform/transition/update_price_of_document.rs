@@ -18,7 +18,7 @@ use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
-use rs_dapi_client::{DapiRequest, RequestSettings};
+use rs_dapi_client::{DapiRequest, IntoInner, RequestSettings};
 
 #[async_trait::async_trait]
 /// A trait for updating the price of a document on Platform
@@ -97,7 +97,8 @@ impl<S: Signer> UpdatePriceOfDocument<S> for Document {
         request
             .clone()
             .execute(sdk, settings.request_settings)
-            .await?;
+            .await // TODO: We need better way to handle execution errors
+            .into_inner()?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
 
@@ -111,8 +112,11 @@ impl<S: Signer> UpdatePriceOfDocument<S> for Document {
         data_contract: Arc<DataContract>,
     ) -> Result<Document, Error> {
         let request = state_transition.wait_for_state_transition_result_request()?;
-
-        let response = request.execute(sdk, RequestSettings::default()).await?;
+        // TODO: Implement retry logic
+        let response = request
+            .execute(sdk, RequestSettings::default())
+            .await
+            .into_inner()?;
 
         let block_info = block_info_from_metadata(response.metadata()?)?;
 
