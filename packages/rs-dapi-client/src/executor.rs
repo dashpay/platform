@@ -1,4 +1,4 @@
-use crate::transport::{TransportClient, TransportRequest};
+use crate::transport::TransportRequest;
 use crate::{Address, CanRetry, DapiClientError, RequestSettings};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
@@ -12,11 +12,10 @@ pub trait DapiRequestExecutor {
         &self,
         request: R,
         settings: RequestSettings,
-    ) -> ExecutionResult<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
+    ) -> ExecutionResult<R::Response, DapiClientError>
     where
         R: TransportRequest + Mockable,
-        R::Response: Mockable,
-        <R::Client as TransportClient>::Error: Mockable;
+        R::Response: Mockable;
 }
 
 /// Unwrap wrapped types

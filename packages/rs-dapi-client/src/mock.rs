@@ -12,9 +12,8 @@
 //! See `tests/mock_dapi_client.rs` for an example.
 
 use crate::{
-    transport::{TransportClient, TransportRequest},
-    DapiClientError, DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult,
-    RequestSettings,
+    transport::TransportRequest, DapiClientError, DapiRequestExecutor, ExecutionError,
+    ExecutionResponse, ExecutionResult, RequestSettings,
 };
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
@@ -36,10 +35,7 @@ pub struct MockDapiClient {
     expectations: Expectations,
 }
 /// Result of executing a mock request
-pub type MockResult<R> = ExecutionResult<
-    <R as TransportRequest>::Response,
-    DapiClientError<<<R as TransportRequest>::Client as TransportClient>::Error>,
->;
+pub type MockResult<T> = ExecutionResult<<T as TransportRequest>::Response, DapiClientError>;
 
 impl MockDapiClient {
     /// Create a new mock client
@@ -364,21 +360,5 @@ where
             inner,
             ..Default::default()
         }
-    }
-}
-
-/// Convert response into inner type
-pub trait InnerInto<T> {
-    /// Convert response into inner type
-    fn inner_into(self) -> T;
-}
-
-/// Blanket implementation of InnerInto for types that implement FromInner
-impl<T, U> InnerInto<U> for T
-where
-    U: FromInner<T>,
-{
-    fn inner_into(self) -> U {
-        U::from_inner(self)
     }
 }

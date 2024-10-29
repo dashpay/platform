@@ -14,7 +14,7 @@ use crate::connection_pool::ConnectionPool;
 #[cfg(feature = "mocks")]
 use crate::Address;
 use crate::{
-    transport::{TransportClient, TransportRequest},
+    transport::{TransportClient, TransportError, TransportRequest},
     AddressList, CanRetry, DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult,
     RequestSettings,
 };
@@ -22,10 +22,13 @@ use crate::{
 /// General DAPI request error type.
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
-pub enum DapiClientError<TE: Mockable> {
+pub enum DapiClientError {
     /// The error happened on transport layer
     #[error("transport error: {0}")]
-    Transport(#[cfg_attr(feature = "mocks", serde(with = "dapi_grpc::mock::serde_mockable"))] TE),
+    Transport(
+        #[cfg_attr(feature = "mocks", serde(with = "dapi_grpc::mock::serde_mockable"))]
+        TransportError,
+    ),
     /// There are no valid DAPI addresses to use.
     #[error("no available addresses to use")]
     NoAvailableAddresses,
@@ -39,7 +42,7 @@ pub enum DapiClientError<TE: Mockable> {
     Mock(#[from] crate::mock::MockError),
 }
 
-impl<TE: CanRetry + Mockable> CanRetry for DapiClientError<TE> {
+impl CanRetry for DapiClientError {
     fn can_retry(&self) -> bool {
         use DapiClientError::*;
         match self {
@@ -52,17 +55,10 @@ impl<TE: CanRetry + Mockable> CanRetry for DapiClientError<TE> {
     }
 }
 
-#[cfg(feature = "mocks")]
-#[derive(serde::Serialize, serde::Deserialize)]
-struct TransportErrorData {
-    transport_error: Vec<u8>,
-    address: Address,
-}
-
 /// Serialization of [DapiClientError].
 ///
 /// We need to do manual serialization because of the generic type parameter which doesn't support serde derive.
-impl<TE: Mockable> Mockable for DapiClientError<TE> {
+impl Mockable for DapiClientError {
     #[cfg(feature = "mocks")]
     fn mock_serialize(&self) -> Option<Vec<u8>> {
         Some(serde_json::to_vec(self).expect("serialize DAPI client error"))
@@ -112,11 +108,11 @@ impl DapiRequestExecutor for DapiClient {
         &self,
         request: R,
         settings: RequestSettings,
-    ) -> ExecutionResult<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
+    ) -> ExecutionResult<R::Response, DapiClientError>
     where
         R: TransportRequest + Mockable,
         R::Response: Mockable,
-        <R::Client as TransportClient>::Error: Mockable,
+        TransportError: Mockable,
     {
         // Join settings of different sources to get final version of the settings for this execution:
         let applied_settings = self
@@ -150,9 +146,10 @@ impl DapiRequestExecutor for DapiClient {
                 .read()
                 .expect("can't get address list for read");
 
-            let address_result = address_list.get_live_address().cloned().ok_or(
-                DapiClientError::<<R::Client as TransportClient>::Error>::NoAvailableAddresses,
-            );
+            let address_result = address_list
+                .get_live_address()
+                .cloned()
+                .ok_or(DapiClientError::NoAvailableAddresses);
 
             drop(address_list);
 
