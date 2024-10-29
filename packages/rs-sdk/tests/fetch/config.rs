@@ -22,6 +22,12 @@ const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
     68, 209, 224, 212, 242, 106, 141, 142, 255, 55, 207,
 ];
 
+// Variables that change every time we regenerate test vectors
+const DEFAULT_IDENTITY_ID_BASE58: &str = "9diBT6EQt3BfX5aMm9ryfEDQ4FAdMEWjGWwvM1Wciqei";
+const DEFAULT_PROTXHASH_HEX: &str =
+    "069dcb6e829988af0edb245f30d3b1297a47081854a78c3cdea9fddb8fbd07eb";
+pub(crate) const DEFAULT_DATA_CONTRACT_WITH_HISTORY_HEX: &str =
+    "3013742faada429308e22a83c72e19310b3dc93db1ceefda78fc2e8965b0805a";
 #[derive(Debug, Deserialize)]
 /// Configuration for dash-platform-sdk.
 ///
@@ -224,11 +230,7 @@ impl Config {
         //  So now I used this manually created identity to populate test vectors.
         //  Next time we need to do it again and update this value :(. This is terrible.
         //  We should automate creation of identity for SDK tests when we have time.
-        Identifier::from_string(
-            "G5z3hwiLUnRDGrLEgcqM9sX8wWEuNGHQqvioERgdZ2Tq",
-            Encoding::Base58,
-        )
-        .unwrap()
+        Identifier::from_string(DEFAULT_IDENTITY_ID_BASE58, Encoding::Base58).unwrap()
     }
 
     fn default_data_contract_id() -> Identifier {
@@ -252,7 +254,7 @@ impl Config {
     ///
     /// See documentation of [contested_resource_identity_votes_ok](super::contested_resource_identity_votes::contested_resource_identity_votes_ok).
     fn default_protxhash() -> String {
-        String::from("069dcb6e829988af0edb245f30d3b1297a47081854a78c3cdea9fddb8fbd07eb")
+        String::from(DEFAULT_PROTXHASH_HEX)
     }
 
     /// Return ProTxHash of an existing evo node, or None if not set

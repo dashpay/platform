@@ -135,7 +135,7 @@ async fn test_data_contracts_2_nx() {
 async fn test_data_contract_history_read() {
     let cfg = Config::new();
     let id = Identifier::from_string(
-        "eacc9ceb6c11ee1ae82afb5590d78d686f43bc0f0e0cd65de1e23c150e41f97f",
+        super::config::DEFAULT_DATA_CONTRACT_WITH_HISTORY_HEX,
         Encoding::Hex,
     )
     .unwrap();
