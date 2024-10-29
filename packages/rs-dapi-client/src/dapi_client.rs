@@ -11,10 +11,12 @@ use tracing::Instrument;
 
 use crate::address_list::AddressListError;
 use crate::connection_pool::ConnectionPool;
+#[cfg(feature = "mocks")]
+use crate::Address;
 use crate::{
     transport::{TransportClient, TransportRequest},
-    Address, AddressList, CanRetry, DapiRequestExecutor, ExecutionError, ExecutionResponse,
-    ExecutionResult, RequestSettings,
+    AddressList, CanRetry, DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult,
+    RequestSettings,
 };
 
 /// General DAPI request error type.
