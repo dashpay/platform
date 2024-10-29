@@ -11,8 +11,6 @@ use tracing::Instrument;
 
 use crate::address_list::AddressListError;
 use crate::connection_pool::ConnectionPool;
-#[cfg(feature = "mocks")]
-use crate::Address;
 use crate::{
     transport::{TransportClient, TransportError, TransportRequest},
     AddressList, CanRetry, DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult,
