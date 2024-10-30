@@ -142,15 +142,14 @@ impl<K: Hash + Eq + MockResponse, V: MockResponse> MockResponse for IndexMap<K, 
 
 impl MockResponse for ResponseMetadata {
     fn mock_serialize(&self, _: &MockDashPlatformSdk) -> Vec<u8> {
-        bincode::serde::encode_to_vec(self, bincode::config::standard())
-            .expect("serialize metadata")
+        bincode::serde::encode_to_vec(self, BINCODE_CONFIG).expect("serialize metadata")
     }
 
     fn mock_deserialize(_: &MockDashPlatformSdk, buf: &[u8]) -> Self
     where
         Self: Sized,
     {
-        bincode::serde::decode_from_slice(buf, bincode::config::standard())
+        bincode::serde::decode_from_slice(buf, BINCODE_CONFIG)
             .expect("deserialize metadata")
             .0
     }
@@ -296,12 +295,11 @@ impl MockResponse for DataContract {
 
 impl MockResponse for ProofVerifierError {
     fn mock_serialize(&self, _mock_sdk: &MockDashPlatformSdk) -> Vec<u8> {
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .expect("encode proof verifier error")
+        bincode::encode_to_vec(self, BINCODE_CONFIG).expect("encode proof verifier error")
     }
 
     fn mock_deserialize(_mock_sdk: &MockDashPlatformSdk, data: &[u8]) -> Self {
-        bincode::decode_from_slice(data, bincode::config::standard())
+        bincode::decode_from_slice(data, BINCODE_CONFIG)
             .expect("decode proof verifier error")
             .0
     }

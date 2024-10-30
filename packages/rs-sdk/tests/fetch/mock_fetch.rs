@@ -224,7 +224,8 @@ async fn test_mock_fetch_retry() {
 
     DataContract::fetch(&sdk, query_correct)
         .await
-        .expect("first fetch should succeed");
+        .expect("first fetch should succeed")
+        .expect("object should exist");
 
     let e = DataContract::fetch(&sdk, query_stale)
         .await

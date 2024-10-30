@@ -2,8 +2,6 @@
 
 use std::time::Duration;
 
-use crate::transport::TransportRequest;
-
 /// Default low-level client timeout
 const DEFAULT_CONNECT_TIMEOUT: Option<Duration> = None;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -78,26 +76,4 @@ pub struct AppliedRequestSettings {
     pub retries: usize,
     /// Ban DAPI address if node not responded or responded with error.
     pub ban_failed_address: bool,
-}
-
-impl AppliedRequestSettings {
-    /// Create [AppliedRequestSettings] from [RequestSettings] with default values.
-    ///
-    /// Combine provided [RequestSettings] together with [request-level overrides](TransportRequest::SETTINGS_OVERRIDES).
-    ///
-    ///
-    /// # Arguments
-    ///
-    /// * `global_settings` - global settings for all requests.
-    /// * `request_settings` - settings for a specific request.
-    pub fn from_settings<R: TransportRequest>(
-        global_settings: &RequestSettings,
-        request_settings: &RequestSettings,
-    ) -> Self {
-        RequestSettings::default()
-            .override_by(*global_settings)
-            .override_by(R::SETTINGS_OVERRIDES)
-            .override_by(*request_settings)
-            .finalize()
-    }
 }

@@ -380,7 +380,7 @@ fn serialize_vec_to_cbor<T: Into<Value>>(input: Vec<T>) -> Result<Vec<u8>, Error
 
     let mut serialized = Vec::new();
     ciborium::ser::into_writer(&cbor_values, &mut serialized)
-        .map_err(|e| Error::Protocol(dpp::ProtocolError::EncodingError(e.to_string())))?;
+        .map_err(|e| dpp::ProtocolError::EncodingError(e.to_string()))?;
 
     Ok(serialized)
 }

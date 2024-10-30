@@ -23,7 +23,7 @@ pub trait IntoInner<T> {
     /// Unwrap the inner type.
     ///
     /// This function returns inner type, dropping additional context information.
-    /// It is lossy operation, so it should be used with caution.
+    /// It is a lossy operation, so it should be used with caution.
     fn into_inner(self) -> T;
 }
 

@@ -276,7 +276,7 @@ impl MockDashPlatformSdk {
         <<O as Fetch>::Request as TransportRequest>::Response: Default,
     {
         let grpc_request = query.query(self.prove()).expect("query must be correct");
-        self.expect(grpc_request, object).await?;
+        self.expect(&grpc_request, object).await?;
 
         Ok(self)
     }
@@ -333,7 +333,7 @@ impl MockDashPlatformSdk {
         <<O as FetchMany<K, R>>::Request as TransportRequest>::Response: Default,
     {
         let grpc_request = query.query(self.prove()).expect("query must be correct");
-        self.expect(grpc_request, objects).await?;
+        self.expect(&grpc_request, objects).await?;
 
         Ok(self)
     }
@@ -402,7 +402,7 @@ impl MockDashPlatformSdk {
     /// Save expectations for a request.
     async fn expect<I: TransportRequest, O>(
         &mut self,
-        grpc_request: I,
+        grpc_request: &I,
         returned_object: Option<O>,
     ) -> Result<(), Error>
     where
@@ -411,7 +411,7 @@ impl MockDashPlatformSdk {
     {
         // This expectation will work for from_proof
         self.expect_from_proof_with_metadata(
-            &grpc_request,
+            grpc_request,
             Ok((returned_object, Default::default(), Default::default())),
         )?;
 
@@ -422,7 +422,7 @@ impl MockDashPlatformSdk {
             retries: 0,
             address: Uri::default().into(),
         };
-        self.expect_dapi(&grpc_request, &Ok(fake_response)).await?;
+        self.expect_dapi(grpc_request, &Ok(fake_response)).await?;
 
         Ok(())
     }
