@@ -25,7 +25,7 @@ const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
 // Variables that change every time we regenerate test vectors
 const DEFAULT_IDENTITY_ID_BASE58: &str = "9diBT6EQt3BfX5aMm9ryfEDQ4FAdMEWjGWwvM1Wciqei";
 const DEFAULT_PROTXHASH_HEX: &str =
-    "069dcb6e829988af0edb245f30d3b1297a47081854a78c3cdea9fddb8fbd07eb";
+    "845536905ae5d93b202e868f3163a81c08ed5911dc8f3d3625cc9430b8923d1b";
 pub(crate) const DEFAULT_DATA_CONTRACT_WITH_HISTORY_HEX: &str =
     "3013742faada429308e22a83c72e19310b3dc93db1ceefda78fc2e8965b0805a";
 #[derive(Debug, Deserialize)]
