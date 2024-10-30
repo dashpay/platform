@@ -25,9 +25,12 @@ impl IdentityPublicKeyV0 {
         let mut binding = [false; 16].to_vec();
         let (key_count, key_matrix) = used_key_matrix.unwrap_or((0, &mut binding));
         if key_count > 16 {
-            return Err(ProtocolError::PublicKeyGenerationError(
-                "too many keys already created".to_string(),
-            ));
+            return Self::random_ecdsa_high_level_authentication_key_with_rng(
+                id,
+                rng,
+                platform_version,
+            )
+            .map(|(pub_key, _)| pub_key);
         }
         let key_number = rng.gen_range(0..(16 - key_count as u8));
         // now we need to find the first bool that isn't set to true
