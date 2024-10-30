@@ -92,6 +92,7 @@ fallbackfee=0.00001
 {{?? it.network === 'local'}}
 regtest=1
 [regtest]
+testactivationheight=mn_rr@1000
 {{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 {{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
