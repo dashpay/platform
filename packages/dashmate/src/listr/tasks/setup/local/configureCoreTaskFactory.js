@@ -2,7 +2,6 @@ import { Listr } from 'listr2';
 import { Observable } from 'rxjs';
 import DashCoreLib from '@dashevo/dashcore-lib';
 import waitForNodesToHaveTheSameHeight from '../../../../core/waitForNodesToHaveTheSameHeight.js';
-import waitForNodesToHaveTheSameSporks from '../../../../core/waitForNodesToHaveTheSameSporks.js';
 
 import { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } from '../../../../constants.js';
 
@@ -124,7 +123,7 @@ export default function configureCoreTaskFactory(
               },
             },
             {
-              title: 'Activating forks',
+              title: 'Activating v19 and v20',
               task: () => new Observable(async (observer) => {
                 const dip3ActivationHeight = 901;
                 const blocksToGenerateInOneStep = 10;
@@ -301,6 +300,47 @@ export default function configureCoreTaskFactory(
             {
               title: 'Wait for quorums to be enabled',
               task: () => enableCoreQuorumsTask(),
+            },
+            {
+              title: 'Wait for nodes to have the same height',
+              task: () => waitForNodesToHaveTheSameHeight(
+                ctx.rpcClients,
+                WAIT_FOR_NODES_TIMEOUT,
+              ),
+            },
+            {
+              title: 'Activating v21 fork',
+              task: () => new Observable(async (observer) => {
+                const dip3ActivationHeight = 1001;
+                const blocksToGenerateInOneStep = 10;
+
+                let blocksGenerated = 0;
+                let {
+                  result: currentBlockHeight,
+                } = await ctx.coreService.getRpcClient().getBlockCount();
+
+                do {
+                  ({
+                    result: currentBlockHeight,
+                  } = await ctx.coreService.getRpcClient().getBlockCount());
+
+                  await generateBlocks(
+                    ctx.coreService,
+                    blocksToGenerateInOneStep,
+                    NETWORK_LOCAL,
+                    // eslint-disable-next-line no-loop-func
+                    (blocks) => {
+                      blocksGenerated += blocks;
+
+                      observer.next(`${blocksGenerated} blocks generated`);
+                    },
+                  );
+                } while (dip3ActivationHeight > currentBlockHeight);
+
+                observer.complete();
+
+                return this;
+              }),
             },
             {
               title: 'Wait for nodes to have the same height',
