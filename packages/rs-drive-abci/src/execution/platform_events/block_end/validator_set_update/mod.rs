@@ -59,7 +59,7 @@ where
                 platform_state,
                 block_execution_context,
             ),
-            1 => self.validator_set_update_v2(
+            2 => self.validator_set_update_v2(
                 proposer_pro_tx_hash,
                 platform_state,
                 block_execution_context,
