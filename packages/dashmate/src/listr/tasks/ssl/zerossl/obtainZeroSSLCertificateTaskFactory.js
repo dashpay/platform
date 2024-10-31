@@ -18,6 +18,8 @@ import { ERRORS } from '../../../../ssl/zerossl/validateZeroSslCertificateFactor
  * @param {VerificationServer} verificationServer
  * @param {HomeDir} homeDir
  * @param {validateZeroSslCertificate} validateZeroSslCertificate
+ * @param {ConfigFileJsonRepository} configFileRepository
+ * @param {ConfigFile} configFile
  * @return {obtainZeroSSLCertificateTask}
  */
 export default function obtainZeroSSLCertificateTaskFactory(
@@ -32,6 +34,8 @@ export default function obtainZeroSSLCertificateTaskFactory(
   verificationServer,
   homeDir,
   validateZeroSslCertificate,
+  configFileRepository,
+  configFile,
 ) {
   /**
    * @typedef {obtainZeroSSLCertificateTask}
@@ -141,6 +145,9 @@ export default function obtainZeroSSLCertificateTaskFactory(
           config.set('platform.gateway.ssl.enabled', true);
           config.set('platform.gateway.ssl.provider', 'zerossl');
           config.set('platform.gateway.ssl.providerConfigs.zerossl.id', ctx.certificate.id);
+
+          // Save config file
+          configFileRepository.write(configFile);
         },
       },
       {
