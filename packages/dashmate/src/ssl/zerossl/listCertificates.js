@@ -13,7 +13,12 @@ import Certificate from './Certificate.js';
  * @return {Promise<Certificate[]>}
  */
 
-export default async function listCertificates(apiKey, statuses = [], page = 1, search = undefined) {
+export default async function listCertificates(
+  apiKey,
+  statuses = [],
+  page = 1,
+  search = undefined,
+) {
   let url = `https://api.zerossl.com/certificates?access_key=${apiKey}&limit=1000&page=${page}`;
 
   if (statuses.length > 0) {
