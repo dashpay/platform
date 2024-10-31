@@ -31,4 +31,4 @@ fi
 
 echo "Starting with UID: $USER_ID, GID: $GROUP_ID, USER: $USERNAME, GROUP: $GROUP"
 
-exec su - $USERNAME -c "cd /platform;DASHMATE_HELPER=1 DASHMATE_HOME_DIR=/home/dashmate/.dashmate $*"
+exec su $USERNAME -c "cd /platform;DASHMATE_HELPER=1 DASHMATE_HOME_DIR=$DASHMATE_HOME_DIR $*"
