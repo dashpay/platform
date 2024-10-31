@@ -1,3 +1,17 @@
+## [1.5.0-rc.2](https://github.com/dashpay/platform/compare/v1.5.0-rc.1...v1.5.0-rc.2) (2024-10-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** rotate always to top quorum (#2290)
+
+### Bug Fixes
+
+* **dashmate:** cleanup zerossl certs command ([#2298](https://github.com/dashpay/platform/issues/2298))
+* **dashmate:** invalid mount path from helper ([#2296](https://github.com/dashpay/platform/issues/2296))
+* **dashmate:** zero ssl certificate draft not saved ([#2297](https://github.com/dashpay/platform/issues/2297))
+* **platform:** rotate always to top quorum ([#2290](https://github.com/dashpay/platform/issues/2290))
+
 ## [1.5.0-rc.1](https://github.com/dashpay/platform/compare/v1.4.1...v1.5.0-rc.1) (2024-10-30)
 
 
