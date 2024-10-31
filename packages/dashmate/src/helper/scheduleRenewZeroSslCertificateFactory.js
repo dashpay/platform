@@ -51,7 +51,7 @@ export default function scheduleRenewZeroSslCertificateFactory(
     }
 
     const job = new CronJob(expiresAt, async () => {
-      const tasks = await obtainZeroSSLCertificateTask(config);
+      const tasks = obtainZeroSSLCertificateTask(config);
 
       await tasks.run({
         expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,

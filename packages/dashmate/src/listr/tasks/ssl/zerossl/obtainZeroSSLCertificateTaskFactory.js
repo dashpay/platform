@@ -40,9 +40,9 @@ export default function obtainZeroSSLCertificateTaskFactory(
   /**
    * @typedef {obtainZeroSSLCertificateTask}
    * @param {Config} config
-   * @return {Promise<Listr>}
+   * @return {Listr}
    */
-  async function obtainZeroSSLCertificateTask(config) {
+  function obtainZeroSSLCertificateTask(config) {
     return new Listr([
       {
         title: 'Check if certificate already exists and not expiring soon',
