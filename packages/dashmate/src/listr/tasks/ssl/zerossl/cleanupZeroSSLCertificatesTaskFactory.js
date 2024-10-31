@@ -13,18 +13,18 @@ export default function cleanupZeroSSLCertificatesTaskFactory(
   cancelCertificate,
 ) {
   /**
-   * @typedef {obtainZeroSSLCertificateTask}
+   * @typedef {cleanupZeroSSLCertificatesTask}
    * @param {Config} config
-   * @return {Promise<Listr>}
+   * @return {Listr}
    */
-  async function cleanupZeroSSLCertificatesTask(config) {
+  function cleanupZeroSSLCertificatesTask(config) {
+    const apiKey = config.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey', true);
+
     return new Listr([
       {
         title: 'Collect drafted and pending validation certificates',
         // Skips the check if force flag is set
         task: async (ctx, task) => {
-          ctx.apiKey = config.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey', true);
-
           ctx.certificates = [];
 
           let certificatesPerRequest = [];
@@ -33,7 +33,7 @@ export default function cleanupZeroSSLCertificatesTaskFactory(
           // Fetch all certificates in draft or pending validation status
           // with pagination
           do {
-            certificatesPerRequest = await listCertificates(ctx.apiKey, ['draft', 'pending_validation'], page);
+            certificatesPerRequest = await listCertificates(apiKey, ['draft', 'pending_validation'], page);
 
             ctx.certificates = ctx.certificates.concat(certificatesPerRequest);
 
@@ -57,7 +57,7 @@ export default function cleanupZeroSSLCertificatesTaskFactory(
           return new Observable(async (observer) => {
             for (const certificate of ctx.certificates) {
               try {
-                await cancelCertificate(ctx.apiKey, certificate.id);
+                await cancelCertificate(apiKey, certificate.id);
 
                 ctx.canceled += 1;
               } catch (e) {

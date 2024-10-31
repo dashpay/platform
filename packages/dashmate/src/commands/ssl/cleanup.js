@@ -34,7 +34,7 @@ Cancel all drafted or pending validation certificates on ZeroSSL
       [
         {
           title: 'Cleanup ZeroSSL certificate',
-          task: async () => cleanupZeroSSLCertificatesTask(config),
+          task: () => cleanupZeroSSLCertificatesTask(config),
         },
       ],
       {
