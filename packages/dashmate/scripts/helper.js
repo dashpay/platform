@@ -45,7 +45,6 @@ import createDIContainer from '../src/createDIContainer.js';
   // Register config collection in the container
   container.register({
     configFile: asValue(configFile),
-    isHelper: asValue(true),
   });
 
   const provider = config.get('platform.gateway.ssl.provider');

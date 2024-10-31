@@ -162,7 +162,7 @@ export default async function createDIContainer(options = {}) {
     createConfigFile: asFunction(createConfigFileFactory).singleton(),
     getConfigFileMigrations: asFunction(getConfigFileMigrationsFactory).singleton(),
     migrateConfigFile: asFunction(migrateConfigFileFactory).singleton(),
-    isHelper: asValue(false),
+    isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
     getConnectionHost: asFunction(getConnectionHostFactory).singleton(),
     generateEnvs: asFunction(generateEnvsFactory).singleton(),
     getConfigProfiles: asFunction(getConfigProfilesFactory).singleton(),
