@@ -1032,7 +1032,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             if ([NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_DEVNET].includes(options.network)) {
-              options.core.docker.image = 'dashpay/dashd:22.0.0-nightly.2024.10.29';
+              options.core.docker.image = 'dashpay/dashd:22.0.0-devpr6375.dde1edf3';
             }
           });
         return configFile;
