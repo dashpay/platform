@@ -45,7 +45,7 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
       [
         {
           title: 'Obtain ZeroSSL certificate',
-          task: async () => obtainZeroSSLCertificateTask(config),
+          task: () => obtainZeroSSLCertificateTask(config),
         },
       ],
       {
