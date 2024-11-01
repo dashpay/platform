@@ -19,7 +19,7 @@ use tenderdash_abci::proto::types::VoteExtension;
 const CORE_RPC_ERROR_ASSET_UNLOCK_NO_ACTIVE_QUORUM: &str = "bad-assetunlock-not-active-quorum";
 
 // This error replaced the previous since Core 22 to make it more verbose
-const CORE_RPC_ERROR_ASSET_UNLOCK_TOO_OLD_QUORUM: &str = " bad-assetunlock-too-old-quorum";
+const CORE_RPC_ERROR_ASSET_UNLOCK_TOO_OLD_QUORUM: &str = "bad-assetunlock-too-old-quorum";
 
 const CORE_RPC_ERROR_ASSET_UNLOCK_EXPIRED: &str = "bad-assetunlock-too-late";
 
