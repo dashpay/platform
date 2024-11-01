@@ -36,10 +36,7 @@ pub const PLATFORM_V5: PlatformVersion = PlatformVersion {
     drive: DRIVE_VERSION_V2,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
-        // We changed `pool_withdrawals_into_transactions_queue` to v1 in order to add pool
-        // withdrawals on any validator quorums. v0 allowed us to pool only on the first two
-        // quorums as workaround for Core v21 bug.
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V4,
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V4, // changed to v4
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V3,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,
@@ -56,9 +53,7 @@ pub const PLATFORM_V5: PlatformVersion = PlatformVersion {
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
-        // We changed `daily_withdrawal_limit` to v1 to increase daily withdrawal limit
-        // to 2000 Dash.
-        methods: DPP_METHOD_VERSIONS_V2,
+        methods: DPP_METHOD_VERSIONS_V1,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V1,

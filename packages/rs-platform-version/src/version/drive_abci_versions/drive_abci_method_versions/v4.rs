@@ -79,7 +79,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V4: DriveAbciMethodVersions = DriveAbciMeth
         build_untied_withdrawal_transactions_from_documents: 0,
         dequeue_and_build_unsigned_withdrawal_transactions: 0,
         fetch_transactions_block_inclusion_status: 0,
-        pool_withdrawals_into_transactions_queue: 1,
+        pool_withdrawals_into_transactions_queue: 0,
         update_broadcasted_withdrawal_statuses: 0,
         rebroadcast_expired_withdrawal_documents: 0,
         append_signatures_and_broadcast_withdrawal_transactions: 0,
@@ -112,7 +112,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V4: DriveAbciMethodVersions = DriveAbciMeth
     block_end: DriveAbciBlockEndMethodVersions {
         update_state_cache: 0,
         update_drive_cache: 0,
-        validator_set_update: 1,
+        validator_set_update: 2,
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 0,
