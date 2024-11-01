@@ -1,3 +1,53 @@
+## [1.5.0](https://github.com/dashpay/platform/compare/v1.4.1...v1.5.0) (2024-11-01)
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** rotate always to top quorum. This is a breaking change requiring a HF. (#2290)
+* **sdk:** SDK methods which broadcasting transactions will return `SdkError::Protocol(ProtocolError::Consensus(..))` instead of `DapiClientError(String)` in case of validation errors. (#2274)
+* **sdk:** serialized consensus error moved to a separate gRPC header `dash-serialized-consensus-error-bin` (#2274)
+* **sdk:** `DapiRequestExecutor::execute` and `DapiRequest::execute` now returns `ExecutionResult` (#2259)
+* **sdk:** returned objects are `IndexMap/IndexSet` instead of previous `BTreeMap` (#2207)
+
+
+### Features
+
+* **dashmate:** add protocol version to the status command ([#2255](https://github.com/dashpay/platform/issues/2255))
+* **sdk:** added transfer transition to rs-sdk ([#2289](https://github.com/dashpay/platform/issues/2289))
+* **sdk:** detect stale nodes ([#2254](https://github.com/dashpay/platform/issues/2254))
+* **sdk:** provide request execution information ([#2259](https://github.com/dashpay/platform/issues/2259))
+* **sdk:** return consensus errors from broadcast methods ([#2274](https://github.com/dashpay/platform/issues/2274))
+* **sdk:** sdk-level retry logic for `fetch` and `fetch_many` ([#2266](https://github.com/dashpay/platform/issues/2266))
+* **dashmate:** cleanup zerossl certs command ([#2298](https://github.com/dashpay/platform/issues/2298))
+
+
+### Bug Fixes
+
+* **dashmate:** invalid mount path from helper ([#2296](https://github.com/dashpay/platform/issues/2296))
+* **dashmate:** zero ssl certificate draft not saved ([#2297](https://github.com/dashpay/platform/issues/2297))
+* **platform:** rotate always to top quorum ([#2290](https://github.com/dashpay/platform/issues/2290))
+* **dapi:** invalid state transition failed with already in chain error ([#2270](https://github.com/dashpay/platform/issues/2270))
+* **dashmate:** invalid drive status check ([#2248](https://github.com/dashpay/platform/issues/2248))
+* **dashmate:** invalid platform version in the status command ([#2249](https://github.com/dashpay/platform/issues/2249))
+* document query start to support pagination ([#2284](https://github.com/dashpay/platform/issues/2284))
+* **sdk:** `AddressListError` is private ([#2278](https://github.com/dashpay/platform/issues/2278))
+* **sdk:** opposite retry trigger ([#2265](https://github.com/dashpay/platform/issues/2265))
+* **sdk:** wrong order of objects returned by Drive ([#2207](https://github.com/dashpay/platform/issues/2207))
+* seed nodes aren't responding ([#2276](https://github.com/dashpay/platform/issues/2276))
+
+
+### Code Refactoring
+
+* platform version refactoring into sub versions ([#2269](https://github.com/dashpay/platform/issues/2269))
+
+
+### Miscellaneous Chores
+
+* add partial eq to document query  ([#2253](https://github.com/dashpay/platform/issues/2253))
+* **dashmate:** report port check errors ([#2245](https://github.com/dashpay/platform/issues/2245))
+* move BLS Sigs import to Rust Dash Core ([#2252](https://github.com/dashpay/platform/issues/2252))
+* update to latest rust dash core with x11 optional ([#2251](https://github.com/dashpay/platform/issues/2251))
+
+
 ## [1.5.0-rc.2](https://github.com/dashpay/platform/compare/v1.5.0-rc.1...v1.5.0-rc.2) (2024-10-31)
 
 
@@ -11,6 +61,7 @@
 * **dashmate:** invalid mount path from helper ([#2296](https://github.com/dashpay/platform/issues/2296))
 * **dashmate:** zero ssl certificate draft not saved ([#2297](https://github.com/dashpay/platform/issues/2297))
 * **platform:** rotate always to top quorum ([#2290](https://github.com/dashpay/platform/issues/2290))
+
 
 ## [1.5.0-rc.1](https://github.com/dashpay/platform/compare/v1.4.1...v1.5.0-rc.1) (2024-10-30)
 
@@ -54,6 +105,7 @@
 ### Code Refactoring
 
 * platform version refactoring into sub versions ([#2269](https://github.com/dashpay/platform/issues/2269))
+
 
 ### [1.4.1](https://github.com/dashpay/platform/compare/v1.4.0...v1.4.1) (2024-10-12)
 

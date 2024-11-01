@@ -1029,9 +1029,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.network === NETWORK_TESTNET && name !== 'base') {
               options.platform.drive.tenderdash.p2p.seeds = testnet.get('platform.drive.tenderdash.p2p.seeds');
             }
-
-            options.platform.drive.abci.docker.image = 'dashpay/drive:1-rc';
-            options.platform.dapi.api.docker.image = 'dashpay/dapi:1-rc';
           });
         return configFile;
       },
