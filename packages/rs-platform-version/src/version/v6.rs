@@ -29,7 +29,7 @@ use crate::version::ProtocolVersion;
 pub const PROTOCOL_VERSION_6: ProtocolVersion = 6;
 
 /// This version contains some fixes for withdrawals.
-pub const PLATFORM_V5: PlatformVersion = PlatformVersion {
+pub const PLATFORM_V6: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_6,
     drive: DRIVE_VERSION_V2,
     drive_abci: DriveAbciVersion {
