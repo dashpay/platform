@@ -621,7 +621,6 @@ mod tests {
                 epoch_time_length_s,
                 ..Default::default()
             },
-            initial_protocol_version: PROTOCOL_VERSION_1,
             block_spacing_ms: epoch_time_length_s * 1000,
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
@@ -629,7 +628,7 @@ mod tests {
 
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
-            .with_initial_protocol_version(INITIAL_PROTOCOL_VERSION)
+            .with_initial_protocol_version(PROTOCOL_VERSION_1)
             .build_with_mock_rpc();
 
         let ChainExecutionOutcome {

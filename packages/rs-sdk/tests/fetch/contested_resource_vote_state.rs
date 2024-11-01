@@ -107,9 +107,10 @@ async fn contested_resource_vote_states_nx_contract() {
     if let dash_sdk::error::Error::DapiClientError(e) = result {
         assert!(
             e.contains(
-                "Transport(Status { code: InvalidArgument, message: \"contract not found error"
+                "Transport(Grpc(Status { code: InvalidArgument, message: \"contract not found error"
             ),
-            "we should get contract not found error"
+            "we should get contract not found error, got: {:?}",
+            e,
         );
     } else {
         panic!("expected 'contract not found' transport error");
@@ -267,7 +268,7 @@ async fn contested_resource_vote_states_with_limit_PLAN_674() {
     assert_eq!(
         contenders.contenders.len(),
         limit as usize,
-        "number of contenders for {:?} should must be at least {}",
+        "number of contenders for {:?} should must be {}",
         label,
         limit
     );
@@ -276,7 +277,7 @@ async fn contested_resource_vote_states_with_limit_PLAN_674() {
 type MutFn = fn(&mut ContestedDocumentVotePollDriveQuery);
 
 #[test_case(|q| q.limit = Some(0), Err("limit 0 out of bounds of [1, 100]"); "limit 0")]
-#[test_case(|q| q.limit = Some(std::u16::MAX), Err("limit 65535 out of bounds of [1, 100]"); "limit std::u16::MAX")]
+#[test_case(|q| q.limit = Some(u16::MAX), Err("limit 65535 out of bounds of [1, 100]"); "limit u16::MAX")]
 #[test_case(|q| q.start_at = Some(([0x11; 32], true)), Ok("Contenders { winner: None, contenders: {Identifier("); "start_at does not exist should return next contenders")]
 #[test_case(|q| q.start_at = Some(([0xff; 32], true)), Ok("Contenders { winner: None, contenders: {}, abstain_vote_tally: None, lock_vote_tally: None }"); "start_at 0xff;32 should return zero contenders")]
 #[test_case(|q| q.vote_poll.document_type_name = "nx doctype".to_string(), Err(r#"code: InvalidArgument, message: "document type nx doctype not found"#); "non existing document type returns InvalidArgument")]

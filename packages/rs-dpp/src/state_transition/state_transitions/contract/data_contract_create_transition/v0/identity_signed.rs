@@ -1,5 +1,5 @@
 use crate::identity::SecurityLevel::{CRITICAL, HIGH};
-use crate::identity::{KeyID, SecurityLevel};
+use crate::identity::{KeyID, Purpose, SecurityLevel};
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 use crate::state_transition::StateTransitionIdentitySigned;
 
@@ -12,7 +12,7 @@ impl StateTransitionIdentitySigned for DataContractCreateTransitionV0 {
         self.signature_public_key_id = key_id
     }
 
-    fn security_level_requirement(&self) -> Vec<SecurityLevel> {
+    fn security_level_requirement(&self, _purpose: Purpose) -> Vec<SecurityLevel> {
         vec![CRITICAL, HIGH]
     }
 }

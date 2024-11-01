@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::{sync::Once, time::Instant};
 
 use dapi_grpc::tonic::Code;
-use metrics::{counter, describe_counter, describe_histogram, histogram, Label};
+use metrics::{counter, describe_counter, describe_gauge, describe_histogram, histogram, Label};
 use metrics_exporter_prometheus::PrometheusBuilder;
 
 /// Default Prometheus port (29090)
@@ -29,6 +29,10 @@ pub const LABEL_STATE_TRANSITION_NAME: &str = "st_name";
 const LABEL_STATE_TRANSITION_EXECUTION_CODE: &str = "st_exec_code";
 /// Metrics label to specify check tx mode: 0 - first time check, 1 - recheck
 pub const LABEL_CHECK_TX_MODE: &str = "check_tx_mode";
+/// Withdrawal daily limit available credits
+pub const GAUGE_CREDIT_WITHDRAWAL_LIMIT_AVAILABLE: &str = "credit_withdrawal_limit_available";
+/// Total withdrawal daily limit in credits
+pub const GAUGE_CREDIT_WITHDRAWAL_LIMIT_TOTAL: &str = "credit_withdrawal_limit_total";
 
 /// Error returned by metrics subsystem
 #[derive(thiserror::Error, Debug)]
@@ -210,7 +214,17 @@ impl Prometheus {
                 HISTOGRAM_QUERY_DURATION,
                 metrics::Unit::Seconds,
                 "Duration of query request execution inside Drive per endpoint, in seconds"
-            )
+            );
+
+            describe_gauge!(
+                GAUGE_CREDIT_WITHDRAWAL_LIMIT_AVAILABLE,
+                "Available withdrawal limit for last 24 hours in credits"
+            );
+
+            describe_gauge!(
+                GAUGE_CREDIT_WITHDRAWAL_LIMIT_TOTAL,
+                "Total withdrawal limit for last 24 hours in credits"
+            );
         });
     }
 }

@@ -22,7 +22,7 @@ impl<C> Platform<C> {
     ) -> Result<QueryValidationResult<GetTotalCreditsInPlatformResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
-                QueryError::DecodingError("could not decode epoch info request".to_string()),
+                QueryError::DecodingError("could not decode total credits in platform".to_string()),
             ));
         };
 

@@ -1,7 +1,9 @@
 #[cfg(feature = "mocks")]
 use {
     dapi_grpc::platform::v0::{GetIdentityRequest, GetIdentityResponse, Proof},
-    rs_dapi_client::{mock::MockDapiClient, DapiRequest, DapiRequestExecutor, RequestSettings},
+    rs_dapi_client::{
+        mock::MockDapiClient, DapiRequest, DapiRequestExecutor, ExecutionResponse, RequestSettings,
+    },
 };
 
 #[tokio::test]
@@ -10,7 +12,7 @@ async fn test_mock_get_identity_dapi_client() {
     let mut dapi = MockDapiClient::new();
 
     let request = GetIdentityRequest::default();
-    let response: GetIdentityResponse = GetIdentityResponse {
+    let inner: GetIdentityResponse = GetIdentityResponse {
         version: Some(dapi_grpc::platform::v0::get_identity_response::Version::V0(dapi_grpc::platform::v0::get_identity_response::GetIdentityResponseV0 {
             result: Some(
                 dapi_grpc::platform::v0::get_identity_response::get_identity_response_v0::Result::Proof(Proof {
@@ -21,8 +23,15 @@ async fn test_mock_get_identity_dapi_client() {
             metadata: Default::default(),
         }))
     };
+    let execution_response = ExecutionResponse {
+        inner,
+        retries: 0,
+        address: "http://127.0.0.1:9000"
+            .parse()
+            .expect("failed to parse address"),
+    };
 
-    dapi.expect(&request, &Ok(response.clone()))
+    dapi.expect(&request, &Ok(execution_response.clone()))
         .expect("expectation added");
 
     let settings = RequestSettings::default();
@@ -31,6 +40,6 @@ async fn test_mock_get_identity_dapi_client() {
 
     let result2 = request.execute(&dapi, settings).await.unwrap();
 
-    assert_eq!(result, response);
-    assert_eq!(result2, response);
+    assert_eq!(result, execution_response);
+    assert_eq!(result2, execution_response);
 }

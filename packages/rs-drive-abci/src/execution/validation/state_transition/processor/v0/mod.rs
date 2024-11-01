@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
@@ -5,21 +6,20 @@ use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::Network;
 use dpp::fee::Credits;
 use dpp::identity::PartialIdentity;
 use dpp::prefunded_specialized_balance::PrefundedSpecializedBalanceIdentifier;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::ProtocolError;
-use std::collections::BTreeMap;
-
-use crate::error::execution::ExecutionError;
 use dpp::serialization::Signable;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
+use dpp::ProtocolError;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
+use std::collections::BTreeMap;
 
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
 use crate::execution::validation::state_transition::common::validate_simple_pre_check_balance::ValidateSimplePreCheckBalance;
@@ -29,6 +29,7 @@ use crate::execution::validation::state_transition::identity_top_up::StateTransi
 use crate::execution::validation::state_transition::state_transitions::identity_update::advanced_structure::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_top_up::identity_retrieval::v0::IdentityTopUpStateTransitionIdentityRetrievalV0;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::execution::validation::state_transition::state_transitions::identity_credit_withdrawal::signature_purpose_matches_requirements::IdentityCreditWithdrawalStateTransitionSignaturePurposeMatchesRequirementsValidation;
 pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     block_info: &BlockInfo,
@@ -214,6 +215,8 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
 
         // Validating structure
         let result = state_transition.validate_advanced_structure_from_state(
+            block_info,
+            platform.config.network,
             &action,
             maybe_identity.as_ref(),
             &mut state_transition_execution_context,
@@ -402,6 +405,8 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
     /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
     fn validate_advanced_structure_from_state(
         &self,
+        block_info: &BlockInfo,
+        network: Network,
         action: &StateTransitionAction,
         maybe_identity: Option<&PartialIdentity>,
         execution_context: &mut StateTransitionExecutionContext,
@@ -745,6 +750,8 @@ impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
 impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
     fn validate_advanced_structure_from_state(
         &self,
+        block_info: &BlockInfo,
+        network: Network,
         action: &StateTransitionAction,
         maybe_identity: Option<&PartialIdentity>,
         execution_context: &mut StateTransitionExecutionContext,
@@ -752,6 +759,8 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
             StateTransition::DocumentsBatch(st) => st.validate_advanced_structure_from_state(
+                block_info,
+                network,
                 action,
                 maybe_identity,
                 execution_context,
@@ -773,6 +782,8 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
                 )
             }
             StateTransition::MasternodeVote(st) => st.validate_advanced_structure_from_state(
+                block_info,
+                network,
                 action,
                 maybe_identity,
                 execution_context,
@@ -810,7 +821,6 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
         match self {
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
-            | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::DocumentsBatch(_) => {
                 //Basic signature verification
@@ -822,6 +832,29 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
                     execution_context,
                     platform_version,
                 )?)
+            }
+            StateTransition::IdentityCreditWithdrawal(credit_withdrawal) => {
+                let mut consensus_validation_result = self
+                    .validate_state_transition_identity_signed(
+                        drive,
+                        true,
+                        false,
+                        tx,
+                        execution_context,
+                        platform_version,
+                    )?;
+
+                if consensus_validation_result.is_valid_with_data() {
+                    let validation_result = credit_withdrawal
+                        .validate_signature_purpose_matches_requirements(
+                            consensus_validation_result.data.as_ref().unwrap(),
+                            platform_version,
+                        )?;
+                    if !validation_result.is_valid() {
+                        consensus_validation_result.add_errors(validation_result.errors);
+                    }
+                }
+                Ok(consensus_validation_result)
             }
             StateTransition::IdentityUpdate(_) => {
                 //Basic signature verification

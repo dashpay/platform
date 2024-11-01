@@ -68,7 +68,7 @@ mod tests {
     #[deprecated(note = "This function is marked as unused.")]
     #[allow(deprecated)]
     fn setup_deep_nested_50_contract() -> (Drive, DataContract) {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
@@ -93,7 +93,7 @@ mod tests {
     #[deprecated(note = "This function is marked as unused.")]
     #[allow(deprecated)]
     fn setup_deep_nested_10_contract() -> (Drive, DataContract) {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
@@ -115,7 +115,7 @@ mod tests {
     }
 
     pub(in crate::drive::contract) fn setup_reference_contract() -> (Drive, DataContract) {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
@@ -138,7 +138,7 @@ mod tests {
     }
 
     pub(in crate::drive::contract) fn setup_dashpay() -> (Drive, DataContract) {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         // let's construct the grovedb structure for the dashpay data contract
@@ -159,7 +159,7 @@ mod tests {
 
     pub(in crate::drive::contract) fn setup_dashpay_with_generalized_encryption_contract(
     ) -> (Drive, DataContract) {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         // let's construct the grovedb structure for the dashpay data contract
@@ -419,7 +419,7 @@ mod tests {
 
     #[test]
     fn test_create_reference_contract_without_apply() {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
@@ -441,7 +441,7 @@ mod tests {
 
     #[test]
     fn test_create_reference_contract_with_history_without_apply() {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let contract_path =
@@ -464,7 +464,7 @@ mod tests {
 
     #[test]
     fn test_update_reference_contract_without_apply() {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let contract_path = "tests/supporting_files/contract/references/references.json";

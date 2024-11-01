@@ -53,6 +53,7 @@ use dpp::document::serialization_traits::{
 use dpp::document::DocumentV0Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::tests::json_document::json_document_to_contract;
+use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "server")]
@@ -166,7 +167,7 @@ pub fn setup(
     let platform_version = PlatformVersion::latest();
 
     let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     let drive = setup_drive(Some(drive_config));
 
@@ -260,7 +261,7 @@ fn test_query_historical() {
     let platform_version = PlatformVersion::latest();
 
     let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, PlatformVersion::first().fee_version.clone())]));
+        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     let db_transaction = drive.grove.start_transaction();
 

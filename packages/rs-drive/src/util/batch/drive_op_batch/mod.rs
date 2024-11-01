@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_documents() {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn test_add_multiple_dashpay_documents_individually_should_succeed() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_add_multiple_dashpay_documents() {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -568,7 +568,7 @@ mod tests {
 
     #[test]
     fn test_add_multiple_family_documents() {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -679,7 +679,7 @@ mod tests {
 
     #[test]
     fn test_update_multiple_family_documents() {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 
@@ -897,7 +897,7 @@ mod tests {
 
     #[test]
     fn test_update_multiple_family_documents_with_index_being_removed_and_added() {
-        let drive: Drive = setup_drive_with_initial_state_structure();
+        let drive: Drive = setup_drive_with_initial_state_structure(None);
 
         let platform_version = PlatformVersion::latest();
 

@@ -1,6 +1,6 @@
 [package]
 name = "dpp"
-version = "1.3.1"
+version = "1.5.0"
 edition = "2021"
 rust-version.workspace = true
 authors = [
@@ -15,8 +15,7 @@ authors = [
 anyhow = { version = "1.0.81" }
 async-trait = { version = "0.1.79" }
 base64 = "0.22.1"
-bls-signatures = { git = "https://github.com/dashpay/bls-signatures", tag = "v1.3.1", optional = true }
-bs58 = "0.4.0"
+bs58 = "0.5"
 byteorder = { version = "1.4" }
 chrono = { version = "0.4.35", default-features = false, features = [
   "wasmbind",
@@ -29,20 +28,22 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
   "rand",
   "signer",
   "serde",
-], default-features = false, branch = "master" }
-env_logger = { version = "0.9" }
+  "bls",
+  "eddsa"
+], default-features = false, tag = "0.32.0" }
+env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
-itertools = { version = "0.12.1" }
+itertools = { version = "0.13" }
 jsonschema = { git = "https://github.com/dashpay/jsonschema-rs", branch = "configure_regexp", default-features = false, features = [
   "draft202012",
 ], optional = true }
 lazy_static = { version = "1.4" }
 log = { version = "0.4.6" }
-num_enum = "0.5.7"
+num_enum = "0.7"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-rand = { version = "0.8.4", features = ["small_rng"] }
+rand = { version = "0.8.5", features = ["small_rng"] }
 regex = { version = "1.10.4" }
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
@@ -55,28 +56,27 @@ platform-version = { path = "../rs-platform-version" }
 platform-versioning = { path = "../rs-platform-versioning" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
-derive_more = "0.99.17"
-ed25519-dalek = { version = "2.0.0-rc.2", features = [
-  "rand_core",
-], optional = true }
+derive_more = { version = "1.0", features = ["from", "display"] }
 nohash-hasher = "0.2.0"
 rust_decimal = "1.29.1"
 rust_decimal_macros = "1.29.1"
 indexmap = { version = "2.0.2", features = ["serde"] }
-strum = { version = "0.25.0", features = ["derive"] }
+strum = { version = "0.26", features = ["derive"] }
 json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator' }
 once_cell = "1.19.0"
 
 [dev-dependencies]
-test-case = { version = "2.0" }
-tokio = { version = "1.17", features = ["full"] }
-pretty_assertions = { version = "1.3.0" }
+test-case = { version = "3.3" }
+tokio = { version = "1.40", features = ["full"] }
+pretty_assertions = { version = "1.4.1" }
 dpp = { path = ".", features = ["all_features_without_client"] }
 assert_matches = "1.5.0"
 once_cell = "1.7"
 
 [features]
 default = ["platform-value", "state-transitions"]
+bls-signatures = ["dashcore/bls"]
+ed25519-dalek = ["dashcore/eddsa"]
 all_features = [
   "json-object",
   "platform-value",
@@ -89,6 +89,9 @@ all_features = [
   "identity-hashing",
   "identity-serialization",
   "ciborium",
+  "core-types",
+  "core-types-serialization",
+  "core-types-serde-conversion",
   "document-serde-conversion",
   "document-value-conversion",
   "document-json-conversion",
@@ -131,6 +134,9 @@ dash-sdk-features = [
   "document-value-conversion",
   "data-contract-value-conversion",
   "identity-value-conversion",
+  "core-types",
+  "core-types-serialization",
+  "core-types-serde-conversion",
   "state-transition-serde-conversion",
   "state-transition-value-conversion",
   "state-transition-json-conversion",
@@ -152,6 +158,9 @@ all_features_without_client = [
   "identity-hashing",
   "identity-serialization",
   "ciborium",
+  "core-types",
+  "core-types-serialization",
+  "core-types-serde-conversion",
   "document-serde-conversion",
   "document-value-conversion",
   "document-json-conversion",
@@ -189,6 +198,9 @@ abci = [
   "identity-serialization",
   "vote-serialization",
   "platform-value-cbor",
+  "core-types",
+  "core-types-serialization",
+  "core-types-serde-conversion",
 ]
 cbor = ["ciborium"]
 validation = [
@@ -261,6 +273,9 @@ state-transition-signing = [
 ]
 vote-serialization = []
 vote-serde-conversion = []
+core-types = ["bls-signatures"]
+core-types-serialization = ["core-types"]
+core-types-serde-conversion = ["core-types"]
 state-transitions = []
 system_contracts = ["factories", "data-contracts", "platform-value-json"]
 fixtures-and-mocks = ["system_contracts", "platform-value/json"]

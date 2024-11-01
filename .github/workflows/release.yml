@@ -214,7 +214,7 @@ jobs:
           - package_type: deb
             os: ubuntu-22.04
           - package_type: macos
-            os: macos-12
+            os: macos-14
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -242,9 +242,11 @@ jobs:
       - name: Install macOS build deps
         if: runner.os == 'macOS'
         run: |
-          brew install llvm docker colima coreutils
-          colima start
-          echo "/usr/local/opt/llvm/bin" >> $GITHUB_PATH
+          brew install llvm coreutils
+
+      - name: Set up Docker for macOS
+        if: runner.os == 'macOS'
+        uses: docker-practice/actions-setup-docker@master
 
       - name: Install the Apple certificate
         if: runner.os == 'macOS'
@@ -278,7 +280,7 @@ jobs:
 
       - name: Create package
         env:
-          OSX_KEYCHAIN: $RUNNER_TEMP/app-signing.keychain-db
+          OSX_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
         run: "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh ${{ matrix.package_type }}"
 
       - name: Upload artifacts to action summary

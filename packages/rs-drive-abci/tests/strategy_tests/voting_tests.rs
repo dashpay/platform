@@ -24,6 +24,7 @@ mod tests {
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::FinishedVoteInfo;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::finished_vote_info::FinishedVoteOutcome;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use dpp::dash_to_duffs;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::state_transition::StateTransition;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
@@ -80,6 +81,7 @@ mod tests {
 
         let start_identities = create_state_transitions_for_identities(
             vec![identity1],
+            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
             &simple_signer,
             &mut rng,
             platform_version,
@@ -363,6 +365,7 @@ mod tests {
 
         let start_identities = create_state_transitions_for_identities(
             vec![identity1, identity2],
+            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
             &simple_signer,
             &mut rng,
             platform_version,
@@ -634,6 +637,7 @@ mod tests {
 
         let start_identities = create_state_transitions_for_identities(
             vec![identity1, identity2],
+            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
             &simple_signer,
             &mut rng,
             platform_version,
@@ -986,6 +990,7 @@ mod tests {
 
         let start_identities = create_state_transitions_for_identities(
             vec![identity1, identity2],
+            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
             &simple_signer,
             &mut rng,
             platform_version,
@@ -1350,6 +1355,7 @@ mod tests {
 
         let start_identities = create_state_transitions_for_identities(
             vec![identity1, identity2],
+            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
             &simple_signer,
             &mut rng,
             platform_version,

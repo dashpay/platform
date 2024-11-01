@@ -45,13 +45,15 @@ use rand::prelude::StdRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::ops::RangeInclusive;
 use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::data_contract::document_type::DocumentType;
+use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::{BinaryData, Bytes32, Value};
-use dpp::ProtocolError;
+use dpp::{dash_to_duffs, ProtocolError};
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use dpp::state_transition::documents_batch_transition::document_create_transition::{DocumentCreateTransition, DocumentCreateTransitionV0};
@@ -153,6 +155,7 @@ pub struct IdentityInsertInfo {
     pub frequency: Frequency,
     pub start_keys: u8,
     pub extra_keys: KeyMaps,
+    pub start_balance_range: RangeInclusive<Credits>,
 }
 
 impl Default for IdentityInsertInfo {
@@ -161,6 +164,7 @@ impl Default for IdentityInsertInfo {
             frequency: Default::default(),
             start_keys: 5,
             extra_keys: Default::default(),
+            start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
         }
     }
 }
@@ -1167,7 +1171,10 @@ impl Strategy {
                     }
 
                     // Generate state transition for identity top-up operation
-                    OperationType::IdentityTopUp if !current_identities.is_empty() => {
+                    OperationType::IdentityTopUp(_amount_range)
+                        if !current_identities.is_empty() =>
+                    {
+                        // todo: use amount ranges
                         // Use a cyclic iterator over the identities to ensure we can create 'count' transitions
                         let cyclic_identities = current_identities.iter().cycle();
 
@@ -1261,13 +1268,16 @@ impl Strategy {
                     }
 
                     // Generate state transition for identity withdrawal operation
-                    OperationType::IdentityWithdrawal if !current_identities.is_empty() => {
+                    OperationType::IdentityWithdrawal(amount_range)
+                        if !current_identities.is_empty() =>
+                    {
                         for i in 0..count {
                             let index = (i as usize) % current_identities.len();
                             let random_identity = &mut current_identities[index];
                             let state_transition =
                                 crate::transitions::create_identity_withdrawal_transition(
                                     random_identity,
+                                    amount_range.clone(),
                                     identity_nonce_counter,
                                     signer,
                                     rng,
@@ -1853,6 +1863,7 @@ mod tests {
     use crate::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use crate::transitions::create_state_transitions_for_identities;
     use crate::{StartIdentities, Strategy};
+    use dpp::dash_to_duffs;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
@@ -1902,6 +1913,7 @@ mod tests {
 
         let start_identities = create_state_transitions_for_identities(
             vec![identity1, identity2],
+            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
             &mut simple_signer,
             &mut rng,
             platform_version,

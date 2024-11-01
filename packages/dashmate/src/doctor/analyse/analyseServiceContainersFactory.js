@@ -20,9 +20,12 @@ export default function analyseServiceContainersFactory(
     const servicesNotStarted = [];
     const servicesFailed = [];
     const servicesOOMKilled = [];
+    const servicesHighCpuUsage = [];
+    const servicesHighMemoryUsage = [];
 
     for (const service of services) {
       const dockerInspect = samples.getServiceInfo(service.name, 'dockerInspect');
+      const dockerStats = samples.getServiceInfo(service.name, 'dockerStats');
 
       if (!dockerInspect) {
         continue;
@@ -46,6 +49,34 @@ export default function analyseServiceContainersFactory(
         servicesOOMKilled.push({
           service,
         });
+      }
+
+      const cpuSystemUsage = dockerStats?.cpuStats?.system_cpu_usage ?? 0;
+      const cpuServiceUsage = dockerStats?.cpuStats?.cpu_usage?.total_usage ?? 0;
+
+      if (cpuSystemUsage > 0) {
+        const cpuUsage = cpuServiceUsage / cpuSystemUsage;
+
+        if (cpuUsage > 0.8) {
+          servicesHighCpuUsage.push({
+            service,
+            cpuUsage,
+          });
+        }
+      }
+
+      const memoryLimit = dockerStats?.memoryStats?.limit ?? 0;
+      const memoryServiceUsage = dockerStats?.memoryStats?.usage ?? 0;
+
+      if (memoryLimit > 0) {
+        const memoryUsage = memoryServiceUsage / memoryLimit;
+
+        if (memoryUsage > 0.8) {
+          servicesHighMemoryUsage.push({
+            service,
+            memoryUsage,
+          });
+        }
       }
     }
 
@@ -101,6 +132,34 @@ export default function analyseServiceContainersFactory(
       );
 
       problems.push(problem);
+    }
+
+    if (servicesHighCpuUsage.length > 0) {
+      for (const highCpuService of servicesHighCpuUsage) {
+        const description = `Service ${highCpuService.service.title} is consuming ${(highCpuService.cpuUsage * 100).toFixed(2)}% CPU.`;
+
+        const problem = new Problem(
+          description,
+          'Consider upgrading CPU or report in case of misbehaviour.',
+          SEVERITY.MEDIUM,
+        );
+
+        problems.push(problem);
+      }
+    }
+
+    if (servicesHighMemoryUsage.length > 0) {
+      for (const highMemoryService of servicesHighMemoryUsage) {
+        const description = `Service ${highMemoryService.service.title} is consuming ${(highMemoryService.memoryUsage * 100).toFixed(2)}% RAM.`;
+
+        const problem = new Problem(
+          description,
+          'Consider upgrading RAM or report in case of misbehaviour.',
+          SEVERITY.MEDIUM,
+        );
+
+        problems.push(problem);
+      }
     }
 
     return problems;

@@ -976,6 +976,37 @@ public final class PlatformGrpc {
     return getGetStatusMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoResponse> getGetCurrentQuorumsInfoMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getCurrentQuorumsInfo",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoResponse> getGetCurrentQuorumsInfoMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoResponse> getGetCurrentQuorumsInfoMethod;
+    if ((getGetCurrentQuorumsInfoMethod = PlatformGrpc.getGetCurrentQuorumsInfoMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetCurrentQuorumsInfoMethod = PlatformGrpc.getGetCurrentQuorumsInfoMethod) == null) {
+          PlatformGrpc.getGetCurrentQuorumsInfoMethod = getGetCurrentQuorumsInfoMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getCurrentQuorumsInfo"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getCurrentQuorumsInfo"))
+              .build();
+        }
+      }
+    }
+    return getGetCurrentQuorumsInfoMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -1256,6 +1287,13 @@ public final class PlatformGrpc {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetStatusMethod(), responseObserver);
     }
 
+    /**
+     */
+    public void getCurrentQuorumsInfo(org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetCurrentQuorumsInfoMethod(), responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
@@ -1475,6 +1513,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse>(
                   this, METHODID_GET_STATUS)))
+          .addMethod(
+            getGetCurrentQuorumsInfoMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoResponse>(
+                  this, METHODID_GET_CURRENT_QUORUMS_INFO)))
           .build();
     }
   }
@@ -1755,6 +1800,14 @@ public final class PlatformGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetStatusMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     */
+    public void getCurrentQuorumsInfo(org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetCurrentQuorumsInfoMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -2001,6 +2054,13 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse getStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetStatusMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoResponse getCurrentQuorumsInfo(org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetCurrentQuorumsInfoMethod(), getCallOptions(), request);
     }
   }
 
@@ -2280,6 +2340,14 @@ public final class PlatformGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetStatusMethod(), getCallOptions()), request);
     }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoResponse> getCurrentQuorumsInfo(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetCurrentQuorumsInfoMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_BROADCAST_STATE_TRANSITION = 0;
@@ -2313,6 +2381,7 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 28;
   private static final int METHODID_GET_PATH_ELEMENTS = 29;
   private static final int METHODID_GET_STATUS = 30;
+  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 31;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -2455,6 +2524,10 @@ public final class PlatformGrpc {
           serviceImpl.getStatus((org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetStatusResponse>) responseObserver);
           break;
+        case METHODID_GET_CURRENT_QUORUMS_INFO:
+          serviceImpl.getCurrentQuorumsInfo((org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetCurrentQuorumsInfoResponse>) responseObserver);
+          break;
         default:
           throw new AssertionError();
       }
@@ -2547,6 +2620,7 @@ public final class PlatformGrpc {
               .addMethod(getGetTotalCreditsInPlatformMethod())
               .addMethod(getGetPathElementsMethod())
               .addMethod(getGetStatusMethod())
+              .addMethod(getGetCurrentQuorumsInfoMethod())
               .build();
         }
       }

@@ -1,3 +1,4 @@
+mod current_quorums_info;
 mod epoch_infos;
 mod path_elements;
 mod status;

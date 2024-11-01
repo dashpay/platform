@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn should_fetch_and_merge_pending_updates_v0() {
-        let drive = setup_drive_with_initial_state_structure();
+        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 

@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "1.3.1"
+version = "1.5.0"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -23,18 +23,18 @@ drive = { path = "../rs-drive", default-features = false, features = [
   "server",
   "grovedb_operations_logging",
 ] }
-thiserror = "1.0.58"
+thiserror = "1.0.64"
 rand = "0.8.5"
 tempfile = "3.3.0"
 hex = "0.4.3"
 indexmap = { version = "2.2.6", features = ["serde"] }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.4" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.8" }
 dpp = { path = "../rs-dpp", features = ["abci"] }
 simple-signer = { path = "../simple-signer" }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
-mockall = { version = "0.11", optional = true }
-prost = { version = "0.12", default-features = false }
+mockall = { version = "0.13", optional = true }
+prost = { version = "0.13", default-features = false }
 tracing = { version = "0.1.37", default-features = false, features = [] }
 clap = { version = "4.4.10", features = ["derive"] }
 envy = { version = "0.4.2" }
@@ -49,30 +49,30 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
   "registry",
   "tracing-log",
 ], optional = false }
-atty = { version = "0.2.14", optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.2.0+1.3.0", tag = "v1.2.0+1.3.0", features = [
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.2.1", tag = "v1.2.1+1.3.0", features = [
   "grpc",
 ] }
 lazy_static = "1.4.0"
-itertools = { version = "0.10.5" }
+itertools = { version = "0.13" }
 file-rotate = { version = "0.7.3" }
 reopen = { version = "1.0.3" }
-delegate = { version = "0.9.0" }
+delegate = { version = "0.13" }
 regex = { version = "1.8.1" }
-metrics = { version = "0.22.3" }
-metrics-exporter-prometheus = { version = "0.14.0" }
+metrics = { version = "0.23" }
+metrics-exporter-prometheus = { version = "0.15", default-features = false, features = [
+  "http-listener",
+] }
 url = { version = "2.3.1" }
-ureq = { "version" = "2.6.2" }
-tokio = { version = "1.36", features = [
+tokio = { version = "1.40", features = [
   "macros",
   "signal",
   "rt-multi-thread",
   "time",
 ] }
-tokio-util = { version = "0.7.8" }
-derive_more = "0.99.17"
+tokio-util = { version = "0.7" }
+derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
-console-subscriber = { version = "0.2.0", optional = true }
+console-subscriber = { version = "0.4", optional = true }
 
 [dev-dependencies]
 bs58 = { version = "0.5.0" }

@@ -104,10 +104,7 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
     }
 
     if (['pending_validation', 'draft'].includes(data.certificate.status)) {
-      // Certificate is already created, so we just need to pass validation
-      // and download certificate file
-
-      // We need to download new certificate bundle
+      // We need to validate and download new certificate bundle
       data.isBundleFilePresent = false;
 
       return {
@@ -115,6 +112,9 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
         data,
       };
     }
+
+    // Certificate is already created at this point, so we just need to pass validation
+    // and download certificate file
 
     if (data.certificate.status !== 'issued' || data.isExpiresSoon) {
       // Certificate is going to expire soon, or current certificate is not valid

@@ -1,5 +1,4 @@
 use crate::error::PlatformVersionError;
-use crate::version::contracts::SystemDataContractVersions;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::DriveVersion;
@@ -10,38 +9,39 @@ use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
 use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
 #[cfg(feature = "mock-versions")]
 use crate::version::mocks::TEST_PROTOCOL_VERSION_SHIFT_BYTES;
+use crate::version::system_data_contract_versions::SystemDataContractVersions;
 use crate::version::v1::PLATFORM_V1;
 #[cfg(feature = "mock-versions")]
 use std::sync::OnceLock;
 
 use crate::version::consensus_versions::ConsensusVersions;
-use crate::version::limits::SystemLimits;
+use crate::version::system_limits::SystemLimits;
 use crate::version::v2::PLATFORM_V2;
 use crate::version::v3::PLATFORM_V3;
+use crate::version::v4::PLATFORM_V4;
+use crate::version::v5::PLATFORM_V5;
 use crate::version::ProtocolVersion;
 pub use versioned_feature_core::*;
-
-#[derive(Clone, Debug, Default)]
-pub struct PlatformArchitectureVersion {
-    pub data_contract_factory_structure_version: FeatureVersion,
-    pub document_factory_structure_version: FeatureVersion,
-}
 
 #[derive(Clone, Debug)]
 pub struct PlatformVersion {
     pub protocol_version: ProtocolVersion,
-    pub proofs: FeatureVersionBounds,
     pub dpp: DPPVersion,
     pub drive: DriveVersion,
     pub drive_abci: DriveAbciVersion,
     pub consensus: ConsensusVersions,
     pub fee_version: FeeVersion,
-    pub platform_architecture: PlatformArchitectureVersion,
     pub system_data_contracts: SystemDataContractVersions,
     pub system_limits: SystemLimits,
 }
 
-pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[PLATFORM_V1, PLATFORM_V2, PLATFORM_V3];
+pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
+    PLATFORM_V1,
+    PLATFORM_V2,
+    PLATFORM_V3,
+    PLATFORM_V4,
+    PLATFORM_V5,
+];
 
 #[cfg(feature = "mock-versions")]
 // We use OnceLock to be able to modify the version mocks
@@ -49,9 +49,8 @@ pub static PLATFORM_TEST_VERSIONS: OnceLock<Vec<PlatformVersion>> = OnceLock::ne
 #[cfg(feature = "mock-versions")]
 const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, TEST_PLATFORM_V3];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V3;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V5;
 
-/// For V3 release we want to do an emergency version upgrade
 pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
 
 impl PlatformVersion {
@@ -149,6 +148,10 @@ impl PlatformVersion {
         PLATFORM_VERSIONS
             .last()
             .expect("expected to have a platform version")
+    }
+
+    pub fn desired<'a>() -> &'a Self {
+        DESIRED_PLATFORM_VERSION
     }
 
     #[cfg(feature = "mock-versions")]
