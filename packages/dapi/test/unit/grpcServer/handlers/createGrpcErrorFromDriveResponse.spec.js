@@ -69,7 +69,8 @@ describe('createGrpcErrorFromDriveResponse', () => {
   it('should throw basic consensus error if error code = 10000', async () => {
     const consensusError = new ProtocolVersionParsingError('test');
 
-    const data = { serializedError: consensusError.serialize() };
+    const serializedError = consensusError.serialize();
+    const data = { serializedError };
     info = { data };
 
     const error = await createGrpcErrorFromDriveResponse(10000, cbor.encode(info).toString('base64'));
@@ -78,7 +79,7 @@ describe('createGrpcErrorFromDriveResponse', () => {
     expect(error.message).to.be.equals(consensusError.message);
     expect(error.getRawMetadata()).to.deep.equal({
       code: 10000,
-      'drive-error-data-bin': cbor.encode(data),
+      'dash-serialized-consensus-error-bin': serializedError,
     });
   });
 
@@ -87,7 +88,8 @@ describe('createGrpcErrorFromDriveResponse', () => {
 
     const consensusError = new IdentityNotFoundError(id);
 
-    const data = { serializedError: consensusError.serialize() };
+    const serializedError = consensusError.serialize();
+    const data = { serializedError };
     info = { data };
 
     const error = await createGrpcErrorFromDriveResponse(
@@ -100,14 +102,15 @@ describe('createGrpcErrorFromDriveResponse', () => {
     expect(error.getCode()).to.equal(GrpcErrorCodes.UNAUTHENTICATED);
     expect(error.getRawMetadata()).to.deep.equal({
       code: 20000,
-      'drive-error-data-bin': cbor.encode(data),
+      'dash-serialized-consensus-error-bin': serializedError,
     });
   });
 
   it('should throw fee consensus error if error code = 30000', async () => {
     const consensusError = new BalanceIsNotEnoughError(BigInt(20), BigInt(10));
 
-    const data = { serializedError: consensusError.serialize() };
+    const serializedError = consensusError.serialize();
+    const data = { serializedError };
     info = { data };
 
     const error = await createGrpcErrorFromDriveResponse(30000, cbor.encode(info).toString('base64'));
@@ -115,7 +118,7 @@ describe('createGrpcErrorFromDriveResponse', () => {
     expect(error).to.be.an.instanceOf(FailedPreconditionGrpcError);
     expect(error.getRawMetadata()).to.deep.equal({
       code: 30000,
-      'drive-error-data-bin': cbor.encode(data),
+      'dash-serialized-consensus-error-bin': serializedError,
     });
   });
 
@@ -124,7 +127,8 @@ describe('createGrpcErrorFromDriveResponse', () => {
 
     const consensusError = new DataContractAlreadyPresentError(dataContractId);
 
-    const data = { serializedError: consensusError.serialize() };
+    const serializedError = consensusError.serialize();
+    const data = { serializedError };
     info = { data };
 
     const error = await createGrpcErrorFromDriveResponse(
@@ -135,7 +139,7 @@ describe('createGrpcErrorFromDriveResponse', () => {
     expect(error).to.be.an.instanceOf(InvalidArgumentGrpcError);
     expect(error.getRawMetadata()).to.deep.equal({
       code: 40000,
-      'drive-error-data-bin': cbor.encode(data),
+      'dash-serialized-consensus-error-bin': serializedError,
     });
   });
 

@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use super::{CanRetry, TransportClient, TransportRequest};
+use super::{CanRetry, TransportClient, TransportError, TransportRequest};
 use crate::connection_pool::{ConnectionPool, PoolPrefix};
 use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 use dapi_grpc::core::v0::core_client::CoreClient;
@@ -39,9 +39,7 @@ fn create_channel(
 }
 
 impl TransportClient for PlatformGrpcClient {
-    type Error = dapi_grpc::tonic::Status;
-
-    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, Self::Error> {
+    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
         Ok(pool
             .get_or_create(PoolPrefix::Platform, &uri, None, || {
                 match create_channel(uri.clone(), None) {
@@ -59,7 +57,7 @@ impl TransportClient for PlatformGrpcClient {
         uri: Uri,
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, TransportError> {
         Ok(pool
             .get_or_create(
                 PoolPrefix::Platform,
@@ -78,9 +76,7 @@ impl TransportClient for PlatformGrpcClient {
 }
 
 impl TransportClient for CoreGrpcClient {
-    type Error = dapi_grpc::tonic::Status;
-
-    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, Self::Error> {
+    fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
         Ok(pool
             .get_or_create(PoolPrefix::Core, &uri, None, || {
                 match create_channel(uri.clone(), None) {
@@ -98,7 +94,7 @@ impl TransportClient for CoreGrpcClient {
         uri: Uri,
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, TransportError> {
         Ok(pool
             .get_or_create(
                 PoolPrefix::Core,
@@ -155,7 +151,7 @@ macro_rules! impl_transport_request_grpc {
                 self,
                 client: &'c mut Self::Client,
                 settings: &AppliedRequestSettings,
-            ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>>
+            ) -> BoxFuture<'c, Result<Self::Response, TransportError>>
             {
                 let mut grpc_request = self.into_request();
 
@@ -165,6 +161,7 @@ macro_rules! impl_transport_request_grpc {
 
                 client
                     .$($method)+(grpc_request)
+                    .map_err(TransportError::Grpc)
                     .map_ok(|response| response.into_inner())
                     .boxed()
             }
