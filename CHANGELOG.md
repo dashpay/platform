@@ -1,3 +1,38 @@
+## [1.6.0-pr.2287.1](https://github.com/dashpay/platform/compare/v1.5.0...v1.6.0-pr.2287.1) (2024-11-01)
+
+
+### Bug Fixes
+
+* **dapi:** getStatus cache invalidation ([#2155](https://github.com/dashpay/platform/issues/2155))
+* **dapi:** invalid mainnet seed ports ([#2173](https://github.com/dashpay/platform/issues/2173))
+* **dashmate:** cannot read properties of undefined (reading 'expires') ([#2164](https://github.com/dashpay/platform/issues/2164))
+* **dashmate:** colors[updated] is not a function ([#2157](https://github.com/dashpay/platform/issues/2157))
+* **dashmate:** doctor fails collecting to big logs ([#2158](https://github.com/dashpay/platform/issues/2158))
+* **dashmate:** port marks as closed if ipv6 is not disabled ([#2162](https://github.com/dashpay/platform/issues/2162))
+* error name
+* incorrect constant name
+* incorrect dashd tag
+* mn_rr activated before we have quorums
+* wrong migration version
+
+
+### Tests
+
+* **dashmate:** e2e tests failing due to DKG interval check ([#2171](https://github.com/dashpay/platform/issues/2171))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update Core to 21.2 nightly
+* **drive:** reduce withdrawal limits
+* handle previous and new error during AU broadcasting
+* introduce one more version
+* make sure we activated mn_rr
+* **release:** update changelog and version to 1.3.1
+* remove `deprecatedrpc=hpmn`
+* update Core only for testnet/local/devnet
+* update the image to recent nightly
+
 ## [1.5.0](https://github.com/dashpay/platform/compare/v1.4.1...v1.5.0) (2024-11-01)
 
 ### ⚠ BREAKING CHANGES
