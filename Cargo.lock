@@ -1231,8 +1231,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore"
-version = "0.33.2"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=0.33.2#078ae448e65647df3b5d77e4376ed5c83ba957de"
+version = "0.33.3"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=0.33.3#d224400d34b5b0ab9089c26698c5ee39645867ff"
 dependencies = [
  "anyhow",
  "bech32",
@@ -1254,12 +1254,12 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=0.33.2#078ae448e65647df3b5d77e4376ed5c83ba957de"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=0.33.3#d224400d34b5b0ab9089c26698c5ee39645867ff"
 
 [[package]]
 name = "dashcore-rpc"
-version = "0.15.9"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.10#7cd04868dbcb255366a0ea391537433de5d35bc8"
+version = "0.15.12"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.12#677d6e50e13ced4095ff35248ef22edecf3b9962"
 dependencies = [
  "dashcore-private",
  "dashcore-rpc-json",
@@ -1273,8 +1273,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore-rpc-json"
-version = "0.15.10"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.10#7cd04868dbcb255366a0ea391537433de5d35bc8"
+version = "0.15.12"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.12#677d6e50e13ced4095ff35248ef22edecf3b9962"
 dependencies = [
  "bincode",
  "dashcore",
@@ -1288,7 +1288,7 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.14.0"
-source = "git+https://github.com/dashpay/rust-dashcore?tag=0.33.2#078ae448e65647df3b5d77e4376ed5c83ba957de"
+source = "git+https://github.com/dashpay/rust-dashcore?tag=0.33.3#d224400d34b5b0ab9089c26698c5ee39645867ff"
 dependencies = [
  "dashcore-private",
  "secp256k1",
