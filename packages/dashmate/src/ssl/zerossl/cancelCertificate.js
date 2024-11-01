@@ -1,4 +1,4 @@
-import requestApi from './requestApi';
+import requestApi from './requestApi.js';
 
 /**
  * Get ZeroSSL certificate

@@ -56,9 +56,7 @@ pub const PLATFORM_V5: PlatformVersion = PlatformVersion {
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
-        // We changed `daily_withdrawal_limit` to v1 to increase daily withdrawal limit
-        // to 2000 Dash.
-        methods: DPP_METHOD_VERSIONS_V2,
+        methods: DPP_METHOD_VERSIONS_V1,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V1,
