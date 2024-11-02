@@ -17,7 +17,6 @@ function getContestedResourceVoteStateFactory(grpcTransport) {
    * Fetch the version upgrade votes status
    * @typedef {getContestedResourceVoteState}
    * @param contractId
-   * @param documentType
    * @param documentTypeName
    * @param indexName
    * @param resultType
