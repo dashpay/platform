@@ -21,12 +21,31 @@ where
 
     let platform_state = app.platform().state.load();
 
-    let state_app_hash = platform_state
+    // Verify that Platform State corresponds to Drive commited state
+    let drive_storage_root_hash = platform_state
         .last_committed_block_app_hash()
-        .map(|app_hash| app_hash.to_vec())
         .unwrap_or_default();
 
-    // TODO: Check that Drive and Platform root hashes match except 32326
+    let platform_state_app_hash = app
+        .platform()
+        .drive
+        .grove
+        .root_hash(
+            None,
+            &platform_state
+                .current_platform_version()?
+                .drive
+                .grove_version,
+        )
+        .unwrap()?;
+
+    if drive_storage_root_hash != platform_state_app_hash {
+        return Err(AbciError::AppHashMismatch {
+            drive_storage_root_hash,
+            platform_state_app_hash,
+        }
+        .into());
+    }
 
     let desired_protocol_version = DESIRED_PLATFORM_VERSION.protocol_version;
 
@@ -35,7 +54,7 @@ where
         app_version: desired_protocol_version as u64,
         last_block_height: platform_state.last_committed_block_height() as i64,
         version: env!("CARGO_PKG_VERSION").to_string(),
-        last_block_app_hash: state_app_hash.clone(),
+        last_block_app_hash: platform_state_app_hash.to_vec(),
     };
 
     tracing::debug!(
@@ -43,7 +62,7 @@ where
         software_version = env!("CARGO_PKG_VERSION"),
         block_version = request.block_version,
         p2p_version = request.p2p_version,
-        app_hash = hex::encode(state_app_hash),
+        app_hash = hex::encode(platform_state_app_hash),
         height = platform_state.last_committed_block_height(),
         "Handshake with consensus engine",
     );

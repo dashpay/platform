@@ -66,7 +66,7 @@ where
         ));
     }
 
-    // TODO: do not commit on this block height
+    // TODO: document this
     if block_height == 32326 {
         app.commit_transaction(platform_version)?;
     }

@@ -179,7 +179,31 @@ where
 
     let platform_state = app.platform().state.load();
 
-    // TODO: Check that Drive and Platform root hashes match except 32327
+    // Verify that Platform State corresponds to Drive commited state
+    let drive_storage_root_hash = platform_state
+        .last_committed_block_app_hash()
+        .unwrap_or_default();
+
+    let platform_state_app_hash = app
+        .platform()
+        .drive
+        .grove
+        .root_hash(
+            None,
+            &platform_state
+                .current_platform_version()?
+                .drive
+                .grove_version,
+        )
+        .unwrap()?;
+
+    if drive_storage_root_hash != platform_state_app_hash {
+        return Err(AbciError::AppHashMismatch {
+            drive_storage_root_hash,
+            platform_state_app_hash,
+        }
+        .into());
+    }
 
     let starting_platform_version = platform_state.current_platform_version()?;
 
