@@ -179,6 +179,8 @@ where
 
     let platform_state = app.platform().state.load();
 
+    // TODO: Check that Drive and Platform root hashes match except 32327
+
     let starting_platform_version = platform_state.current_platform_version()?;
 
     // Running the proposal executes all the state transitions for the block

@@ -35,6 +35,8 @@ where
 
     let platform_state = app.platform().state.load();
 
+    // TODO: Check that Drive and Platform root hashes match except 32327
+
     let last_committed_core_height = platform_state.last_committed_core_height();
 
     let starting_platform_version = platform_state.current_platform_version()?;

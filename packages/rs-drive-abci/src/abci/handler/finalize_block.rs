@@ -66,7 +66,10 @@ where
         ));
     }
 
-    app.commit_transaction(platform_version)?;
+    // TODO: do not commit on this block height
+    if block_height == 32326 {
+        app.commit_transaction(platform_version)?;
+    }
 
     app.platform()
         .committed_block_height_guard

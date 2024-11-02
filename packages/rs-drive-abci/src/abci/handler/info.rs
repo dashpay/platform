@@ -26,6 +26,8 @@ where
         .map(|app_hash| app_hash.to_vec())
         .unwrap_or_default();
 
+    // TODO: Check that Drive and Platform root hashes match except 32326
+
     let desired_protocol_version = DESIRED_PLATFORM_VERSION.protocol_version;
 
     let response = proto::ResponseInfo {
