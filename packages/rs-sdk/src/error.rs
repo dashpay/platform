@@ -1,13 +1,13 @@
 //! Definitions of errors
-use std::fmt::Debug;
-use std::time::Duration;
-
-use dapi_grpc::mock::Mockable;
+use dpp::consensus::ConsensusError;
+use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
-use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
-
 pub use drive_proof_verifier::error::ContextProviderError;
+use rs_dapi_client::transport::TransportError;
+use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
+use std::fmt::Debug;
+use std::time::Duration;
 
 /// Error type for the SDK
 // TODO: Propagate server address and retry information so that the user can retrieve it
@@ -74,8 +74,24 @@ pub enum Error {
     StaleNode(#[from] StaleNodeError),
 }
 
-impl<T: Debug + Mockable> From<DapiClientError<T>> for Error {
-    fn from(value: DapiClientError<T>) -> Self {
+// TODO: Decompose DapiClientError to more specific errors like connection, node error instead of DAPI client error
+impl From<DapiClientError> for Error {
+    fn from(value: DapiClientError) -> Self {
+        if let DapiClientError::Transport(TransportError::Grpc(status)) = &value {
+            if let Some(consensus_error_value) = status
+                .metadata()
+                .get_bin("dash-serialized-consensus-error-bin")
+            {
+                return ConsensusError::deserialize_from_bytes(
+                    consensus_error_value.as_encoded_bytes(),
+                )
+                .map(|consensus_error| {
+                    Self::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error)))
+                })
+                .unwrap_or_else(Self::Protocol);
+            }
+        }
+
         Self::DapiClientError(format!("{:?}", value))
     }
 }

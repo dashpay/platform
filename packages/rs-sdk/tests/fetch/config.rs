@@ -225,7 +225,7 @@ impl Config {
         //  Next time we need to do it again and update this value :(. This is terrible.
         //  We should automate creation of identity for SDK tests when we have time.
         Identifier::from_string(
-            "G1vdreUUxFAmt3bd2kJmV8idrhPCvRQis4cQfRQayWW2",
+            "G5z3hwiLUnRDGrLEgcqM9sX8wWEuNGHQqvioERgdZ2Tq",
             Encoding::Base58,
         )
         .unwrap()
@@ -252,7 +252,7 @@ impl Config {
     ///
     /// See documentation of [contested_resource_identity_votes_ok](super::contested_resource_identity_votes::contested_resource_identity_votes_ok).
     fn default_protxhash() -> String {
-        String::from("208a6f71a8b68d20485d568d3039124c5b930d893e73a23774081de0be6e30dd")
+        String::from("069dcb6e829988af0edb245f30d3b1297a47081854a78c3cdea9fddb8fbd07eb")
     }
 
     /// Return ProTxHash of an existing evo node, or None if not set

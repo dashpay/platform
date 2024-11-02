@@ -23,6 +23,9 @@ import analyseSystemResourcesFactory from './doctor/analyse/analyseSystemResourc
 import analyseSamplesFactory from './doctor/analyseSamplesFactory.js';
 import archiveSamples from './doctor/archiveSamples.js';
 import unarchiveSamplesFactory from './doctor/unarchiveSamplesFactory.js';
+import cleanupZeroSSLCertificatesTaskFactory
+  from './listr/tasks/ssl/zerossl/cleanupZeroSSLCertificatesTaskFactory.js';
+import cancelCertificate from './ssl/zerossl/cancelCertificate.js';
 
 import renderTemplateFactory from './templates/renderTemplateFactory.js';
 import renderServiceTemplatesFactory from './templates/renderServiceTemplatesFactory.js';
@@ -206,6 +209,7 @@ export default async function createDIContainer(options = {}) {
     downloadCertificate: asValue(downloadCertificate),
     getCertificate: asValue(getCertificate),
     listCertificates: asValue(listCertificates),
+    cancelCertificate: asValue(cancelCertificate),
     createSelfSignedCertificate: asValue(createSelfSignedCertificate),
     verificationServer: asClass(VerificationServer).singleton(),
   });
@@ -299,6 +303,7 @@ export default async function createDIContainer(options = {}) {
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
     registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
+    cleanupZeroSSLCertificatesTask: asFunction(cleanupZeroSSLCertificatesTaskFactory).singleton(),
     obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
     saveCertificateTask: asFunction(saveCertificateTaskFactory),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
