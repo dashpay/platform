@@ -233,8 +233,6 @@ struct PlatformConfigIntermediate {
     #[serde(flatten)]
     pub instant_lock: InstantLockConfig,
     pub block_spacing_ms: u64,
-    #[serde(default = "PlatformConfig::default_initial_protocol_version")]
-    pub initial_protocol_version: ProtocolVersion,
     pub db_path: PathBuf,
     #[serde(default)]
     pub rejections_path: Option<PathBuf>,
@@ -624,10 +622,6 @@ impl ExecutionConfig {
 }
 
 impl PlatformConfig {
-    fn default_initial_protocol_version() -> ProtocolVersion {
-        INITIAL_PROTOCOL_VERSION
-    }
-
     fn default_network() -> Network {
         Network::Dash
     }

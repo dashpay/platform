@@ -12,6 +12,7 @@ use crate::platform_types::block_execution_outcome;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
+use dpp::dashcore::Network;
 use dpp::version::TryIntoPlatformVersioned;
 use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
@@ -197,12 +198,17 @@ where
         )
         .unwrap()?;
 
-    if drive_storage_root_hash != platform_state_app_hash {
-        return Err(AbciError::AppHashMismatch {
-            drive_storage_root_hash,
-            platform_state_app_hash,
+    // TODO: Document this
+    // TODO: verify that chain id is evo1
+    #[allow(clippy::collapsible_if)]
+    if !(app.platform().config.network == Network::Dash && request.height == 32327) {
+        if drive_storage_root_hash != platform_state_app_hash {
+            return Err(AbciError::AppHashMismatch {
+                drive_storage_root_hash,
+                platform_state_app_hash,
+            }
+            .into());
         }
-        .into());
     }
 
     let starting_platform_version = platform_state.current_platform_version()?;

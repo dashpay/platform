@@ -5,6 +5,7 @@ use crate::execution::types::block_execution_context::v0::BlockExecutionContextV
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
+use dpp::dashcore::Network;
 use std::sync::atomic::Ordering;
 use tenderdash_abci::proto::abci as proto;
 
@@ -67,7 +68,8 @@ where
     }
 
     // TODO: document this
-    if block_height == 32326 {
+    // TODO: verify that chain id is evo1
+    if !(app.platform().config.network == Network::Dash && block_height == 32326) {
         app.commit_transaction(platform_version)?;
     }
 

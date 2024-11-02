@@ -3,6 +3,7 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
+use dpp::dashcore::Network;
 use dpp::version::DESIRED_PLATFORM_VERSION;
 use tenderdash_abci::proto::abci as proto;
 
@@ -20,6 +21,8 @@ where
     }
 
     let platform_state = app.platform().state.load();
+
+    let last_block_height = platform_state.last_committed_block_height() as i64;
 
     // Verify that Platform State corresponds to Drive commited state
     let drive_storage_root_hash = platform_state
@@ -39,12 +42,17 @@ where
         )
         .unwrap()?;
 
-    if drive_storage_root_hash != platform_state_app_hash {
-        return Err(AbciError::AppHashMismatch {
-            drive_storage_root_hash,
-            platform_state_app_hash,
+    // TODO: Document this
+    // TODO: verify that chain id is evo1
+    #[allow(clippy::collapsible_if)]
+    if !(app.platform().config.network == Network::Dash && last_block_height == 32326) {
+        if drive_storage_root_hash != platform_state_app_hash {
+            return Err(AbciError::AppHashMismatch {
+                drive_storage_root_hash,
+                platform_state_app_hash,
+            }
+            .into());
         }
-        .into());
     }
 
     let desired_protocol_version = DESIRED_PLATFORM_VERSION.protocol_version;
@@ -52,7 +60,7 @@ where
     let response = proto::ResponseInfo {
         data: "".to_string(),
         app_version: desired_protocol_version as u64,
-        last_block_height: platform_state.last_committed_block_height() as i64,
+        last_block_height,
         version: env!("CARGO_PKG_VERSION").to_string(),
         last_block_app_hash: platform_state_app_hash.to_vec(),
     };
@@ -63,7 +71,7 @@ where
         block_version = request.block_version,
         p2p_version = request.p2p_version,
         app_hash = hex::encode(platform_state_app_hash),
-        height = platform_state.last_committed_block_height(),
+        last_block_height,
         "Handshake with consensus engine",
     );
 
