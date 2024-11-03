@@ -25,7 +25,7 @@ where
     let last_block_height = platform_state.last_committed_block_height() as i64;
 
     // Verify that Platform State corresponds to Drive commited state
-    let drive_storage_root_hash = platform_state
+    let platform_state_app_hash = platform_state
         .last_committed_block_app_hash()
         .unwrap_or_default();
 
@@ -34,7 +34,7 @@ where
         .drive
         .grove_version;
 
-    let platform_state_app_hash = app
+    let drive_storage_root_hash = app
         .platform()
         .drive
         .grove
