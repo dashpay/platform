@@ -29,17 +29,16 @@ where
         .last_committed_block_app_hash()
         .unwrap_or_default();
 
+    let grove_version = &platform_state
+        .current_platform_version()?
+        .drive
+        .grove_version;
+
     let platform_state_app_hash = app
         .platform()
         .drive
         .grove
-        .root_hash(
-            None,
-            &platform_state
-                .current_platform_version()?
-                .drive
-                .grove_version,
-        )
+        .root_hash(None, grove_version)
         .unwrap()?;
 
     // We had a chain halt on mainnet on block 32326. Compaction happened
