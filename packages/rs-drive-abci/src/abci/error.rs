@@ -90,13 +90,4 @@ pub enum AbciError {
     /// Generic with code should only be used in tests
     #[error("invalid state transition error: {0}")]
     InvalidStateTransition(#[from] ConsensusError),
-
-    /// Drive storage root hash is not matching with app hash stored in PlatformState
-    #[error("drive and platform state app hash mismatch")]
-    AppHashMismatch {
-        /// Storage root hash
-        drive_storage_root_hash: [u8; 32],
-        /// App hash stored in PlatformState
-        platform_state_app_hash: [u8; 32],
-    },
 }

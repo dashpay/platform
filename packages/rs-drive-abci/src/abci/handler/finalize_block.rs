@@ -67,10 +67,19 @@ where
         ));
     }
 
-    // TODO: document this
+    // We had a chain halt on mainnet on block 32326. Compaction happened
+    // and transaction.commit() returned an error. Due to a bug in tenderdash,
+    // validators just proceeded on next block without committing data but keeping
+    // updated cache. To keep consistency with mainnet chain we have to skip
+    // commit of this block now on.
     // TODO: verify that chain id is evo1
     if !(app.platform().config.network == Network::Dash && block_height == 32326) {
-        app.commit_transaction(platform_version)?;
+        // This is simplified solution until we have a better way to handle
+        // We still have caches in memory that corresponds to the data that
+        // we weren't able to commit. Solution is to restart the Drive, so all caches
+        // will be restored from the disk and try to process this block again
+        app.commit_transaction(platform_version)
+            .expect("commit transaction");
     }
 
     app.platform()
