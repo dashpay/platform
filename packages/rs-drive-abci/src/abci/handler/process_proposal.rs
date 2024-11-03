@@ -202,9 +202,13 @@ where
     // validators just proceeded on next block without committing data but keeping
     // updated cache. To keep consistency with mainnet chain we allow app hashes to be
     // different for this block.
-    // TODO: verify that chain id is evo1
+    let config = &app.platform().config;
+
     #[allow(clippy::collapsible_if)]
-    if !(app.platform().config.network == Network::Dash && request.height == 32327) {
+    if !(app.platform().config.network == Network::Dash
+        && config.abci.chain_id == "evo1"
+        && request.height == 32327)
+    {
         // App hash in memory must be equal to app hash on disk
         if drive_storage_root_hash != platform_state_app_hash {
             // We panic because we can't recover from this situation.

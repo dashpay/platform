@@ -72,8 +72,12 @@ where
     // validators just proceeded on next block without committing data but keeping
     // updated cache. To keep consistency with mainnet chain we have to skip
     // commit of this block now on.
-    // TODO: verify that chain id is evo1
-    if !(app.platform().config.network == Network::Dash && block_height == 32326) {
+    let config = &app.platform().config;
+
+    if !(app.platform().config.network == Network::Dash
+        && config.abci.chain_id == "evo1"
+        && block_height == 32326)
+    {
         // This is simplified solution until we have a better way to handle
         // We still have caches in memory that corresponds to the data that
         // we weren't able to commit. Solution is to restart the Drive, so all caches
