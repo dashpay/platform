@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::serialization::PlatformDeserializableFromVersionedStructure;
 use dpp::version::PlatformVersion;
@@ -27,7 +28,22 @@ impl<C> Platform<C> {
                     );
                 }
 
-                result
+                let mut platform_state = result?;
+
+                if platform_state.last_committed_block_height() >= 32326 {
+                    // Apply a corrective patch to handle the commit failure at block 32326
+                    //
+                    // Due to a missed commit of block 32326, an Evonode deletion was not saved to disk.
+                    // This discrepancy caused an inconsistency between the in-memory cache and the disk state,
+                    // leading to potential issues in consensus.
+                    //
+                    // Calling `patch_error_block_32326_commit_failure` here replays the deletion event
+                    // during state loading, ensuring that the in-memory state reflects the actual state
+                    // on the network, allowing the chain to proceed correctly.
+                    platform_state.patch_error_block_32326_commit_failure::<C>();
+                }
+
+                Ok(platform_state)
             })
             .transpose()
     }

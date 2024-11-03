@@ -12,10 +12,7 @@ use dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff, Masterno
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
-impl<C> Platform<C>
-where
-    C: CoreRPCLike,
-{
+impl<C> Platform<C> {
     /// Remove a masternode from all validator sets based on its ProTxHash.
     ///
     /// This function iterates through all the validator sets and removes the given masternode
@@ -27,7 +24,7 @@ where
     /// * `validator_sets` - A mutable reference to an IndexMap containing QuorumHash as key
     ///                      and ValidatorSet as value.
     ///
-    fn remove_masternode_in_validator_sets(
+    pub(crate) fn remove_masternode_in_validator_sets(
         pro_tx_hash: &ProTxHash,
         validator_sets: &mut IndexMap<QuorumHash, ValidatorSet>,
     ) {
@@ -37,7 +34,12 @@ where
                 validator_set.members_mut().remove(pro_tx_hash);
             });
     }
+}
 
+impl<C> Platform<C>
+where
+    C: CoreRPCLike,
+{
     /// Updates a masternode in the validator sets.
     ///
     /// This function updates the properties of the masternode that matches the given `pro_tx_hash`.
