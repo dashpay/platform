@@ -1312,7 +1312,7 @@ impl Strategy {
                                     &sender.0,
                                     &recipient.0,
                                     identity_nonce_counter,
-                                    signer, // Does this mean the loaded identity must be the sender since we're signing with it?
+                                    signer, // This means the TUI loaded identity must always be the sender since we're always signing with it for now
                                     transfer_info.amount,
                                 );
                                 operations.push(state_transition);
