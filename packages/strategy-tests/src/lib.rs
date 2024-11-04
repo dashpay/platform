@@ -44,6 +44,7 @@ use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::Rng;
+use transitions::create_identity_credit_transfer_transition;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::RangeInclusive;
 use bincode::{Decode, Encode};
@@ -146,7 +147,7 @@ pub struct StartIdentities {
     pub keys_per_identity: u8,
     pub starting_balances: u64, // starting balance in duffs
     pub extra_keys: KeyMaps,
-    pub hard_coded: Vec<(Identity, StateTransition)>,
+    pub hard_coded: Vec<(Identity, Option<StateTransition>)>,
 }
 
 /// Identities to register on the first block of the strategy
@@ -1287,38 +1288,66 @@ impl Strategy {
                     }
 
                     // Generate state transition for identity transfer operation
-                    OperationType::IdentityTransfer if current_identities.len() > 1 => {
+                    OperationType::IdentityTransfer(identity_transfer_info) => {
                         for _ in 0..count {
-                            let identities_count = current_identities.len();
-                            if identities_count == 0 {
-                                break;
-                            }
+                            if let Some(transfer_info) = identity_transfer_info {
+                                let sender = self
+                                    .start_identities
+                                    .hard_coded
+                                    .iter()
+                                    .find(|(identity, _)| identity.id() == transfer_info.from)
+                                    .expect(
+                                        "Expected to find sender identity in hardcoded start identities",
+                                    );
+                                let recipient = self
+                                    .start_identities
+                                    .hard_coded
+                                    .iter()
+                                    .find(|(identity, _)| identity.id() == transfer_info.to)
+                                    .expect(
+                                        "Expected to find recipient identity in hardcoded start identities",
+                                    );
 
-                            // Select a random identity from the current_identities for the sender
-                            let random_index_sender = rng.gen_range(0..identities_count);
+                                let state_transition = create_identity_credit_transfer_transition(
+                                    &sender.0,
+                                    &recipient.0,
+                                    identity_nonce_counter,
+                                    signer, // Does this mean the loaded identity must be the sender since we're signing with it?
+                                    transfer_info.amount,
+                                );
+                                operations.push(state_transition);
+                            } else if current_identities.len() > 1 {
+                                let identities_count = current_identities.len();
+                                if identities_count == 0 {
+                                    break;
+                                }
 
-                            // Clone current_identities to a Vec for manipulation
-                            let mut unused_identities: Vec<_> =
-                                current_identities.iter().cloned().collect();
-                            unused_identities.remove(random_index_sender); // Remove the sender
-                            let unused_identities_count = unused_identities.len();
+                                // Select a random identity from the current_identities for the sender
+                                let random_index_sender = rng.gen_range(0..identities_count);
 
-                            // Select a random identity from the remaining ones for the recipient
-                            let random_index_recipient = rng.gen_range(0..unused_identities_count);
-                            let recipient = &unused_identities[random_index_recipient];
+                                // Clone current_identities to a Vec for manipulation
+                                let mut unused_identities: Vec<_> =
+                                    current_identities.iter().cloned().collect();
+                                unused_identities.remove(random_index_sender); // Remove the sender
+                                let unused_identities_count = unused_identities.len();
 
-                            // Use the sender index on the original slice
-                            let sender = &mut current_identities[random_index_sender];
+                                // Select a random identity from the remaining ones for the recipient
+                                let random_index_recipient =
+                                    rng.gen_range(0..unused_identities_count);
+                                let recipient = &unused_identities[random_index_recipient];
 
-                            let state_transition =
-                                crate::transitions::create_identity_credit_transfer_transition(
+                                // Use the sender index on the original slice
+                                let sender = &mut current_identities[random_index_sender];
+
+                                let state_transition = create_identity_credit_transfer_transition(
                                     sender,
                                     recipient,
                                     identity_nonce_counter,
                                     signer,
                                     300000,
                                 );
-                            operations.push(state_transition);
+                                operations.push(state_transition);
+                            }
                         }
                     }
 

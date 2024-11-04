@@ -41,7 +41,7 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
 use strategy_tests::Strategy;
-use strategy_tests::transitions::{create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs, instant_asset_lock_proof_fixture, instant_asset_lock_proof_fixture_with_dynamic_range};
+use strategy_tests::transitions::{create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs, instant_asset_lock_proof_fixture_with_dynamic_range};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::RangeInclusive;
@@ -405,7 +405,15 @@ impl NetworkStrategy {
                 state_transitions.append(&mut new_transitions);
             }
             if !self.strategy.start_identities.hard_coded.is_empty() {
-                state_transitions.extend(self.strategy.start_identities.hard_coded.clone());
+                state_transitions.extend(
+                    self.strategy.start_identities.hard_coded.iter().filter_map(
+                        |(identity, transition)| {
+                            transition.as_ref().map(|create_transition| {
+                                (identity.clone(), create_transition.clone())
+                            })
+                        },
+                    ),
+                );
             }
         }
         let frequency = &self.strategy.identity_inserts.frequency;
@@ -1196,7 +1204,7 @@ impl NetworkStrategy {
                             operations.push(state_transition);
                         }
                     }
-                    OperationType::IdentityTransfer if current_identities.len() > 1 => {
+                    OperationType::IdentityTransfer(_) if current_identities.len() > 1 => {
                         let identities_clone = current_identities.clone();
 
                         // Sender is the first in the list, which should be loaded_identity

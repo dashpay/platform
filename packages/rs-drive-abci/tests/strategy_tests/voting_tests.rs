@@ -79,13 +79,17 @@ mod tests {
 
         simple_signer.add_keys(keys1);
 
-        let start_identities = create_state_transitions_for_identities(
-            vec![identity1],
-            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
-            &simple_signer,
-            &mut rng,
-            platform_version,
-        );
+        let start_identities: Vec<(Identity, Option<StateTransition>)> =
+            create_state_transitions_for_identities(
+                vec![identity1],
+                &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
+                &simple_signer,
+                &mut rng,
+                platform_version,
+            )
+            .iter()
+            .map(|(identity, transition)| (identity.clone(), Some(transition.clone())))
+            .collect();
 
         let dpns_contract = platform
             .drive
@@ -363,13 +367,17 @@ mod tests {
 
         simple_signer.add_keys(keys2);
 
-        let start_identities = create_state_transitions_for_identities(
-            vec![identity1, identity2],
-            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
-            &simple_signer,
-            &mut rng,
-            platform_version,
-        );
+        let start_identities: Vec<(Identity, Option<StateTransition>)> =
+            create_state_transitions_for_identities(
+                vec![identity1, identity2],
+                &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
+                &simple_signer,
+                &mut rng,
+                platform_version,
+            )
+            .iter()
+            .map(|(identity, transition)| (identity.clone(), Some(transition.clone())))
+            .collect();
 
         let dpns_contract = platform
             .drive
@@ -635,13 +643,17 @@ mod tests {
 
         simple_signer.add_keys(keys2);
 
-        let start_identities = create_state_transitions_for_identities(
-            vec![identity1, identity2],
-            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
-            &simple_signer,
-            &mut rng,
-            platform_version,
-        );
+        let start_identities: Vec<(Identity, Option<StateTransition>)> =
+            create_state_transitions_for_identities(
+                vec![identity1, identity2],
+                &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
+                &simple_signer,
+                &mut rng,
+                platform_version,
+            )
+            .iter()
+            .map(|(identity, transition)| (identity.clone(), Some(transition.clone())))
+            .collect();
 
         let dpns_contract = platform
             .drive
@@ -988,13 +1000,17 @@ mod tests {
 
         simple_signer.add_keys(keys2);
 
-        let start_identities = create_state_transitions_for_identities(
-            vec![identity1, identity2],
-            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
-            &simple_signer,
-            &mut rng,
-            platform_version,
-        );
+        let start_identities: Vec<(Identity, Option<StateTransition>)> =
+            create_state_transitions_for_identities(
+                vec![identity1, identity2],
+                &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
+                &simple_signer,
+                &mut rng,
+                platform_version,
+            )
+            .iter()
+            .map(|(identity, transition)| (identity.clone(), Some(transition.clone())))
+            .collect();
 
         let dpns_contract = platform
             .drive
@@ -1353,13 +1369,17 @@ mod tests {
 
         simple_signer.add_keys(keys2);
 
-        let start_identities = create_state_transitions_for_identities(
-            vec![identity1, identity2],
-            &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
-            &simple_signer,
-            &mut rng,
-            platform_version,
-        );
+        let start_identities: Vec<(Identity, Option<StateTransition>)> =
+            create_state_transitions_for_identities(
+                vec![identity1, identity2],
+                &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
+                &simple_signer,
+                &mut rng,
+                platform_version,
+            )
+            .iter()
+            .map(|(identity, transition)| (identity.clone(), Some(transition.clone())))
+            .collect();
 
         let dpns_contract = platform
             .drive
