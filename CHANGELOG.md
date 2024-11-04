@@ -1,3 +1,12 @@
+### [1.5.1](https://github.com/dashpay/platform/compare/v1.5.0...v1.5.1) (2024-11-04)
+
+
+### Bug Fixes
+
+* **drive:** apply batch is not using transaction in `remove_all_votes_given_by_identities` ([#2309](https://github.com/dashpay/platform/issues/2309))
+* **drive:** uncommitted state if db transaction fails ([#2305](https://github.com/dashpay/platform/issues/2305))
+
+
 ## [1.5.0](https://github.com/dashpay/platform/compare/v1.4.1...v1.5.0) (2024-11-01)
 
 ### ⚠ BREAKING CHANGES
