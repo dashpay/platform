@@ -84,10 +84,11 @@ where
         // Old behavior on mainnet below block 33000
         result?;
     } else {
-        // This is simplified solution until we have a better way to handle
-        // We still have caches in memory that corresponds to the data that
-        // we weren't able to commit. Solution is to restart the Drive, so all caches
-        // will be restored from the disk and try to process this block again
+        // In case if transaction commit failed we still have caches in memory that
+        // corresponds to the data that we weren't able to commit.
+        // The simplified solution is to restart the Drive, so all caches
+        // will be restored from the disk and try to process this block again.
+        // TODO: We need a better handling of the transaction is busy error with retry logic.
         result.expect("commit transaction");
     }
 
