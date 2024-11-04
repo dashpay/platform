@@ -53,28 +53,15 @@ where
         .root_hash(None, grove_version)
         .unwrap()?;
 
-    // We had a chain halt on mainnet on block 32326. Compaction happened
-    // and transaction.commit() returned an error. Due to a bug in tenderdash,
-    // validators just proceeded on next block without committing data but keeping
-    // updated cache. To keep consistency with mainnet chain we allow app hashes to be
-    // different for this block.
-    let config = &app.platform().config;
-
-    #[allow(clippy::collapsible_if)]
-    if !(config.network == Network::Dash
-        && config.abci.chain_id == "evo1"
-        && request.height == 32327)
-    {
-        // App hash in memory must be equal to app hash on disk
-        if drive_storage_root_hash != platform_state_app_hash {
-            // We panic because we can't recover from this situation.
-            // Better to restart the Drive, so we might self-heal the node
-            // reloading state form the disk
-            panic!(
-                "drive and platform state app hash mismatch: drive_storage_root_hash: {:?}, platform_state_app_hash: {:?}",
-                drive_storage_root_hash, platform_state_app_hash
-            );
-        }
+    // App hash in memory must be equal to app hash on disk
+    if drive_storage_root_hash != platform_state_app_hash {
+        // We panic because we can't recover from this situation.
+        // Better to restart the Drive, so we might self-heal the node
+        // reloading state form the disk
+        panic!(
+            "drive and platform state app hash mismatch: drive_storage_root_hash: {:?}, platform_state_app_hash: {:?}",
+            drive_storage_root_hash, platform_state_app_hash
+        );
     }
 
     let last_committed_core_height = platform_state.last_committed_core_height();
