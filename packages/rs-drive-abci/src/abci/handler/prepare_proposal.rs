@@ -53,12 +53,12 @@ where
         .root_hash(None, grove_version)
         .unwrap()?;
 
-    // We had a sequence of errors on mainnet started since block 32326.
-    // We got rocksdb transaction is busy error because of a bug (writing outside of transaction).
-    // Due to another bug in tenderdash, validators just proceeded on next block partially committing
-    // the state and updated cache. Fullnodes are stuck and proceeded after re-sync.
-    // To keep consistency with mainnet chain we enable this fix at
-    // the block when we consider state is consistent.
+    // We had a sequence of errors on the mainnet started since block 32326.
+    // We got RocksDB's "transaction is busy" error because of a bug (#2309 ).
+    // Due to another bug in Tenderdash (https://github.com/dashpay/tenderdash/pull/966),
+    // validators just proceeded to the next block partially committing the state and updating the cache.
+    // Full nodes are stuck and proceeded after re-sync.
+    // For the mainnet chain, we enable these fixes at the block when we consider the state is consistent.
     let config = &app.platform().config;
 
     #[allow(clippy::collapsible_if)]
