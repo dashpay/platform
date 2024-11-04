@@ -11,6 +11,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::Network;
 use dpp::version::TryIntoPlatformVersioned;
 use drive::grovedb_storage::Error::RocksDBError;
 use tenderdash_abci::proto::abci as proto;
@@ -34,6 +35,48 @@ where
     // This is done before all else
 
     let platform_state = app.platform().state.load();
+
+    // Verify that Platform State corresponds to Drive commited state
+    let platform_state_app_hash = platform_state
+        .last_committed_block_app_hash()
+        .unwrap_or_default();
+
+    let grove_version = &platform_state
+        .current_platform_version()?
+        .drive
+        .grove_version;
+
+    let drive_storage_root_hash = app
+        .platform()
+        .drive
+        .grove
+        .root_hash(None, grove_version)
+        .unwrap()?;
+
+    // We had a sequence of errors on the mainnet started since block 32326.
+    // We got RocksDB's "transaction is busy" error because of a bug (https://github.com/dashpay/platform/pull/2309).
+    // Due to another bug in Tenderdash (https://github.com/dashpay/tenderdash/pull/966),
+    // validators just proceeded to the next block partially committing the state and updating the cache.
+    // Full nodes are stuck and proceeded after re-sync.
+    // For the mainnet chain, we enable these fixes at the block when we consider the state is consistent.
+    let config = &app.platform().config;
+
+    #[allow(clippy::collapsible_if)]
+    if !(config.network == Network::Dash
+        && config.abci.chain_id == "evo1"
+        && request.height < 33000)
+    {
+        // App hash in memory must be equal to app hash on disk
+        if drive_storage_root_hash != platform_state_app_hash {
+            // We panic because we can't recover from this situation.
+            // Better to restart the Drive, so we might self-heal the node
+            // reloading state form the disk
+            panic!(
+                "drive and platform state app hash mismatch: drive_storage_root_hash: {:?}, platform_state_app_hash: {:?}",
+                drive_storage_root_hash, platform_state_app_hash
+            );
+        }
+    }
 
     let last_committed_core_height = platform_state.last_committed_core_height();
 
