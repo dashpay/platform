@@ -67,6 +67,8 @@ where
         ));
     }
 
+    let result = app.commit_transaction(platform_version);
+
     // We had a sequence of errors on the mainnet started since block 32326.
     // We got RocksDB's "transaction is busy" error because of a bug (https://github.com/dashpay/platform/pull/2309).
     // Due to another bug in Tenderdash (https://github.com/dashpay/tenderdash/pull/966),
@@ -75,16 +77,18 @@ where
     // For the mainnet chain, we enable these fixes at the block when we consider the state is consistent.
     let config = &app.platform().config;
 
-    if !(app.platform().config.network == Network::Dash
+    if app.platform().config.network == Network::Dash
         && config.abci.chain_id == "evo1"
-        && block_height < 33000)
+        && block_height < 33000
     {
+        // Old behavior on mainnet below block 33000
+        result?;
+    } else {
         // This is simplified solution until we have a better way to handle
         // We still have caches in memory that corresponds to the data that
         // we weren't able to commit. Solution is to restart the Drive, so all caches
         // will be restored from the disk and try to process this block again
-        app.commit_transaction(platform_version)
-            .expect("commit transaction");
+        result.expect("commit transaction");
     }
 
     app.platform()
