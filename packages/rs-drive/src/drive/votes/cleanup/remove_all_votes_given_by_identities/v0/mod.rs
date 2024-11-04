@@ -123,13 +123,14 @@ impl Drive {
             // and updating the cache (https://github.com/dashpay/platform/pull/2305).
             // Full nodes are stuck and proceeded after re-sync.
             // For the mainnet chain, we enable this fix at the block when we consider the state is consistent.
-            let transaction = if network == Network::Dash && chain_id == "evo1" && block_height < 33000 {
-                // Old behaviour on mainnet
-                None
-            } else {
-                // We should use transaction
-                transaction
-            };
+            let transaction =
+                if network == Network::Dash && chain_id == "evo1" && block_height < 33000 {
+                    // Old behaviour on mainnet
+                    None
+                } else {
+                    // We should use transaction
+                    transaction
+                };
 
             self.apply_batch_low_level_drive_operations(
                 None,
