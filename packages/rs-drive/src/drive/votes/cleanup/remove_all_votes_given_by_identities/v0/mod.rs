@@ -116,23 +116,28 @@ impl Drive {
         }
 
         if !deletion_batch.is_empty() {
-            if network == Network::Dash && chain_id == "evo1" && block_height < 33000 {
-                self.apply_batch_low_level_drive_operations(
-                    None,
-                    None,
-                    deletion_batch,
-                    &mut vec![],
-                    &platform_version.drive,
-                )?;
+            // We had a sequence of errors on the mainnet started since block 32326.
+            // We got RocksDB's "transaction is busy" error because of a bug (https://github.com/dashpay/platform/pull/2309).
+            // Due to another bug in Tenderdash (https://github.com/dashpay/tenderdash/pull/966),
+            // validators just proceeded to the next block partially committing the state
+            // and updating the cache (https://github.com/dashpay/platform/pull/2305).
+            // Full nodes are stuck and proceeded after re-sync.
+            // For the mainnet chain, we enable this fix at the block when we consider the state is consistent.
+            let transaction = if network == Network::Dash && chain_id == "evo1" && block_height < 33000 {
+                // Old behaviour on mainnet
+                None
             } else {
-                self.apply_batch_low_level_drive_operations(
-                    None,
-                    transaction,
-                    deletion_batch,
-                    &mut vec![],
-                    &platform_version.drive,
-                )?;
-            }
+                // We should use transaction
+                transaction
+            };
+
+            self.apply_batch_low_level_drive_operations(
+                None,
+                None,
+                deletion_batch,
+                &mut vec![],
+                &platform_version.drive,
+            )?;
         }
 
         Ok(())
