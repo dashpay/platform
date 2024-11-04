@@ -67,16 +67,17 @@ where
         ));
     }
 
-    // We had a chain halt on mainnet on block 32326. Compaction happened
-    // and transaction.commit() returned an error. Due to a bug in tenderdash,
-    // validators just proceeded on next block without committing data but keeping
-    // updated cache. To keep consistency with mainnet chain we have to skip
-    // commit of this block now on.
+    // We had a sequence of errors on mainnet started since block 32326.
+    // We got rocksdb transaction is busy error because of a bug (writing outside of transaction).
+    // Due to another bug in tenderdash, validators just proceeded on next block partially committing
+    // the state and updated cache. Fullnodes are stuck and proceeded after re-sync.
+    // To keep consistency with mainnet chain we enable this fix at
+    // the block when we consider state is consistent.
     let config = &app.platform().config;
 
     if !(app.platform().config.network == Network::Dash
         && config.abci.chain_id == "evo1"
-        && block_height == 32326)
+        && block_height < 33000)
     {
         // This is simplified solution until we have a better way to handle
         // We still have caches in memory that corresponds to the data that

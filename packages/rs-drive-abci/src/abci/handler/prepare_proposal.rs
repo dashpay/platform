@@ -53,17 +53,18 @@ where
         .root_hash(None, grove_version)
         .unwrap()?;
 
-    // We had a chain halt on mainnet on block 32326. Compaction happened
-    // and transaction.commit() returned an error. Due to a bug in tenderdash,
-    // validators just proceeded on next block without committing data but keeping
-    // updated cache. To keep consistency with mainnet chain we allow app hashes to be
-    // different for this block.
+    // We had a sequence of errors on mainnet started since block 32326.
+    // We got rocksdb transaction is busy error because of a bug (writing outside of transaction).
+    // Due to another bug in tenderdash, validators just proceeded on next block partially committing
+    // the state and updated cache. Fullnodes are stuck and proceeded after re-sync.
+    // To keep consistency with mainnet chain we enable this fix at
+    // the block when we consider state is consistent.
     let config = &app.platform().config;
 
     #[allow(clippy::collapsible_if)]
     if !(config.network == Network::Dash
         && config.abci.chain_id == "evo1"
-        && request.height == 32327)
+        && request.height < 33000)
     {
         // App hash in memory must be equal to app hash on disk
         if drive_storage_root_hash != platform_state_app_hash {
