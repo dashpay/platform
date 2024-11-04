@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
@@ -14,6 +15,7 @@ where
     /// Removes the votes for removed masternodes
     pub(in crate::execution) fn remove_votes_for_removed_masternodes(
         &self,
+        block_info: &BlockInfo,
         last_committed_platform_state: &PlatformState,
         block_platform_state: &PlatformState,
         transaction: TransactionArg,
@@ -26,6 +28,7 @@ where
             .remove_votes_for_removed_masternodes
         {
             0 => self.remove_votes_for_removed_masternodes_v0(
+                block_info,
                 last_committed_platform_state,
                 block_platform_state,
                 transaction,

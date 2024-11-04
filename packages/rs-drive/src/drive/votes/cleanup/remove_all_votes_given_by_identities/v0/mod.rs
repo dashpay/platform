@@ -11,7 +11,8 @@ use crate::drive::votes::paths::{
 use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::query::QueryItem;
 use crate::util::grove_operations::BatchDeleteApplyType;
-use dpp::prelude::Identifier;
+use dpp::dashcore::Network;
+use dpp::prelude::{BlockHeight, Identifier};
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
@@ -22,6 +23,9 @@ impl Drive {
     pub(super) fn remove_all_votes_given_by_identities_v0(
         &self,
         identity_ids_as_byte_arrays: Vec<Vec<u8>>,
+        block_height: BlockHeight,
+        network: Network,
+        chain_id: &str,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -112,13 +116,23 @@ impl Drive {
         }
 
         if !deletion_batch.is_empty() {
-            self.apply_batch_low_level_drive_operations(
-                None,
-                transaction,
-                deletion_batch,
-                &mut vec![],
-                &platform_version.drive,
-            )?;
+            if network == Network::Dash && chain_id == "evo1" && block_height < 33000 {
+                self.apply_batch_low_level_drive_operations(
+                    None,
+                    None,
+                    deletion_batch,
+                    &mut vec![],
+                    &platform_version.drive,
+                )?;
+            } else {
+                self.apply_batch_low_level_drive_operations(
+                    None,
+                    transaction,
+                    deletion_batch,
+                    &mut vec![],
+                    &platform_version.drive,
+                )?;
+            }
         }
 
         Ok(())
