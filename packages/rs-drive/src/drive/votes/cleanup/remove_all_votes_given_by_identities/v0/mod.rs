@@ -114,7 +114,7 @@ impl Drive {
         if !deletion_batch.is_empty() {
             self.apply_batch_low_level_drive_operations(
                 None,
-                None,
+                transaction,
                 deletion_batch,
                 &mut vec![],
                 &platform_version.drive,
