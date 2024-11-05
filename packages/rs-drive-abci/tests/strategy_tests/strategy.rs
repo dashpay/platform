@@ -404,6 +404,8 @@ impl NetworkStrategy {
                 );
                 state_transitions.append(&mut new_transitions);
             }
+            // Extend the state transitions with the strategy's hard coded start identities
+            // Filtering out the ones that have no create transition
             if !self.strategy.start_identities.hard_coded.is_empty() {
                 state_transitions.extend(
                     self.strategy.start_identities.hard_coded.iter().filter_map(
