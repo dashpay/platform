@@ -824,8 +824,8 @@ pub fn create_identity_credit_transfer_transition(
     let identity_public_key = identity
         .get_first_public_key_matching(
             Purpose::TRANSFER,
-            SecurityLevel::full_range().into(),
-            KeyType::all_key_types().into(),
+            HashSet::from([SecurityLevel::CRITICAL]),
+            HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
             false,
         )
         .expect("expected to get a signing key");
