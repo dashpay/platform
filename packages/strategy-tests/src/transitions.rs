@@ -16,6 +16,7 @@ use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::identity::Purpose::{AUTHENTICATION, TRANSFER};
 use dpp::identity::SecurityLevel::{CRITICAL, MASTER};
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::AssetLockProof;
 use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -903,8 +904,8 @@ pub fn create_identities_state_transitions(
         .max()
         .map_or(0, |max_key| max_key.id() + 1);
 
+    // Add extra keys
     for (i, identity) in identities.iter_mut().enumerate() {
-        // TODO: deal with the case where there's more than one extra key
         for (_, (purpose, security_to_key_type_map)) in extra_keys.iter().enumerate() {
             for (security_level, key_types) in security_to_key_type_map {
                 for key_type in key_types {
@@ -930,20 +931,18 @@ pub fn create_identities_state_transitions(
     for (key, _) in &mut keys {
         let IdentityPublicKey::V0(ref mut id_pub_key_v0) = key;
         id_pub_key_v0.set_id(current_id_num);
-        current_id_num += 1; // Increment for each key
+        current_id_num += 1;
     }
-    signer.add_keys(keys);
+    signer.add_keys(keys.clone());
 
     // Generate state transitions for each identity
     identities
         .into_iter()
         .enumerate()
         .map(|(index, mut identity)| {
-            // Calculate the starting KeyID for this identity
             let identity_starting_id =
                 starting_id_num + index as u32 * (key_count + extra_keys.len() as u32);
 
-            // Update the identity with the new KeyIDs
             let public_keys_map = identity.public_keys_mut();
             public_keys_map
                 .values_mut()
@@ -968,6 +967,25 @@ pub fn create_identities_state_transitions(
                 ) {
                     Ok(identity_create_transition) => {
                         identity.set_id(identity_create_transition.owner_id());
+
+                        // Log public and private keys
+                        let identity_id = identity.id().to_string(Encoding::Base58);
+                        for (key_index, public_key) in identity.public_keys().iter().enumerate() {
+                            let key_num = index * (key_count as usize + extra_keys.len()) + key_index;
+                            let private_key_wif =
+                                PrivateKey::from_slice(&keys[*&key_num].1, Network::Dash)
+                                    .unwrap()
+                                    .to_wif();
+
+                            tracing::info!(
+                                "Identity ID: {:?} Public key ID: {:?} Public key: {:?} Private key: {:?}",
+                                identity_id,
+                                public_key.1.id(),
+                                public_key,
+                                private_key_wif
+                            );
+                        }
+
                         Ok((identity, identity_create_transition))
                     }
                     Err(e) => Err(e),
