@@ -1290,33 +1290,32 @@ impl Strategy {
                     // Generate state transition for identity transfer operation
                     OperationType::IdentityTransfer(identity_transfer_info) => {
                         for _ in 0..count {
+                            // Handle the case where specific sender, recipient, and amount are provided
                             if let Some(transfer_info) = identity_transfer_info {
-                                let sender = self
-                                    .start_identities
-                                    .hard_coded
+                                let sender = current_identities
                                     .iter()
-                                    .find(|(identity, _)| identity.id() == transfer_info.from)
+                                    .find(|identity| identity.id() == transfer_info.from)
                                     .expect(
                                         "Expected to find sender identity in hardcoded start identities",
                                     );
-                                let recipient = self
-                                    .start_identities
-                                    .hard_coded
+                                let recipient = current_identities
                                     .iter()
-                                    .find(|(identity, _)| identity.id() == transfer_info.to)
+                                    .find(|identity| identity.id() == transfer_info.to)
                                     .expect(
                                         "Expected to find recipient identity in hardcoded start identities",
                                     );
 
                                 let state_transition = create_identity_credit_transfer_transition(
-                                    &sender.0,
-                                    &recipient.0,
+                                    &sender,
+                                    &recipient,
                                     identity_nonce_counter,
-                                    signer, // This means the TUI loaded identity must always be the sender since we're always signing with it for now
+                                    signer, // This means in the TUI, the loaded identity must always be the sender since we're always signing with it for now
                                     transfer_info.amount,
                                 );
                                 operations.push(state_transition);
                             } else if current_identities.len() > 1 {
+                                // Handle the case where no sender, recipient, and amount are provided
+
                                 let identities_count = current_identities.len();
                                 if identities_count == 0 {
                                     break;
