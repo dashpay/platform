@@ -2603,8 +2603,8 @@ mod tests {
             &mut rng,
             platform_version,
         )
-        .iter()
-        .map(|(identity, transition)| (identity.clone(), Some(transition.clone())))
+        .into_iter()
+        .map(|(identity, transition)| (identity, Some(transition)))
         .collect();
 
         let strategy = NetworkStrategy {
