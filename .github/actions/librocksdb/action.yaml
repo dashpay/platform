@@ -6,12 +6,9 @@ inputs:
     description: Target platform
     required: false
     default: linux-24.04
-  cache:
-    description: Enable cache
-    required: false
-    default: "true"
+
   version:
-    description: RocksDB version
+    description: RocksDB version, eg. "8.10.2"
     required: false
     default: "8.10.2"
 runs:
@@ -23,9 +20,6 @@ runs:
       with:
         path: /opt/rocksdb
         key: librocksdb-${{ runner.os }}-${{ inputs.version }}
-        restore-keys: |
-          librocksdb-${{ runner.os }}-${{ inputs.version }}
-          librocksdb-${{ runner.os }}-
 
     - if: ${{ steps.librocksdb-cache.outputs.cache-hit != 'true' }}
       shell: bash
@@ -33,14 +27,12 @@ runs:
       run: |
         set -ex
         WORKDIR=/tmp/rocksdb-build
-        mkdir -p ${WORKDIR}
+        mkdir -p ${WORKDIR}/rocksdb
         mkdir -p /opt/rocksdb/usr/local/lib/
-        pushd $WORKDIR
+        pushd ${WORKDIR}/rocksdb
 
         # building rocksdb
-        mkdir -p ${WORKDIR}/rocksdb
-        cd ${WORKDIR}/rocksdb
-        [[ -d .git ]] || git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
+        [[ -d .git ]] || git clone https://github.com/facebook/rocksdb.git -b v${{ inputs.version }} --depth 1 .
         make -j$(nproc) static_lib
         make DESTDIR=/opt/rocksdb install-static
         set +x

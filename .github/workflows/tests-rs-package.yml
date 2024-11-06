@@ -44,8 +44,6 @@ jobs:
 
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
-        with:
-          version: 8.10.2
 
       - uses: clechasseur/rs-clippy-check@v3
         with:
@@ -105,8 +103,6 @@ jobs:
 
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
-        with:
-          version: 8.10.2
 
       - name: Get crate ${{ inputs.package }} info
         id: crate_info
@@ -207,8 +203,6 @@ jobs:
 
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
-        with:
-          version: 8.10.2
 
       - name: Run tests
         run: cargo test --package=${{ inputs.package }} --all-features --locked
@@ -241,8 +235,6 @@ jobs:
 
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
-        with:
-          version: 8.10.2
 
       - name: Get crate ${{ runner.arch }} info
         id: crate_info
