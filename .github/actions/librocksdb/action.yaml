@@ -27,7 +27,7 @@ runs:
           librocksdb-${{ runner.os }}-${{ inputs.version }}
           librocksdb-${{ runner.os }}-
 
-    - if: ${{ steps.cache-npm.outputs.cache-hit != 'true' }}
+    - if: ${{ steps.librocksdb-cache.outputs.cache-hit != 'true' }}
       shell: bash
       name: Build librocksdb
       run: |
