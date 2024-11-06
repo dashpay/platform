@@ -1,0 +1,21 @@
+---
+## This workflow is used to prebuild and cache some dependencies for the build process.
+name: Prebuild dependencies
+on:
+  push:
+    branches:
+      - master
+      - build/optimize-memory # todo: remove this line before merging
+  schedule:
+    - cron: "30 4 * * 0"
+jobs:
+  deps-rocksdb:
+    name: Prebuild and cache librocksdb
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Precompile librocksdb
+        uses: ./.github/actions/librocksdb
