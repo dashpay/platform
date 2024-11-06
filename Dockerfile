@@ -153,7 +153,7 @@ FROM deps-${RUSTC_WRAPPER:-base} AS rocksdb
 RUN mkdir -p /tmp/rocksdb
 WORKDIR /tmp/rocksdb
 RUN git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . && \
-    make -j 4 static_lib && \
+    make -j$(nproc) static_lib && \
     mkdir -p /opt/rocksdb/usr/local/lib && \
     cp librocksdb.a /opt/rocksdb/usr/local/lib/ && \
     cp -r include /opt/rocksdb/usr/local/lib/ && \
