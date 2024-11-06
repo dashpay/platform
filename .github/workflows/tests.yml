@@ -46,6 +46,10 @@ jobs:
     name: Prebuild and cache some Rust dependencies
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       - name: Precompile librocksdb
         uses: ./.github/actions/librocksdb
 
