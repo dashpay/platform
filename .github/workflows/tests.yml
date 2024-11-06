@@ -53,6 +53,21 @@ jobs:
       - name: Precompile librocksdb
         uses: ./.github/actions/librocksdb
 
+  docker-deps:
+    name: Prebuild and cache some Docker dependencies
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Prebuild Docker dependencies
+        uses: ./.github/workflows/tests-build-image.yml
+        with:
+          name: Dependencies
+          image_name: deps
+          target: deps
+
   build-js:
     name: Build JS packages
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
@@ -61,6 +76,8 @@ jobs:
 
   build-images:
     name: Build Docker images
+    needs:
+      - docker-deps
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     secrets: inherit
     strategy:
