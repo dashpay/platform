@@ -802,7 +802,7 @@ pub fn create_identity_withdrawal_transition_with_output_address(
 /// - If the sender's identity does not have a suitable authentication key available for signing.
 /// - If there's an error during the signing process.
 pub fn create_identity_credit_transfer_transition(
-    identity: &mut Identity,
+    identity: &Identity,
     recipient: &Identity,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
     signer: &mut SimpleSigner,
