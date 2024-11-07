@@ -118,7 +118,7 @@ describe('Wallet Contract', () => {
 
           expect(error.keyword)
               .to
-              .equal('maxItems');
+              .equal('minBytes');
           expect(error.instancePath)
               .to
               .equal('/encryptedMetadata');
@@ -290,7 +290,7 @@ describe('Wallet Contract', () => {
         });
 
         it('should be less than 128 chars', async () => {
-          rawIdentityVerifyDocument.normalizedParentDomainName = 'a'.repeat(129);
+          rawIdentityVerifyDocument.url = 'a'.repeat(129);
 
           const document = dpp.document.create(dataContract, identityId, 'domain', rawIdentityVerifyDocument);
           const validationResult = document.validate(dpp.protocolVersion);
