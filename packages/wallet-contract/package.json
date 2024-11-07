@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wallet-contract",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "A contract and helper scripts for Wallet DApp",
   "scripts": {
     "lint": "eslint .",
