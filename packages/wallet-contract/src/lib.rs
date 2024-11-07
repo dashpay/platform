@@ -19,7 +19,7 @@ pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Val
     match platform_version.system_data_contracts.withdrawals {
         1 => Ok(None),
         version => Err(Error::UnknownVersionMismatch {
-            method: "dpns_contract::load_definitions".to_string(),
+            method: "wallet_contract::load_definitions".to_string(),
             known_versions: vec![1],
             received: version,
         }),
@@ -29,7 +29,7 @@ pub fn load_documents_schemas(platform_version: &PlatformVersion) -> Result<Valu
     match platform_version.system_data_contracts.withdrawals {
         1 => v1::load_documents_schemas(),
         version => Err(Error::UnknownVersionMismatch {
-            method: "dpns_contract::load_documents_schemas".to_string(),
+            method: "wallet_contract::load_documents_schemas".to_string(),
             known_versions: vec![1],
             received: version,
         }),
