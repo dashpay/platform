@@ -10,7 +10,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::sync::RwLock;
-use tenderdash_abci::proto::abci as proto;
+use tenderdash_abci::proto::abci::{self as proto};
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
@@ -34,7 +34,95 @@ impl<'a, C> FullAbciApplication<'a, C> {
             block_execution_context: Default::default(),
         }
     }
+
+    /// Dump request and response to the dump directory
+    ///
+    /// This function is used for debugging purposes. It dumps the request and response to the dump directory if it's set.
+    /// File name format is: <height>_<round>_<request_type>_<timestamp>.json
+    /// If height or round is not available, both will be skipped and the file name will be <request_type>_<timestamp>.json
+    ///
+    /// ## Parameters
+    ///
+    /// - `req`: The request to dump
+    /// - `resp`: The response to dump
+    /// - `height`: The height of the block
+    /// - `round`: The round of the block
+    ///
+    /// ## Returns
+    ///
+    /// The response, for easier chaining
+    ///
+    /// ## Errors
+    ///
+    /// Errors are logged at `debug` level and ignored
+    fn dump_req_resp<T: serde::Serialize, U: serde::Serialize>(
+        &self,
+        req: T,
+        resp: Result<U, proto::ResponseException>,
+        height: Option<i64>,
+        round: Option<i32>,
+    ) -> Result<U, proto::ResponseException> {
+        if let Some(dump_dir) = self.platform.config.abci.dump_dir.as_ref() {
+            let now = chrono::Utc::now().timestamp();
+
+            dump(&req, dump_dir, height, round, now).unwrap_or_else(|e| {
+                tracing::error!("failed to dump request: {:?}", e);
+            });
+
+            match resp {
+                Ok(ref r) => dump(&r, dump_dir, height, round, now).unwrap_or_else(|e| {
+                    tracing::error!("failed to dump response: {:?}", e);
+                }),
+                // TODO: implement serde for ResponseException
+                Err(ref e) => dump(&e.error, dump_dir, height, round, now).unwrap_or_else(|e| {
+                    tracing::error!("failed to dump response: {:?}", e);
+                }),
+            }
+        };
+
+        resp
+    }
 }
+
+/// Dump serializable data to the dump directory
+///
+/// ## Parameters
+///
+/// - `req`: The serializable data to dump
+/// - `dump_dir`: The directory to dump the data to
+/// - `height`: The height of the block
+/// - `round`: The round of the block
+/// - `now`: The current timestamp
+///
+/// ## Returns
+///
+/// Result<(), std::io::Error>
+fn dump<T: serde::Serialize>(
+    msg: &T,
+    dump_dir: &std::path::Path,
+    height: Option<i64>,
+    round: Option<i32>,
+    now: i64,
+) -> Result<(), std::io::Error> {
+    let file = if let (Some(h), Some(r)) = (height, round) {
+        dump_dir.join(format!(
+            "{}_{}_{}_{}.json",
+            h,
+            r,
+            std::any::type_name::<T>(),
+            now,
+        ))
+    } else {
+        dump_dir.join(format!("{}_{}.json", std::any::type_name::<T>(), now,))
+    };
+
+    let writer = std::fs::File::create(&file)?;
+    // Dump request
+    serde_json::to_writer(writer, msg)?;
+    Ok(())
+}
+
+/// Macro that dumps request and response to the dump directory
 
 impl<'a, C> PlatformApplication<C> for FullAbciApplication<'a, C> {
     fn platform(&self) -> &Platform<C> {
@@ -91,7 +179,12 @@ where
         &self,
         request: proto::RequestInfo,
     ) -> Result<proto::ResponseInfo, proto::ResponseException> {
-        handler::info(self, request).map_err(error_into_exception)
+        self.dump_req_resp(
+            &request,
+            handler::info(self, request).map_err(error_into_exception),
+            None,
+            None,
+        )
     }
 
     fn init_chain(
@@ -127,7 +220,12 @@ where
         &self,
         request: proto::RequestFinalizeBlock,
     ) -> Result<proto::ResponseFinalizeBlock, proto::ResponseException> {
-        handler::finalize_block(self, request).map_err(error_into_exception)
+        self.dump_req_resp(
+            request,
+            handler::finalize_block(self, request).map_err(error_into_exception),
+            Some(request.height),
+            Some(request.round),
+        )
     }
 
     fn prepare_proposal(
