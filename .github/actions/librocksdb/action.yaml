@@ -1,11 +1,10 @@
 ---
+# This action builds and caches librocksdb. If we find that this solution consumes too much time, we can consider
+# prebuilding librocksdb outside of the pipeline (eg. in the grovedb release process), publish as an artifact, and
+# download it in the pipeline.
 name: "librocksdb"
 description: "Build and install librocksdb"
 inputs:
-  runs-on:
-    description: Target platform
-    required: false
-    default: linux-24.04
   version:
     description: RocksDB version, eg. "8.10.2"
     required: false
@@ -14,6 +13,10 @@ inputs:
     description: S3 bucket to use for caching
     required: false
     default: multi-runner-cache-x1xibo9c
+  force:
+    description: Force rebuild
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -27,7 +30,7 @@ runs:
         path: /opt/rocksdb
         key: librocksdb/${{ inputs.version }}/${{ runner.os }}/${{ runner.arch }}
 
-    - if: ${{ steps.librocksdb-cache.outputs.cache-hit != 'true' }}
+    - if: ${{ steps.librocksdb-cache.outputs.cache-hit != 'true' || inputs.force == 'true' }}
       shell: bash
       name: Build librocksdb
       run: |
@@ -38,7 +41,7 @@ runs:
         pushd ${WORKDIR}/rocksdb
 
         # building rocksdb
-        [[ -d .git ]] || git clone https://github.com/facebook/rocksdb.git -b v${{ inputs.version }} --depth 1 .
+        git clone https://github.com/facebook/rocksdb.git -b v${{ inputs.version }} --depth 1 .
         make -j$(nproc) static_lib
         make DESTDIR=/opt/rocksdb install-static
         set +x
