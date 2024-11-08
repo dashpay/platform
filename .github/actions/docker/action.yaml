@@ -92,10 +92,6 @@ runs:
 #        name: ${{ inputs.image_name }}
 #        bucket: ${{ inputs.bucket }}
 
-    RUN --mount=type=cache,sharing=shared,id=,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-
     - name: Cargo cache for Docker
       uses: actions/cache@v4
       id: cargo-cache
