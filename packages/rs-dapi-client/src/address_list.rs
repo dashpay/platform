@@ -172,6 +172,14 @@ impl AddressList {
         self.addresses.insert(address)
     }
 
+    #[deprecated]
+    // TODO: Remove in favor of add
+    /// Add a node [Address] to [AddressList] by [Uri].
+    /// Returns false if the address is already in the list.
+    pub fn add_uri(&mut self, uri: Uri) -> bool {
+        self.addresses.insert(uri.try_into().expect("valid uri"))
+    }
+
     /// Randomly select a not banned address.
     pub fn get_live_address(&self) -> Option<&Address> {
         let mut rng = SmallRng::from_entropy();
