@@ -156,22 +156,23 @@ ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
 
 WORKDIR /platform
 
+# TODO: Use https://github.com/cargo-bins/cargo-binstall
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
-#RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
-#    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-#    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-#    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
-#    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-#    source $HOME/.cargo/env && \
-#    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-#    RUSTFLAGS="-C target-feature=-crt-static" \
-#    CARGO_TARGET_DIR="/platform/target" \
-#    # TODO: Build wasm with build.rs
-#    # Meanwhile if you want to update wasm-bindgen you also need to update version in:
-#    #  - packages/wasm-dpp/Cargo.toml
-#    #  - packages/wasm-dpp/scripts/build-wasm.sh
-#    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 --locked
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    source $HOME/.cargo/env && \
+    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    RUSTFLAGS="-C target-feature=-crt-static" \
+    CARGO_TARGET_DIR="/platform/target" \
+    # TODO: Build wasm with build.rs
+    # Meanwhile if you want to update wasm-bindgen you also need to update version in:
+    #  - packages/wasm-dpp/Cargo.toml
+    #  - packages/wasm-dpp/scripts/build-wasm.sh
+    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 --locked
 
 #
 # Rust build planner to speed up builds
@@ -179,8 +180,8 @@ WORKDIR /platform
 FROM deps AS build-planner
 WORKDIR /platform
 COPY . .
-#RUN source $HOME/.cargo/env && \
-#    cargo chef prepare --recipe-path recipe.json
+RUN source $HOME/.cargo/env && \
+    cargo chef prepare --recipe-path recipe.json
 
 # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
 RUN touch /platform/packages/dapi-grpc/build.rs
@@ -201,47 +202,47 @@ WORKDIR /platform
 COPY --from=build-planner /platform/recipe.json recipe.json
 
 # Build dependencies - this is the caching Docker layer!
-#RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
-#    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-#    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-#    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
-#    source $HOME/.cargo/env && \
-#    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-#    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-#    cargo chef cook \
-#        --recipe-path recipe.json \
-#        --profile "$CARGO_BUILD_PROFILE" \
-#        --package drive-abci \
-#        --locked && \
-#    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    source $HOME/.cargo/env && \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    cargo chef cook \
+        --recipe-path recipe.json \
+        --profile "$CARGO_BUILD_PROFILE" \
+        --package drive-abci \
+        --locked && \
+    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
 
 COPY . .
 
 RUN mkdir /artifacts
 
 # Build Drive ABCI
-#RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
-#    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-#    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-#    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
-#    source $HOME/.cargo/env && \
-#    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-#    if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
-#        mv .cargo/config-release.toml .cargo/config.toml && \
-#        export OUT_DIRECTORY=release ; \
-#    else \
-#        export FEATURES_FLAG="--features=console,grovedbg" ; \
-#        export OUT_DIRECTORY=debug ; \
-#
-#    fi && \
-#    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-#    cargo build \
-#        --profile "${CARGO_BUILD_PROFILE}" \
-#        --package drive-abci \
-#        ${FEATURES_FLAG} \
-#        --locked && \
-#    cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
-#    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    source $HOME/.cargo/env && \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
+        mv .cargo/config-release.toml .cargo/config.toml && \
+        export OUT_DIRECTORY=release ; \
+    else \
+        export FEATURES_FLAG="--features=console,grovedbg" ; \
+        export OUT_DIRECTORY=debug ; \
+
+    fi && \
+    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    cargo build \
+        --profile "${CARGO_BUILD_PROFILE}" \
+        --package drive-abci \
+        ${FEATURES_FLAG} \
+        --locked && \
+    cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
+    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
@@ -253,40 +254,40 @@ ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/wasm/wasm32
 
 WORKDIR /platform
 
-#COPY --from=build-planner /platform/recipe.json recipe.json
+COPY --from=build-planner /platform/recipe.json recipe.json
 
 # Build dependencies - this is the caching Docker layer!
-#RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
-#    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-#    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-#    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
-#    source $HOME/.cargo/env && \
-#    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-#    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-#    cargo chef cook \
-#        --recipe-path recipe.json \
-#        --profile "$CARGO_BUILD_PROFILE" \
-#        --package wasm-dpp \
-#        --target wasm32-unknown-unknown \
-#        --locked && \
-#    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    source $HOME/.cargo/env && \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    cargo chef cook \
+        --recipe-path recipe.json \
+        --profile "$CARGO_BUILD_PROFILE" \
+        --package wasm-dpp \
+        --target wasm32-unknown-unknown \
+        --locked && \
+    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
 
 COPY . .
 
-#RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
-#    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-#    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-#    --mount=type=cache,sharing=shared,id=target_wasm,target=/platform/target \
-#    --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
-#    source $HOME/.cargo/env && \
-#    cp -R /tmp/unplugged /platform/.yarn/ && \
-#    yarn install --inline-builds && \
-#    cp -R /platform/.yarn/unplugged /tmp/ && \
-#    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-#    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-#    export SKIP_GRPC_PROTO_BUILD=1 && \
-#    yarn build && \
-#    if [[ "${RUSTC_WRAPPER}" == "sccache" ]]; then sccache --show-stats; fi
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_wasm,target=/platform/target \
+    --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
+    source $HOME/.cargo/env && \
+    cp -R /tmp/unplugged /platform/.yarn/ && \
+    yarn install --inline-builds && \
+    cp -R /platform/.yarn/unplugged /tmp/ && \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    export SKIP_GRPC_PROTO_BUILD=1 && \
+    yarn build && \
+    if [[ "${RUSTC_WRAPPER}" == "sccache" ]]; then sccache --show-stats; fi
 
 #
 # STAGE: FINAL DRIVE-ABCI IMAGE
@@ -305,7 +306,7 @@ RUN mkdir -p /var/log/dash \
     /var/lib/dash/rs-drive-abci/db \
     ${REJECTIONS_PATH}
 
-#COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
+COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
 COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
 
 # Create a volume
@@ -313,7 +314,7 @@ VOLUME /var/lib/dash/rs-drive-abci/db
 VOLUME /var/log/dash
 
 # Double-check that we don't have missing deps
-#RUN ldd /usr/bin/drive-abci
+RUN ldd /usr/bin/drive-abci
 
 #
 # Create new non-root user
