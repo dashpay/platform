@@ -120,7 +120,7 @@ runs:
             "../cargo-cache-git-db": {
               "target": "/root/.cargo/git/db",
               "id": "cargo_registry_index"
-            },
+            }
           }
         skip-extraction: ${{ steps.cargo-cache.outputs.cache-hit }}
 
@@ -141,7 +141,7 @@ runs:
             "../yarn-unplugged-cache": {
               "target": "/tmp/unplugged",
               "id": "unplugged_amd64"
-            },
+            }
           }
         skip-extraction: ${{ steps.yarn-cache.outputs.cache-hit }}
 
