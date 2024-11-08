@@ -19,7 +19,7 @@ runs:
   using: composite
   steps:
     # Cache librocksdb using s3 bucket
-    - name: Restore local network data
+    - name: Restore cached librocksdb from S3
       id: librocksdb-cache
       uses: strophy/actions-cache@opendal-update
       with:
