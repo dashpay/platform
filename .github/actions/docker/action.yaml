@@ -69,12 +69,12 @@ runs:
           [worker.oci]
             gc = false
 
-    - name: Load Docker mount cache
-      uses: dcginfra/buildkit-cache-dance/inject@s5cmd
-      if: ${{ inputs.cache_mounts != '' }}
-      with:
-        bucket: ${{ inputs.bucket }}
-        mounts: ${{ inputs.cache_mounts }}
+#    - name: Load Docker mount cache
+#      uses: dcginfra/buildkit-cache-dance/inject@s5cmd
+#      if: ${{ inputs.cache_mounts != '' }}
+#      with:
+#        bucket: ${{ inputs.bucket }}
+#        mounts: ${{ inputs.cache_mounts }}
 
     - name: Set Docker tags and labels from image tag
       id: docker_meta
@@ -100,6 +100,7 @@ runs:
         builder: ${{ steps.buildx.outputs.name }}
         target: ${{ inputs.target }}
         labels: ${{ steps.docker_meta.outputs.labels }}
+        push: ${{ inputs.push_tags }}
         tags: ${{ inputs.push_tags == 'true' && steps.docker_meta.outputs.tags || '' }}
         platforms: ${{ inputs.platform }}
         build-args: |
