@@ -146,20 +146,6 @@ ARG AWS_ACCESS_KEY_ID
 ARG AWS_SECRET_ACCESS_KEY
 
 #
-# BUILD ROCKSDB STATIC LIBRARY
-#
-FROM deps-${RUSTC_WRAPPER:-base} AS rocksdb
-
-RUN mkdir -p /tmp/rocksdb
-WORKDIR /tmp/rocksdb
-RUN git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . && \
-    make -j$(nproc) static_lib && \
-    mkdir -p /opt/rocksdb/usr/local/lib && \
-    cp librocksdb.a /opt/rocksdb/usr/local/lib/ && \
-    cp -r include /opt/rocksdb/usr/local/lib/ && \
-    cd / && \
-    rm -rf /tmp/rocksdb
-
 # DEPS: FULL DEPENDENCIES LIST
 #
 # This is separate from `deps` to use sccache for caching
@@ -167,14 +153,6 @@ FROM deps-${RUSTC_WRAPPER:-base} AS deps
 
 ARG SCCACHE_S3_KEY_PREFIX
 ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
-
-# Install prebuilt rocksdb library
-
-COPY --from=rocksdb /opt/rocksdb /opt/rocksdb
-# Set env variables so that Rust's rocksdb-sys will not build rocksdb from scratch
-
-ENV ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a
-ENV ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib
 
 WORKDIR /platform
 
@@ -193,17 +171,12 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     # Meanwhile if you want to update wasm-bindgen you also need to update version in:
     #  - packages/wasm-dpp/Cargo.toml
     #  - packages/wasm-dpp/scripts/build-wasm.sh
-    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 --locked  
-
+    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 --locked
 
 #
 # Rust build planner to speed up builds
 #
 FROM deps AS build-planner
-
-ENV ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a
-ENV ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib
-
 WORKDIR /platform
 COPY . .
 RUN source $HOME/.cargo/env && \
@@ -222,9 +195,6 @@ SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
 ARG SCCACHE_S3_KEY_PREFIX
 ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
-
-ENV ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a
-ENV ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib
 
 WORKDIR /platform
 
@@ -280,9 +250,6 @@ FROM deps AS build-js
 
 ARG SCCACHE_S3_KEY_PREFIX
 ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/wasm/wasm32
-
-ENV ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a
-ENV ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib
 
 WORKDIR /platform
 
