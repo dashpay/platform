@@ -17,7 +17,8 @@ on:
 jobs:
   build-image:
     name: Build ${{ inputs.name }} image
-    runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
+#    runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -41,7 +42,7 @@ jobs:
           image_name: ${{ inputs.image_name }}
           image_org: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
           target: ${{ inputs.target }}
-          platform: linux/arm64
+          platform: linux/amd64
           push_tags: true
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
