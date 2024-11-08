@@ -329,12 +329,9 @@ mod test {
         counter: Arc<AtomicUsize>,
     ) -> ExecutionResult<(), MockError> {
         // num or retries increases with each call
-        let retries = counter.load(Ordering::Relaxed);
-        let retries = if settings.retries.unwrap_or_default() < retries {
-            settings.retries.unwrap_or_default()
-        } else {
-            retries
-        };
+        let retries = counter
+            .load(Ordering::Relaxed)
+            .min(settings.retries.unwrap_or_default());
 
         // we sent 1 initial request plus `retries` retries
         counter.fetch_add(1 + retries, Ordering::Relaxed);

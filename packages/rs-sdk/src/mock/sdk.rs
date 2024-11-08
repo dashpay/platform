@@ -1,7 +1,6 @@
 //! Mocking mechanisms for Dash Platform SDK.
 //!
 //! See [MockDashPlatformSdk] for more details.
-use super::MockResponse;
 use crate::{
     platform::{
         types::{evonode::EvoNode, identity::IdentityRequest},
@@ -19,14 +18,20 @@ use dapi_grpc::{
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use drive_proof_verifier::{error::ContextProviderError, ContextProvider, FromProof};
-use rs_dapi_client::mock::MockError;
+use http::Uri;
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
     transport::TransportRequest,
-    DapiClient, DumpData, ExecutionResponse,
+    DapiClient, DumpData,
 };
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use rs_dapi_client::{
+    mock::{MockError, MockResult},
+    ExecutionResponse,
+};
+use std::{collections::BTreeMap, fmt::Debug, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, OwnedMutexGuard};
+
+use super::MockResponse;
 
 /// Mechanisms to mock Dash Platform SDK.
 ///
@@ -271,7 +276,7 @@ impl MockDashPlatformSdk {
         <<O as Fetch>::Request as TransportRequest>::Response: Default,
     {
         let grpc_request = query.query(self.prove()).expect("query must be correct");
-        self.expect(grpc_request, object).await?;
+        self.expect(&grpc_request, object).await?;
 
         Ok(self)
     }
@@ -328,21 +333,36 @@ impl MockDashPlatformSdk {
         <<O as FetchMany<K, R>>::Request as TransportRequest>::Response: Default,
     {
         let grpc_request = query.query(self.prove()).expect("query must be correct");
-        self.expect(grpc_request, objects).await?;
+        self.expect(&grpc_request, objects).await?;
 
         Ok(self)
     }
 
-    /// Save expectations for a request.
-    async fn expect<I: TransportRequest, O: MockResponse>(
+    /// Define expectation that Sdk::from_proof_with_metadata() will return provided object.
+    ///
+    /// This method is used to define mock expectations for [FromProof] requests.
+    ///
+    /// ## Generic Parameters
+    ///
+    /// - `I`: Type of the request that will be sent to Platform. Must implement [TransportRequest] and [Mockable].
+    /// - `O`: Type of the object that will be returned in response to the query. Must implement [FromProof] and [MockResponse].
+    ///
+    /// ## Arguments
+    ///
+    /// - `grpc_request`: Request that will be sent to Platform, most likely defined in `dapi_grpc` crate.
+    /// - `returned_object`: Object that will be retrieved from proof in received response.
+    /// - `metadata`: [ResponseMetadata] that will be returned in response to the query; if unsure, try `Default::default()`
+    pub fn expect_from_proof_with_metadata<I, O>(
         &mut self,
-        grpc_request: I,
-        returned_object: Option<O>,
+        grpc_request: &I,
+        expected_result: Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>,
     ) -> Result<(), Error>
     where
-        I::Response: Default,
+        I: Mockable + Debug,
+        O: FromProof<I>,
+        Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>: MockResponse,
     {
-        let key = Key::new(&grpc_request);
+        let key = Key::new(grpc_request);
 
         // detect duplicates
         if self.from_proof_expectations.contains_key(&key) {
@@ -356,20 +376,53 @@ impl MockDashPlatformSdk {
         }
 
         // This expectation will work for from_proof
-        self.from_proof_expectations
-            .insert(key, returned_object.mock_serialize(self));
+        let serialized = expected_result.mock_serialize(self);
+        self.from_proof_expectations.insert(key, serialized);
+
+        Ok(())
+    }
+
+    /// Define expectations for from_proof().
+    ///
+    /// Conveniance wrapper around [MockDashPlatformSdk::expect_from_proof_with_metadata()] that uses default metadata.
+    pub fn expect_from_proof<I, O>(
+        &mut self,
+        grpc_request: &I,
+        expected_result: Result<Option<O>, drive_proof_verifier::Error>,
+    ) -> Result<(), Error>
+    where
+        I: Mockable + Debug,
+        O: FromProof<I>,
+        Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>: MockResponse,
+    {
+        let expected = expected_result.map(|o| (o, Default::default(), Default::default()));
+        self.expect_from_proof_with_metadata(grpc_request, expected)
+    }
+
+    /// Save expectations for a request.
+    async fn expect<I: TransportRequest, O>(
+        &mut self,
+        grpc_request: &I,
+        returned_object: Option<O>,
+    ) -> Result<(), Error>
+    where
+        I::Response: Default,
+        O: FromProof<I> + MockResponse,
+    {
+        // This expectation will work for from_proof
+        self.expect_from_proof_with_metadata(
+            grpc_request,
+            Ok((returned_object, Default::default(), Default::default())),
+        )?;
 
         // This expectation will work for execute
-        let mut dapi_guard = self.dapi.lock().await;
         // We don't really care about the response, as it will be mocked by from_proof, so we provide default()
-        dapi_guard.expect(
-            &grpc_request,
-            &Ok(ExecutionResponse {
-                inner: Default::default(),
-                retries: 0,
-                address: "http://127.0.0.1".parse().expect("failed to parse address"),
-            }),
-        )?;
+        let fake_response = ExecutionResponse {
+            inner: Default::default(),
+            retries: 0,
+            address: Uri::default().into(),
+        };
+        self.expect_dapi(grpc_request, &Ok(fake_response)).await?;
 
         Ok(())
     }
@@ -382,17 +435,19 @@ impl MockDashPlatformSdk {
     ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
     where
         O::Request: Mockable,
-        Option<O>: MockResponse,
+        // Option<O>: MockResponse,
         // O: FromProof<<O as FromProof<I>>::Request>,
+        Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>: MockResponse,
     {
         let key = Key::new(&request);
 
-        let data = match self.from_proof_expectations.get(&key) {
-            Some(d) => (
-                Option::<O>::mock_deserialize(self, d),
-                ResponseMetadata::default(),
-                Proof::default(),
-            ),
+        match self.from_proof_expectations.get(&key) {
+            Some(d) => {
+                Result::<
+                    (Option<O>, ResponseMetadata, Proof),
+                    drive_proof_verifier::Error,
+                >::mock_deserialize(self, d)
+            }
             None => {
                 let version = self.version();
                 let provider = self.context_provider()
@@ -405,11 +460,9 @@ impl MockDashPlatformSdk {
                     Network::Regtest,
                     version,
                     &provider,
-                )?
+                )
             }
-        };
-
-        Ok(data)
+        }
     }
     /// Return context provider implementation defined for upstreeam Sdk object.
     fn context_provider(&self) -> Option<impl ContextProvider> {
@@ -418,6 +471,20 @@ impl MockDashPlatformSdk {
         } else {
             None
         }
+    }
+
+    /// Define DAPI-level expectations for the SDK.
+    ///
+    /// Add a new expectation for a request
+    pub async fn expect_dapi<R>(&mut self, request: &R, result: &MockResult<R>) -> Result<(), Error>
+    where
+        R: TransportRequest + Mockable,
+        R::Response: Mockable,
+    {
+        let mut guard = self.dapi.lock().await;
+        guard.expect(request, result)?;
+
+        Ok(())
     }
 }
 

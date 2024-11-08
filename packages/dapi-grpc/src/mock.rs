@@ -26,9 +26,9 @@ where
     /// # Panics
     ///
     /// Panics on any error.
-    fn mock_serialize(&self) -> Option<Vec<u8>> {
-        None
-    }
+    #[cfg(feature = "mocks")]
+    fn mock_serialize(&self) -> Option<Vec<u8>>;
+
     /// Deserialize the message serialized with [mock_serialize()].
     ///
     /// Returns None if the message is not serializable or mocking is disabled.
@@ -36,9 +36,8 @@ where
     /// # Panics
     ///
     /// Panics on any error.
-    fn mock_deserialize(_data: &[u8]) -> Option<Self> {
-        None
-    }
+    #[cfg(feature = "mocks")]
+    fn mock_deserialize(_data: &[u8]) -> Option<Self>;
 }
 #[cfg(feature = "mocks")]
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -77,12 +76,37 @@ where
 impl<T: Mockable> Mockable for Option<T> {
     #[cfg(feature = "mocks")]
     fn mock_serialize(&self) -> Option<Vec<u8>> {
-        self.as_ref().and_then(|value| value.mock_serialize())
+        let data = match self {
+            None => vec![0],
+            Some(value) => {
+                let mut data = vec![1]; // we return None if value does not support serialization
+                let mut serialized = value.mock_serialize()?;
+                data.append(&mut serialized);
+
+                data
+            }
+        };
+
+        Some(data)
     }
 
     #[cfg(feature = "mocks")]
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
-        T::mock_deserialize(data).map(Some)
+        if data.is_empty() {
+            panic!("empty data");
+        }
+
+        match data[0] {
+            0 => Some(None),
+            // Mind double Some - first says mock_deserialize is implemented, second is deserialized value
+            1 => Some(Some(
+                T::mock_deserialize(&data[1..]).expect("unable to deserialize Option<T>"),
+            )),
+            _ => panic!(
+                "unsupported first byte for Option<T>::mock_deserialize: {:x}",
+                data[0]
+            ),
+        }
     }
 }
 
@@ -97,6 +121,29 @@ impl Mockable for Vec<u8> {
         serde_json::from_slice(data).ok()
     }
 }
+
+impl<T: Mockable> Mockable for Vec<T> {
+    #[cfg(feature = "mocks")]
+    fn mock_serialize(&self) -> Option<Vec<u8>> {
+        let data: Vec<Vec<u8>> = self
+            .iter()
+            .map(|d| d.mock_serialize())
+            .collect::<Option<Vec<Vec<u8>>>>()?;
+
+        Some(serde_json::to_vec(&data).expect("unable to serialize Vec<T>"))
+    }
+
+    #[cfg(feature = "mocks")]
+    fn mock_deserialize(data: &[u8]) -> Option<Self> {
+        let data: Vec<Vec<u8>> =
+            serde_json::from_slice(data).expect("unable to deserialize Vec<T>");
+
+        data.into_iter()
+            .map(|d| T::mock_deserialize(&d))
+            .collect::<Option<Vec<T>>>()
+    }
+}
+
 #[cfg(feature = "mocks")]
 #[derive(serde::Serialize, serde::Deserialize)]
 struct MockableStatus {
@@ -127,4 +174,41 @@ impl Mockable for crate::tonic::Status {
 ///
 /// This will return `None` on serialization,
 /// effectively disabling mocking of streaming responses.
-impl<T: Mockable> Mockable for Streaming<T> {}
+impl<T: Mockable> Mockable for Streaming<T> {
+    #[cfg(feature = "mocks")]
+    fn mock_serialize(&self) -> Option<Vec<u8>> {
+        unimplemented!("mocking of streaming messages is not supported")
+    }
+
+    #[cfg(feature = "mocks")]
+    fn mock_deserialize(_data: &[u8]) -> Option<Self> {
+        unimplemented!("mocking of streaming messages is not supported")
+    }
+}
+
+/// Mocking of primitive types - just serialize them as little-endian bytes.
+///
+/// This is useful for mocking of messages that contain primitive types.
+macro_rules! mockable_number {
+    ($($t:ty),*) => {
+        $(
+            impl Mockable for $t {
+                #[cfg(feature = "mocks")]
+                fn mock_serialize(&self) -> Option<Vec<u8>> {
+                    (*self).to_le_bytes().to_vec().mock_serialize()
+                }
+
+                #[cfg(feature = "mocks")]
+                fn mock_deserialize(data: &[u8]) -> Option<Self> {
+                    let data: Vec<u8> = Mockable::mock_deserialize(data)?;
+                    Some(Self::from_le_bytes(
+                        data.try_into().expect("invalid serialized data"),
+                    ))
+                }
+            }
+        )*
+    };
+}
+
+// No `u8` as it would cause conflict between Vec<u8> and Vec<T: Mockable>  impls.
+mockable_number!(usize, u16, u32, u64, u128, isize, i8, i16, i32, i64, i128);

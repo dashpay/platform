@@ -14,8 +14,9 @@ use drive_proof_verifier::DataContractProvider;
 use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use drive::drive::Drive;
-use rs_dapi_client::transport::TransportError;
-use rs_dapi_client::{DapiClientError, DapiRequest, IntoInner, RequestSettings};
+use rs_dapi_client::{
+    transport::TransportError, DapiClientError, DapiRequest, IntoInner, RequestSettings,
+};
 
 #[async_trait::async_trait]
 /// A trait for putting an identity to platform

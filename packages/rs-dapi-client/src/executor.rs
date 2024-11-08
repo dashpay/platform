@@ -23,18 +23,19 @@ pub trait IntoInner<T> {
     /// Unwrap the inner type.
     ///
     /// This function returns inner type, dropping additional context information.
-    /// It is lossy operation, so it should be used with caution.
+    /// It is a lossy operation, so it should be used with caution.
     fn into_inner(self) -> T;
 }
 
-/// Convert inner type without loosing additional context information of the wrapper.
+/// Convert inner type without losing additional context information of the wrapper.
 pub trait InnerInto<T> {
-    /// Convert inner type without loosing additional context information of the wrapper.
+    /// Convert inner type without losing additional context information of the wrapper.
     fn inner_into(self) -> T;
 }
 
 /// Error happened during request execution.
 #[derive(Debug, Clone, thiserror::Error, Eq, PartialEq)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 #[error("{inner}")]
 pub struct ExecutionError<E> {
     /// The cause of error
@@ -49,7 +50,7 @@ impl<F, T> InnerInto<ExecutionError<T>> for ExecutionError<F>
 where
     F: Into<T>,
 {
-    /// Convert inner error type without loosing retries and address
+    /// Convert inner error type without losing retries and address
     fn inner_into(self) -> ExecutionError<T> {
         ExecutionError {
             inner: self.inner.into(),
@@ -77,6 +78,7 @@ impl<E: CanRetry> CanRetry for ExecutionError<E> {
 
 /// Request execution response.
 #[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct ExecutionResponse<R> {
     /// The response from the request
     pub inner: R,
@@ -111,7 +113,7 @@ impl<F, T> InnerInto<ExecutionResponse<T>> for ExecutionResponse<F>
 where
     F: Into<T>,
 {
-    /// Convert inner response type without loosing retries and address
+    /// Convert inner response type without losing retries and address
     fn inner_into(self) -> ExecutionResponse<T> {
         ExecutionResponse {
             inner: self.inner.into(),

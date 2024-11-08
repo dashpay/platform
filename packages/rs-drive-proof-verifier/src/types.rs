@@ -9,6 +9,7 @@ mod evonode_status;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::core_types::validator_set::ValidatorSet;
+use dpp::dashcore::hashes::Hash;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
@@ -16,9 +17,7 @@ use dpp::prelude::{IdentityNonce, TimestampMillis};
 use dpp::version::PlatformVersion;
 pub use dpp::version::ProtocolVersionVoteCount;
 use dpp::voting::contender_structs::{Contender, ContenderWithSerializedDocument};
-use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
-use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::{
@@ -38,7 +37,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
-    dpp::{dashcore::hashes::Hash, version as platform_version, ProtocolError},
+    dpp::{version as platform_version, ProtocolError},
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
@@ -239,19 +238,6 @@ pub type IdentityBalanceAndRevision = (u64, Revision);
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContestedResource(pub Value);
 
-impl ContestedResource {
-    /// Get the value.
-    pub fn encode_to_vec(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, bincode::error::EncodeError> {
-        platform_serialization::platform_encode_to_vec(
-            self,
-            bincode::config::standard(),
-            platform_version,
-        )
-    }
-}
 impl From<ContestedResource> for Value {
     fn from(resource: ContestedResource) -> Self {
         resource.0
@@ -319,15 +305,6 @@ impl FromIterator<ContestedResource> for ContestedResources {
         Self(iter.into_iter().collect())
     }
 }
-
-/// A contested vote for querying
-#[derive(Debug, derive_more::From, Clone)]
-#[cfg_attr(
-    feature = "mocks",
-    derive(PlatformSerialize, PlatformDeserialize, Encode, Decode),
-    platform_serialize(unversioned)
-)]
-pub struct ContestedVote(ContestedDocumentResourceVotePoll, ResourceVoteChoice);
 
 /// Votes casted by some identity.
 pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;

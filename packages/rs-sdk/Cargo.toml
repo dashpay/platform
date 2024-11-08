@@ -16,7 +16,7 @@ rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
-drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
+drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 http = { version = "1.1" }
 thiserror = "1.0.64"
@@ -42,7 +42,7 @@ zeroize = { version = "1.8", features = ["derive"] }
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
-rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks"] }
+rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 base64 = { version = "0.22.1" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 dpp = { path = "../rs-dpp", features = [

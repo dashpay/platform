@@ -18,6 +18,7 @@ use tokio::time::{sleep, timeout};
 
 impl Sdk {
     /// Starts the stream to listen for instant send lock messages
+    // TODO: Refactor to return ExecutionResult.
     pub async fn start_instant_send_lock_stream(
         &self,
         from_block_hash: Vec<u8>,
@@ -61,6 +62,7 @@ impl Sdk {
     }
 
     /// Waits for a response for the asset lock proof
+    // TODO: Refactor to use ExecutionResult.
     pub async fn wait_for_asset_lock_proof_for_transaction(
         &self,
         mut stream: dapi_grpc::tonic::Streaming<TransactionsWithProofsResponse>,
