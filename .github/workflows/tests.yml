@@ -42,7 +42,7 @@ jobs:
         with:
           filters: .github/package-filters/rs-packages.yml
 
-  rust-deps:
+  build-rust-deps:
     name: Prebuild and cache some Rust dependencies
     runs-on: ubuntu-24.04
     steps:
@@ -86,7 +86,7 @@ jobs:
     name: Rust packages
     needs:
       - changes
-      - rust-deps
+      - build-rust-deps
     secrets: inherit
     strategy:
       fail-fast: false
