@@ -85,12 +85,12 @@ runs:
           type=semver,pattern={{version}},value=${{inputs.image_version}},enable=${{ inputs.image_version != '' }}
           type=sha,format=long,enable=${{ inputs.image_version == '' }}
 
-    - name: Configure docker layer cache
-      uses: ./.github/actions/s3-layer-cache-settings
-      id: layer_cache_settings
-      with:
-        name: ${{ inputs.image_name }}
-        bucket: ${{ inputs.bucket }}
+#    - name: Configure docker layer cache
+#      uses: ./.github/actions/s3-layer-cache-settings
+#      id: layer_cache_settings
+#      with:
+#        name: ${{ inputs.image_name }}
+#        bucket: ${{ inputs.bucket }}
 
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
@@ -117,9 +117,9 @@ runs:
         cache-to: type=gha,mode=max
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true
 
-    - name: Save Docker mount cache
-      uses: dcginfra/buildkit-cache-dance/extract@s5cmd
-      if: ${{ inputs.cache_mounts != '' }}
-      with:
-        bucket: ${{ inputs.bucket }}
-        mounts: ${{ inputs.cache_mounts }}
+#    - name: Save Docker mount cache
+#      uses: dcginfra/buildkit-cache-dance/extract@s5cmd
+#      if: ${{ inputs.cache_mounts != '' }}
+#      with:
+#        bucket: ${{ inputs.bucket }}
+#        mounts: ${{ inputs.cache_mounts }}
