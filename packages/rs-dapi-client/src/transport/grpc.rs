@@ -44,8 +44,8 @@ impl TransportClient for PlatformGrpcClient {
             .get_or_create(PoolPrefix::Platform, &uri, None, || {
                 match create_channel(uri.clone(), None) {
                     Ok(channel) => Ok(Self::new(channel).into()),
-                    Err(e) => Err(dapi_grpc::tonic::Status::failed_precondition(format!(
-                        "Channel creation failed: {}",
+                    Err(e) => Err(dapi_grpc::tonic::Status::invalid_argument(format!(
+                        "channel creation failed: {}",
                         e
                     ))),
                 }

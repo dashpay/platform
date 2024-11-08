@@ -8,6 +8,7 @@ use http::Uri;
 use std::time::Duration;
 /// Given some existing evonode URIs, WHEN we connect to them, THEN we get status.
 use tokio::time::timeout;
+use rs_dapi_client::Address;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_evonode_status() {
@@ -61,11 +62,11 @@ async fn test_evonode_status_refused() {
     let cfg = Config::new();
     let sdk = cfg.setup_api("test_evonode_status_refused").await;
 
-    let uri: Uri = "http://127.0.0.1:1".parse().unwrap();
+    let address: Address = "http://127.0.0.1:1".parse().expect("valid address");
 
-    let node = EvoNode::new(uri.clone().into());
+    let node = EvoNode::new(address.clone());
     let result = EvoNodeStatus::fetch_unproved(&sdk, node).await;
-    tracing::debug!(?result, ?uri, "evonode status");
+    tracing::debug!(?result, ?address, "evonode status");
 
     assert!(result.is_err());
 }

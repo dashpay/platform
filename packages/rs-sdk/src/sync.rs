@@ -194,10 +194,10 @@ where
     let  result= ::backon::Retryable::retry(closure,backoff_strategy)
         .when(|e| {
             if e.can_retry() {
-                // requests sent for current execution attempt; 
+                // requests sent for current execution attempt;
                 let requests_sent = e.retries + 1;
 
-                // requests sent in all preceeding attempts; user expects `settings.retries +1`                           
+                // requests sent in all preceeding attempts; user expects `settings.retries +1`
                 retries += requests_sent;
                 let all_requests_sent = retries;
 
@@ -231,7 +231,6 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use http::Uri;
     use rs_dapi_client::ExecutionError;
     use std::{
         future::Future,
@@ -342,7 +341,7 @@ mod test {
         Err(ExecutionError {
             inner: MockError::Generic,
             retries,
-            address: Some(Uri::from_static("http://localhost").into()),
+            address: Some("http://localhost".parse().expect("valid address")),
         })
     }
 

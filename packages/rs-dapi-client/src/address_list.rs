@@ -1,7 +1,6 @@
 //! Subsystem to manage DAPI nodes.
 
 use chrono::Utc;
-use dapi_grpc::tonic::codegen::http;
 use dapi_grpc::tonic::transport::Uri;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 use std::collections::HashSet;
@@ -26,8 +25,8 @@ impl FromStr for Address {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Uri::from_str(s)
-            .map(Address::from)
-            .map_err(AddressListError::from)
+            .map_err(|e| AddressListError::InvalidAddressUri(e.to_string()))
+            .map(Address::try_from)?
     }
 }
 
@@ -49,13 +48,19 @@ impl Hash for Address {
     }
 }
 
-impl From<Uri> for Address {
-    fn from(uri: Uri) -> Self {
-        Address {
+impl TryFrom<Uri> for Address {
+    type Error = AddressListError;
+
+    fn try_from(value: Uri) -> Result<Self, Self::Error> {
+        if value.host().is_none() {
+            return Err(AddressListError::InvalidAddressUri("uri must contain host".to_string()));
+        }
+
+        Ok(Address {
             ban_count: 0,
             banned_until: None,
-            uri,
-        }
+            uri: value,
+        })
     }
 }
 
@@ -96,7 +101,7 @@ pub enum AddressListError {
     /// A valid uri is required to create an Address
     #[error("unable parse address: {0}")]
     #[cfg_attr(feature = "mocks", serde(skip))]
-    InvalidAddressUri(#[from] http::uri::InvalidUri),
+    InvalidAddressUri(String),
 }
 
 /// A structure to manage DAPI addresses to select from
@@ -167,15 +172,6 @@ impl AddressList {
         self.addresses.insert(address)
     }
 
-    // TODO: this is the most simple way to add an address
-    //  however we need to support bulk loading (e.g. providing a network name)
-    //  and also fetch updated from SML.
-    /// Add a node [Address] to [AddressList] by [Uri].
-    /// Returns false if the address is already in the list.
-    pub fn add_uri(&mut self, uri: Uri) -> bool {
-        self.addresses.insert(uri.into())
-    }
-
     /// Randomly select a not banned address.
     pub fn get_live_address(&self) -> Option<&Address> {
         let mut rng = SmallRng::from_entropy();
@@ -185,7 +181,7 @@ impl AddressList {
 
     /// Get all addresses that are not banned.
     fn unbanned(&self) -> Vec<&Address> {
-        let now = chrono::Utc::now();
+        let now = Utc::now();
 
         self.addresses
             .iter()
@@ -216,23 +212,24 @@ impl AddressList {
     }
 }
 
-// TODO: Must be changed to FromStr
-impl From<&str> for AddressList {
-    fn from(value: &str) -> Self {
-        let uri_list: Vec<Uri> = value
-            .split(',')
-            .map(|uri| Uri::from_str(uri).expect("invalid uri"))
-            .collect();
+impl FromStr for AddressList {
+    type Err = AddressListError;
 
-        Self::from_iter(uri_list)
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let uri_list: Vec<Address> = s
+            .split(',')
+            .map(Address::from_str)
+            .collect::<Result<_, _>>()?;
+
+        Ok(Self::from_iter(uri_list))
     }
 }
 
-impl FromIterator<Uri> for AddressList {
-    fn from_iter<T: IntoIterator<Item = Uri>>(iter: T) -> Self {
+impl FromIterator<Address> for AddressList {
+    fn from_iter<T: IntoIterator<Item = Address>>(iter: T) -> Self {
         let mut address_list = Self::new();
         for uri in iter {
-            address_list.add_uri(uri);
+            address_list.add(uri);
         }
 
         address_list
