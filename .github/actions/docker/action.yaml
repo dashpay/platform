@@ -105,7 +105,7 @@ runs:
           - ${{ runner.os }}-cargo-
 
     - name: Inject cargo cache into docker
-      uses: reproducible-containers/buildkit-cache-dance@3
+      uses: reproducible-containers/buildkit-cache-dance@v3.1.2
       with:
         cache-map: |
           {
@@ -134,7 +134,7 @@ runs:
           - ${{ runner.os }}-yarn-unplugged-amd64-
 
     - name: Inject cargo cache into docker
-      uses: reproducible-containers/buildkit-cache-dance@3
+      uses: reproducible-containers/buildkit-cache-dance@v3.1.2
       with:
         cache-map: |
           {
