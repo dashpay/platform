@@ -9,6 +9,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 pub type UsedKeyMatrix = Vec<bool>;
+pub const MAX_RANDOM_KEYS: usize = 16;
 
 impl IdentityPublicKey {
     pub fn random_key(id: KeyID, seed: Option<u64>, platform_version: &PlatformVersion) -> Self {
@@ -685,7 +686,7 @@ impl IdentityPublicKey {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Self>, ProtocolError> {
-        let mut used_key_matrix = [false; 16].to_vec();
+        let mut used_key_matrix = [false; MAX_RANDOM_KEYS].to_vec();
         (0..key_count)
             .map(|i| {
                 Self::random_authentication_key_with_rng(
@@ -726,6 +727,14 @@ impl IdentityPublicKey {
                 "at least 2 keys must be created".to_string(),
             ));
         }
+
+        if key_count > MAX_RANDOM_KEYS as u32 {
+            return Err(ProtocolError::PublicKeyGenerationError(format!(
+                "too many keys requested: {}, max is {}",
+                key_count, MAX_RANDOM_KEYS
+            )));
+        }
+
         //create a master and a high level key
         let mut main_keys = if key_count == 2 {
             vec![
@@ -751,22 +760,27 @@ impl IdentityPublicKey {
                 )?,
             ]
         };
-        let mut used_key_matrix = [false; 16].to_vec();
+        let mut used_key_matrix = [false; MAX_RANDOM_KEYS].to_vec();
         used_key_matrix[0] = true;
         used_key_matrix[1] = true;
         used_key_matrix[2] = true;
         used_key_matrix[4] = true; //also a master key
         used_key_matrix[8] = true; //also a master key
         used_key_matrix[12] = true; //also a master key
-        main_keys.extend((3..key_count).map(|i| {
-            Self::random_authentication_key_with_private_key_with_rng(
+        let used_key_matrix_count = used_key_matrix.iter().filter(|x| **x).count() as u32;
+        let main_keys_count = main_keys.len() as u32;
+        for i in main_keys_count..key_count {
+            let privkey = Self::random_authentication_key_with_private_key_with_rng(
                 i,
                 rng,
-                Some((i, &mut used_key_matrix)),
+                Some((
+                    used_key_matrix_count + (i - main_keys_count),
+                    &mut used_key_matrix,
+                )),
                 platform_version,
-            )
-            .unwrap()
-        }));
+            )?;
+            main_keys.push(privkey);
+        }
         Ok(main_keys)
     }
 
