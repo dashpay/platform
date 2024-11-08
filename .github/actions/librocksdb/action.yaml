@@ -25,7 +25,7 @@ runs:
       with:
         bucket: ${{ inputs.bucket }}
         path: /opt/rocksdb
-        key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
+        key: librocksdb/${{ inputs.version }}/${{ runner.os }}/${{ runner.arch }}
 
     - if: ${{ steps.librocksdb-cache.outputs.cache-hit != 'true' }}
       shell: bash
