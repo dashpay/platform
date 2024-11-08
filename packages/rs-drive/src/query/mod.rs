@@ -2070,7 +2070,7 @@ mod tests {
         drive
             .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
-        
+
         // let's construct the grovedb structure for the dashpay data contract
         let contract = load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
             .expect("load system contact");
@@ -2775,7 +2775,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
         };
-        
+
         // Create a document that we are starting at, which may be missing 'transactionIndex'
         let mut properties = BTreeMap::new();
         properties.insert("status".to_string(), Value::U64(0));
@@ -2802,7 +2802,7 @@ mod tests {
         let result = drive_document_query
             .construct_path_query(Some(starts_at_document), platform_version)
             .expect("expected to construct a path query");
-        
+
         assert_eq!(
             result
                 .clone()

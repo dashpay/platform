@@ -74,7 +74,7 @@ impl Sdk {
         //     transaction_id = transaction_id.to_string(),
         // )
         // .entered();
-        // 
+        //
         // tracing::debug!("waiting for messages from stream");
 
         // Define an inner async block to handle the stream processing.
@@ -126,7 +126,7 @@ impl Sdk {
                                 // );
 
                                 return Ok(asset_lock_proof);
-                            } 
+                            }
                             // else {
                             //     tracing::debug!(
                             //         "instant lock is not matching, waiting for the next message"
@@ -238,10 +238,10 @@ impl Sdk {
                         // tracing::trace!("received transaction(s), ignoring")
                     }
                     None => {
-                    //     tracing::trace!(
-                    //     "received empty response as a workaround for the bug in tonic, ignoring"
-                    // )
-                    },
+                        //     tracing::trace!(
+                        //     "received empty response as a workaround for the bug in tonic, ignoring"
+                        // )
+                    }
                 }
             }
         };
