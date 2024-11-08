@@ -208,11 +208,11 @@ jobs:
       matrix:
         include:
           - package_type: tarballs
-            os: ubuntu-22.04
+            os: ubuntu-24.04
           - package_type: win
-            os: ubuntu-22.04
+            os: ubuntu-24.04
           - package_type: deb
-            os: ubuntu-22.04
+            os: ubuntu-24.04
           - package_type: macos
             os: macos-14
     steps:
