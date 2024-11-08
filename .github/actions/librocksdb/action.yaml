@@ -6,20 +6,26 @@ inputs:
     description: Target platform
     required: false
     default: linux-24.04
-
   version:
     description: RocksDB version, eg. "8.10.2"
     required: false
     default: "8.10.2"
+  bucket:
+    description: S3 bucket to use for caching
+    required: false
+    default: multi-runner-cache-x1xibo9c
+
 runs:
   using: composite
   steps:
-    - name: Load cached librocksdb
+    # Cache librocksdb using s3 bucket
+    - name: Restore local network data
       id: librocksdb-cache
-      uses: actions/cache@v3
+      uses: strophy/actions-cache@opendal-update
       with:
+        bucket: ${{ inputs.bucket }}
         path: /opt/rocksdb
-        key: librocksdb-${{ runner.os }}-${{ inputs.version }}
+        key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
 
     - if: ${{ steps.librocksdb-cache.outputs.cache-hit != 'true' }}
       shell: bash
