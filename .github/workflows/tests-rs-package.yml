@@ -12,7 +12,7 @@ on:
       lint-runner:
         description: Runner for linting. Must be JSON valid string.
         type: string
-        default: '"ubuntu-22.04"'
+        default: '"ubuntu-24.04"'
       check-each-feature:
         description: If true, try to build each individual feature for this crate
         type: boolean
@@ -58,7 +58,7 @@ jobs:
 
   formatting:
     name: Formatting
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Check out repo
@@ -82,7 +82,7 @@ jobs:
 
   unused_deps:
     name: Unused dependencies
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       contents: read
@@ -124,7 +124,7 @@ jobs:
 
   detect_structure_changes:
     name: Detect immutable structure changes
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     # FIXME: as we use `gh pr view` below, this check can only
     # run on pull requests. We should find a way to run it
     # when manual triggers are used.

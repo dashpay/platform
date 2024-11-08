@@ -2,6 +2,11 @@ name: Tests
 
 on:
   workflow_dispatch:
+    inputs:
+      rebuild-deps:
+        description: "Rebuild cached Rust dependencies"
+        required: false
+        default: "false"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
@@ -94,7 +99,7 @@ jobs:
     uses: ./.github/workflows/tests-rs-package.yml
     with:
       package: ${{ matrix.rs-package }}
-      # lint-runner: ${{ contains(fromJSON('["drive-abci", "drive"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' || '"ubuntu-22.04"' }}
+      # lint-runner: ${{ contains(fromJSON('["drive-abci", "drive"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' || '"ubuntu-24.04"' }}
       # FIXME: Clippy fails on github hosted runners, most likely due to RAM usage. Using self-hosted runners for now.
       # lint-runner: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
       lint-runner: '["ubuntu-24.04"]'
@@ -106,7 +111,7 @@ jobs:
   rs-crates-security:
     name: Rust crates security audit
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -135,7 +140,7 @@ jobs:
   js-deps-versions:
     name: JS dependency versions check
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -154,7 +159,7 @@ jobs:
   js-npm-security:
     name: JS NPM security audit
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
