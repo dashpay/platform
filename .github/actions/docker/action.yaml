@@ -22,12 +22,12 @@ inputs:
     description: User name to use when pushing images to Docker Hub
   dockerhub_token:
     description: Docker Hub token to use
-  cache_mounts:
-    description: Load cache mounts cache
-    default: |
-      cargo_registry_index
-      cargo_registry_cache
-      cargo_git
+#  cache_mounts:
+#    description: Load cache mounts cache
+#    default: |
+#      cargo_registry_index
+#      cargo_registry_cache
+#      cargo_git
   cargo_profile:
     description: Cargo build profile, i.e release or dev
     default: dev
