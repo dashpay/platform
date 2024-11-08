@@ -94,7 +94,7 @@ runs:
 
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: .
         builder: ${{ steps.buildx.outputs.name }}
