@@ -233,7 +233,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     else \
         export FEATURES_FLAG="--features=console,grovedbg" ; \
         export OUT_DIRECTORY=debug ; \
-
     fi && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \

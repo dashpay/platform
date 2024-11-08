@@ -92,6 +92,63 @@ runs:
 #        name: ${{ inputs.image_name }}
 #        bucket: ${{ inputs.bucket }}
 
+    RUN --mount=type=cache,sharing=shared,id=,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+
+    - name: Cargo cache for Docker
+      uses: actions/cache@v4
+      id: cargo-cache
+      with:
+        path: |
+          ../cargo-cache-registry-index
+          ../cargo-cache-registry-cache
+          ../cargo-cache-git-db
+        key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+        restore-keys:
+            - ${{ runner.os }}-cargo-
+
+    - name: Inject cargo cache into docker
+      uses: reproducible-containers/buildkit-cache-dance@3
+      with:
+        cache-map: |
+          {
+            "../cargo-cache-registry-index": {
+              "target": "/root/.cargo/registry/index",
+              "id": "cargo_registry_index"
+            },
+            "../cargo-cache-registry-cache": {
+              "target": "/root/.cargo/registry/cache",
+              "id": "cargo_registry_index"
+            },
+            "../cargo-cache-git-db": {
+              "target": "/root/.cargo/git/db",
+              "id": "cargo_registry_index"
+            },
+          }
+        skip-extraction: ${{ steps.cargo-cache.outputs.cache-hit }}
+
+    - name: Yarn unplugged cache for Docker
+      uses: actions/cache@v4
+      id: yarn-cache
+      with:
+        path: ../yarn-unplugged-cache
+        key: ${{ runner.os }}-yarn-unplugged-amd64-${{ hashFiles('yarn.lock') }}
+        restore-keys:
+          - ${{ runner.os }}-yarn-unplugged-amd64-
+
+    - name: Inject cargo cache into docker
+      uses: reproducible-containers/buildkit-cache-dance@3
+      with:
+        cache-map: |
+          {
+            "../yarn-unplugged-cache": {
+              "target": "/tmp/unplugged",
+              "id": "unplugged_amd64"
+            },
+          }
+        skip-extraction: ${{ steps.yarn-cache.outputs.cache-hit }}
+
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
       uses: docker/build-push-action@v6
