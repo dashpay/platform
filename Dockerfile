@@ -1,4 +1,4 @@
-# syntax = docker/dockerfile:1.5
+# syntax = docker/dockerfile:1
 
 # Docker image for rs-drive-abci
 #
@@ -30,7 +30,6 @@
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
 ARG ALPINE_VERSION=3.18
-ARG PROTOC_VERSION=27.3
 ARG RUSTC_WRAPPER
 
 #
@@ -82,7 +81,7 @@ RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | t
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
-ARG PROTOC_VERSION
+ARG PROTOC_VERSION=27.3
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
     curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip \
         -o /tmp/protoc.zip && \
@@ -102,7 +101,7 @@ ENV NODE_ENV ${NODE_ENV}
 
 FROM deps-base AS deps-sccache
 
-ARG SCCHACHE_VERSION=0.7.1
+ARG SCCHACHE_VERSION=0.8.2
 
 # Install sccache for caching
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
@@ -156,22 +155,34 @@ ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
 
 WORKDIR /platform
 
+# Download and install cargo-binstall
+ENV BINSTALL_VERSION=1.10.11
+RUN set -ex; \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+        CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        CARGO_BINSTALL_ARCH="aarch64-unknown-linux-musl"; \
+    else \
+        echo "Unsupported architecture: $TARGETARCH"; exit 1; \
+    fi; \
+    # Construct download URL
+    DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
+    # Download and extract the cargo-binstall binary
+    curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;  \
+    ./cargo-binstall -y --force cargo-binstall; \
+    rm ./cargo-binstall; \
+    source $HOME/.cargo/env; \
+    cargo binstall -V
+
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
-RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    source $HOME/.cargo/env && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    RUSTFLAGS="-C target-feature=-crt-static" \
-    CARGO_TARGET_DIR="/platform/target" \
-    # TODO: Build wasm with build.rs
-    # Meanwhile if you want to update wasm-bindgen you also need to update version in:
-    #  - packages/wasm-dpp/Cargo.toml
-    #  - packages/wasm-dpp/scripts/build-wasm.sh
-    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 --locked
+RUN source $HOME/.cargo/env; \
+    cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 \
+    --locked \
+    --no-discover-github-token \
+    --disable-telemetry \
+    --no-track \
+    --no-confirm
 
 #
 # Rust build planner to speed up builds
@@ -232,7 +243,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     else \
         export FEATURES_FLAG="--features=console,grovedbg" ; \
         export OUT_DIRECTORY=debug ; \
-        
+
     fi && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
