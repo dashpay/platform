@@ -174,8 +174,6 @@ RUN set -ex; \
     source $HOME/.cargo/env; \
     cargo binstall -V
 
-# Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
-# better build caching
 RUN source $HOME/.cargo/env; \
     cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 \
     --locked \
