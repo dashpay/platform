@@ -7,6 +7,7 @@ use crate::{
 };
 
 use dapi_grpc::platform::v0::get_identities_balances_request::GetIdentitiesBalancesRequestV0;
+use dapi_grpc::platform::v0::get_identities_for_non_unique_public_key_hash_request::GetIdentitiesForNonUniquePublicKeyHashRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
@@ -14,12 +15,13 @@ use dapi_grpc::platform::v0::get_identity_contract_nonce_request::GetIdentityCon
 use dapi_grpc::platform::v0::get_identity_nonce_request::GetIdentityNonceRequestV0;
 use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
 use dapi_grpc::platform::v0::{
-    get_identities_balances_request, get_identity_balance_and_revision_request,
-    get_identity_balance_request, get_identity_by_public_key_hash_request,
-    get_identity_contract_nonce_request, get_identity_nonce_request, get_identity_request,
-    GetIdentitiesBalancesRequest, GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceRequest,
-    GetIdentityByPublicKeyHashRequest, GetIdentityContractNonceRequest, GetIdentityNonceRequest,
-    GetIdentityRequest, ResponseMetadata,
+    get_identities_balances_request, get_identities_for_non_unique_public_key_hash_request,
+    get_identity_balance_and_revision_request, get_identity_balance_request,
+    get_identity_by_public_key_hash_request, get_identity_contract_nonce_request,
+    get_identity_nonce_request, get_identity_request, GetIdentitiesBalancesRequest,
+    GetIdentitiesForNonUniquePublicKeyHashRequest, GetIdentityBalanceAndRevisionRequest,
+    GetIdentityBalanceRequest, GetIdentityByPublicKeyHashRequest, GetIdentityContractNonceRequest,
+    GetIdentityNonceRequest, GetIdentityRequest, ResponseMetadata,
 };
 use dpp::prelude::Identity;
 use rs_dapi_client::transport::TransportError;
@@ -55,6 +57,13 @@ impl Query<IdentityRequest> for dpp::prelude::Identifier {
 /// by its public key hash.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PublicKeyHash(pub [u8; 20]);
+
+/// Non-unique Public key hash that can be used as a [Query] to find identities.
+///
+/// You can use [`FetchMany::fetch_many(Vec<NonUniquePublicKeyHash>)`](crate::platform::FetchMany::fetch_many()) to fetch the identities
+/// having this public key hash.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NonUniquePublicKeyHash(pub [u8; 20]);
 
 impl Query<IdentityRequest> for PublicKeyHash {
     fn query(self, prove: bool) -> Result<IdentityRequest, Error> {
@@ -161,6 +170,28 @@ impl Query<GetIdentitiesBalancesRequest> for Vec<dpp::prelude::Identifier> {
                 GetIdentitiesBalancesRequestV0 { ids, prove },
             )),
         };
+
+        Ok(request)
+    }
+}
+
+impl Query<GetIdentitiesForNonUniquePublicKeyHashRequest> for NonUniquePublicKeyHash {
+    fn query(self, prove: bool) -> Result<GetIdentitiesForNonUniquePublicKeyHashRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        let request: GetIdentitiesForNonUniquePublicKeyHashRequest =
+            GetIdentitiesForNonUniquePublicKeyHashRequest {
+                version: Some(
+                    get_identities_for_non_unique_public_key_hash_request::Version::V0(
+                        GetIdentitiesForNonUniquePublicKeyHashRequestV0 {
+                            public_key_hash: self.0.to_vec(),
+                            prove,
+                        },
+                    ),
+                ),
+            };
 
         Ok(request)
     }

@@ -1,6 +1,9 @@
 use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
-use crate::drive::{identity_tree_path_vec, unique_key_hashes_tree_path_vec, Drive};
+use crate::drive::{
+    identity_tree_path_vec, non_unique_key_hashes_sub_tree_path_vec,
+    unique_key_hashes_tree_path_vec, Drive,
+};
 use std::ops::RangeFull;
 
 use crate::error::Error;
@@ -88,6 +91,14 @@ impl Drive {
     pub fn identity_id_by_unique_public_key_hash_query(public_key_hash: [u8; 20]) -> PathQuery {
         let unique_key_hashes = unique_key_hashes_tree_path_vec();
         PathQuery::new_single_key(unique_key_hashes, public_key_hash.to_vec())
+    }
+
+    /// The query for proving identity ids from a public key hash for non-unique keys
+    pub fn identity_ids_for_non_unique_public_key_hash_query(
+        public_key_hash: [u8; 20],
+    ) -> PathQuery {
+        let non_unique_key_hashes = non_unique_key_hashes_sub_tree_path_vec(public_key_hash);
+        PathQuery::new_single_query_item(non_unique_key_hashes, QueryItem::RangeFull(RangeFull))
     }
 
     /// The query for proving identity ids from a vector of public key hashes.
@@ -198,7 +209,7 @@ impl Drive {
     }
 
     /// This query gets the full identity and the public key hash
-    pub fn full_identity_with_public_key_hash_query(
+    pub fn full_identity_with_unique_public_key_hash_query(
         public_key_hash: [u8; 20],
         identity_id: [u8; 32],
         grove_version: &GroveVersion,

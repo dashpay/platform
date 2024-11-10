@@ -6,6 +6,7 @@
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from Platform.
 
 use super::LimitQuery;
+use crate::platform::types::identity::NonUniquePublicKeyHash;
 use crate::{
     error::Error,
     mock::MockResponse,
@@ -18,13 +19,14 @@ use dapi_grpc::platform::v0::{
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
     GetDataContractsRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest,
     GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentitiesBalancesRequest,
-    GetIdentityKeysRequest, GetPathElementsRequest, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetVotePollsByEndDateRequest,
+    GetIdentitiesForNonUniquePublicKeyHashRequest, GetIdentityKeysRequest, GetPathElementsRequest,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetVotePollsByEndDateRequest,
 };
 use dashcore_rpc::dashcore::ProTxHash;
 use dpp::data_contract::DataContract;
 use dpp::identity::KeyID;
-use dpp::prelude::{Identifier, IdentityPublicKey};
+use dpp::prelude::{Identifier, Identity, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::ProtocolVersionVoteCount;
 use dpp::{block::epoch::EpochIndex, prelude::TimestampMillis, voting::vote_polls::VotePoll};
@@ -456,6 +458,15 @@ impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
 /// * [Vec<Identifier>](dpp::prelude::Identifier) - list of identifiers of identities whose balance we want to fetch
 impl FetchMany<Identifier, IdentityBalances> for drive_proof_verifier::types::IdentityBalance {
     type Request = GetIdentitiesBalancesRequest;
+}
+
+/// Fetch multiple elements.
+///
+/// ## Supported query types
+///
+/// * [NonUniquePublicKeyHash]
+impl FetchMany<Identifier, Identity> for NonUniquePublicKeyHash {
+    type Request = GetIdentitiesForNonUniquePublicKeyHashRequest;
 }
 
 //

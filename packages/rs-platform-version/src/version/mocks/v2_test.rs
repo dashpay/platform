@@ -139,6 +139,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1,
         query: DriveAbciQueryVersions {
             max_returned_elements: 100,
+            max_returned_full_identities: 3,
             response_metadata: 0,
             proofs_query: FeatureVersionBounds {
                 min_version: 0,
@@ -199,6 +200,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 identities_contract_keys: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                identities_for_non_unique_public_key_hash: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,

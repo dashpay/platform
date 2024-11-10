@@ -7,6 +7,7 @@ use versioned_feature_core::FeatureVersionBounds;
 
 pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryVersions {
     max_returned_elements: 100,
+    max_returned_full_identities: 3,
     response_metadata: 0,
     proofs_query: FeatureVersionBounds {
         min_version: 0,
@@ -67,6 +68,11 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
             default_current_version: 0,
         },
         identity_by_public_key_hash: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        identities_for_non_unique_public_key_hash: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,

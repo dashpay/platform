@@ -22,7 +22,8 @@ use dapi_grpc::platform::v0::{
     GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
     GetEvonodesProposedEpochBlocksResponse, GetIdentitiesBalancesRequest,
     GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
-    GetIdentitiesContractKeysResponse, GetIdentityBalanceAndRevisionRequest,
+    GetIdentitiesContractKeysResponse, GetIdentitiesForNonUniquePublicKeyHashRequest,
+    GetIdentitiesForNonUniquePublicKeyHashResponse, GetIdentityBalanceAndRevisionRequest,
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
     GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
     GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
@@ -400,6 +401,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_identity_by_public_key_hash,
             "get_identity_by_public_key_hash",
+        )
+        .await
+    }
+
+    async fn get_identities_for_non_unique_public_key_hash(
+        &self,
+        request: Request<GetIdentitiesForNonUniquePublicKeyHashRequest>,
+    ) -> Result<Response<GetIdentitiesForNonUniquePublicKeyHashResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identities_for_non_unique_public_key_hash,
+            "get_identities_for_non_unique_public_key_hash",
         )
         .await
     }

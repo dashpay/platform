@@ -2,6 +2,7 @@ mod balance;
 mod balance_and_revision;
 mod balances;
 mod identities_contract_keys;
+mod identities_for_non_unique_public_key_hash;
 mod identity;
 mod identity_by_public_key_hash;
 mod identity_contract_nonce;

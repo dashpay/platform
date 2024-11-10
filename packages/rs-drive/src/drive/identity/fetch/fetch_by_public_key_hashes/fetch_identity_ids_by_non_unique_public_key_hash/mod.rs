@@ -22,6 +22,7 @@ impl Drive {
     pub fn fetch_identity_ids_by_non_unique_public_key_hash(
         &self,
         public_key_hash: [u8; 20],
+        limit: Option<u16>,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<[u8; 32]>, Error> {
@@ -34,6 +35,7 @@ impl Drive {
         {
             0 => self.fetch_identity_ids_by_non_unique_public_key_hash_v0(
                 public_key_hash,
+                limit,
                 transaction,
                 drive_version,
             ),
