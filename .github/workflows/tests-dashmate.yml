@@ -17,8 +17,7 @@ on:
 jobs:
   dashmate-test:
     name: Run ${{ inputs.name }} tests
-    # TODO: Try with Github Runner, probably it will be the same time
-    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -42,6 +41,7 @@ jobs:
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
+      # TODO: Use action artifacts
       - name: Restore JS build artifacts
         uses: strophy/actions-cache@opendal-update
         with:
