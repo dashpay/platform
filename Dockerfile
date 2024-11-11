@@ -35,7 +35,7 @@ ARG RUSTC_WRAPPER
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
 #
-FROM node:20-alpine${ALPINE_VERSION} as deps-base
+FROM node:20-alpine${ALPINE_VERSION} AS deps-base
 
 #
 # Install some dependencies
@@ -94,10 +94,10 @@ RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
 
 # Select whether we want dev or release
 ARG CARGO_BUILD_PROFILE=dev
-ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
+ENV CARGO_BUILD_PROFILE=${CARGO_BUILD_PROFILE}
 
 ARG NODE_ENV=production
-ENV NODE_ENV ${NODE_ENV}
+ENV NODE_ENV=${NODE_ENV}
 
 FROM deps-base AS deps-sccache
 
@@ -204,6 +204,7 @@ SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
 ARG SCCACHE_S3_KEY_PREFIX
 ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
+ENV CARGO_HOME=$HOME/.cargo
 
 WORKDIR /platform
 
@@ -241,7 +242,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     else \
         export FEATURES_FLAG="--features=console,grovedbg" ; \
         export OUT_DIRECTORY=debug ; \
-
     fi && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
