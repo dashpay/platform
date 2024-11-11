@@ -16,12 +16,13 @@ jobs:
           owner: dashpay
           repo: platform
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Extract running workflow ids
         id: extract_workflow_ids
         run: |
-          current_branch=${GITHUB_HEAD_REF}
+          current_branch="${{ github.event.pull_request.head.ref }}"
+          echo "Current branch: $current_branch"
 
           # loop thru the workflows found & filter out ones that are not on PRs pointing to this branch
           workflow_ids=$(echo '${{ steps.get_active_workflows.outputs.data }}' | \
@@ -42,6 +43,6 @@ jobs:
             curl \
               -X POST \
               -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Authorization: Bearer ${{ github.token }}" \
               https://api.github.com/repos/${{ github.repository }}/actions/runs/$id/cancel
           done
