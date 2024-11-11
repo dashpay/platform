@@ -130,19 +130,16 @@ runs:
       with:
         path: ../yarn-unplugged-cache
         # TODO: We should use platform input
-        key: ${{ runner.os }}-yarn-unplugged-amd64-${{ hashFiles('yarn.lock') }}
+        key: ${{ inputs.platform }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
         restore-keys: |
-          - ${{ runner.os }}-yarn-unplugged-amd64-
+          - ${{ inputs.platform }}-yarn-unplugged-amd64-
 
     - name: Inject cargo cache into docker
       uses: reproducible-containers/buildkit-cache-dance@v3.1.2
       with:
         cache-map: |
           {
-            "../yarn-unplugged-cache": {
-              "target": "/tmp/unplugged",
-              "id": "unplugged_amd64"
-            }
+            "../yarn-unplugged-cache": "/tmp/unplugged"
           }
         skip-extraction: ${{ steps.yarn-cache.outputs.cache-hit }}
 
