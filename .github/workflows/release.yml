@@ -69,6 +69,14 @@ jobs:
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
+      - name: Install Cargo binstall
+        uses: cargo-bins/cargo-binstall@main
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+
+      - name: Install wasm-bindgen-cli
+        run: cargo binstall wasm-bindgen-cli@0.2.86
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+
       - name: Build packages
         run: yarn build
         env:
