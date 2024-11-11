@@ -64,6 +64,8 @@ const {
             GetStatusResponse: PBJSGetStatusResponse,
             GetIdentityBalanceRequest: PBJSGetIdentityBalanceRequest,
             GetIdentityBalanceResponse: PBJSGetIdentityBalanceResponse,
+            GetContestedResourceVoteStateRequest: PBJSGetContestedResourceVoteStateRequest,
+            GetContestedResourceVoteStateResponse: PBJSGetContestedResourceVoteStateResponse,
           },
         },
       },
@@ -91,6 +93,7 @@ const {
   GetTotalCreditsInPlatformResponse: ProtocGetTotalCreditsInPlatformResponse,
   GetStatusResponse: ProtocGetStatusResponse,
   GetIdentityBalanceResponse: ProtocGetIdentityBalanceResponse,
+  GetContestedResourceVoteStateResponse: ProtocGetContestedResourceVoteStateResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -191,6 +194,10 @@ class PlatformPromiseClient {
 
     this.client.getIdentityBalance = promisify(
       this.client.getIdentityBalance.bind(this.client),
+    );
+
+    this.client.getContestedResourceVoteState = promisify(
+      this.client.getContestedResourceVoteState.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -790,6 +797,35 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetIdentityBalanceRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  getContestedResourceVoteState(
+    getContestedResourceVoteStateRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getContestedResourceVoteState(
+      getContestedResourceVoteStateRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetContestedResourceVoteStateResponse,
+              PBJSGetContestedResourceVoteStateResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetContestedResourceVoteStateRequest,
             ),
           ),
         ],
