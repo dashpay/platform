@@ -5,6 +5,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
+use dpp::dashcore::Network;
+use dpp::prelude::BlockHeight;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
@@ -14,6 +16,9 @@ impl Drive {
     pub fn remove_all_votes_given_by_identities(
         &self,
         identity_ids_as_byte_arrays: Vec<Vec<u8>>,
+        block_height: BlockHeight,
+        network: Network,
+        chain_id: &str,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -26,6 +31,9 @@ impl Drive {
         {
             0 => self.remove_all_votes_given_by_identities_v0(
                 identity_ids_as_byte_arrays,
+                block_height,
+                network,
+                chain_id,
                 transaction,
                 platform_version,
             ),

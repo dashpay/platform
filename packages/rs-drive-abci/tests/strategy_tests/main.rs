@@ -2602,7 +2602,10 @@ mod tests {
             &simple_signer,
             &mut rng,
             platform_version,
-        );
+        )
+        .into_iter()
+        .map(|(identity, transition)| (identity, Some(transition)))
+        .collect();
 
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -3910,7 +3913,7 @@ mod tests {
             strategy: Strategy {
                 start_contracts: vec![],
                 operations: vec![Operation {
-                    op_type: OperationType::IdentityTransfer,
+                    op_type: OperationType::IdentityTransfer(None),
                     frequency: Frequency {
                         times_per_block_range: 1..3,
                         chance_per_block: None,

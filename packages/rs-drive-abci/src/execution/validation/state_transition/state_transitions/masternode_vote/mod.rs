@@ -11287,6 +11287,7 @@ mod tests {
 
                 platform
                     .remove_votes_for_removed_masternodes(
+                        &BlockInfo::default(),
                         &platform_state_before_masternode_identity_removals,
                         &block_platform_state,
                         Some(&transaction),
