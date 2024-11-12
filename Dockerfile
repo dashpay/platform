@@ -132,6 +132,7 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
 #
 # Configure sccache
 #
+ARG RUSTC_WRAPPER
 
 # Disable incremental builds, not supported by sccache
 RUN echo 'CARGO_INCREMENTAL=false' >> /root/env
