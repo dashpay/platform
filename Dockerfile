@@ -56,6 +56,7 @@ RUN apk add --no-cache \
         linux-headers \
         llvm-static llvm-dev  \
         openssl-dev \
+        snappy-static snappy-dev \
         perl \
         python3 \
         unzip \
@@ -206,11 +207,6 @@ FROM deps-compilation AS deps-rocksdb
 RUN mkdir -p /tmp/rocksdb
 WORKDIR /tmp/rocksdb
 
-# 1. Clone rocksdb
-# 2. Delete source files not needed by librocksdb-sys
-# 3. Build static library
-# TODO join with code below && \
-
 ARG ACTIONS_RUNTIME_TOKEN
 ARG AWS_SECRET_ACCESS_KEY
 
@@ -226,11 +222,18 @@ RUN git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . && 
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
     
 
-# Configure sccache
+# Configure RocksDB env variables
 RUN <<EOS
 echo "export ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a" >> /root/env
 echo "export ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib" >> /root/env
 echo "export ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include" >> /root/env
+EOS
+
+# Configure snappy, dependency of librocksdb-sys
+RUN <<EOS
+echo "export SNAPPY_STATIC=/usr/lib/libsnappy.a" >> /root/env
+echo "export SNAPPY_LIB_DIR=/usr/lib" >> /root/env
+echo "export SNAPPY_INCLUDE_DIR=/usr/include" >> /root/env
 EOS
 
 #
@@ -302,6 +305,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    set -ex && \
     source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef cook \
