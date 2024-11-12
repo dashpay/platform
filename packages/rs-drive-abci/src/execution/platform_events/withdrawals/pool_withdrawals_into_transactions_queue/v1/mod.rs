@@ -77,9 +77,14 @@ where
 
             // If adding this withdrawal would exceed the limit, stop processing further.
             if potential_total_withdrawal_amount > current_withdrawal_limit {
+                let available_credits = current_withdrawal_limit - total_withdrawal_amount;
+
                 tracing::debug!(
+                    available_credits,
+                    daily_maximum = withdrawals_info.daily_maximum,
+                    withdrawn = withdrawals_info.withdrawals_amount + total_withdrawal_amount,
                     "Pooling is limited due to daily withdrawals limit. {} credits left",
-                    current_withdrawal_limit
+                    available_credits
                 );
                 break;
             }
