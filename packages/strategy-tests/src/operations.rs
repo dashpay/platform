@@ -497,6 +497,13 @@ impl VoteAction {
 
 pub type AmountRange = RangeInclusive<Credits>;
 
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+pub struct IdentityTransferInfo {
+    pub from: Identifier,
+    pub to: Identifier,
+    pub amount: Credits,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum OperationType {
     Document(DocumentOp),
@@ -505,7 +512,7 @@ pub enum OperationType {
     IdentityWithdrawal(AmountRange),
     ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
     ContractUpdate(DataContractUpdateOp),
-    IdentityTransfer,
+    IdentityTransfer(Option<IdentityTransferInfo>),
     ResourceVote(ResourceVoteOp),
 }
 
@@ -517,7 +524,7 @@ enum OperationTypeInSerializationFormat {
     IdentityWithdrawal(AmountRange),
     ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
     ContractUpdate(Vec<u8>),
-    IdentityTransfer,
+    IdentityTransfer(Option<IdentityTransferInfo>),
     ResourceVote(ResourceVoteOpSerializable),
 }
 
@@ -563,7 +570,9 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                     contract_op_in_serialization_format,
                 )
             }
-            OperationType::IdentityTransfer => OperationTypeInSerializationFormat::IdentityTransfer,
+            OperationType::IdentityTransfer(identity_transfer_info) => {
+                OperationTypeInSerializationFormat::IdentityTransfer(identity_transfer_info)
+            }
             OperationType::ResourceVote(resource_vote_op) => {
                 let vote_op_in_serialization_format =
                     resource_vote_op.try_into_platform_versioned(platform_version)?;
@@ -626,7 +635,9 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 )?;
                 OperationType::ContractUpdate(update_op)
             }
-            OperationTypeInSerializationFormat::IdentityTransfer => OperationType::IdentityTransfer,
+            OperationTypeInSerializationFormat::IdentityTransfer(identity_transfer_info) => {
+                OperationType::IdentityTransfer(identity_transfer_info)
+            }
             OperationTypeInSerializationFormat::ResourceVote(resource_vote_op) => {
                 let vote_op = resource_vote_op.try_into_platform_versioned(platform_version)?;
                 OperationType::ResourceVote(vote_op)

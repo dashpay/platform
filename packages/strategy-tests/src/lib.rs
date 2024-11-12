@@ -44,6 +44,7 @@ use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
 use rand::seq::{IteratorRandom, SliceRandom};
 use rand::Rng;
+use transitions::create_identity_credit_transfer_transition;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::RangeInclusive;
 use bincode::{Decode, Encode};
@@ -146,7 +147,7 @@ pub struct StartIdentities {
     pub keys_per_identity: u8,
     pub starting_balances: u64, // starting balance in duffs
     pub extra_keys: KeyMaps,
-    pub hard_coded: Vec<(Identity, StateTransition)>,
+    pub hard_coded: Vec<(Identity, Option<StateTransition>)>,
 }
 
 /// Identities to register on the first block of the strategy
@@ -1287,38 +1288,65 @@ impl Strategy {
                     }
 
                     // Generate state transition for identity transfer operation
-                    OperationType::IdentityTransfer if current_identities.len() > 1 => {
+                    OperationType::IdentityTransfer(identity_transfer_info) => {
                         for _ in 0..count {
-                            let identities_count = current_identities.len();
-                            if identities_count == 0 {
-                                break;
-                            }
+                            // Handle the case where specific sender, recipient, and amount are provided
+                            if let Some(transfer_info) = identity_transfer_info {
+                                let sender = current_identities
+                                    .iter()
+                                    .find(|identity| identity.id() == transfer_info.from)
+                                    .expect(
+                                        "Expected to find sender identity in hardcoded start identities",
+                                    );
+                                let recipient = current_identities
+                                    .iter()
+                                    .find(|identity| identity.id() == transfer_info.to)
+                                    .expect(
+                                        "Expected to find recipient identity in hardcoded start identities",
+                                    );
 
-                            // Select a random identity from the current_identities for the sender
-                            let random_index_sender = rng.gen_range(0..identities_count);
+                                let state_transition = create_identity_credit_transfer_transition(
+                                    &sender,
+                                    &recipient,
+                                    identity_nonce_counter,
+                                    signer, // This means in the TUI, the loaded identity must always be the sender since we're always signing with it for now
+                                    transfer_info.amount,
+                                );
+                                operations.push(state_transition);
+                            } else if current_identities.len() > 1 {
+                                // Handle the case where no sender, recipient, and amount are provided
 
-                            // Clone current_identities to a Vec for manipulation
-                            let mut unused_identities: Vec<_> =
-                                current_identities.iter().cloned().collect();
-                            unused_identities.remove(random_index_sender); // Remove the sender
-                            let unused_identities_count = unused_identities.len();
+                                let identities_count = current_identities.len();
+                                if identities_count == 0 {
+                                    break;
+                                }
 
-                            // Select a random identity from the remaining ones for the recipient
-                            let random_index_recipient = rng.gen_range(0..unused_identities_count);
-                            let recipient = &unused_identities[random_index_recipient];
+                                // Select a random identity from the current_identities for the sender
+                                let random_index_sender = rng.gen_range(0..identities_count);
 
-                            // Use the sender index on the original slice
-                            let sender = &mut current_identities[random_index_sender];
+                                // Clone current_identities to a Vec for manipulation
+                                let mut unused_identities: Vec<_> =
+                                    current_identities.iter().cloned().collect();
+                                unused_identities.remove(random_index_sender); // Remove the sender
+                                let unused_identities_count = unused_identities.len();
 
-                            let state_transition =
-                                crate::transitions::create_identity_credit_transfer_transition(
+                                // Select a random identity from the remaining ones for the recipient
+                                let random_index_recipient =
+                                    rng.gen_range(0..unused_identities_count);
+                                let recipient = &unused_identities[random_index_recipient];
+
+                                // Use the sender index on the original slice
+                                let sender = &mut current_identities[random_index_sender];
+
+                                let state_transition = create_identity_credit_transfer_transition(
                                     sender,
                                     recipient,
                                     identity_nonce_counter,
                                     signer,
                                     300000,
                                 );
-                            operations.push(state_transition);
+                                operations.push(state_transition);
+                            }
                         }
                     }
 
