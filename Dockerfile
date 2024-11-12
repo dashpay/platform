@@ -6,8 +6,8 @@
 # - deps-base - includes all base dependencies and some libraries
 # - deps-sccache - deps image with sccache included
 # - deps-compilation - deps image with all compilation dependencies - it's either deps-base or deps-sccache
+# - deps-rocksdb - build static rocksdb library
 # - deps - all deps, including wasm-bindgen-cli; built on top of either deps-base or deps-sccache
-# - rocksdb - build static rocksdb library
 # - build-planner - image used to prepare build plan for rs-drive-abci
 # - build-* - actual build process of given image
 # - drive-abci, dashmate-helper, test-suite, dapi - final images
@@ -201,7 +201,7 @@ FROM deps-${RUSTC_WRAPPER:-base} AS deps-compilation
 # BUILD ROCKSDB STATIC LIBRARY
 #
 
-FROM deps-compilation AS rocksdb
+FROM deps-compilation AS deps-rocksdb
 
 RUN mkdir -p /tmp/rocksdb
 WORKDIR /tmp/rocksdb
@@ -236,7 +236,7 @@ EOS
 #
 # DEPS: FULL DEPENDENCIES LIST
 #
-FROM rocksdb AS deps
+FROM deps-rocksdb AS deps
 
 
 WORKDIR /platform
