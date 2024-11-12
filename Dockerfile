@@ -5,8 +5,10 @@
 # This image is divided multiple parts:
 # - deps-base - includes all base dependencies and some libraries
 # - deps-sccache - deps image with sccache included
+# - deps-compilation - deps image with all compilation dependencies - it's either deps-base or deps-sccache
 # - deps - all deps, including wasm-bindgen-cli; built on top of either deps-base or deps-sccache
-# - sources - includes full source code
+# - rocksdb - build static rocksdb library
+# - build-planner - image used to prepare build plan for rs-drive-abci
 # - build-* - actual build process of given image
 # - drive-abci, dashmate-helper, test-suite, dapi - final images
 #
@@ -15,6 +17,7 @@
 # - NODE_ENV - node.js environment name to use to build the library
 # - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables available:
 #   - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
+#   - SCCACHE_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, SCCACHE_S3_KEY_PREFIX - store caches in S3
 #   - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
@@ -100,9 +103,24 @@ ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
 
+# Create generic env file that should be sourced before build
+RUN touch /root/env
+
+#
+# DEPS-SCCACHE stage 
+#
+# This stage is used to install sccache and configure it.
+# Later on, one should copy  /root/env from this image.
+
+# Note that, due to security concerns, each stage needs to separately declare variables like
+# ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY:
+#
+#    ARG ACTIONS_RUNTIME_TOKEN
+#    ARG AWS_SECRET_ACCESS_KEY
+
 FROM deps-base AS deps-sccache
 
-ARG SCCHACHE_VERSION=0.7.1
+ARG SCCHACHE_VERSION=0.8.2
 
 # Install sccache for caching
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
@@ -114,70 +132,120 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
 #
 # Configure sccache
 #
-ARG RUSTC_WRAPPER
-ENV RUSTC_WRAPPER=${RUSTC_WRAPPER}
+
+# Disable incremental builds, not supported by sccache
+RUN echo 'CARGO_INCREMENTAL=false' >> /root/env
 
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
-ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
-
 ARG ACTIONS_CACHE_URL
-ENV ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}
-
-ARG ACTIONS_RUNTIME_TOKEN
-ENV ACTIONS_RUNTIME_TOKEN=${ACTIONS_RUNTIME_TOKEN}
 
 # Alternative solution is to use memcache
 ARG SCCACHE_MEMCACHED
-ENV SCCACHE_MEMCACHED=${SCCACHE_MEMCACHED}
 
 # S3 storage
 ARG SCCACHE_BUCKET
-ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
-
-ARG SCCACHE_REGION
-ENV SCCACHE_REGION=${SCCACHE_REGION}
-
-# Disable incremental buildings, not supported by sccache
-ARG CARGO_INCREMENTAL=false
-ENV CARGO_INCREMENTAL=${CARGO_INCREMENTAL}
-
 ARG AWS_ACCESS_KEY_ID
-ARG AWS_SECRET_ACCESS_KEY
+ARG AWS_REGION
+ARG SCCACHE_REGION
+ARG SCCACHE_S3_KEY_PREFIX
+
+# Generate sccache configuration
+# 
+# Note this is conditional logic, to only enable one sccache backend at a time
+#
+
+RUN <<EOS
+    set -ex -o pipefail
+
+    if [ -n "${SCCACHE_GHA_ENABLED}" ]; then 
+        # Github Actions cache
+        echo "SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /root/env
+        echo "ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
+        # ACTIONS_RUNTIME_TOKEN is a secret so we don't put it in the env file
+    elif [ -n "${SCCACHE_BUCKET}" ]; then
+        # AWS S3
+        if [ -z "${SCCACHE_REGION}" ] ; then
+            # Default to AWS_REGION if not set
+            export SCCACHE_REGION=${AWS_REGION}
+        fi
+
+        echo "AWS_REGION=${AWS_REGION}" >> /root/env
+        echo "SCCACHE_REGION=${SCCACHE_REGION}" >> /root/env
+        echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
+        # AWS_SECRET_ACCESS_KEY is a secret so we don't put it in the env file
+        echo "SCCACHE_BUCKET=${SCCACHE_BUCKET}" >> /root/env
+        echo "SCCACHE_S3_USE_SSL=false" >> /root/env
+        echo "SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl" >> /root/env
+    elif [ -n "${SCCACHE_MEMCACHED}" ]; then
+        # memcached
+        echo "SCCACHE_MEMCACHED=${SCCACHE_MEMCACHED}" >> /root/env
+    fi
+    
+    if [ -n "${RUSTC_WRAPPER}" ]; then
+        echo CXX="${RUSTC_WRAPPER} clang++" >> /root/env
+        echo CC="${RUSTC_WRAPPER} clang" >> /root/env
+        echo RUSTC_WRAPPER="${RUSTC_WRAPPER}" >> /root/env
+        echo SCCACHE_SERVER_PORT=$((RANDOM+1025)) >> /root/env
+    fi
+
+    cat /root/env
+EOS
+
+# Image containing compolation dependencies; used to overcome lack of interpolation in COPY --from
+FROM deps-${RUSTC_WRAPPER:-base} AS deps-compilation
 
 #
 # BUILD ROCKSDB STATIC LIBRARY
 #
-FROM deps-${RUSTC_WRAPPER:-base} AS rocksdb
+
+FROM deps-compilation AS rocksdb
 
 RUN mkdir -p /tmp/rocksdb
 WORKDIR /tmp/rocksdb
-RUN git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . && \
+
+# 1. Clone rocksdb
+# 2. Delete source files not needed by librocksdb-sys
+# 3. Build static library
+# TODO join with code below && \
+
+RUN git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . 
+
+ARG ACTIONS_RUNTIME_TOKEN
+ARG AWS_SECRET_ACCESS_KEY
+
+RUN source /root/env && \
     make -j$(nproc) static_lib && \
     mkdir -p /opt/rocksdb/usr/local/lib && \
     cp librocksdb.a /opt/rocksdb/usr/local/lib/ && \
     cp -r include /opt/rocksdb/usr/local/ && \
     cd / && \
-    rm -rf /tmp/rocksdb
+    rm -rf /tmp/rocksdb && \
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+    
 
+# Configure sccache
+RUN <<EOS
+echo ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a >> /root/env
+echo ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib >> /root/env
+echo ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include >> /root/env
+EOS
+
+#
 # DEPS: FULL DEPENDENCIES LIST
 #
 # This is separate from `deps` to use sccache for caching
-FROM deps-${RUSTC_WRAPPER:-base} AS deps
-
-ARG SCCACHE_S3_KEY_PREFIX
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
+FROM deps-compilation AS deps
 
 # Install prebuilt rocksdb library
-
 COPY --from=rocksdb /opt/rocksdb /opt/rocksdb
-# Set env variables so that Rust's rocksdb-sys will not build rocksdb from scratch
 
-ENV ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a
-ENV ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib
-ENV ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include
 
 WORKDIR /platform
+
+# Configure credentials requied by sccache
+ARG ACTIONS_RUNTIME_TOKEN
+ARG AWS_SECRET_ACCESS_KEY
 
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
@@ -185,9 +253,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     source $HOME/.cargo/env && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    source /root/env && \
     RUSTFLAGS="-C target-feature=-crt-static" \
     CARGO_TARGET_DIR="/platform/target" \
     # TODO: Build wasm with build.rs
@@ -201,14 +268,14 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 # Rust build planner to speed up builds
 #
 FROM deps AS build-planner
-
-ENV ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a
-ENV ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib
-ENV ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include
+# Configure credentials requied by sccache
+ARG ACTIONS_RUNTIME_TOKEN
+ARG AWS_SECRET_ACCESS_KEY
 
 WORKDIR /platform
 COPY . .
 RUN source $HOME/.cargo/env && \
+    source /root/env && \
     cargo chef prepare --recipe-path recipe.json
 
 # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
@@ -222,16 +289,14 @@ FROM deps AS build-drive-abci
 
 SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
-ARG SCCACHE_S3_KEY_PREFIX
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
-
-ENV ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a
-ENV ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib
-ENV ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include
 
 WORKDIR /platform
 
 COPY --from=build-planner /platform/recipe.json recipe.json
+
+# Configure credentials requied by sccache
+ARG ACTIONS_RUNTIME_TOKEN
+ARG AWS_SECRET_ACCESS_KEY
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
@@ -239,14 +304,13 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    source /root/env && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
         --package drive-abci \
         --locked && \
-    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
+        if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 COPY . .
 
@@ -258,39 +322,34 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml && \
         export OUT_DIRECTORY=release ; \
     else \
         export FEATURES_FLAG="--features=console,grovedbg" ; \
         export OUT_DIRECTORY=debug ; \
-        
     fi && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
         --profile "${CARGO_BUILD_PROFILE}" \
         --package drive-abci \
         ${FEATURES_FLAG} \
         --locked && \
-    cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
-    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
-
+    cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \    
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+    
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
 #
 FROM deps AS build-js
 
-ARG SCCACHE_S3_KEY_PREFIX
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/wasm/wasm32
-
-ENV ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a
-ENV ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib
-ENV ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include
-
 WORKDIR /platform
 
 COPY --from=build-planner /platform/recipe.json recipe.json
+
+# Configure credentials requied by sccache
+ARG ACTIONS_RUNTIME_TOKEN
+ARG AWS_SECRET_ACCESS_KEY
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
@@ -298,15 +357,14 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    source /root/env && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
         --package wasm-dpp \
         --target wasm32-unknown-unknown \
         --locked && \
-    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 COPY . .
 
@@ -316,14 +374,13 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=target_wasm,target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     source $HOME/.cargo/env && \
+    source /root/env && \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn install --inline-builds && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn build && \
-    if [[ "${RUSTC_WRAPPER}" == "sccache" ]]; then sccache --show-stats; fi
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 #
 # STAGE: FINAL DRIVE-ABCI IMAGE
