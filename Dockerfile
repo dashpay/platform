@@ -185,14 +185,18 @@ RUN <<EOS
     fi
     
     if [ -n "${RUSTC_WRAPPER}" ]; then
-        echo "export CXX='${RUSTC_WRAPPER} clang++'" >> /root/env
-        echo "export CC='${RUSTC_WRAPPER} clang'" >> /root/env
+        echo "export CXX='${RUSTC_WRAPPER} cpp'" >> /root/env
+        echo "export CC='${RUSTC_WRAPPER} cc'" >> /root/env
         echo "export RUSTC_WRAPPER='${RUSTC_WRAPPER}'" >> /root/env
         echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
     fi
 
     cat /root/env
 EOS
+
+# Some security settings
+ONBUILD ARG ACTIONS_RUNTIME_TOKEN
+ONBUILD ARG AWS_SECRET_ACCESS_KEY
 
 # Image containing compolation dependencies; used to overcome lack of interpolation in COPY --from
 FROM deps-${RUSTC_WRAPPER:-base} AS deps-compilation
@@ -207,14 +211,10 @@ FROM deps-compilation AS deps-rocksdb
 RUN mkdir -p /tmp/rocksdb
 WORKDIR /tmp/rocksdb
 
-ARG ACTIONS_RUNTIME_TOKEN
-ARG AWS_SECRET_ACCESS_KEY
-
 RUN git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . && \
     source /root/env && \
     PORTABLE=1 make -j$(nproc) static_lib && \
     mkdir -p /opt/rocksdb/usr/local/lib && \
-    strip librocksdb.a && \
     cp librocksdb.a /opt/rocksdb/usr/local/lib/ && \
     cp -r include /opt/rocksdb/usr/local/ && \
     cd / && \
@@ -244,10 +244,6 @@ FROM deps-rocksdb AS deps
 
 WORKDIR /platform
 
-# Configure credentials requied by sccache
-ARG ACTIONS_RUNTIME_TOKEN
-ARG AWS_SECRET_ACCESS_KEY
-
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
@@ -273,9 +269,6 @@ FROM deps AS build-planner
 WORKDIR /platform
 COPY . .
 
-ARG ACTIONS_RUNTIME_TOKEN
-ARG AWS_SECRET_ACCESS_KEY
-
 RUN source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef prepare --recipe-path recipe.json
@@ -295,10 +288,6 @@ SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 WORKDIR /platform
 
 COPY --from=build-planner /platform/recipe.json recipe.json
-
-# Configure credentials requied by sccache
-ARG ACTIONS_RUNTIME_TOKEN
-ARG AWS_SECRET_ACCESS_KEY
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
@@ -349,10 +338,6 @@ FROM deps AS build-js
 WORKDIR /platform
 
 COPY --from=build-planner /platform/recipe.json recipe.json
-
-# Configure credentials requied by sccache
-ARG ACTIONS_RUNTIME_TOKEN
-ARG AWS_SECRET_ACCESS_KEY
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
