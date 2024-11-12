@@ -171,23 +171,23 @@ RUN <<EOS
             export SCCACHE_REGION=${AWS_REGION}
         fi
 
-        echo "AWS_REGION=${AWS_REGION}" >> /root/env
-        echo "SCCACHE_REGION=${SCCACHE_REGION}" >> /root/env
-        echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
+        echo "export AWS_REGION='${AWS_REGION}'" >> /root/env
+        echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
+        echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
         # AWS_SECRET_ACCESS_KEY is a secret so we don't put it in the env file
-        echo "SCCACHE_BUCKET=${SCCACHE_BUCKET}" >> /root/env
-        echo "SCCACHE_S3_USE_SSL=false" >> /root/env
-        echo "SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl" >> /root/env
+        echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
+        echo "export SCCACHE_S3_USE_SSL=false" >> /root/env
+        echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
     elif [ -n "${SCCACHE_MEMCACHED}" ]; then
         # memcached
-        echo "SCCACHE_MEMCACHED=${SCCACHE_MEMCACHED}" >> /root/env
+        echo "export SCCACHE_MEMCACHED='${SCCACHE_MEMCACHED}'" >> /root/env
     fi
     
     if [ -n "${RUSTC_WRAPPER}" ]; then
-        echo CXX="${RUSTC_WRAPPER} clang++" >> /root/env
-        echo CC="${RUSTC_WRAPPER} clang" >> /root/env
-        echo RUSTC_WRAPPER="${RUSTC_WRAPPER}" >> /root/env
-        echo SCCACHE_SERVER_PORT=$((RANDOM+1025)) >> /root/env
+        echo "export CXX='${RUSTC_WRAPPER} clang++'" >> /root/env
+        echo "export CC='${RUSTC_WRAPPER} clang'" >> /root/env
+        echo "export RUSTC_WRAPPER='${RUSTC_WRAPPER}'" >> /root/env
+        echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
     fi
 
     cat /root/env
@@ -210,14 +210,14 @@ WORKDIR /tmp/rocksdb
 # 3. Build static library
 # TODO join with code below && \
 
-RUN git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . 
-
 ARG ACTIONS_RUNTIME_TOKEN
 ARG AWS_SECRET_ACCESS_KEY
 
-RUN source /root/env && \
-    make -j$(nproc) static_lib && \
+RUN git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . && \
+    source /root/env && \
+    PORTABLE=1 make -j$(nproc) static_lib && \
     mkdir -p /opt/rocksdb/usr/local/lib && \
+    strip librocksdb.a && \
     cp librocksdb.a /opt/rocksdb/usr/local/lib/ && \
     cp -r include /opt/rocksdb/usr/local/ && \
     cd / && \
@@ -227,9 +227,9 @@ RUN source /root/env && \
 
 # Configure sccache
 RUN <<EOS
-echo ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a >> /root/env
-echo ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib >> /root/env
-echo ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include >> /root/env
+echo "export ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a" >> /root/env
+echo "export ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib" >> /root/env
+echo "export ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include" >> /root/env
 EOS
 
 #
