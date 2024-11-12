@@ -195,6 +195,7 @@ EOS
 
 # Image containing compolation dependencies; used to overcome lack of interpolation in COPY --from
 FROM deps-${RUSTC_WRAPPER:-base} AS deps-compilation
+# Stage intentionally left empty
 
 #
 # BUILD ROCKSDB STATIC LIBRARY
@@ -235,11 +236,7 @@ EOS
 #
 # DEPS: FULL DEPENDENCIES LIST
 #
-# This is separate from `deps` to use sccache for caching
-FROM deps-compilation AS deps
-
-# Install prebuilt rocksdb library
-COPY --from=rocksdb /opt/rocksdb /opt/rocksdb
+FROM rocksdb AS deps
 
 
 WORKDIR /platform
@@ -270,11 +267,12 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 #
 FROM deps AS build-planner
 # Configure credentials requied by sccache
+WORKDIR /platform
+COPY . .
+
 ARG ACTIONS_RUNTIME_TOKEN
 ARG AWS_SECRET_ACCESS_KEY
 
-WORKDIR /platform
-COPY . .
 RUN source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef prepare --recipe-path recipe.json
