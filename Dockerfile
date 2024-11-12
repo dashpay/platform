@@ -177,7 +177,7 @@ RUN <<EOS
         echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
         # AWS_SECRET_ACCESS_KEY is a secret so we don't put it in the env file
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
-        echo "export SCCACHE_S3_USE_SSL=false" >> /root/env
+        echo "export SCCACHE_S3_USE_SSL=true" >> /root/env
         echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
     elif [ -n "${SCCACHE_MEMCACHED}" ]; then
         # memcached
@@ -258,8 +258,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     # Meanwhile if you want to update wasm-bindgen you also need to update version in:
     #  - packages/wasm-dpp/Cargo.toml
     #  - packages/wasm-dpp/scripts/build-wasm.sh
-    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 --locked  
-
+    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 --locked  && \
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 #
 # Rust build planner to speed up builds
@@ -294,7 +294,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
-    set -ex && \
     source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef cook \
@@ -302,7 +301,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         --profile "$CARGO_BUILD_PROFILE" \
         --package drive-abci \
         --locked && \
-        if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 COPY . .
 
