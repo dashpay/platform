@@ -156,7 +156,7 @@ RUN git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . && 
     make -j$(nproc) static_lib && \
     mkdir -p /opt/rocksdb/usr/local/lib && \
     cp librocksdb.a /opt/rocksdb/usr/local/lib/ && \
-    cp -r include /opt/rocksdb/usr/local/lib/ && \
+    cp -r include /opt/rocksdb/usr/local/ && \
     cd / && \
     rm -rf /tmp/rocksdb
 
@@ -175,6 +175,7 @@ COPY --from=rocksdb /opt/rocksdb /opt/rocksdb
 
 ENV ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a
 ENV ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib
+ENV ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include
 
 WORKDIR /platform
 
@@ -203,6 +204,7 @@ FROM deps AS build-planner
 
 ENV ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a
 ENV ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib
+ENV ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include
 
 WORKDIR /platform
 COPY . .
@@ -225,6 +227,7 @@ ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
 
 ENV ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a
 ENV ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib
+ENV ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include
 
 WORKDIR /platform
 
@@ -283,6 +286,7 @@ ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/wasm/wasm32
 
 ENV ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a
 ENV ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib
+ENV ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include
 
 WORKDIR /platform
 
