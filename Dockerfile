@@ -185,8 +185,8 @@ RUN <<EOS
     fi
     
     if [ -n "${RUSTC_WRAPPER}" ]; then
-        echo "export CXX='${RUSTC_WRAPPER} cpp'" >> /root/env
-        echo "export CC='${RUSTC_WRAPPER} cc'" >> /root/env
+        echo "export CXX='${RUSTC_WRAPPER} clang++'" >> /root/env
+        echo "export CC='${RUSTC_WRAPPER} clang'" >> /root/env
         echo "export RUSTC_WRAPPER='${RUSTC_WRAPPER}'" >> /root/env
         echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
     fi
