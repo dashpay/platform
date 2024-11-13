@@ -95,6 +95,10 @@ runs:
       shell: bash
       run: echo "key=$(echo '${{ github.ref_name }}' | sha256sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
 
+    - name: Set HOME variable to github context
+      shell: bash
+      run: echo "HOME=$HOME" >> $GITHUB_ENV
+
     - name: Cache cargo registry (S3 bucket cache)
       uses: strophy/actions-cache@opendal-update
       if: inputs.cache == 'true'
@@ -102,9 +106,9 @@ runs:
         bucket: multi-runner-cache-x1xibo9c
         root: actions-cache
         path: |
-          /home/ubuntu/.cargo/registry/index
-          /home/ubuntu/.cargo/registry/cache
-          /home/ubuntu/.cargo/git
+          ${{ env.HOME }}/.cargo/registry/index
+          ${{ env.HOME }}/.cargo/registry/cache
+          ${{ env.HOME }}/.cargo/git
         key: ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
