@@ -27,6 +27,7 @@
 # 2. We add `--config net.git-fetch-with-cli=true` to address ARM build issue,
 # see https://github.com/rust-lang/cargo/issues/10781#issuecomment-1441071052
 # 3. Github Actions have shared networking configured, so we need to set a random
+# SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
 ARG ALPINE_VERSION=3.18
 ARG PROTOC_VERSION=27.3
@@ -117,7 +118,7 @@ ARG RUSTC_WRAPPER
 ENV RUSTC_WRAPPER=${RUSTC_WRAPPER}
 
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
-ARG SCCACHE_GHA_ENABLED="false"
+ARG SCCACHE_GHA_ENABLED
 ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
 
 ARG ACTIONS_CACHE_URL
@@ -155,13 +156,13 @@ ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
 
 WORKDIR /platform
 
-# TODO: Use https://github.com/cargo-bins/cargo-binstall
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     source $HOME/.cargo/env && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     RUSTFLAGS="-C target-feature=-crt-static" \
@@ -205,6 +206,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo chef cook \
         --recipe-path recipe.json \
@@ -223,12 +225,14 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml && \
         export OUT_DIRECTORY=release ; \
     else \
         export FEATURES_FLAG="--features=console,grovedbg" ; \
         export OUT_DIRECTORY=debug ; \
+
     fi && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
@@ -257,6 +261,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo chef cook \
         --recipe-path recipe.json \
@@ -277,6 +282,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn install --inline-builds && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn build && \

@@ -22,12 +22,6 @@ inputs:
     description: User name to use when pushing images to Docker Hub
   dockerhub_token:
     description: Docker Hub token to use
-#  cache_mounts:
-#    description: Load cache mounts cache
-#    default: |
-#      cargo_registry_index
-#      cargo_registry_cache
-#      cargo_git
   cargo_profile:
     description: Cargo build profile, i.e release or dev
     default: dev
@@ -85,12 +79,12 @@ runs:
           type=semver,pattern={{version}},value=${{inputs.image_version}},enable=${{ inputs.image_version != '' }}
           type=sha,format=long,enable=${{ inputs.image_version == '' }}
 
-#    - name: Configure docker layer cache
-#      uses: ./.github/actions/s3-layer-cache-settings
-#      id: layer_cache_settings
-#      with:
-#        name: ${{ inputs.image_name }}
-#        bucket: ${{ inputs.bucket }}
+    - name: Configure docker layer cache
+      uses: ./.github/actions/s3-layer-cache-settings
+      id: layer_cache_settings
+      with:
+        name: ${{ inputs.image_name }}
+        bucket: ${{ inputs.bucket }}
 
     - name: Cargo cache for Docker
       uses: actions/cache@v4
@@ -171,10 +165,8 @@ runs:
           SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache
           AWS_ACCESS_KEY_ID=${{ inputs.aws_access_key_id }}
           AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
-        #cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
-        cache-from: type=gha
-        #cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
-        cache-to: type=gha,mode=max
+        cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
+        cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true
 
 #    - name: Save Docker mount cache
