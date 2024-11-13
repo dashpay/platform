@@ -102,6 +102,11 @@ runs:
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
       uses: docker/build-push-action@v5
+      env:
+        AWS_ACCESS_KEY_ID: "${{ inputs.aws_access_key_id }}"
+        AWS_SECRET_ACCESS_KEY: "${{ inputs.aws_secret_access_key }}"
+        AWS_REGION: "${{ inputs.region }}"
+
       with:
         context: .
         builder: ${{ steps.buildx.outputs.name }}
