@@ -2,11 +2,6 @@ name: Tests
 
 on:
   workflow_dispatch:
-    inputs:
-      rebuild-deps:
-        description: "Rebuild cached Rust dependencies"
-        required: false
-        default: "false"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
@@ -44,11 +39,14 @@ jobs:
   build-rust-deps:
     name: Prebuild and cache some Rust dependencies
     runs-on: ubuntu-24.04
+    needs:
+      - changes
+    # run only if any changes were detected, eg. changes job returned non-empty list
+    if: ${{ needs.changes.outputs.rs-packages != '[]' }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: ${{ secrets.AWS_REGION }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4

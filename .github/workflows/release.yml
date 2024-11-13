@@ -21,7 +21,7 @@ concurrency:
 jobs:
   release-npm:
     name: Release NPM packages
-    runs-on: ["self-hosted", "linux", "arm64", "ubuntu-platform"]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     if: github.event_name != 'workflow_dispatch'
     steps:
