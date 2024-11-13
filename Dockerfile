@@ -23,14 +23,16 @@
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
 #
+#
+#
+#
 # BUILD PROCESS
 #
 # 1. All these --mount... are to cache reusable info between runs.
 # See https://doc.rust-lang.org/cargo/guide/cargo-home.html#caching-the-cargo-home-in-ci
-# 2. We add `--config net.git-fetch-with-cli=true` to address ARM build issue,
-# see https://github.com/rust-lang/cargo/issues/10781#issuecomment-1441071052
-# 3. Github Actions have shared networking configured, so we need to set a random
-# SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
+# 2. Github Actions have shared networking configured, so we need to set a random SCCACHE_SERVER_PORT port to avoid
+# conflicts in case of parallel compilation.
+# 3. Configuration variables are shared between runs using /root/env file.
 
 ARG ALPINE_VERSION=3.18
 ARG PROTOC_VERSION=27.3
@@ -63,6 +65,13 @@ RUN apk add --no-cache \
         wget \
         xz \
         zeromq-dev
+
+# Configure snappy, dependency of librocksdb-sys
+RUN <<EOS
+echo "export SNAPPY_STATIC=/usr/lib/libsnappy.a" >> /root/env
+echo "export SNAPPY_LIB_DIR=/usr/lib" >> /root/env
+echo "export SNAPPY_INCLUDE_DIR=/usr/include" >> /root/env
+EOS
 
 # Configure Node.js
 
@@ -104,23 +113,19 @@ ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
 
-# Create generic env file that should be sourced before build
-RUN touch /root/env
-
 #
 # DEPS-SCCACHE stage 
 #
 # This stage is used to install sccache and configure it.
-# Later on, one should copy  /root/env from this image.
+# Later on, one should source /root/env before building to use sccache.
 
-# Note that, due to security concerns, each stage needs to separately declare variables like
-# ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY:
-#
-#    ARG ACTIONS_RUNTIME_TOKEN
-#    ARG AWS_SECRET_ACCESS_KEY
+# Note that, due to security concerns, each stage needs to declare variables containing authentication secrets, like
+# ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY. It is done using ONBUILD directive, so the secrets are not stored in the
+# final image.
 
 FROM deps-base AS deps-sccache
 
+# SCCACHE_VERSION must be the same as in github actions, to avoid cache incompatibility
 ARG SCCHACHE_VERSION=0.8.2
 
 # Install sccache for caching
@@ -136,7 +141,7 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
 ARG RUSTC_WRAPPER
 
 # Disable incremental builds, not supported by sccache
-RUN echo 'CARGO_INCREMENTAL=false' >> /root/env
+RUN echo 'export CARGO_INCREMENTAL=false' >> /root/env
 
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
@@ -152,19 +157,17 @@ ARG AWS_REGION
 ARG SCCACHE_REGION
 ARG SCCACHE_S3_KEY_PREFIX
 
-# Generate sccache configuration
+# Generate sccache configuration variables and save them to /root/env
 # 
-# Note this is conditional logic, to only enable one sccache backend at a time
-#
-
+# We only enable one cache at a time. Setting env variables belonging to multiple cache backends may fail the build.
 RUN <<EOS
     set -ex -o pipefail
 
     if [ -n "${SCCACHE_GHA_ENABLED}" ]; then 
         # Github Actions cache
-        echo "SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /root/env
-        echo "ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
-        # ACTIONS_RUNTIME_TOKEN is a secret so we don't put it in the env file
+        echo "export SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /root/env
+        echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
+        # ACTIONS_RUNTIME_TOKEN is a secret so we load it using ONBUILD ARG later on
     elif [ -n "${SCCACHE_BUCKET}" ]; then
         # AWS S3
         if [ -z "${SCCACHE_REGION}" ] ; then
@@ -175,7 +178,7 @@ RUN <<EOS
         echo "export AWS_REGION='${AWS_REGION}'" >> /root/env
         echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
         echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
-        # AWS_SECRET_ACCESS_KEY is a secret so we don't put it in the env file
+        # AWS_SECRET_ACCESS_KEY is a secret so we load it using ONBUILD ARG later on
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
         echo "export SCCACHE_S3_USE_SSL=true" >> /root/env
         echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
@@ -190,11 +193,12 @@ RUN <<EOS
         echo "export RUSTC_WRAPPER='${RUSTC_WRAPPER}'" >> /root/env
         echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
     fi
-
+    # for debugging, we display what we generated
     cat /root/env
 EOS
 
-# Some security settings
+# We provide secrets using ONBUILD ARG mechanism, to avoid putting them into a file and potentialy leaking them
+# to the final image or to layer cache
 ONBUILD ARG ACTIONS_RUNTIME_TOKEN
 ONBUILD ARG AWS_SECRET_ACCESS_KEY
 
@@ -229,12 +233,6 @@ echo "export ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib" >> /root/env
 echo "export ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include" >> /root/env
 EOS
 
-# Configure snappy, dependency of librocksdb-sys
-RUN <<EOS
-echo "export SNAPPY_STATIC=/usr/lib/libsnappy.a" >> /root/env
-echo "export SNAPPY_LIB_DIR=/usr/lib" >> /root/env
-echo "export SNAPPY_INCLUDE_DIR=/usr/include" >> /root/env
-EOS
 
 #
 # DEPS: FULL DEPENDENCIES LIST
