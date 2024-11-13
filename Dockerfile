@@ -1,4 +1,4 @@
-# syntax = docker/dockerfile:1.5
+# syntax = docker/dockerfile:1
 
 # Docker image for rs-drive-abci
 #
@@ -35,13 +35,12 @@
 # 3. Configuration variables are shared between runs using /root/env file.
 
 ARG ALPINE_VERSION=3.18
-ARG PROTOC_VERSION=27.3
 ARG RUSTC_WRAPPER
 
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
 #
-FROM node:20-alpine${ALPINE_VERSION} as deps-base
+FROM node:20-alpine${ALPINE_VERSION} AS deps-base
 
 #
 # Install some dependencies
@@ -93,9 +92,12 @@ RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | t
         --default-toolchain "${TOOLCHAIN_VERSION}" \
         --target wasm32-unknown-unknown
 
+ONBUILD ENV HOME=/root
+ONBUILD ENV CARGO_HOME=$HOME/.cargo
+
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
-ARG PROTOC_VERSION
+ARG PROTOC_VERSION=27.3
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
     curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip \
         -o /tmp/protoc.zip && \
@@ -107,14 +109,13 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
 RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
 
 # Select whether we want dev or release
-ARG CARGO_BUILD_PROFILE=dev
-ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
+ONBUILD ARG CARGO_BUILD_PROFILE=dev
 
 ARG NODE_ENV=production
-ENV NODE_ENV ${NODE_ENV}
+ENV NODE_ENV=${NODE_ENV}
 
 #
-# DEPS-SCCACHE stage 
+# DEPS-SCCACHE stage
 #
 # This stage is used to install sccache and configure it.
 # Later on, one should source /root/env before building to use sccache.
@@ -158,12 +159,12 @@ ARG SCCACHE_REGION
 ARG SCCACHE_S3_KEY_PREFIX
 
 # Generate sccache configuration variables and save them to /root/env
-# 
+#
 # We only enable one cache at a time. Setting env variables belonging to multiple cache backends may fail the build.
 RUN <<EOS
     set -ex -o pipefail
 
-    if [ -n "${SCCACHE_GHA_ENABLED}" ]; then 
+    if [ -n "${SCCACHE_GHA_ENABLED}" ]; then
         # Github Actions cache
         echo "export SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /root/env
         echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
@@ -186,7 +187,7 @@ RUN <<EOS
         # memcached
         echo "export SCCACHE_MEMCACHED='${SCCACHE_MEMCACHED}'" >> /root/env
     fi
-    
+
     if [ -n "${RUSTC_WRAPPER}" ]; then
         echo "export CXX='${RUSTC_WRAPPER} clang++'" >> /root/env
         echo "export CC='${RUSTC_WRAPPER} clang'" >> /root/env
@@ -217,7 +218,7 @@ WORKDIR /tmp/rocksdb
 
 RUN <<EOS
 set -ex -o pipefail
-git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . 
+git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 .
 source /root/env
 
 if [[ "$TARGETARCH" == "amd64" ]] ; then
@@ -251,22 +252,32 @@ FROM deps-rocksdb AS deps
 
 WORKDIR /platform
 
-# Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
-# better build caching
-RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
-    source $HOME/.cargo/env && \
-    source /root/env && \
-    RUSTFLAGS="-C target-feature=-crt-static" \
-    CARGO_TARGET_DIR="/platform/target" \
-    # TODO: Build wasm with build.rs
-    # Meanwhile if you want to update wasm-bindgen you also need to update version in:
-    #  - packages/wasm-dpp/Cargo.toml
-    #  - packages/wasm-dpp/scripts/build-wasm.sh
-    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 --locked  && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+# Download and install cargo-binstall
+ENV BINSTALL_VERSION=1.10.11
+RUN set -ex; \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+        CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        CARGO_BINSTALL_ARCH="aarch64-unknown-linux-musl"; \
+    else \
+        echo "Unsupported architecture: $TARGETARCH"; exit 1; \
+    fi; \
+    # Construct download URL
+    DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
+    # Download and extract the cargo-binstall binary
+    curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;  \
+    ./cargo-binstall -y --force cargo-binstall; \
+    rm ./cargo-binstall; \
+    source $HOME/.cargo/env; \
+    cargo binstall -V
+
+RUN source $HOME/.cargo/env; \
+    cargo binstall wasm-bindgen-cli@0.2.86 cargo-chef@0.1.67 \
+    --locked \
+    --no-discover-github-token \
+    --disable-telemetry \
+    --no-track \
+    --no-confirm
 
 #
 # Rust build planner to speed up builds
@@ -290,7 +301,6 @@ RUN touch /platform/packages/dapi-grpc/build.rs
 FROM deps AS build-drive-abci
 
 SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
-
 
 WORKDIR /platform
 
@@ -333,9 +343,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         --package drive-abci \
         ${FEATURES_FLAG} \
         --locked && \
-    cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \    
+    cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
-    
+
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
 #
