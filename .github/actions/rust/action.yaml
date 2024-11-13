@@ -99,12 +99,25 @@ runs:
       shell: bash
       run: echo "HOME=$HOME" >> $GITHUB_ENV
 
-    - name: Cache cargo registry (S3 bucket cache)
-      uses: strophy/actions-cache@opendal-update
+#    - name: Cache cargo registry (S3 bucket cache)
+#      uses: strophy/actions-cache@opendal-update
+#      if: inputs.cache == 'true'
+#      with:
+#        bucket: multi-runner-cache-x1xibo9c
+#        root: actions-cache
+#        path: |
+#          ${{ env.HOME }}/.cargo/registry/index
+#          ${{ env.HOME }}/.cargo/registry/cache
+#          ${{ env.HOME }}/.cargo/git
+#        key: ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
+#        restore-keys: |
+#          ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
+#          ${{ runner.os }}/cargo/registry/
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
       if: inputs.cache == 'true'
       with:
-        bucket: multi-runner-cache-x1xibo9c
-        root: actions-cache
         path: |
           ${{ env.HOME }}/.cargo/registry/index
           ${{ env.HOME }}/.cargo/registry/cache
@@ -113,6 +126,7 @@ runs:
         restore-keys: |
           ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
           ${{ runner.os }}/cargo/registry/
+
 
     # TODO: Move to AMI and build every day
     - name: Install clang

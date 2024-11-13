@@ -79,12 +79,12 @@ runs:
           type=semver,pattern={{version}},value=${{inputs.image_version}},enable=${{ inputs.image_version != '' }}
           type=sha,format=long,enable=${{ inputs.image_version == '' }}
 
-    - name: Configure docker layer cache
-      uses: ./.github/actions/s3-layer-cache-settings
-      id: layer_cache_settings
-      with:
-        name: ${{ inputs.image_name }}
-        bucket: ${{ inputs.bucket }}
+#    - name: Configure docker layer cache
+#      uses: ./.github/actions/s3-layer-cache-settings
+#      id: layer_cache_settings
+#      with:
+#        name: ${{ inputs.image_name }}
+#        bucket: ${{ inputs.bucket }}
 
     - name: Cargo cache for Docker
       uses: actions/cache@v4
@@ -146,6 +146,13 @@ runs:
           }
         skip-extraction: ${{ steps.yarn-cache.outputs.cache-hit }}
 
+    - name: Export actions cache vars
+      uses: actions/github-script@v7
+      with:
+        script: |
+          core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+          core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
       uses: docker/build-push-action@v6
@@ -160,14 +167,19 @@ runs:
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
           RUSTC_WRAPPER=sccache
-          SCCACHE_BUCKET=${{ inputs.bucket }}
-          SCCACHE_REGION=${{ inputs.region }}
-          SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache
-          AWS_ACCESS_KEY_ID=${{ inputs.aws_access_key_id }}
-          AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
-          AWS_REGION=${{ inputs.region }}
-        cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
-        cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
+          SCCACHE_GHA_ENABLED=true
+          ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
+          ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
+#          SCCACHE_BUCKET=${{ inputs.bucket }}
+#          SCCACHE_REGION=${{ inputs.region }}
+#          SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache
+#          AWS_ACCESS_KEY_ID=${{ inputs.aws_access_key_id }}
+#          AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
+#          AWS_REGION=${{ inputs.region }}
+#        cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
+#        cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true
 
 #    - name: Save Docker mount cache

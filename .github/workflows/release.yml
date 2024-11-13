@@ -40,14 +40,22 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+#      - name: Retrieve JS build artifacts
+#        uses: strophy/actions-cache@opendal-update
+#        id: cache
+#        with:
+#          bucket: multi-runner-cache-x1xibo9c
+#          root: actions-cache
+#          path: build-js-artifacts-${{ github.sha }}.tar
+#          key: build-js-artifacts/${{ github.sha }}
+
       - name: Retrieve JS build artifacts
-        uses: strophy/actions-cache@opendal-update
+        uses: actions/cache/restore@v4
         id: cache
         with:
-          bucket: multi-runner-cache-x1xibo9c
-          root: actions-cache
           path: build-js-artifacts-${{ github.sha }}.tar
           key: build-js-artifacts/${{ github.sha }}
+          fail-on-cache-miss: 'true'
 
       - name: Unpack JS build artifacts archive
         run: tar -xf build-js-artifacts-${{ github.sha }}.tar
@@ -69,14 +77,22 @@ jobs:
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
+      - name: Configure sccache
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
       - name: Build packages
         run: yarn build
         env:
           CARGO_BUILD_PROFILE: release
           RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/wasm/wasm32
+          SCCACHE_GHA_ENABLED: true
+#          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
+#          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
+#          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/wasm/wasm32
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
 
       - name: Set suffix
@@ -228,13 +244,21 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
+#      - name: Retrieve JS build artifacts
+#        uses: strophy/actions-cache@opendal-update
+#        with:
+#          bucket: multi-runner-cache-x1xibo9c
+#          root: actions-cache
+#          path: build-js-artifacts-${{ github.sha }}.tar
+#          key: build-js-artifacts/${{ github.sha }}
+
       - name: Retrieve JS build artifacts
-        uses: strophy/actions-cache@opendal-update
+        uses: actions/cache/restore@v4
         with:
-          bucket: multi-runner-cache-x1xibo9c
-          root: actions-cache
           path: build-js-artifacts-${{ github.sha }}.tar
           key: build-js-artifacts/${{ github.sha }}
+          fail-on-cache-miss: 'true'
+
 
       - name: Unpack JS build artifacts archive
         run: tar -xf build-js-artifacts-${{ github.sha }}.tar
