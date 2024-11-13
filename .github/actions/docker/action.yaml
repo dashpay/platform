@@ -115,11 +115,11 @@ runs:
             },
             "../cargo-cache-registry-cache": {
               "target": "/root/.cargo/registry/cache",
-              "id": "cargo_registry_index"
+              "id": "cargo_registry_cache"
             },
             "../cargo-cache-git-db": {
               "target": "/root/.cargo/git/db",
-              "id": "cargo_registry_index"
+              "id": "cargo_git"
             }
           }
         skip-extraction: ${{ steps.cargo-cache.outputs.cache-hit }}
@@ -129,17 +129,19 @@ runs:
       id: yarn-cache
       with:
         path: ../yarn-unplugged-cache
-        # TODO: We should use platform input
         key: ${{ inputs.platform }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
         restore-keys: |
-          - ${{ inputs.platform }}-yarn-unplugged-amd64-
+          - ${{ inputs.platform }}-yarn-unplugged-
 
     - name: Inject cargo cache into docker
       uses: reproducible-containers/buildkit-cache-dance@v3.1.2
       with:
         cache-map: |
           {
-            "../yarn-unplugged-cache": "/tmp/unplugged"
+            "../yarn-unplugged-cache": {
+              "target": "/tmp/unplugged",
+              "id": "unplugged_${{ inputs.platform.replace('linux/', '') }}"
+            }
           }
         skip-extraction: ${{ steps.yarn-cache.outputs.cache-hit }}
 
