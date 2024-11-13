@@ -55,7 +55,8 @@ jobs:
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
-
+          SNAPPY_STATIC: "/usr/lib/libsnappy.a"
+          SNAPPY_LIB_DIR: "/usr/lib"
   formatting:
     name: Formatting
     runs-on: ubuntu-24.04
@@ -119,6 +120,8 @@ jobs:
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
+          SNAPPY_STATIC: "/usr/lib/libsnappy.a"
+          SNAPPY_LIB_DIR: "/usr/lib"
         with:
           args: ${{ steps.crate_info.outputs.cargo_manifest_dir }}
 
@@ -213,7 +216,8 @@ jobs:
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
-
+          SNAPPY_STATIC: "/usr/lib/libsnappy.a"
+          SNAPPY_LIB_DIR: "/usr/lib"
   check_each_feature:
     name: Check each feature
     runs-on: ${{ fromJSON(inputs.test-runner) }}
@@ -250,6 +254,8 @@ jobs:
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
+          SNAPPY_STATIC: "/usr/lib/libsnappy.a"
+          SNAPPY_LIB_DIR: "/usr/lib"
         run: |
           echo Verify all features disabled
           set -ex
