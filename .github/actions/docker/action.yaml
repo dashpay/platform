@@ -52,16 +52,22 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Configure AWS credentials and bucket region
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ inputs.aws_access_key_id }}
-        aws-secret-access-key: ${{ inputs.aws_secret_access_key }}
-        aws-region: ${{ inputs.region }}
+    - name: Configure AWS credentials file
+      shell: bash
+      run: |
+        mkdir $HOME/.aws
+        echo "[default]" > $HOME/.aws/credentials
+        echo "aws_access_key_id=${{ inputs.aws_access_key_id }}" >> $HOME/.aws/credentials
+        echo "aws_secret_access_key=${{ inputs.aws_secret_access_key }}" >> $HOME/.aws/credentials
+
+        echo "[default]" > $HOME/.aws/config
+        echo "region=${{ inputs.region }}" >> $HOME/.aws/config
+
+        cp $HOME/.aws/credentials ${{ runner.temp }}/credentials
 
     - name: Configure Github token
       shell: bash
-      run: echo "${{ github.token }}" > $HOME/.github_token
+      run: echo "${{ github.token }}" > ${{ runner.temp }}/GHA
 
     - name: Login to DockerHub
       uses: docker/login-action@v3
@@ -113,11 +119,9 @@ runs:
         echo "Bucket: ${{ inputs.bucket }}"
         echo "Region: ${{ inputs.region }}"
         echo "AWS credentials:"
-        ls -lR $HOME/.aws
-        cat $HOME/.aws/credentials
 
-        echo "Github token:"
-        ls -lR $HOME/.github_token
+        cat ${{ runner.temp }}/credentials
+        cat ${{ runner.temp }}/GHA
 
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
@@ -130,8 +134,8 @@ runs:
         tags: ${{ inputs.push_tags == 'true' && steps.docker_meta.outputs.tags || '' }}
         platforms: ${{ inputs.platform }}
         secrets: |
-          GHA=/home/ubuntu/.github_token
-          AWS=/home/ubuntu/.aws/credentials
+          GHA=${{ runner.temp }}/GHA
+          AWS=${{ runner.temp }}/credentials
 
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
