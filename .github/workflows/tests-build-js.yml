@@ -47,7 +47,7 @@ jobs:
           target: wasm32-unknown-unknown
 
       - name: Install Cargo binstall
-        uses: cargo-bins/cargo-binstall@v1
+        uses: cargo-bins/cargo-binstall@v1.3.1
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
 
       - name: Install wasm-bindgen-cli
