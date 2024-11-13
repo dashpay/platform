@@ -215,16 +215,25 @@ FROM deps-compilation AS deps-rocksdb
 RUN mkdir -p /tmp/rocksdb
 WORKDIR /tmp/rocksdb
 
-RUN git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . && \
-    source /root/env && \
-    PORTABLE=1 make -j$(nproc) static_lib && \
-    mkdir -p /opt/rocksdb/usr/local/lib && \
-    cp librocksdb.a /opt/rocksdb/usr/local/lib/ && \
-    cp -r include /opt/rocksdb/usr/local/ && \
-    cd / && \
-    rm -rf /tmp/rocksdb && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
-    
+RUN <<EOS
+set -ex -o pipefail
+git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . 
+source /root/env
+
+if [[ "$TARGETARCH" == "amd64" ]] ; then
+    export PORTABLE=haswell
+else
+    export PORTABLE=1
+fi
+
+make -j$(nproc) static_lib
+mkdir -p /opt/rocksdb/usr/local/lib
+cp librocksdb.a /opt/rocksdb/usr/local/lib/
+cp -r include /opt/rocksdb/usr/local/
+cd /
+rm -rf /tmp/rocksdb
+if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+EOS
 
 # Configure RocksDB env variables
 RUN <<EOS
