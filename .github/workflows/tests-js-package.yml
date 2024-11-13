@@ -47,7 +47,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: build-js-artifacts-${{ github.sha }}.tar
-          key: build-js-artifacts/${{ github.sha }}
+          key: build-js-artifacts-${{ github.sha }}
           fail-on-cache-miss: 'true'
 
       - name: Unpack JS build artifacts archive
@@ -91,7 +91,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: build-js-artifacts-${{ github.sha }}.tar
-          key: build-js-artifacts/${{ github.sha }}
+          key: build-js-artifacts-${{ github.sha }}
           fail-on-cache-miss: 'true'
 
       - name: Unpack JS build artifacts archive
