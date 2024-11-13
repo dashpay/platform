@@ -22,8 +22,7 @@ on:
 jobs:
   test-suite:
     name: Run ${{ inputs.name }}
-    # runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
-    runs-on: ubuntu-24.04
+    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
     timeout-minutes: 15
     env:
       CHROME_BIN: /usr/bin/brave-browser
@@ -58,8 +57,8 @@ jobs:
       - name: Run test suite
         run: yarn workspace @dashevo/platform-test-suite ${{ inputs.command }}
         env:
-          BROWSER_TEST_BATCH_INDEX: ${{ inputs.batch_index }}
-          BROWSER_TEST_BATCH_TOTAL: ${{ inputs.batch_total }}
+            BROWSER_TEST_BATCH_INDEX: ${{ inputs.batch_index }}
+            BROWSER_TEST_BATCH_TOTAL: ${{ inputs.batch_total }}
 
       - name: Show Docker logs
         if: ${{ failure() }}
