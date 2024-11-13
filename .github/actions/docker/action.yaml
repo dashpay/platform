@@ -107,15 +107,17 @@ runs:
     - name: Display some debug info
       shell: bash
       run: |
+        echo "User home: $HOME"
         echo "Cache from: ${{ steps.layer_cache_settings.outputs.cache_from }}"
         echo "Cache to: ${{ steps.layer_cache_settings.outputs.cache_to }}"
         echo "Bucket: ${{ inputs.bucket }}"
         echo "Region: ${{ inputs.region }}"
         echo "AWS credentials:"
-        ls -lR /root/.aws
+        ls -lR $HOME/.aws
+        cat $HOME/.aws/credentials
 
         echo "Github token:"
-        ls -lR /root/.github_token
+        ls -lR $HOME/.github_token
 
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
@@ -128,8 +130,8 @@ runs:
         tags: ${{ inputs.push_tags == 'true' && steps.docker_meta.outputs.tags || '' }}
         platforms: ${{ inputs.platform }}
         secrets: |
-          GHA=/root/.github_token
-          AWS=/root/.aws/credentials
+          GHA=/home/ubuntu/.github_token
+          AWS=/home/ubuntu/.aws/credentials
 
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
