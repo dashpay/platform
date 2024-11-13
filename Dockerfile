@@ -92,6 +92,7 @@ RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | t
         --default-toolchain "${TOOLCHAIN_VERSION}" \
         --target wasm32-unknown-unknown
 
+ONBUILD ENV HOME=/root
 ONBUILD ENV CARGO_HOME=$HOME/.cargo
 
 # Install protoc - protobuf compiler
