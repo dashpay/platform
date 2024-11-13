@@ -85,9 +85,9 @@ runs:
         export PATH="${PATH}:${HOME}/.local/bin"
 
     - name: Run sccache-cache
-      uses: mozilla-actions/sccache-action@v0.0.3
+      uses: mozilla-actions/sccache-action@v0.0.6
       with:
-        version: "v0.7.1" # Must be the same as in Dockerfile
+        version: "v0.8.2" # Must be the same as in Dockerfile
       if: inputs.cache == 'true'
 
     - name: Hash ref_name
@@ -121,5 +121,6 @@ runs:
       if: runner.os == 'Linux'
       run: |
         sudo apt update -qq
-        sudo apt install -qq --yes clang llvm
+        # snappy is required by rust rocksdb
+        sudo apt install -qq --yes clang llvm libsnappy-dev
         sudo update-alternatives --set cc /usr/bin/clang
