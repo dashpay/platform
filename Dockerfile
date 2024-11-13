@@ -117,7 +117,7 @@ ARG RUSTC_WRAPPER
 ENV RUSTC_WRAPPER=${RUSTC_WRAPPER}
 
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
-ARG SCCACHE_GHA_ENABLED
+ARG SCCACHE_GHA_ENABLED="false"
 ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
 
 ARG ACTIONS_CACHE_URL
