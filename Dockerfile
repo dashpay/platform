@@ -32,7 +32,7 @@
 # See https://doc.rust-lang.org/cargo/guide/cargo-home.html#caching-the-cargo-home-in-ci
 # 2. Github Actions have shared networking configured, so we need to set a random SCCACHE_SERVER_PORT port to avoid
 # conflicts in case of parallel compilation.
-# 3. Configuration variables are shared between runs using /etc/profile file.
+# 3. Configuration variables are shared between runs using /root/env file.
 
 ARG ALPINE_VERSION=3.18
 ARG PROTOC_VERSION=27.3
@@ -68,9 +68,9 @@ RUN apk add --no-cache \
 
 # Configure snappy, dependency of librocksdb-sys
 RUN <<EOS
-echo "export SNAPPY_STATIC=/usr/lib/libsnappy.a" >> /etc/profile
-echo "export SNAPPY_LIB_DIR=/usr/lib" >> /etc/profile
-echo "export SNAPPY_INCLUDE_DIR=/usr/include" >> /etc/profile
+echo "export SNAPPY_STATIC=/usr/lib/libsnappy.a" >> /root/env
+echo "export SNAPPY_LIB_DIR=/usr/lib" >> /root/env
+echo "export SNAPPY_INCLUDE_DIR=/usr/include" >> /root/env
 EOS
 
 # Configure Node.js
@@ -117,7 +117,7 @@ ENV NODE_ENV ${NODE_ENV}
 # DEPS-SCCACHE stage 
 #
 # This stage is used to install sccache and configure it.
-# Later on, one should source /etc/profile before building to use sccache.
+# Later on, one should source /root/env before building to use sccache.
 
 # Note that, due to security concerns, each stage needs to declare variables containing authentication secrets, like
 # ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY. It is done using ONBUILD directive, so the secrets are not stored in the
@@ -141,7 +141,7 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
 ARG RUSTC_WRAPPER
 
 # Disable incremental builds, not supported by sccache
-RUN echo 'export CARGO_INCREMENTAL=false' >> /etc/profile
+RUN echo 'export CARGO_INCREMENTAL=false' >> /root/env
 
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
@@ -157,7 +157,7 @@ ARG AWS_REGION
 ARG SCCACHE_REGION
 ARG SCCACHE_S3_KEY_PREFIX
 
-# Generate sccache configuration variables and save them to /etc/profile
+# Generate sccache configuration variables and save them to /root/env
 # 
 # We only enable one cache at a time. Setting env variables belonging to multiple cache backends may fail the build.
 RUN <<EOS
@@ -165,8 +165,8 @@ RUN <<EOS
 
     if [ -n "${SCCACHE_GHA_ENABLED}" ]; then 
         # Github Actions cache
-        echo "export SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /etc/profile
-        echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /etc/profile
+        echo "export SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /root/env
+        echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
         # ACTIONS_RUNTIME_TOKEN is a secret so we load it using ONBUILD ARG later on
     elif [ -n "${SCCACHE_BUCKET}" ]; then
         # AWS S3
@@ -175,26 +175,26 @@ RUN <<EOS
             export SCCACHE_REGION=${AWS_REGION}
         fi
 
-        echo "export AWS_REGION='${AWS_REGION}'" >> /etc/profile
-        echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /etc/profile
-        echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /etc/profile
+        echo "export AWS_REGION='${AWS_REGION}'" >> /root/env
+        echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
+        echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
         # AWS_SECRET_ACCESS_KEY is a secret so we load it using ONBUILD ARG later on
-        echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /etc/profile
-        echo "export SCCACHE_S3_USE_SSL=true" >> /etc/profile
-        echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /etc/profile
+        echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
+        echo "export SCCACHE_S3_USE_SSL=true" >> /root/env
+        echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
     elif [ -n "${SCCACHE_MEMCACHED}" ]; then
         # memcached
-        echo "export SCCACHE_MEMCACHED='${SCCACHE_MEMCACHED}'" >> /etc/profile
+        echo "export SCCACHE_MEMCACHED='${SCCACHE_MEMCACHED}'" >> /root/env
     fi
     
     if [ -n "${RUSTC_WRAPPER}" ]; then
-        echo "export CXX='${RUSTC_WRAPPER} clang++'" >> /etc/profile
-        echo "export CC='${RUSTC_WRAPPER} clang'" >> /etc/profile
-        echo "export RUSTC_WRAPPER='${RUSTC_WRAPPER}'" >> /etc/profile
-        echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /etc/profile
+        echo "export CXX='${RUSTC_WRAPPER} clang++'" >> /root/env
+        echo "export CC='${RUSTC_WRAPPER} clang'" >> /root/env
+        echo "export RUSTC_WRAPPER='${RUSTC_WRAPPER}'" >> /root/env
+        echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
     fi
     # for debugging, we display what we generated
-    cat /etc/profile
+    cat /root/env
 EOS
 
 # We provide secrets using ONBUILD ARG mechanism, to avoid putting them into a file and potentialy leaking them
@@ -216,6 +216,7 @@ RUN mkdir -p /tmp/rocksdb
 WORKDIR /tmp/rocksdb
 
 RUN git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . && \
+    source /root/env && \
     PORTABLE=1 make -j$(nproc) static_lib && \
     mkdir -p /opt/rocksdb/usr/local/lib && \
     cp librocksdb.a /opt/rocksdb/usr/local/lib/ && \
@@ -227,9 +228,9 @@ RUN git clone https://github.com/facebook/rocksdb.git -b v8.10.2 --depth 1 . && 
 
 # Configure RocksDB env variables
 RUN <<EOS
-echo "export ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a" >> /etc/profile
-echo "export ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib" >> /etc/profile
-echo "export ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include" >> /etc/profile
+echo "export ROCKSDB_STATIC=/opt/rocksdb/usr/local/lib/librocksdb.a" >> /root/env
+echo "export ROCKSDB_LIB_DIR=/opt/rocksdb/usr/local/lib" >> /root/env
+echo "export ROCKSDB_INCLUDE_DIR=/opt/rocksdb/usr/local/include" >> /root/env
 EOS
 
 
@@ -248,6 +249,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
+    source /root/env && \
     RUSTFLAGS="-C target-feature=-crt-static" \
     CARGO_TARGET_DIR="/platform/target" \
     # TODO: Build wasm with build.rs
@@ -266,6 +268,7 @@ WORKDIR /platform
 COPY . .
 
 RUN source $HOME/.cargo/env && \
+    source /root/env && \
     cargo chef prepare --recipe-path recipe.json
 
 # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
@@ -290,6 +293,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
+    source /root/env && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
@@ -307,6 +311,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
+    source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml && \
         export OUT_DIRECTORY=release ; \
@@ -337,6 +342,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
+    source /root/env && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
@@ -353,6 +359,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=target_wasm,target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     source $HOME/.cargo/env && \
+    source /root/env && \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn install --inline-builds && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
