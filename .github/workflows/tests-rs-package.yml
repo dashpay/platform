@@ -8,11 +8,12 @@ on:
       test-runner:
         description: Runner for tests. Must be JSON valid string.
         type: string
-        default: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
+        # default: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
+        default: '[ "ubuntu-24.04" ]'
       lint-runner:
         description: Runner for linting. Must be JSON valid string.
         type: string
-        default: '"ubuntu-24.04"'
+        default: '[ "ubuntu-24.04" ]'
       check-each-feature:
         description: If true, try to build each individual feature for this crate
         type: boolean
