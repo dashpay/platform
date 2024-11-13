@@ -90,7 +90,7 @@ runs:
         docker tag ${{ inputs.image_org }}/dashmate-helper:$SHA_TAG dashpay/dashmate-helper:$VERSION
 
         # Replace DAPI and Drive images with new org and tag in dashmate config
-        sed -i -E "s/dashpay\/(drive|dapi):[^\"]+/${{ inputs.image_org }}\/\1:${SHA_TAG}/g" /home/ubuntu/.dashmate/config.json
+        sed -i -E "s/dashpay\/(drive|dapi):[^\"]+/${{ inputs.image_org }}\/\1:${SHA_TAG}/g" ${{ env.HOME }}/.dashmate/config.json
 
         cat ${{ env.HOME }}/.dashmate/config.json
 
