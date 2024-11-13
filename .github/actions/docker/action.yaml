@@ -43,6 +43,7 @@ inputs:
   aws_secret_access_key:
     description: AWS secret access key
     required: true
+
 outputs:
   digest:
     value: ${{ steps.docker_build.outputs.digest }}
@@ -57,6 +58,10 @@ runs:
         aws-access-key-id: ${{ inputs.aws_access_key_id }}
         aws-secret-access-key: ${{ inputs.aws_secret_access_key }}
         aws-region: ${{ inputs.region }}
+
+    - name: Configure Github token
+      shell: bash
+      run: echo "${{ github.token }}" > $HOME/.github_token
 
     - name: Login to DockerHub
       uses: docker/login-action@v3
@@ -99,14 +104,22 @@ runs:
         name: ${{ inputs.image_name }}
         bucket: ${{ inputs.bucket }}
 
+    - name: Display some debug info
+      shell: bash
+      run: |
+        echo "Cache from: ${{ steps.layer_cache_settings.outputs.cache_from }}"
+        echo "Cache to: ${{ steps.layer_cache_settings.outputs.cache_to }}"
+        echo "Bucket: ${{ inputs.bucket }}"
+        echo "Region: ${{ inputs.region }}"
+        echo "AWS credentials:"
+        ls -lR /root/.aws
+
+        echo "Github token:"
+        ls -lR /root/.github_token
+
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
       uses: docker/build-push-action@v5
-      env:
-        AWS_ACCESS_KEY_ID: "${{ inputs.aws_access_key_id }}"
-        AWS_SECRET_ACCESS_KEY: "${{ inputs.aws_secret_access_key }}"
-        AWS_REGION: "${{ inputs.region }}"
-
       with:
         context: .
         builder: ${{ steps.buildx.outputs.name }}
@@ -114,15 +127,17 @@ runs:
         labels: ${{ steps.docker_meta.outputs.labels }}
         tags: ${{ inputs.push_tags == 'true' && steps.docker_meta.outputs.tags || '' }}
         platforms: ${{ inputs.platform }}
+        secrets: |
+          GHA=/root/.github_token
+          AWS=/root/.aws/credentials
+
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
           RUSTC_WRAPPER=sccache
           SCCACHE_BUCKET=${{ inputs.bucket }}
           SCCACHE_REGION=${{ inputs.region }}
           SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache
-          AWS_ACCESS_KEY_ID=${{ inputs.aws_access_key_id }}
-          AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
-          AWS_REGION=${{ inputs.region }}
+
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true

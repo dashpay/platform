@@ -24,8 +24,6 @@
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
 #
 #
-#
-#
 # BUILD PROCESS
 #
 # 1. All these --mount... are to cache reusable info between runs.
@@ -92,7 +90,7 @@ RUN TOOLCHAIN_VERSION="$(grep channel rust-toolchain.toml | awk '{print $3}' | t
         --default-toolchain "${TOOLCHAIN_VERSION}" \
         --target wasm32-unknown-unknown
 
-ONBUILD ENV CARGO_HOME=$HOME/.cargo
+ONBUILD ENV CARGO_HOME=/root/.cargo
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
@@ -119,9 +117,9 @@ ENV NODE_ENV=${NODE_ENV}
 # This stage is used to install sccache and configure it.
 # Later on, one should source /root/env before building to use sccache.
 
-# Note that, due to security concerns, each stage needs to declare variables containing authentication secrets, like
-# ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY. It is done using ONBUILD directive, so the secrets are not stored in the
-# final image.
+# Note that, due to security concerns, we cannot use ARG or ENV with variables containing authentication secrets, like
+# ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY. We do it using RUN --mount type=secret, so the secret is not stored 
+# outside of the image layers.
 
 FROM deps-base AS deps-sccache
 
@@ -152,8 +150,6 @@ ARG SCCACHE_MEMCACHED
 
 # S3 storage
 ARG SCCACHE_BUCKET
-ARG AWS_ACCESS_KEY_ID
-ARG AWS_REGION
 ARG SCCACHE_REGION
 ARG SCCACHE_S3_KEY_PREFIX
 
@@ -167,18 +163,21 @@ RUN <<EOS
         # Github Actions cache
         echo "export SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /root/env
         echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
-        # ACTIONS_RUNTIME_TOKEN is a secret so we load it using ONBUILD ARG later on
+
+        # ACTIONS_RUNTIME_TOKEN is a secret so we load it using secret mounts when needed
+        # escaping so that it will be executed when sourced, using mounted secrets
+        # Requires `RUN --mount type=secret,id=GHA`
+        echo '[[ -f cat /run/secrets/GHA ]] && export ACTIONS_RUNTIME_TOKEN=$(cat /run/secrets/GHA)' >> /root/env
     elif [ -n "${SCCACHE_BUCKET}" ]; then
         # AWS S3
         if [ -z "${SCCACHE_REGION}" ] ; then
-            # Default to AWS_REGION if not set
-            export SCCACHE_REGION=${AWS_REGION}
+            echo "SCCACHE_REGION is required for AWS S3 cache"
+            exit 1
         fi
-
-        echo "export AWS_REGION='${AWS_REGION}'" >> /root/env
+        # AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY are read from /run/secrets/AWS
+        # Requires `RUN --mount=type=secret,id=AWS`
+        echo "export AWS_SHARED_CREDENTIALS_FILE=/run/secrets/AWS" >> /root/env
         echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
-        echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
-        # AWS_SECRET_ACCESS_KEY is a secret so we load it using ONBUILD ARG later on
         echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
         echo "export SCCACHE_S3_USE_SSL=true" >> /root/env
         echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
@@ -196,11 +195,6 @@ RUN <<EOS
     # for debugging, we display what we generated
     cat /root/env
 EOS
-
-# We provide secrets using ONBUILD ARG mechanism, to avoid putting them into a file and potentialy leaking them
-# to the final image or to layer cache
-ONBUILD ARG ACTIONS_RUNTIME_TOKEN
-ONBUILD ARG AWS_SECRET_ACCESS_KEY
 
 # Image containing compolation dependencies; used to overcome lack of interpolation in COPY --from
 FROM deps-${RUSTC_WRAPPER:-base} AS deps-compilation
@@ -310,6 +304,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    --mount type=secret,id=GHA \
+    --mount=type=secret,id=AWS \
     source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef cook \
@@ -328,6 +324,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    --mount type=secret,id=GHA \
+    --mount=type=secret,id=AWS \
     source $HOME/.cargo/env && \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
@@ -359,6 +357,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    --mount type=secret,id=GHA \
+    --mount=type=secret,id=AWS \
     source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef cook \
@@ -376,6 +376,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_wasm,target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
+    --mount type=secret,id=GHA \
+    --mount=type=secret,id=AWS \
     source $HOME/.cargo/env && \
     source /root/env && \
     cp -R /tmp/unplugged /platform/.yarn/ && \
