@@ -28,6 +28,10 @@ runs:
       shell: bash
       run: echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_OUTPUT
 
+    - name: Set HOME variable to github context
+      shell: bash
+      run: echo "HOME=$HOME" >> $GITHUB_ENV
+
     # TODO: Use upload artifacts action instead
     - name: Restore local network data
       id: local-network-data
