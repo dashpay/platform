@@ -156,7 +156,8 @@ ARG SCCACHE_S3_KEY_PREFIX
 # Generate sccache configuration variables and save them to /root/env
 #
 # We only enable one cache at a time. Setting env variables belonging to multiple cache backends may fail the build.
-RUN <<EOS
+RUN --mount=type=secret,id=GHA \
+    --mount=type=secret,id=AWS <<EOS
     set -ex -o pipefail
 
     if [ -n "${SCCACHE_GHA_ENABLED}" ]; then
@@ -304,7 +305,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
-    --mount type=secret,id=GHA \
+    --mount=type=secret,id=GHA \
     --mount=type=secret,id=AWS \
     source $HOME/.cargo/env && \
     source /root/env && \
@@ -324,7 +325,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
-    --mount type=secret,id=GHA \
+    --mount=type=secret,id=GHA \
     --mount=type=secret,id=AWS \
     source $HOME/.cargo/env && \
     source /root/env && \
@@ -357,7 +358,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
-    --mount type=secret,id=GHA \
+    --mount=type=secret,id=GHA \
     --mount=type=secret,id=AWS \
     source $HOME/.cargo/env && \
     source /root/env && \
@@ -376,7 +377,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_wasm,target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
-    --mount type=secret,id=GHA \
+    --mount=type=secret,id=GHA \
     --mount=type=secret,id=AWS \
     source $HOME/.cargo/env && \
     source /root/env && \
