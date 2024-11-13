@@ -133,6 +133,13 @@ runs:
         restore-keys: |
           - ${{ inputs.platform }}-yarn-unplugged-
 
+    - name: Set arch
+      id: arch
+      uses: actions/github-script@v6
+      with:
+        result-encoding: 'string'
+        script: return '${{ inputs.platform }}'.replace('linux/', '');
+
     - name: Inject cargo cache into docker
       uses: reproducible-containers/buildkit-cache-dance@v3.1.2
       with:
@@ -140,7 +147,7 @@ runs:
           {
             "../yarn-unplugged-cache": {
               "target": "/tmp/unplugged",
-              "id": "unplugged_${{ inputs.platform.replace('linux/', '') }}"
+              "id": "unplugged_${{ steps.arch.outputs.result }}"
             }
           }
         skip-extraction: ${{ steps.yarn-cache.outputs.cache-hit }}
