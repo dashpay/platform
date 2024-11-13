@@ -118,5 +118,5 @@ runs:
       run: |
         sudo apt update -qq
         # snappy is required by rust rocksdb
-        sudo apt install -qq --yes clang llvm snappy-dev snappy-static
+        sudo apt install -qq --yes clang llvm libsnappy-dev
         sudo update-alternatives --set cc /usr/bin/clang
