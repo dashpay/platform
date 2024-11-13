@@ -51,6 +51,13 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Configure AWS credentials and bucket region
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ inputs.aws_access_key_id }}
+        aws-secret-access-key: ${{ inputs.aws_secret_access_key }}
+        aws-region: ${{ inputs.region }}
+
     - name: Login to DockerHub
       uses: docker/login-action@v3
       with:
