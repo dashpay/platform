@@ -115,9 +115,10 @@ runs:
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true
 
-    - name: Save Docker mount cache
-      uses: dcginfra/buildkit-cache-dance/extract@s5cmd
-      if: ${{ inputs.cache_mounts != '' }}
-      with:
-        bucket: ${{ inputs.bucket }}
-        mounts: ${{ inputs.cache_mounts }}
+# TODO: This is doesn't work
+#    - name: Save Docker mount cache
+#      uses: dcginfra/buildkit-cache-dance/extract@s5cmd
+#      if: ${{ inputs.cache_mounts != '' }}
+#      with:
+#        bucket: ${{ inputs.bucket }}
+#        mounts: ${{ inputs.cache_mounts }}
