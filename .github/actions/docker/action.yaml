@@ -63,13 +63,6 @@ runs:
           [worker.oci]
             gc = false
 
-    #    - name: Load Docker mount cache
-    #      uses: dcginfra/buildkit-cache-dance/inject@s5cmd
-    #      if: ${{ inputs.cache_mounts != '' }}
-    #      with:
-    #        bucket: ${{ inputs.bucket }}
-    #        mounts: ${{ inputs.cache_mounts }}
-
     - name: Set Docker tags and labels from image tag
       id: docker_meta
       uses: docker/metadata-action@v5
@@ -79,12 +72,12 @@ runs:
           type=semver,pattern={{version}},value=${{inputs.image_version}},enable=${{ inputs.image_version != '' }}
           type=sha,format=long,enable=${{ inputs.image_version == '' }}
 
-#    - name: Configure docker layer cache
-#      uses: ./.github/actions/s3-layer-cache-settings
-#      id: layer_cache_settings
-#      with:
-#        name: ${{ inputs.image_name }}
-#        bucket: ${{ inputs.bucket }}
+    - name: Configure docker layer cache
+      uses: ./.github/actions/s3-layer-cache-settings
+      id: layer_cache_settings
+      with:
+        name: ${{ inputs.image_name }}
+        bucket: ${{ inputs.bucket }}
 
     - name: Cargo cache for Docker
       uses: actions/cache@v4
@@ -166,15 +159,8 @@ runs:
 #          AWS_ACCESS_KEY_ID=${{ inputs.aws_access_key_id }}
 #          AWS_SECRET_ACCESS_KEY=${{ inputs.aws_secret_access_key }}
 #          AWS_REGION=${{ inputs.region }}
-#        cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
-#        cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
-        cache-from: type=registry,ref=${{ inputs.image_org }}/${{ inputs.image_name }}:build-cache
-        cache-to: type=registry,image-manifest=true,oci-mediatypes=true,ref=${{ inputs.image_org }}/${{ inputs.image_name }}:build-cache,mode=max
+        cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
+        cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
+#        cache-from: type=registry,ref=${{ inputs.image_org }}/${{ inputs.image_name }}:build-cache
+#        cache-to: type=registry,image-manifest=true,oci-mediatypes=true,ref=${{ inputs.image_org }}/${{ inputs.image_name }}:build-cache,mode=max
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true
-
-#    - name: Save Docker mount cache
-#      uses: dcginfra/buildkit-cache-dance/extract@s5cmd
-#      if: ${{ inputs.cache_mounts != '' }}
-#      with:
-#        bucket: ${{ inputs.bucket }}
-#        mounts: ${{ inputs.cache_mounts }}

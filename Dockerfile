@@ -317,13 +317,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     else \
         export FEATURES_FLAG="--features=console,grovedbg" ; \
     fi && \
-    if [ "$TARGETARCH" = "amd64" ]; then \
-        export CARGO_TARGET="x86_64-unknown-linux-musl"; \
-    elif [ "$TARGETARCH" = "arm64" ]; then \
-        export CARGO_TARGET="aarch64-unknown-linux-musl"; \
-    else \
-        echo "Unsupported architecture: $TARGETARCH"; exit 1; \
-    fi; \
     source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef cook \
@@ -331,7 +324,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         --profile "$CARGO_BUILD_PROFILE" \
         --package drive-abci \
         ${FEATURES_FLAG} \
-#        --target $CARGO_TARGET \
         --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
@@ -343,7 +335,6 @@ RUN mkdir /artifacts
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    #--mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     set -ex; \
     source $HOME/.cargo/env && \
     source /root/env && \
@@ -354,21 +345,16 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         export FEATURES_FLAG="--features=console,grovedbg" ; \
         export OUT_DIRECTORY=debug ; \
     fi && \
-    if [ "$TARGETARCH" = "amd64" ]; then \
-        export CARGO_TARGET="x86_64-unknown-linux-musl"; \
-    elif [ "$TARGETARCH" = "arm64" ]; then \
-        export CARGO_TARGET="aarch64-unknown-linux-musl"; \
-    else \
-        echo "Unsupported architecture: $TARGETARCH"; exit 1; \
-    fi; \
     cargo build \
         --profile "${CARGO_BUILD_PROFILE}" \
         --package drive-abci \
         ${FEATURES_FLAG} \
-#        --target $CARGO_TARGET \
         --locked && \
     cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+
+# Remove target directory to save space
+RUN rm -rf target
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
@@ -383,7 +369,6 @@ COPY --from=build-planner /platform/recipe.json recipe.json
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    #--mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
     source /root/env && \
     cargo chef cook \
@@ -399,7 +384,6 @@ COPY . .
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-#    --mount=type=cache,sharing=shared,id=target_wasm,target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     source $HOME/.cargo/env && \
     source /root/env && \
@@ -409,6 +393,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn build && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+
+# Remove target directory to save space
+RUN rm -rf target
 
 #
 # STAGE: FINAL DRIVE-ABCI IMAGE
