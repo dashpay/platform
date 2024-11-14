@@ -27,7 +27,77 @@ ARG ALPINE_VERSION=3.18
 #
 # Rust build planner to speed up builds
 #
-FROM lklimek/dash-platform-build-base AS build-planner
+
+
+#
+# Configure sccache
+#
+FROM lklimek/dash-platform-build-base AS deps
+ARG RUSTC_WRAPPER
+
+# Disable incremental builds, not supported by sccache
+RUN echo 'export CARGO_INCREMENTAL=false' >> /root/env
+
+# Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
+ARG SCCACHE_GHA_ENABLED
+ARG ACTIONS_CACHE_URL
+
+# Alternative solution is to use memcache
+ARG SCCACHE_MEMCACHED
+
+# S3 storage
+ARG SCCACHE_BUCKET
+ARG AWS_ACCESS_KEY_ID
+ARG AWS_REGION
+ARG SCCACHE_REGION
+ARG SCCACHE_S3_KEY_PREFIX
+
+# Generate sccache configuration variables and save them to /root/env
+#
+# We only enable one cache at a time. Setting env variables belonging to multiple cache backends may fail the build.
+RUN <<EOS
+    set -ex -o pipefail
+
+    if [ -n "${SCCACHE_GHA_ENABLED}" ]; then
+        # Github Actions cache
+        echo "export SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}" >> /root/env
+        echo "export ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> /root/env
+        # ACTIONS_RUNTIME_TOKEN is a secret so we load it using ONBUILD ARG later on
+    elif [ -n "${SCCACHE_BUCKET}" ]; then
+        # AWS S3
+        if [ -z "${SCCACHE_REGION}" ] ; then
+            # Default to AWS_REGION if not set
+            export SCCACHE_REGION=${AWS_REGION}
+        fi
+
+        echo "export AWS_REGION='${AWS_REGION}'" >> /root/env
+        echo "export SCCACHE_REGION='${SCCACHE_REGION}'" >> /root/env
+        echo "export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> /root/env
+        # AWS_SECRET_ACCESS_KEY is a secret so we load it using ONBUILD ARG later on
+        echo "export SCCACHE_BUCKET='${SCCACHE_BUCKET}'" >> /root/env
+        echo "export SCCACHE_S3_USE_SSL=true" >> /root/env
+        echo "export SCCACHE_S3_KEY_PREFIX='${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl'" >> /root/env
+    elif [ -n "${SCCACHE_MEMCACHED}" ]; then
+        # memcached
+        echo "export SCCACHE_MEMCACHED='${SCCACHE_MEMCACHED}'" >> /root/env
+    fi
+
+    if [ -n "${RUSTC_WRAPPER}" ]; then
+        echo "export CXX='${RUSTC_WRAPPER} clang++'" >> /root/env
+        echo "export CC='${RUSTC_WRAPPER} clang'" >> /root/env
+        echo "export RUSTC_WRAPPER='${RUSTC_WRAPPER}'" >> /root/env
+        echo "export SCCACHE_SERVER_PORT=$((RANDOM+1025))" >> /root/env
+    fi
+    # for debugging, we display what we generated
+    cat /root/env
+EOS
+
+# We provide secrets using ONBUILD ARG mechanism, to avoid putting them into a file and potentialy leaking them
+# to the final image or to layer cache
+ONBUILD ARG ACTIONS_RUNTIME_TOKEN
+ONBUILD ARG AWS_SECRET_ACCESS_KEY
+
+FROM deps AS build-planner
 
 WORKDIR /platform
 COPY . .
