@@ -307,9 +307,9 @@ WORKDIR /platform
 COPY --from=build-planner /platform/recipe.json recipe.json
 
 # Build dependencies - this is the caching Docker layer!
-RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+RUN #--mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    #--mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    #--mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     #--mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
     source /root/env && \
@@ -325,9 +325,9 @@ COPY . .
 RUN mkdir /artifacts
 
 # Build Drive ABCI
-RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+RUN #--mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    #--mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    #--mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     #--mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
     source /root/env && \
@@ -356,9 +356,9 @@ WORKDIR /platform
 COPY --from=build-planner /platform/recipe.json recipe.json
 
 # Build dependencies - this is the caching Docker layer!
-RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+RUN #--mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    #--mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    #--mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     #--mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     source $HOME/.cargo/env && \
     source /root/env && \
@@ -372,9 +372,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 
 COPY . .
 
-RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+RUN #--mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    #--mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    #--mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
 #    --mount=type=cache,sharing=shared,id=target_wasm,target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     source $HOME/.cargo/env && \
