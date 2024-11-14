@@ -15,10 +15,10 @@ inputs:
     default: ${{ github.ref }}
   region:
     description: S3 region
-    default: eu-west-1
+    required: true
   bucket:
     description: S3 bucket name
-    default: multi-runner-cache-x1xibo9c
+    required: true
   prefix:
     description: S3 key prefix
     default: 'cache-layers/'

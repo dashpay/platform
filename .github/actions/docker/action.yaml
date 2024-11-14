@@ -77,16 +77,21 @@ runs:
       id: layer_cache_settings
       with:
         name: ${{ inputs.image_name }}
+        region: ${{ inputs.region }}
         bucket: ${{ inputs.bucket }}
+
+    - name: Set HOME variable to github context
+      shell: bash
+      run: echo "HOME=$HOME" >> $GITHUB_ENV
 
     - name: Cargo cache for Docker
       uses: actions/cache@v4
       id: cargo-cache
       with:
         path: |
-          ${{ env.RUNNER_TEMP }}/cargo-cache-registry-index
-          ${{ env.RUNNER_TEMP }}/cargo-cache-registry-cache
-          ${{ env.RUNNER_TEMP }}/cargo-cache-git-db
+          ${{ env.HOME }}/cargo-cache-registry-index
+          ${{ env.HOME }}/cargo-cache-registry-cache
+          ${{ env.HOME }}/cargo-cache-git-db
         key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
           - ${{ runner.os }}-cargo-
@@ -96,15 +101,15 @@ runs:
       with:
         cache-map: |
           {
-            "${{ env.RUNNER_TEMP }}/cargo-cache-registry-index": {
+            "${{ env.HOME }}/cargo-cache-registry-index": {
               "target": "/root/.cargo/registry/index",
               "id": "cargo_registry_index"
             },
-            "${{ env.RUNNER_TEMP }}/cargo-cache-registry-cache": {
+            "${{ env.HOME }}/cargo-cache-registry-cache": {
               "target": "/root/.cargo/registry/cache",
               "id": "cargo_registry_cache"
             },
-            "${{ env.RUNNER_TEMP }}/cargo-cache-git-db": {
+            "${{ env.HOME }}/cargo-cache-git-db": {
               "target": "/root/.cargo/git/db",
               "id": "cargo_git"
             }
@@ -115,7 +120,7 @@ runs:
       uses: actions/cache@v4
       id: yarn-cache
       with:
-        path: ${{ env.RUNNER_TEMP }}/yarn-unplugged-cache
+        path: ${{ env.HOME }}/yarn-unplugged-cache
         key: ${{ inputs.platform }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
         restore-keys: |
           - ${{ inputs.platform }}-yarn-unplugged-
@@ -132,7 +137,7 @@ runs:
       with:
         cache-map: |
           {
-            "${{ env.RUNNER_TEMP }}/yarn-unplugged-cache": {
+            "${{ env.HOME }}/yarn-unplugged-cache": {
               "target": "/tmp/unplugged",
               "id": "unplugged_${{ steps.arch.outputs.result }}"
             }
