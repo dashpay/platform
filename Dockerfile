@@ -23,7 +23,7 @@
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
 #
-
+ARG ALPINE_VERSION=3.18
 #
 # Rust build planner to speed up builds
 #
