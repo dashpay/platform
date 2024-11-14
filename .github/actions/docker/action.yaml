@@ -169,7 +169,7 @@ runs:
 #        cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
 #        cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
         cache-from: type=registry,ref=${{ inputs.image_org }}/${{ inputs.image_name }}:build-cache
-        cache-to: type=registry,ref=${{ inputs.image_org }}/${{ inputs.image_name }}:build-cache,mode=max
+        cache-to: type=registry,ref=docker.io/dashpay/${{ inputs.image_org }}:build-cache,mode=max
         outputs: type=image,name=${{ inputs.image_org }}/${{ inputs.image_name }},push-by-digest=${{ inputs.push_tags != 'true' }},name-canonical=true,push=true
 
 #    - name: Save Docker mount cache
