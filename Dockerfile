@@ -351,10 +351,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         ${FEATURES_FLAG} \
         --locked && \
     cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
+    # Remove target directory to save space
+    rm -rf target && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
-
-# Remove target directory to save space
-RUN rm -rf target
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
@@ -392,10 +391,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     cp -R /platform/.yarn/unplugged /tmp/ && \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn build && \
+    # Remove target directory to save space
+    rm -rf target && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
-
-# Remove target directory to save space
-RUN rm -rf target
 
 #
 # STAGE: FINAL DRIVE-ABCI IMAGE
