@@ -16,7 +16,7 @@ jobs:
       - uses: softwareforgood/check-artifact-v4-existence@v0
         id: check-artifact
         with:
-          name: build-js-artifacts-${{ github.sha }}
+          name: js-build-${{ github.sha }}
 
       - name: Check out repo
         uses: actions/checkout@v4
@@ -89,7 +89,7 @@ jobs:
       - name: Upload the archive of built files
         uses: actions/upload-artifact@v4
         with:
-          name: build-js-artifacts-${{ github.sha }}
+          name: js-build-${{ github.sha }}
           path: ${{ steps.diff.outputs.files }}
           retention-days: 1
           if-no-files-found: error

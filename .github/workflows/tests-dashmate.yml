@@ -44,7 +44,7 @@ jobs:
       - name: Download JS build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: build-js-artifacts-${{ github.sha }}
+          name: js-build-${{ github.sha }}
 
       - name: Replace with pre-built images
         run: |

@@ -43,7 +43,7 @@ jobs:
       - uses: softwareforgood/check-artifact-v4-existence@v0
         id: check-artifact
         with:
-          name: build-js-artifacts-${{ github.sha }}
+          name: js-build-${{ github.sha }}
 
       - name: Login to DockerHub
         uses: docker/login-action@v3
@@ -142,14 +142,14 @@ jobs:
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Create an archive of built files
-        run: xargs -a artifacts_list.txt tar cvf build-js-artifacts-${{ github.sha }}.tar
+        run: xargs -a artifacts_list.txt tar cvf js-build-${{ github.sha }}.tar
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Upload the archive of built files
         uses: actions/upload-artifact@v4
         with:
-          name: build-js-artifacts-${{ github.sha }}
-          path: build-js-artifacts-${{ github.sha }}.tar
+          name: js-build-${{ github.sha }}
+          path: js-build-${{ github.sha }}.tar
           retention-days: 1
           if-no-files-found: error
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
@@ -249,7 +249,7 @@ jobs:
       - name: Download JS build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: build-js-artifacts-${{ github.sha }}
+          name: js-build-${{ github.sha }}
 
       - name: Install macOS build deps
         if: runner.os == 'macOS'

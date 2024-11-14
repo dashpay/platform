@@ -245,5 +245,5 @@ jobs:
     steps:
       - uses: geekyeggo/delete-artifact@v5
         with:
-          name: build-js-artifacts-${{ github.sha }}
+          name: js-build-${{ github.sha }}
         if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}

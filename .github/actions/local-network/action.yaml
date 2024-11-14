@@ -14,11 +14,11 @@ runs:
     - name: Download JS build artifacts
       uses: actions/download-artifact@v4
       with:
-        name: build-js-artifacts-${{ github.sha }}
+        name: js-build-${{ github.sha }}
 
     - name: Unpack JS build artifacts archive
       shell: bash
-      run: tar -xf build-js-artifacts-${{ github.sha }}.tar
+      run: tar -xf js-build-${{ github.sha }}.tar
 
     - name: Get dashmate fingerprint
       id: dashmate-fingerprint

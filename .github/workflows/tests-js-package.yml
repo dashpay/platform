@@ -38,7 +38,7 @@ jobs:
       - name: Download JS build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: build-js-artifacts-${{ github.sha }}
+          name: js-build-${{ github.sha }}
 
       - name: Run ESLinter
         run: yarn workspace "${{ inputs.package }}" lint
@@ -69,7 +69,7 @@ jobs:
       - name: Download JS build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: build-js-artifacts-${{ github.sha }}
+          name: js-build-${{ github.sha }}
 
       - name: Create necessary dotenv files
         run: |
