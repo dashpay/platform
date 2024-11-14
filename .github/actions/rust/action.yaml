@@ -17,6 +17,7 @@ inputs:
     required: false
     default: "true"
 
+# TODO: Cache deps here to save 1 minute
 runs:
   using: composite
   steps:
@@ -32,10 +33,8 @@ runs:
         echo "TOOLCHAIN_VERSION=$TOOLCHAIN_VERSION" >> $GITHUB_ENV
         echo "::set-output name=version::$TOOLCHAIN_VERSION"
 
-    # TODO: Move to AMI and build every day
     - uses: dtolnay/rust-toolchain@master
       name: Install Rust toolchain
-      id: install_rust
       with:
         toolchain: ${{ steps.rust_toolchain.outputs.version }}
         target: ${{ inputs.target }}
@@ -60,7 +59,6 @@ runs:
             ;;
         esac
 
-    # TODO: Move to AMI and build every day
     - name: Check if protoc is installed
       id: check-protoc
       shell: bash
@@ -84,35 +82,15 @@ runs:
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
 
-    - name: Run sccache-cache
+    - name: Install sccache-cache
       uses: mozilla-actions/sccache-action@v0.0.6
       with:
         version: "v0.8.2" # Must be the same as in Dockerfile
       if: inputs.cache == 'true'
 
-    - name: Hash ref_name
-      id: hashed-ref-name
-      shell: bash
-      run: echo "key=$(echo '${{ github.ref_name }}' | sha256sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
-
     - name: Set HOME variable to github context
       shell: bash
       run: echo "HOME=$HOME" >> $GITHUB_ENV
-
-#    - name: Cache cargo registry (S3 bucket cache)
-#      uses: strophy/actions-cache@opendal-update
-#      if: inputs.cache == 'true'
-#      with:
-#        bucket: multi-runner-cache-x1xibo9c
-#        root: actions-cache
-#        path: |
-#          ${{ env.HOME }}/.cargo/registry/index
-#          ${{ env.HOME }}/.cargo/registry/cache
-#          ${{ env.HOME }}/.cargo/git
-#        key: ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
-#        restore-keys: |
-#          ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
-#          ${{ runner.os }}/cargo/registry/
 
     - name: Cache cargo registry
       uses: actions/cache@v4
@@ -127,8 +105,6 @@ runs:
           ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
           ${{ runner.os }}/cargo/registry/
 
-
-    # TODO: Move to AMI and build every day
     - name: Install clang
       id: deps-clang
       shell: bash

@@ -17,10 +17,6 @@ runs:
         name: js-build-${{ github.sha }}
         path: packages
 
-    - name: Unpack JS build artifacts archive
-      shell: bash
-      run: tar -xf js-build-${{ github.sha }}.tar
-
     - name: Get dashmate fingerprint
       id: dashmate-fingerprint
       shell: bash
