@@ -1,4 +1,3 @@
-use dashcore::blsful::BlsError;
 use thiserror::Error;
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
@@ -249,9 +248,10 @@ pub enum ProtocolError {
     #[error("invalid cbor error: {0}")]
     InvalidCBOR(String),
 
-    /// Invalid CBOR error
+    /// BLS signature error
+    #[cfg(feature = "bls-signatures")]
     #[error(transparent)]
-    BlsError(#[from] BlsError),
+    BlsError(#[from] dashcore::blsful::BlsError),
 }
 
 impl From<&str> for ProtocolError {
