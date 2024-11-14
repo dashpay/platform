@@ -1,16 +1,20 @@
-use crate::bls_signatures::{Bls12381G2Impl, Pairing};
-#[cfg(feature = "message-signature-verification")]
-use crate::consensus::signature::{
-    BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
-};
 use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "message-signature-verification")]
-use crate::validation::SimpleConsensusValidationResult;
+use crate::{
+    consensus::signature::{
+        BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
+    },
+    validation::SimpleConsensusValidationResult,
+};
 #[cfg(feature = "message-signing")]
 use crate::{BlsModule, ProtocolError};
-use dashcore::blsful::Signature;
-use dashcore::{blsful as bls_signatures, signer};
+use dashcore::signer;
+#[cfg(feature = "bls-signatures")]
+use {
+    crate::bls_signatures::{Bls12381G2Impl, Pairing},
+    dashcore::{blsful as bls_signatures, blsful::Signature},
+};
 
 impl PlatformMessageSignable for &[u8] {
     #[cfg(feature = "message-signature-verification")]
@@ -67,7 +71,7 @@ impl PlatformMessageSignable for &[u8] {
                     .expect("G2 projective");
                 let signature = Signature::<Bls12381G2Impl>::Basic(g2);
 
-                if !signature.verify(&public_key, signable_data).is_ok() {
+                if signature.verify(&public_key, signable_data).is_err() {
                     SimpleConsensusValidationResult::new_with_error(
                         SignatureError::BasicBLSError(BasicBLSError::new(
                             "bls signature was incorrect".to_string(),
