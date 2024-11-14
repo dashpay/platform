@@ -312,8 +312,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     #--mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     set -ex; \
-    source $HOME/.cargo/env && \
-    source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
         mv .cargo/config-release.toml .cargo/config.toml; \
     else \
@@ -326,12 +324,14 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     else \
         echo "Unsupported architecture: $TARGETARCH"; exit 1; \
     fi; \
+    source $HOME/.cargo/env && \
+    source /root/env && \
     cargo chef cook \
         --recipe-path recipe.json \
         --profile "$CARGO_BUILD_PROFILE" \
         --package drive-abci \
         ${FEATURES_FLAG} \
-        --target $CARGO_TARGET \
+#        --target $CARGO_TARGET \
         --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
@@ -365,7 +365,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         --profile "${CARGO_BUILD_PROFILE}" \
         --package drive-abci \
         ${FEATURES_FLAG} \
-        --target $CARGO_TARGET \
+#        --target $CARGO_TARGET \
         --locked && \
     cp /platform/target/${OUT_DIRECTORY}/drive-abci /artifacts/ && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
