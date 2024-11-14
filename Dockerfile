@@ -311,19 +311,18 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     #--mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    set -ex; \
     source $HOME/.cargo/env && \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
-        mv .cargo/config-release.toml .cargo/config.toml && \
-        export OUT_DIRECTORY=release ; \
+        mv .cargo/config-release.toml .cargo/config.toml; \
     else \
         export FEATURES_FLAG="--features=console,grovedbg" ; \
-        export OUT_DIRECTORY=debug ; \
     fi && \
     if [ "$TARGETARCH" = "amd64" ]; then \
-        CARGO_TARGET="x86_64-unknown-linux-musl"; \
+        export CARGO_TARGET="x86_64-unknown-linux-musl"; \
     elif [ "$TARGETARCH" = "arm64" ]; then \
-        CARGO_TARGET="aarch64-unknown-linux-musl"; \
+        export CARGO_TARGET="aarch64-unknown-linux-musl"; \
     else \
         echo "Unsupported architecture: $TARGETARCH"; exit 1; \
     fi; \
@@ -345,6 +344,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     #--mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    set -ex; \
     source $HOME/.cargo/env && \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
@@ -355,9 +355,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
         export OUT_DIRECTORY=debug ; \
     fi && \
     if [ "$TARGETARCH" = "amd64" ]; then \
-        CARGO_TARGET="x86_64-unknown-linux-musl"; \
+        export CARGO_TARGET="x86_64-unknown-linux-musl"; \
     elif [ "$TARGETARCH" = "arm64" ]; then \
-        CARGO_TARGET="aarch64-unknown-linux-musl"; \
+        export CARGO_TARGET="aarch64-unknown-linux-musl"; \
     else \
         echo "Unsupported architecture: $TARGETARCH"; exit 1; \
     fi; \
