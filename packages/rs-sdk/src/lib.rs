@@ -71,12 +71,12 @@ pub mod sdk;
 pub use error::Error;
 pub use sdk::{RequestSettings, Sdk, SdkBuilder};
 
+pub use dapi_grpc;
 pub use dashcore_rpc;
 pub use dpp;
 pub use drive;
 pub use drive_proof_verifier::types as query_types;
 pub use rs_dapi_client as dapi_client;
-pub use dapi_grpc;
 pub mod sync;
 
 /// Version of the SDK
