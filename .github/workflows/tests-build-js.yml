@@ -82,8 +82,9 @@ jobs:
       - name: Get modified files
         id: diff
         run: |
-          files="$(git ls-files --others --exclude-standard)"
-          echo "files=$files" >> $GITHUB_OUTPUT
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          git ls-files --others --exclude-standard >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Upload the archive of built files
