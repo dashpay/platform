@@ -33,6 +33,11 @@ ARG ALPINE_VERSION=3.18
 # Configure sccache
 #
 FROM lklimek/dash-platform-build-base AS deps
+
+ONBUILD ENV HOME=/root
+ONBUILD ENV CARGO_HOME=$HOME/.cargo
+ONBUILD ARG CARGO_BUILD_PROFILE=dev
+
 ARG RUSTC_WRAPPER
 
 # Disable incremental builds, not supported by sccache
