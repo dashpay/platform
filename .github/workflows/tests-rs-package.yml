@@ -37,13 +37,6 @@ jobs:
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
 
-      - name: Configure sccache
-        uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-
       - uses: clechasseur/rs-clippy-check@v3
         with:
           args: --package ${{ inputs.package }} --all-features --locked -- --no-deps
@@ -71,13 +64,6 @@ jobs:
           cache: false
 
       #  This step doesn't need librocksdb, so we don't install it
-
-      - name: Configure sccache
-        uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
       - name: Check formatting
         env:
@@ -116,13 +102,6 @@ jobs:
         uses: ./.github/actions/crate_info
         with:
           package: ${{ inputs.package }}
-
-      - name: Configure sccache
-        uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
       - name: Find unused dependencies
         uses: lklimek/cargo-machete@feat/workdir
@@ -220,13 +199,6 @@ jobs:
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
 
-      - name: Configure sccache
-        uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-
       - name: Run tests
         run: cargo test --package=${{ inputs.package }} --all-features --locked
         env:
@@ -266,13 +238,6 @@ jobs:
         uses: ./.github/actions/crate_info
         with:
           package: ${{ inputs.package }}
-
-      - name: Configure sccache
-        uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
       - name: Check each feature in ${{ inputs.package }}
         env:
