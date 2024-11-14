@@ -48,10 +48,10 @@ jobs:
         with:
           args: --package ${{ inputs.package }} --all-features --locked -- --no-deps
         env:
-#          RUSTC_WRAPPER: sccache
-#          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-#          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
-#          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          RUSTC_WRAPPER: sccache
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
@@ -80,11 +80,11 @@ jobs:
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
       - name: Check formatting
-#        env:
-#          RUSTC_WRAPPER: sccache
-#          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-#          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
-#          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
         run: cargo fmt --check --package=${{ inputs.package }}
 
   unused_deps:
@@ -127,10 +127,10 @@ jobs:
       - name: Find unused dependencies
         uses: lklimek/cargo-machete@feat/workdir
         env:
-#          RUSTC_WRAPPER: sccache
-#          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-#          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
-#          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          RUSTC_WRAPPER: sccache
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
@@ -230,10 +230,10 @@ jobs:
       - name: Run tests
         run: cargo test --package=${{ inputs.package }} --all-features --locked
         env:
-#          RUSTC_WRAPPER: sccache
-#          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-#          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
-#          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          RUSTC_WRAPPER: sccache
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
@@ -276,10 +276,10 @@ jobs:
 
       - name: Check each feature in ${{ inputs.package }}
         env:
-#          RUSTC_WRAPPER: sccache
-#          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
-#          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
-#          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          RUSTC_WRAPPER: sccache
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
+          SCCACHE_REGION: ${{ secrets.AWS_REGION }}
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
