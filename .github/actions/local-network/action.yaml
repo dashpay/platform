@@ -15,6 +15,7 @@ runs:
       uses: actions/download-artifact@v4
       with:
         name: js-build-${{ github.sha }}
+        path: packages
 
     - name: Unpack JS build artifacts archive
       shell: bash

@@ -250,6 +250,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: js-build-${{ github.sha }}
+          path: packages
 
       - name: Install macOS build deps
         if: runner.os == 'macOS'

@@ -94,5 +94,6 @@ jobs:
           path: ${{ steps.diff.outputs.files }}
           retention-days: 1
           if-no-files-found: error
+          include-hidden-files: true
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
